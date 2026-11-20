@@ -126,3 +126,5 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 显式最小字节约束和旧attempt不可变策略保持原值，修复后需受控新尝试，不能改旧账本。
 `tests/test_empty_required_read_dispatch.py`经过真实`prepare_call_operation`、
 重规划工件分区、策略冻结和页读取入口验证，保留默认值及身份反例。
+
+修复`a8ea58a5`通过63聚焦、9269影响闭包（7 skipped）、Web、53哨兵、10流程测试。受控stage-retrigger保留原始来源和修订草稿，内核取消旧attempt并建立新attempt；71/71读取覆盖后，2026-11-20 17:16:57真实提交获接纳（`evt-22a89feb7a39`），随后独立Critic启动。旧policy/账本保留，未代写Worker结果。这是准备阶段修复闭环，业务验收与Plan后无监工窗口仍未开始。
