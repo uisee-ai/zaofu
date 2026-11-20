@@ -344,12 +344,10 @@ class GoalClosureBridgeMixin:
 
         continuation = closure_provenance(events, state_dir=self.state_dir, workflow_run_id=workflow_run_id)
         if continuation:
-            inherited_refs = [continuation["receipt_ref"], *[
-                proof["envelope_ref"] for proof in continuation["task_proofs"]
-            ]]
-            for index, ref in enumerate(inherited_refs):
+            from zf.runtime.continuation_evidence import continuation_input_refs
+            for ref in continuation_input_refs(self.state_dir, events, workflow_run_id):
                 add_descriptor(ref=ref["ref"], digest=ref["sha256"],
-                    source_id=f"continuation-source-{index}", kind="historical_execution_evidence")
+                    source_id=ref["source_id"], kind="historical_execution_evidence")
         package_ref = str(identity.get("plan_artifact_package_ref") or "")
         package_digest = str(identity.get("plan_artifact_package_digest") or "")
         product_acceptance: dict = {"required": False}

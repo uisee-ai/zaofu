@@ -499,3 +499,28 @@ unavailable，不能用最新版本填补历史未知。运行版本与产品tar
 当前配置明确关闭resident时，历史spawn事件只能作为历史证据，不能重新启用
 发消息能力；无配置的只读投影仍可根据历史描述观察状态。实际tick入口及关闭、
 投递失败、等待响应反例见`tests/test_run_manager_diagnosis_consumer.py`。
+
+### Candidate 续跑的跨阶段证据接力
+
+受控 continuation 的历史证明由 `continuation_evidence` 统一提供给实际 Reader
+handoff、Goal read contract 和常驻诊断 context。入口先校验原授权、冻结目标及
+sidecar 摘要，索引原 Task Verify control/envelope、精确 Task 提交上的已准入
+Impl/self-check、它引用的工具事实，以及原 Run 派发/native hook 发生记录。
+摘要损坏拒绝；找不到的工具引用明确 unavailable，不从其他 Run 补造。
+所有事实保留原身份；派发/hook 观察不是硬件推理并发或最终资格 verdict。
+
+`critical-continuation-context` 保存执行范围、原批准及证据导航。经现有受控
+stage retry 成功发布的 owner feedback 同步进入后续消费，不修改历史 claims、
+原失败/取消终态或已完成任务。产品条款与执行资格的适用性由评估 agent 对账，
+不能把后继产品交付成功当作重新证明零人工干预。规范方法见
+`skills/zf-verify-rescan-replan/SKILL.md`；完成审阅但缺证据使用既有 blocked/
+dependency_blocked 结果，执行失败仅用于真实执行故障，不通过文本猜测改判。
+
+常驻 Run Manager 的每次诊断 context 带当前 reflect/source-repair 能力及历史
+证据 refs。已有资料的有界只读核对由 resident 自身先完成，避免依赖关闭的路由；
+它不能释放人工门禁、批准重试或提交产品通过。当前恢复仍经原受控动作、精确失败
+身份、Run/暂停/幂等校验执行。未将“readonly”当作绕过所有门禁的通行证。
+
+回归：`tests/test_continuation_evidence_handoff.py` 覆盖真实派发消费者、Goal
+消费、损坏/缺授权及历史工具身份；`tests/test_recovery_evidence_context.py`
+覆盖实际常驻诊断入口和受控 scope review。真实状态与介入次数另记 reports。

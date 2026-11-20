@@ -166,6 +166,11 @@ class CanonicalHandoffResolver:
             mutable,
             stage_id=str(authority_contract.get("stage_id") or ""),
         )
+        if profile in {"workflow-read", "candidate-verify", "goal-closure", "thin-judge-goal-closure"}:
+            from zf.runtime.continuation_evidence import continuation_input_refs
+            reader_inputs.extend(continuation_input_refs(
+                self.state_dir, self.query._events(), workflow_run_id,
+            ))
         if reader_inputs:
             input_refs = (
                 list(mutable.get("input_refs") or [])

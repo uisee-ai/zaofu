@@ -4339,6 +4339,7 @@ def _write_run_manager_context_sidecars(
     projection: dict[str, Any],
     project_root: Path | None,
     source_event_id: str,
+    config: ZfConfig | None = None,
 ) -> dict[str, Any]:
     context = projection.get("run_context_bundle")
     if not isinstance(context, dict) or not context:
@@ -4349,12 +4350,36 @@ def _write_run_manager_context_sidecars(
         )
     safe_request = _safe_ref_slug(request_id)
     from zf.runtime.diagnosis_runtime_context import diagnosis_runtime_sources
+    from zf.runtime.continuation_evidence import continuation_input_refs
+
+    events = _read_events(state_dir)
+    continuation_error = ""
+    try:
+        continuation_refs = continuation_input_refs(state_dir, events,
+            str(action.get("workflow_run_id") or action.get("run_id") or ""))
+    except (ValueError, OSError) as exc:
+        # A broken evidence input is itself diagnostic material, not a reason
+        # to suppress the diagnostic request or pretend it was verified.
+        continuation_refs = []
+        continuation_error = str(exc)
 
     context_payload = redact_obj({
         "schema_version": RUN_MANAGER_CONTEXT_SIDECAR_SCHEMA_VERSION,
         "request_id": request_id,
         "legacy_context_ref": _legacy_run_manager_context_ref(),
         "action": action,
+        "recovery_capabilities": {
+            "resident_read_only_reconciliation": True,
+            "reflect": config.runtime.run_manager.reflect.enabled if config else None,
+            "source_repair": config.runtime.run_manager.source_repair.enabled if config else None,
+            "human_gate_bypass": False,
+        },
+        "continuation_evidence_refs": continuation_refs,
+        "continuation_evidence_error": continuation_error,
+        "reconciliation_method": "First perform bounded read-only reconciliation in this resident. "
+            "Missing evidence is not proof of absent execution. Do not request disabled or unknown "
+            "routes. Preserve human gates; propose an exact available action and its evidence, "
+            "never an abstract approval or a retrospective unattended success.",
         "context": context,
         "runtime_sources": diagnosis_runtime_sources(
             state_dir, _read_events(state_dir), _string_list(action.get("source_event_ids")),
@@ -7246,7 +7271,7 @@ def _execute_resident_agent_reprompt(
             refs = _write_run_manager_context_sidecars(
                 state_dir=state_dir, request_id=action["request_id"],
                 action=action, projection={}, project_root=project_root,
-                source_event_id=causation_id,
+                source_event_id=causation_id, config=config,
             )
         except Exception as exc:
             _emit_blocked_action(writer, action, causation_id=causation_id,

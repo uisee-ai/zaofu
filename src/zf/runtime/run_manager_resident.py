@@ -248,6 +248,12 @@ def build_resident_run_manager_briefing(
         "没有信号是未知，需结合 operation、合同及证据判断。",
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
+        "   先读取本次 context 的 recovery_capabilities；关闭或未知的能力不得当作已可用。",
+        "   证据不可用不等于执行失败。先由本 resident 做一次有界只读对账，沿",
+        "   continuation_evidence_refs 核对原 Run、任务、目标和工具记录，说明缺失、矛盾或范围未决。",
+        "   不必为已有材料的读取再请求 reflect/repair。人工门禁保留：只读诊断不释放门禁，",
+        "   不重试 worker、不改状态、不承诺产品通过；恢复建议应给出精确失败身份、",
+        "   已补证据及可用受控动作。没有可用动作时明确 owner 决策内容，不提交抽象批准。",
         "5. 写一条观察事件,例如:",
         "",
         "```bash",
