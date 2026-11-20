@@ -58,3 +58,18 @@ reason 关闭无合同字段的旧升级。Web 入口却提前统一拒绝，导
 
 宿主修复、重启与人工关闭发生在 Plan 批准前。16 项业务验收和 8+8 并发尚未开始，
 本段操作不能计入无人干预成功证据。
+
+## 2026-11-20：部分 Reader 恢复后再次被人工门阻塞
+
+15:21 UTC RM 精确 child-rebuild 已经通过实际准入，新 product-scan Operation 完成
+真实 Luna 执行，15:25产物获准。另一 tech-scan 仍为旧失败，重新汇总后 reactor
+对 infrastructure_failure 无条件升级 human，挡住已有 RM 诊断责任。现在只有
+启用 resident RM 且该事件注册了 RM pending_action 时，保留该路由；未具备这两个
+条件仍升级。此改变不批准任何重试，不改变审批、语义重规划或失败事实。
+
+同时修正失败汇总把所有历史 fanout.child.failed 重新注入的缺陷：只补充当前
+failed child、当前派发和当前事件的正文。成功或新派发不能被旧报告污染；历史
+仍保留账本供诊断。针对两个真实问题新增调用方和多 child 重试回归：
+`tests/test_reader_infrastructure_recovery_routing.py`、
+`tests/test_fanout_current_failure_findings.py`。真实后续阶段须单独记录，不能从这些
+测试推断16项完成或8+8并发通过。

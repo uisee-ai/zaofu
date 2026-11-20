@@ -476,6 +476,22 @@ class EventReactorMixin(
         events = read_runtime_events(self.event_log, self.state_dir)
         replan_event, note = plan_reader_stage_replan(self.config, events, event, state_dir=self.state_dir)
         if replan_event is None:
+            if note == "infrastructure_failure":
+                from zf.runtime.event_problem_registry import spec_for_event
+
+                manager = getattr(getattr(self.config, "runtime", None), "run_manager", None)
+                resident = getattr(manager, "resident_agent", None)
+                spec = spec_for_event(event.type)
+                if (getattr(resident, "enabled", False) and spec is not None
+                        and spec.owner_route == "run_manager"
+                        and "pending_action" in spec.run_manager_semantics):
+                    # The existing RM consumer owns diagnosis. Infrastructure
+                    # failure alone grants neither a retry nor a human gate.
+                    return WorkflowRuntimeDecision(
+                        action="wait", target_role="run-manager",
+                        task_id=str(event.task_id or ""),
+                        reason=f"{event.type} → registered Run Manager diagnosis",
+                    )
             if note == "cap_exhausted":
                 from zf.runtime.escalation_terminal import converge_stage_replan_cap
 
