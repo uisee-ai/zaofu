@@ -1,6 +1,6 @@
 # 无人执行 Spec：当前 dev 已确认缺口修复
 
-> 状态: active
+> 状态: done — 3d71bd97 fix: close reader recovery and scoped supervision gaps
 
 来源：用户授权“执行下一步，基于 dev 补 Spec 缺口”；基线 d442a9bd。
 对应本地规格 ZF-SPEC-004 r2（docs/spec/zaofu-unattended-execution.spec.md）。
