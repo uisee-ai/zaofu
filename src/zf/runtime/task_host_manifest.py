@@ -135,6 +135,29 @@ def dependency_digest(service, root: Path) -> str:
     return digest(rows)
 
 
+def publication_hooks(root: Path) -> list[dict]:
+    """Recognize only the exact guard installed by this trusted runtime."""
+    from zf.core.workspace.git_hooks import PRE_COMMIT_HOOK
+
+    # --git-path resolves a hooks-directory symlink; inspect the default entry itself.
+    hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+    error = "Git hooks require separate review; this host action does not bypass them"
+    if git_read(root, "config", "--get", "core.hooksPath").stdout.strip() or hooks.is_symlink():
+        raise ValueError(error)
+    rows = []
+    for path in sorted(hooks.glob("*")):
+        if not path.is_file() or not os.access(path, os.X_OK) or path.name.endswith(".sample"):
+            continue
+        if path.is_symlink() or path.name != "pre-commit":
+            raise ValueError(error)
+        content = path.read_bytes()
+        if content != PRE_COMMIT_HOOK.encode():
+            raise ValueError(error)
+        rows.append({"name": path.name, "sha256": hashlib.sha256(content).hexdigest(),
+                     "mode": path.stat().st_mode})
+    return rows
+
+
 def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = None,
             command_id: str = "") -> dict:
     op, request, contract, root = binding(service, operation_id)
@@ -151,11 +174,7 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
         # the interactive shell's author environment or global Git config.
         git(root, "var", "GIT_AUTHOR_IDENT")
         git(root, "var", "GIT_COMMITTER_IDENT")
-        hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks"))
-        if (git_read(root, "config", "--get", "core.hooksPath").stdout.strip()
-                or any(p.is_file() and os.access(p, os.X_OK) and not p.name.endswith(".sample")
-                       for p in hooks.glob("*"))):
-            raise ValueError("Git hooks require separate review; this host action does not bypass them")
+        hooks = publication_hooks(root)
         scopes = request.get("workdir_write_scopes") or []
         for name in names:
             _relative(root, name)
@@ -190,4 +209,6 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
             "branch": git(root, "rev-parse", "--abbrev-ref", "HEAD"),
             "paths": names, "command": command, "files": source_files(root),
             "dependency_digest": dependency_digest(service, root)}
+    if kind == "commit":
+        body["git_hooks"] = hooks
     return {**body, "manifest_digest": digest(body)}
