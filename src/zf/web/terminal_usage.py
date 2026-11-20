@@ -102,6 +102,7 @@ class _UsageSnapshot:
     context_usage_ratio: float | None = None
     observed_at: str = ""
     reason: str = ""
+    turn_boundary: dict = field(default_factory=dict)
 
 
 class TerminalUsageService:
@@ -275,6 +276,36 @@ class TerminalUsageService:
             if fallback is not None:
                 return fallback
         return self._project(internal)
+
+    def native_snapshot(self, *, provider: str, session_id: str, project_root: Path) -> dict[str, object]:
+        """Read exact native identity counters for managed non-terminal calls too."""
+        if provider not in _QUALIFIED_PROVIDERS or not session_id or not re.fullmatch(r'[a-zA-Z0-9_-]{1,160}', session_id):
+            return {'status': 'unavailable'}
+        root = self.claude_projects_root if provider == 'claude-code' else self.codex_sessions_root
+        pattern = f'*/{session_id}.jsonl' if provider == 'claude-code' else f'*/*/*/rollout-*-{session_id}.jsonl'
+        matches = [path for path in root.glob(pattern) if self._under(path.resolve(), root)]
+        if len(matches) != 1:
+            return {'status': 'unavailable'}
+        path = matches[0]
+        if provider == 'claude-code':
+            # Claude stores cwd in its project folder; never read another project's same UUID.
+            expected = str(Path(project_root).resolve()).replace('/', '-').replace('.', '-')
+            if path.parent.name != expected:
+                return {'status': 'unavailable'}
+            internal = self._read_claude(path)
+        else:
+            try:
+                internal = self._read_codex(path, expected_root=Path(project_root), strict=True)
+            except (OSError, ValueError, TypeError):
+                return {'status': 'unavailable'}
+        result = self._project(internal)
+        if internal.turn_boundary.get('session_id') == session_id:
+            result['turn_boundary'] = internal.turn_boundary
+        from zf.runtime.backend_session_reader import get_reader_for_backend
+        reader = get_reader_for_backend(provider)
+        report = reader.read_latest_usage(path) if reader else None
+        result['session_started_at'] = getattr(report, 'series_started_at', '')
+        return result
 
     def settle(self, record: TerminalSessionRecord) -> dict[str, object]:
         internal = self._read_snapshot(record)
@@ -463,7 +494,10 @@ class TerminalUsageService:
             observed_at=observed_at,
         )
 
-    def _read_codex(self, path: Path, *, expected_root: Path) -> _UsageSnapshot:
+    def _read_codex(self, path: Path, *, expected_root: Path, strict: bool = False) -> _UsageSnapshot:
+        from zf.runtime.codex_turn_boundary import CodexTurnBoundary
+
+        boundary = CodexTurnBoundary()
         buckets: dict[str, _UsageBucket] = {}
         previous: dict[str, int] = {}
         seen_incremental: set[str] = set()
@@ -472,7 +506,8 @@ class TerminalUsageService:
         accounting_mode = "unknown"
         observed_at = ""
         context_ratio: float | None = None
-        for obj in self._jsonl(path):
+        for obj in self._jsonl(path, strict=strict):
+            boundary.consume(obj)
             kind = obj.get("type")
             payload = obj.get("payload")
             if not isinstance(payload, dict):
@@ -560,6 +595,7 @@ class TerminalUsageService:
                 provider=provider,
                 accounting_mode=accounting_mode,
                 reason="provider transcript has no usage receipt yet",
+                turn_boundary=boundary.project(),
             )
         return _UsageSnapshot(
             status="observed",
@@ -569,6 +605,7 @@ class TerminalUsageService:
             buckets=buckets,
             context_usage_ratio=context_ratio,
             observed_at=observed_at,
+            turn_boundary=boundary.project(),
         )
 
     def _project(self, snapshot: _UsageSnapshot) -> dict[str, object]:
@@ -788,19 +825,25 @@ class TerminalUsageService:
         return match.group(1) if match else ""
 
     @staticmethod
-    def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
+    def _jsonl(path: Path, *, strict: bool = False) -> Iterable[dict[str, Any]]:
         try:
             handle = path.open("r", encoding="utf-8", errors="replace")
         except OSError:
+            if strict:
+                raise
             return
         with handle:
             for line in handle:
                 try:
                     value = json.loads(line)
                 except json.JSONDecodeError:
+                    if strict:
+                        raise
                     continue
                 if isinstance(value, dict):
                     yield value
+                elif strict:
+                    raise ValueError("provider transcript contains a non-object record")
 
     @staticmethod
     def _receipt_counters(receipt: dict[str, Any]) -> dict[str, int]:

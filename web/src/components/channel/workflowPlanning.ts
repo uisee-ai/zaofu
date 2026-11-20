@@ -183,8 +183,8 @@ export function buildChannelWorkflowPlanningRequest(args: {
         "基于已确认的 canonical Channel PRD 提议创建一个 Task，并准备后续的 Workflow Plan。",
         objective ? `目标：${objective}` : "",
         "返回一个 subject_type=task_create 的 plan_request JSON，提供 2-3 个选项，其中一个标记 recommended。",
-        "创建选项必须使用 effect.mode=propose、effect.action=create-task；flat payload 包含 title、objective、priority、scope、acceptance、acceptance_criteria、explicit_non_goals、skills_required，可包含 channel_prd_scope、verification、verification_tiers、validation 和 workflow_plan。完整交付使用 channel_prd_scope=full_product（默认）；Owner 明确要求局部评审、验证或演练时使用 approved_task，并提供非空字符串 objective、acceptance、verification，非空 acceptance_criteria 和 verification_tiers，范围与验收仅覆盖已批准的局部任务。explicit_non_goals 描述 Task 之外的内容，不要把提案尚未执行的审批说明写成否定 Task 目标的非目标。",
-        "workflow_plan 必须有 2-3 个选项，至少一个使用当前 workflow route catalog 中的 route_id；可执行项包含 id、label、description、recommended、route_id、objective 和可选 parameters，无执行项使用 mode=defer。不要在 workflow_plan 中填写 task_id、config_digest 或 task_contract_digest，Kernel 会在创建真实 Task 后重绑定。Task 确认只能创建 Task 并发布第二个 Workflow Plan；不要直接启动 workflow。",
+        "创建选项必须使用 effect.mode=propose、effect.action=create-task；flat payload 包含 title、objective、priority、scope、acceptance、acceptance_criteria、explicit_non_goals、skills_required，可包含 channel_prd_scope、verification、verification_tiers、validation、target_root。完整交付使用 channel_prd_scope=full_product（默认）；Owner 明确要求局部评审、验证或演练时使用 approved_task，并提供非空字符串 objective、acceptance、verification，非空 acceptance_criteria 和 verification_tiers，范围与验收仅覆盖已批准的局部任务。explicit_non_goals 描述 Task 之外的内容，不要把提案尚未执行的审批说明写成否定 Task 目标的非目标。",
+        "新 Task 默认设置 prepare_workflow=true，省略 workflow_plan；Kernel 绑定当前项目目录，在 Task 确认后准备 Workflow YAML Preview，启动需要独立确认。不要直接启动 workflow。只有 Owner 明确要求旧路由选择时才返回 workflow_plan，并使用当前 route catalog 的有效 route_id。",
         "Canonical Channel PRD lineage:",
         lineage,
       ].filter(Boolean).join("\n\n");

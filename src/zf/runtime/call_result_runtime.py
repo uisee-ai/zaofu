@@ -302,12 +302,18 @@ def prepare_call_operation(
     )
     if critical_sources:
         critical_ids = {source["source_id"] for source in critical_sources}
-        payload["input_refs"] = [
-            *(item for item in (payload.get("input_refs") or [])
-              if not isinstance(item, dict) or item.get("source_id") not in critical_ids),
-            *critical_sources,
-        ]
+        retained = [item for item in (payload.get("input_refs") or [])
+                    if not isinstance(item, dict) or item.get("source_id") not in critical_ids]
+        # Preparation appends its proof after critical inputs. Preserve that
+        # ordering when the same prepared payload is delivered a second time.
+        proof = []
+        if (output_profile_id == "plan-synth" and retained and isinstance(retained[-1], dict)
+                and retained[-1].get("source_id") == "plan-structural-delta"):
+            proof.append(retained.pop())
+        payload["input_refs"] = [*retained, *critical_sources, *proof]
 
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    configured_review = flow_metadata_for(runtime.config, payload=payload).get("plan_review", {})
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_replay import pin_replayed_review_usage, remove_replayed_scoped_read_projection
 
@@ -318,7 +324,7 @@ def prepare_call_operation(
         from zf.runtime.plan_unchanged_review import attach_unchanged_review
 
         attach_unchanged_review(runtime, payload=payload, stage=stage_id, trigger_id=causation_id,
-                                operation_id=operation_id)
+                                operation_id=operation_id, compare_text=configured_review.get("mode") == "targeted")
 
     if operation_type == "fanout_reader_child":
         from zf.runtime.reader_handoff import attach_reader_handoff
@@ -365,7 +371,7 @@ def prepare_call_operation(
         ),
     )
     full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
-    if output_profile_id == "plan-synth" and any(
+    if output_profile_id == "plan-synth" and configured_review.get("mode") != "full" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
         for source in source_manifest.get("sources", [])
     ):
@@ -380,12 +386,39 @@ def prepare_call_operation(
             plan_revision=str(payload.get("plan_revision") or ""),
         )
     if output_profile_id == "plan-synth":
-        from zf.runtime.plan_review_input_diagnostics import review_diagnostics
+        from zf.runtime.plan_review_selection_cost import choose_review_reads
+        from zf.runtime.plan_input_read_selection import select_plan_input_reads
 
-        payload["plan_review_optimization"] = review_diagnostics(
-            source_manifest, before=full_plan_reads, after=required_reads,
-            explicit=bool(explicit_required_reads),
+        payload["plan_review_policy"] = configured_review
+        selection_strategy = ""
+        if any(s.get("source_id") == "plan-structural-delta" for s in source_manifest["sources"]):
+            from zf.runtime.plan_text_change import select_text_change
+            selected = select_text_change(runtime.state_dir, source_manifest, required_reads,
+                events=runtime.event_log.read_all(), fanout=payload.get("fanout_id"), stage=stage_id,
+                role=payload.get("role_instance"), policy=configured_review, explicit=bool(explicit_required_reads),
+                project_root=runtime.project_root)
+            if selected:
+                required_reads, selection_strategy = selected
+        if required_reads == full_plan_reads:
+            required_reads, selection_strategy = select_plan_input_reads(
+                runtime.state_dir, source_manifest, required_reads,
+                policy=configured_review, explicit=bool(explicit_required_reads),
+            )
+        required_reads, payload["plan_review_optimization"] = choose_review_reads(
+            runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
+            explicit=bool(explicit_required_reads), strategy=selection_strategy,
         )
+    elif (source_manifest.get("handoff_authority_contract") or {}).get("attempt_domain") == "plan":
+        from zf.runtime.plan_input_read_selection import select_plan_input_reads
+        from zf.runtime.plan_review_selection_cost import choose_review_reads
+
+        partitioned, strategy = select_plan_input_reads(runtime.state_dir, source_manifest,
+            required_reads, policy={}, explicit=bool(explicit_required_reads))
+        required_reads, payload["plan_input_optimization"] = choose_review_reads(
+            runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
+            explicit=bool(explicit_required_reads), strategy=strategy,
+        )
+    if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_inspection import review_scope_diagnostics
         from zf.runtime.plan_review_input_budget import check_review_input_budget
 

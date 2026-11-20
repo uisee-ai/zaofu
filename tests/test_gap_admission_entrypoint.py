@@ -29,11 +29,14 @@ def test_taskless_rejection_reaches_kernel_repair_or_cap(tmp_path, monkeypatch, 
     if layer2:
         cfg.roles = [RoleConfig(name="orchestrator", backend="mock")]
     runtime = Orchestrator(state, cfg, _FakeTransport())
+    # Seeded history was already consumed; exercise only the new rejection.
+    runtime.session_store.create(str(tmp_path))
+    runtime._persist_offset(log.current_offset())
     # Isolate the unrelated provider dispatch edge; event admission and actual
     # run_once -> reactor -> bounded replan/escalation are not replaced.
     monkeypatch.setattr(runtime, "_dispatch_ready", lambda: [])
-    monkeypatch.setattr(runtime, "_notify_orchestrator_agent",
-                        lambda *_: pytest.fail("mechanical rejection routed to Layer 2"))
+    notifications = []
+    monkeypatch.setattr(runtime, "_notify_orchestrator_agent", notifications.append)
     on_event, on_batch = make_watch_callbacks(
         orchestrator=runtime, wake_patterns=compute_effective_wake_patterns(cfg),
         wake_worthy_fn=lambda _: True, rate_limiter=SimpleNamespace(allow=lambda _: True),
@@ -61,5 +64,9 @@ def test_taskless_rejection_reaches_kernel_repair_or_cap(tmp_path, monkeypatch, 
         assert not any(e.type == "flow.discovery.requested" and e.causation_id == failure.id for e in rows)
     before = [(e.id, e.type) for e in rows if e.type in {"flow.discovery.requested", "human.escalate", "run.goal.blocked"}]
     runtime.run_once(events=[rejection], consumed_offset=log.current_offset())
+    # The replay tail also contains newly emitted follow-up events. They may
+    # notify Layer 2; the mechanical rejection/failure must remain Kernel-owned.
+    assert not any(e.id in {rejection.id, failure.id} or e.type == "task_map.amend.failed"
+                   for e in notifications)
     assert [(e.id, e.type) for e in log.read_all()
             if e.type in {"flow.discovery.requested", "human.escalate", "run.goal.blocked"}] == before

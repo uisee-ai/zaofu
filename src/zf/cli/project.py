@@ -224,6 +224,8 @@ def init_flow_project(
     if apply_request and not has_request_input:
         raise ValueError("--apply requires --objective, --from, or --open-question")
     project_root = project_root.expanduser().resolve()
+    from zf.integrations.controller.binding import project_directory
+    workspace = project_directory(project_root, workspace, state_dir)
     name, description = normalize_new_project_metadata(
         root=project_root,
         name=name,

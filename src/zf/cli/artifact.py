@@ -124,7 +124,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--source", help="Source id from artifact list")
     read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
     read_cmd.add_argument("--required", action="store_true", help="Read kernel-required slices in bounded, deduplicated pages")
-    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..8192 bytes")
+    read_cmd.add_argument("--page-bytes", type=int, default=8192, help="Required output UTF-8 budget including metadata; 1024..32768 bytes")
+    read_cmd.add_argument("--format", choices=["json", "text"], default="json", dest="output_format",
+                          help="Text pages preserve body quoting; complete output is still required for delivery evidence")
     read_cmd.add_argument("--pages", type=int, default=1, help="Required pages per call, 1..4; emits JSON Lines, at most pages * page-bytes bytes")
     read_cmd.add_argument("--cursor", default=None, help="Continue a bound --required page")
     read_cmd.add_argument("--resume", action="store_true", help="Resume observed pages in the current provider session")
@@ -298,12 +300,14 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                     context.state_dir, manifest=manifest, rows=rows, identity=identity,
                     cursor=cursor, page_bytes=args.page_bytes, event_log=event_log,
                     resume=bool(page == 0 and getattr(args, "resume", False)),
+                    output_format=getattr(args, "output_format", "json"),
                 )
                 for row in receipts:
                     row.update(read_reason=getattr(args, "reason", "unspecified"),
                                host_elapsed_ms=round((perf_counter()-page_started)*1000, 3))
                 emit_artifact_output(context.state_dir, output, receipts, sys.stdout)
-                cursor = json.loads(output)["next_cursor"]
+                from zf.runtime.artifact_text_page import parse_artifact_page
+                cursor = parse_artifact_page(output)["next_cursor"]
                 if not cursor:
                     break
             return 0
@@ -337,6 +341,15 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                          ensure_ascii=False)
     else:
         output = result["content"]
+    if getattr(args, "output_format", "json") == "text":
+        from zf.runtime.artifact_text_page import render_text_page
+
+        row = result["read"]
+        output = render_text_page({"schema_version": "artifact-page.v1", "items": [{
+            **{k: row[k] for k in ("source_id", "artifact_id", "artifact_sha256", "json_path")},
+            **{k: row[k] for k in ("page_start", "page_end", "page_total") if k in row},
+            "content": result["content"],
+        }]})
     from zf.runtime.artifact_output_delivery import emit_artifact_output
     try:
         result["read"].update(read_reason=getattr(args, "reason", "unspecified"), host_elapsed_ms=round((perf_counter()-started)*1000, 3))

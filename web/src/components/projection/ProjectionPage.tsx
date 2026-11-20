@@ -1,4 +1,3 @@
-import { SettingsPage } from "../settings/SettingsPage";
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, RecentEvent, SearchResult, Snapshot } from "../../api/types";
 import { DeliveryTracePage } from "../../components/delivery-trace/DeliveryTracePage";
@@ -218,7 +217,6 @@ export function ProjectionPage({
       </>
     );
   }
-  if (page === "settings") return <SettingsPage snapshot={snapshot} />;
 
   return (
     <ProjectionEmptyState

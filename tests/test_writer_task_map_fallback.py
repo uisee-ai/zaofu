@@ -339,6 +339,7 @@ def test_failed_and_downstream_scope_maps_unique_successor_and_keeps_audit(
             "resume_scope": "failed_children_and_downstream",
             "metadata": {
                 "dispatch_delta_task_ids": ["AC8-R2", "RELEASE-AUDIT"],
+                "target_commit": head,
             },
             "tasks": [
                 {

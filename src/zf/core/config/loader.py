@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from zf.core.config.controller import parse_controller_observation
+
 
 _ROLE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,31}$")
 # Permission modes describe ZaoFu's logical role policy. Trusted provider
@@ -328,7 +330,7 @@ _KNOWN_COST_KEYS = frozenset({
     "pricing_refresh_timeout_seconds",
     "backend_accounting_modes",
 })
-_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds"})
+_KNOWN_CHANNEL_KEYS = frozenset({"agent_profiles", "semantic_source_max_chars", "codex_context_window_tokens", "provider_timeout_seconds", "codex_model", "codex_reasoning_effort"})
 _KNOWN_CHANNEL_AGENT_PROFILE_KEYS = frozenset({
     "revision",
     "persona",
@@ -4694,8 +4696,13 @@ def _build_channel(data: object) -> ChannelConfig:
     timeout = data.get("provider_timeout_seconds", 0)
     if type(timeout) is not int or not 0 <= timeout <= 7200:
         raise ConfigError("channel.provider_timeout_seconds must be an integer between 0 and 7200")
-    return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
-                         codex_context_window_tokens=context_window, provider_timeout_seconds=timeout)
+    try:
+        return ChannelConfig(agent_profiles=profiles, semantic_source_max_chars=budget,
+                             codex_context_window_tokens=context_window, provider_timeout_seconds=timeout,
+                             codex_model=data.get("codex_model", ""),
+                             codex_reasoning_effort=data.get("codex_reasoning_effort", ""))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 _FEISHU_ROUTE_TARGETS = {
@@ -5083,7 +5090,7 @@ _KNOWN_GOAL_KEYS = frozenset({
     "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
 })
 _KNOWN_OBSERVABILITY_KEYS = frozenset({
-    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts",
+    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller",
 })
 _KNOWN_PROVIDER_TELEMETRY_KEYS = frozenset({
     "mode", "profile_id", "endpoint_env", "enable_traces",
@@ -5104,6 +5111,10 @@ def _build_observability(data: object) -> ObservabilityConfig:
     if not isinstance(data, dict):
         raise ConfigError("observability must be a mapping")
     _reject_unknown_keys(data, _KNOWN_OBSERVABILITY_KEYS, "observability")
+    try:
+        controller = parse_controller_observation(data.get("controller"))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(str(exc)) from exc
     telemetry_raw = data.get("provider_telemetry") or {}
     metrics_raw = data.get("metrics") or {}
     runtime_logs_raw = data.get("runtime_logs") or {}
@@ -5226,6 +5237,7 @@ def _build_observability(data: object) -> ObservabilityConfig:
             "observability.alerts.cooldown_seconds must be 30..86400"
         )
     return ObservabilityConfig(
+        controller=controller,
         provider_telemetry=ProviderTelemetryConfig(
             mode=mode,
             profile_id=str(

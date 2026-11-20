@@ -8,7 +8,7 @@ from tests.test_plan_artifact_package import _run_contract
 def add_human_review_fixture(state, writer):
     task_map = {"tasks": [
         {"task_id": "T-STOCK", "title": "修正库存", "source_ref": "docs/prd.md#stock", "acceptance_criteria": [
-            {"id": "AC-STOCK", "statement": "修正只结算差额", "verification_command_ids": ["VC-STOCK"], "verification_tier": "runtime"}]},
+            {"id": "AC-STOCK", "source_acceptance_ids": ["REQ-STOCK"], "statement": "修正只结算差额", "verification_command_ids": ["VC-STOCK"], "verification_tier": "runtime"}]},
         {"task_id": "T-LEGACY", "title": "已有读取功能", "acceptance_criteria": [{"id": "AC-READ", "statement": "受权读取"}]},
     ], "goal_claims": [{"id": "G1", "statement": "库存一致，重复请求不重复结算"}], "owner_decision_items": [
         {"decision_id": "Q1", "status": "pending_decision", "blocking": False, "question": "确认库存来源", "owner": "数据负责人", "affected_task_ids": ["T-STOCK"], "latest_gate": "写入前", "closure_evidence": "确认唯一真源"},

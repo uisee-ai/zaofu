@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **322** addressable command paths.
+The parser currently exposes **70** top-level families and **326** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -183,6 +183,14 @@ Inspect/render the effective canonical config
 | `zf config` | Inspect/render the effective canonical config |
 | `zf config inspect` | Inspect expanded config |
 | `zf config render` | Render expanded config and lock |
+
+## `zf controller`
+
+Deliver Controller observation records
+
+| Command | Parser description |
+|---|---|
+| `zf controller` | Deliver Controller observation records |
 
 ## `zf cost`
 
@@ -481,9 +489,11 @@ Review, approve, or reject a plan
 |---|---|
 | `zf plan` | Review, approve, or reject a plan |
 | `zf plan approve` | Approve a plan and unlock writer fanout |
+| `zf plan draft-baseline` | Export pinned Plan ports as a tar stream for local editing |
 | `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
 | `zf plan inspect-inputs` | Inspect declared task input coverage without approving semantic completeness |
 | `zf plan inspect-review` | Inspect Critic input cost, scope and read progress |
+| `zf plan prepare-scope-review` | Assemble scope evidence; does not approve or establish runtime eligibility |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 
@@ -548,6 +558,7 @@ Recover deterministic runtime state from append-only events
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
+| `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |
 | `zf recover host-assist` | Preview exact task host assistance without executing it |
 | `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
 | `zf recover host-unit` | Render or install an opt-in user systemd supervisor |

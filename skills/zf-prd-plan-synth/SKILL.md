@@ -1,6 +1,7 @@
 ---
 name: zf-prd-plan-synth
 description: "Use for ZaoFu PRD workflows. Defines scan, planning, configured review, and the dispatchable plan contract for product delivery."
+dependencies: [zf-plan-execution-readiness]
 ---
 
 # ZaoFu PRD Plan Synthesis
@@ -14,12 +15,18 @@ actual dispatch briefing and configured role names:
    waits for both and emits `prd.scan.completed`.
 2. `prd-plan`: `planner` produces the complete Plan, task map and matrices.
 3. By default, `plan-critic` independently reviews the admitted Planner
-   candidate. When the explicit `planCriticEnabled: false` route is configured,
+   candidate. Explicit `plan_review` selects none, targeted or full with a reason;
+   targeted also names the review questions and does not imply whole-document approval.
+   When `plan_review.mode: none` or `planCriticEnabled: false` is configured,
    Planner performs cross-artifact reconciliation and submits its own complete
    candidate; the Kernel admits the package before writer dispatch. This is
    Planner self-check, not independent review. Record missing evidence and do
    not claim an independent Critic verdict.
 4. When enabled, human Plan approval precedes product writer dispatch.
+
+Use the configured scope and the input policy; supplementary ports remain available
+for controlled reads. Follow the dependency's review-scope method for first targeted
+review, evidence-bound incremental review and finding-linked rework.
 
 The default Plan stage has Planner and Critic; the explicitly configured
 no-Critic route has Planner alone. The Kernel is deterministic orchestration,
@@ -31,6 +38,11 @@ configured workflow separates PRD authoring. They do not add `prd-author`,
 `prd-critic`, or `task-map-synth` to the standard PrdFlow.
 
 ## PRD Author Output
+
+编写或评审 PRD 时读取[产品阅读与证据方法](references/product-reading-evidence.md)，
+将摘要、正文、设计和追溯组织为同版权威材料的阅读路径。存在设计问题时，同时读取
+依赖技能中的[设计调研与交接](../zf-plan-execution-readiness/references/design-research-handoff.md)。
+按适用性展开，不增加固定章节、角色或 Runtime 语义门禁。
 
 Channel PRD 输入先消费同版 `implementation_companion` 的来源基线、评审覆盖、验收数据
 计划和 handoff 索引，以及独立评估报告（如已提供）。复核报告的 PRD ref/digest；旧版
@@ -80,25 +92,19 @@ After PRD approval, write:
 - `task_map.json`: dispatchable vertical slices.
 - `source_index.json`: PRD and evidence index.
 
-The Markdown plan is the human review document, not a one-paragraph status
-summary. It must be long enough to let an owner review the confirmed scope
-without opening the provider transcript. Include these sections whenever the
-workflow has a source PRD or authority bundle:
+Plan 正文面向审批与执行交接，默认沿用确认需求的语言；代码标识、命令、路径和
+固定机器键保持原样。小需求按适用性表达完整语义，不按模板补造页面、数据模型、
+并行 wave 或业务指标。推荐阅读顺序：
 
-- a human approval entry in this order: **PRD** (user outcome, scope, and
-  non-goals), **SDD** (system boundaries, entrypoints, data/API contracts,
-  ownership, and dependencies), **TDD** (acceptance-to-command mapping,
-  evidence paths, and current PASS/BLOCKED/NOT_RUN state), risks/open
-  decisions, and an approval checklist;
-- authority and source index, with every source ref and digest-bound anchor;
-- objective, users, scope, non-goals, assumptions, risks, and unresolved owner decisions;
-- one row for every formal task with its group, wave, dependencies, owned paths,
-  acceptance criteria, verification owner, and evidence contract;
-- the dependency graph and parallel execution waves;
-- requirement, acceptance, test, and real-E2E traceability summaries with their
-  exact matrix artifact refs;
-- approval gates and the explicit rule that impl/verify remain blocked before
-  owner approval.
+- 简短审批摘要：本次交付、变化、范围、主要风险、待决条件及批准后的动作；
+- Task Spec：本片行为与失败不变项、真实入口、依赖/写入责任、准备/恢复、验收与交接；
+- 共享合同：仅在确有共用内容时集中定义一次，任务引用具体条款及本片例外；
+- 工程附件：Task Map、来源/AC/测试矩阵的准确引用和未覆盖项，完整追溯不重复铺满正文。
+
+PRD/SDD/TDD 是语义覆盖要求，不强制使用对应字面标题或重复章节。单任务可使用
+一张责任表和少量段落；保持来源、命令、证据与决策可取得。身份、摘要、完整性和
+授权仍由既有工件及准入规则约束，缩短正文不删除任何强制验收或更改机器合同。
+审批前不执行实施和产品验收；通用运行协议引用当前 briefing/Skill，正文仅写任务特有义务。
 
 The approval entry is a contract, not a formatting preference. For
 `derived_plan_full`, the Planner candidate and any configured Critic handoff must bind these semantic
@@ -233,11 +239,25 @@ For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
 user goals, scope/conditional scope, phase outcomes and owner decisions;
 follow with module specifications and concrete acceptance scenarios. Keep
 engineering repair history in appendices. When execution_spec is already
-used, place shared reading material in `shared.human_review` and module
+used, populate its existing human_review fields before submission: place shared reading material in `shared.human_review` and module
 specifications/scenarios in each existing `tasks[].body.human_review`.
 Preserve canonical task/AC/command IDs and bind these artifacts in the same
 Plan Package. The configured reviewer checks semantic consistency; the UI only renders the bound
-content. Neither a page count nor repeated RED/GREEN prose proves clause
+content. For routes without execution_spec, keep the same reading sections in the
+accepted Markdown; the reader quotes those sections without inventing a second
+specification. Store atomic Given/When/Then cases in the existing
+`test_matrix.tests[]` with task_id, acceptance_ids, command_ids, source_refs and
+explicit evidence_status. Do not create a parallel scenario list just for UI.
+Persist the complete decision register in `task_map.owner_decision_items`
+(including deferred, non-blocking and pending-validation items), not only in
+the role's control result. An explicitly empty list means the author reviewed
+and found no decisions; a missing field means unknown. The Critic checks the
+same IDs/statuses against the accepted Markdown and the bound task map;
+its own empty action-question list must not be used as the product register.
+Compare the complete ID sets before comparing statuses: a nonempty prose
+register with an empty task-map register is a missing-record finding even
+when the author says there are no new product-scope choices.
+Neither a page count nor repeated RED/GREEN prose proves clause
 coverage. Never rewrite admitted artifacts to improve presentation.
 
 Even a minimal PRD must provide an explicit approval synopsis, user journeys
@@ -248,8 +268,37 @@ in `task_map.modules` with exact task IDs. Otherwise provide these sections in
 the accepted Plan Markdown. Check the actual submitted files for omissions;
 a populated task list or PAS is not proof that the human synopsis exists.
 Critic reports missing presentation separately from missing product behavior.
+Before every resubmission, including an environment-only Critic rework, apply
+`zf-plan-execution-readiness/references/spec-revision-review.md` and put its
+`## 本次变更` reading entry in the new bound Plan. Identify the previous candidate,
+changed consumers and preserved obligations; a larger replacement specification
+does not itself explain the revision.
+
+Avoid duplicating complete port bodies in both files and the control result.
+For `source_inventory`, `capability_matrix`, `acceptance_matrix`, `test_matrix`,
+`real_e2e_matrix` and `source_index`, write each complete JSON file once and use
+the existing top-level `<name>_ref`, also listing that file in `artifact_refs`.
+Do not repeat that port as an inline field or `plan_ports[].body`. These six
+reference routes are supported by candidate preflight, Critic handoff and
+Package materialization; consumers still read the complete bound artifact.
+Keep other required bodies and every configured required read. Do not infer
+new reference fields, shorten semantic contents, or omit missing files to save tokens.
+
+For artifact writes containing source paths, prefer native Write/apply_patch with explicit
+workdir-relative targets. The shell guard cannot distinguish arbitrary Python data
+from writes. If rejected, inspect the target and use the explicit-target tool; never
+weaken the guard, splice paths to evade it, or edit canonical runtime state. Use only
+the current Kernel-declared result scratch for result submission.
 
 ## Task Design
+
+Apply `zf-plan-execution-readiness/references/task-spec-slices.md` for task-local
+behavior, shared references, setup/cleanup, RED/GREEN and reading partitions;
+perform `references/final-package-review.md` from that same skill on the final
+serialized candidate. Keep findings and their disposition in the existing review
+artifact. These referenced methods are the single method source; do not repeat
+their full checklist in every task or re-read unchanged bodies already read in
+this turn. This does not waive required inputs or independent Critic review.
 
 Split by end-to-end user journey, not by component-only layers. Each normal
 slice should own the smallest runnable behavior across the API/runtime/web
@@ -391,3 +440,41 @@ when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
 及 source_refs/image_refs 等显式关系；不要为导航添加 schema 不接受的字段。语义映射由
 Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
 章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。
+
+## 无法完成可执行计划时的草案审查
+
+先遵循 Task Map Skill 的来源 AC 归组、原子场景保留和逐片验收责任方法。
+业务约束冲突不等于 Provider/传输故障。若已完成分析，但真实互斥要求使完整 Task Map 无法成立，
+保存当前 Markdown 草案和 `source-index.v1` 来源索引（可使用拟议 Task ID），提交以下明确声明：
+
+```json
+{
+  "candidate_kind": "owner_review",
+  "execution_status": "completed",
+  "result_semantics": "artifact_production",
+  "recommendation": "abstain",
+  "summary": "列出冲突的原文依据、已尝试的可行方案和仍需决定的理由",
+  "findings": [],
+  "plan_artifact_ref": "<实际草案 Markdown 路径>",
+  "plan_artifact_sha256": "<该文件原始字节的 SHA-256>",
+  "source_index_ref": "<实际来源索引 JSON 路径>",
+  "source_index_sha256": "<该文件原始字节的 SHA-256>",
+  "owner_decision_items": [{"decision_id": "D1", "question": "具体互斥决定", "blocking": true}]
+}
+```
+
+通过当前 operation 的 `zf result validate/submit` 提交，不直接改状态或生成审批事件。
+此声明只表示草案工件生产完成，绝不表示计划可执行或已获 Critic 批准；禁止将 Provider 中断、
+输入传递失败或工具异常标为此路径。实际执行失败继续明确报告 `execution_status: failed`。
+独立 Critic 必须核对来源、逐项判断冲突是否成立：可由合理归组/责任调整解决时返回 needs_rework；
+确实需要 Owner 时返回带完整 `owner_decision_items` 的非批准结果，并绑定当前候选摘要，进入
+已有 Owner 检查点。不能仅复述 Planner 的阻塞结论，也不能批准缺失 Task Map 的草案。
+Owner 答复后重新规划，完整计划仍需正常机械校验、独立 Critic 和人工审批。
+
+
+### 完整 Plan 正文的首屏阅读顺序
+
+共用依赖技能的[正文阅读与审查](../zf-requirement-reconciliation/references/document-reading.md)。
+该方法同时覆盖 `prd-plan.md`、PRD 正文和可选 `human_review`，以及作者自检与独立 Critic
+对实际文件的检查。完整原文先说明业务交付、方案和验收，工程来源放可达附件；
+不通过前端关键词删改历史正文，不以技能加载代替原文检查。

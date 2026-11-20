@@ -1,0 +1,180 @@
+"""Execution claims require actual post-dispatch replan, new binding and closure."""
+from copy import deepcopy
+import json
+from pathlib import Path
+import subprocess
+
+import pytest
+
+from tests.e2e.prd_ui.execution_replan import check_execution_order, initialize_protocol, verify_protocol_product
+from zf.core.events.model import ZfEvent
+
+
+def _case():
+    rows = [
+        ("plan.approved", {"plan_id": "old"}),
+        ("task.pipeline.stage.dispatched", {"task_map_generation": "g1", "plan_artifact_package_digest": "p1"}),
+        ("test.failed", {"fanout_id": "candidate-verify"}),
+        ("prd.plan.requested", {"rework_of": "evt-2"}),
+        ("plan.approval.requested", {"plan_id": "new", "plan_artifact_package_digest": "p2"}),
+        ("plan.approved", {"plan_id": "new"}),
+        ("task.pipeline.stage.dispatched", {"task_pipeline_stage": "impl", "task_map_generation": "g2",
+                                            "plan_artifact_package_digest": "p2"}),
+        ("candidate.ready", {"candidate_head_commit": "c" * 40, "task_map_generation": "g2", "plan_artifact_package_digest": "p2"}),
+        ("run.goal.completed", {"candidate_event_id": "evt-7", "target_commit": "c" * 40}),
+    ]
+    events = [ZfEvent(id=f"evt-{i}", type=kind, origin="kernel", correlation_id="run-1",
+                     payload={**body, "workflow_run_id": "run-1"}) for i, (kind, body) in enumerate(rows)]
+    return events, {"trigger_event_id": "evt-1", "workflow_run_id": "run-1"}
+
+
+@pytest.mark.parametrize("trigger", ["orchestrator.replan_requested", "prd.plan.requested"])
+def test_execution_replan_requires_new_plan_generation_and_delivery(trigger):
+    events, change = _case()
+    events[3].type = trigger
+    assert check_execution_order(events, change)["revised_plan"] == "new"
+
+
+@pytest.mark.parametrize("fault", ["preview-only", "old-approval", "old-generation", "other-run", "no-delivery", "duplicate-delivery", "unrelated-failure", "early-impl", "stale-final", "mutable-final"])
+def test_reject_partial_or_unbound_recovery(fault):
+    events, change = _case()
+    if fault == "preview-only":
+        events[1], events[3] = events[3], events[1]
+    elif fault == "old-approval":
+        events[5].payload["plan_id"] = "old"
+    elif fault == "old-generation":
+        events[6].payload["task_map_generation"] = "g1"
+    elif fault == "other-run":
+        events[-1].payload["workflow_run_id"] = "run-2"
+    elif fault == "no-delivery":
+        events.pop()
+    elif fault == "unrelated-failure":
+        events[3].payload["rework_of"] = "other"
+    elif fault == "early-impl":
+        events[5], events[6] = events[6], events[5]
+    elif fault == "stale-final":
+        events[7].payload["task_map_generation"] = "g1"
+    elif fault == "mutable-final":
+        events[7], events[8] = events[8], events[7]
+    else:
+        extra = deepcopy(events[-1]); extra.id = "evt-extra"; events.append(extra)
+    with pytest.raises(AssertionError):
+        check_execution_order(events, change)
+
+
+def test_initial_external_fixture_is_isolated(tmp_path: Path):
+    initialize_protocol(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["protocol.json"]
+
+
+@pytest.mark.parametrize("decoy_run", ["run-1", "run-2"])
+def test_final_oracle_uses_completed_candidate_binding(tmp_path, monkeypatch, decoy_run):
+    from tests.e2e.prd_ui import execution_replan
+
+    events, change = _case()
+    events.append(ZfEvent(type="candidate.ready", correlation_id=decoy_run,
+                          payload={"candidate_head_commit": "d" * 40}))
+    (tmp_path / "evidence").mkdir()
+    (tmp_path / "evidence/protocol-change.json").write_text(json.dumps(change))
+    monkeypatch.setattr(execution_replan, "_events", lambda _: events)
+    monkeypatch.setattr(execution_replan, "verify_protocol_product",
+                        lambda _, commit: {"passed": commit == "c" * 40, "target_commit": commit})
+    result = execution_replan.audit_execution_replan(tmp_path, tmp_path / "project")
+    assert result["oracle"]["target_commit"] == "c" * 40
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_oracle_uses_complete_frozen_commit_not_dirty_checkout(tmp_path, version):
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Protocol test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "render_protocol.py").write_text("from implementation import main\nmain()\n")
+    key = "text" if version == 2 else "message"
+    source = f'''import json, sys
+def main():
+    try:
+        value = json.load(sys.stdin)
+        if not isinstance(value, dict) or set(value) != {{"{key}"}} or not isinstance(value["{key}"], str):
+            raise ValueError("invalid input")
+        print("v{version}:" + value["{key}"])
+    except (ValueError, TypeError):
+        print("invalid input", file=sys.stderr)
+        raise SystemExit(1)
+'''
+    (tmp_path / "implementation.py").write_text(source)
+    git("add", "--", "render_protocol.py", "implementation.py")
+    git("commit", "-qm", "test: freeze protocol fixture")
+    commit = git("rev-parse", "HEAD")
+    (tmp_path / "implementation.py").write_text("raise RuntimeError('uncommitted decoy')\n")
+    report = verify_protocol_product(tmp_path, commit)
+    assert report["passed"] == (version == 2)
+    assert report["target_commit"] == commit
+    assert len(report["cases"]) == 8
+
+
+@pytest.mark.parametrize("fault", ["", "wrong_commit", "wrong_freeze", "unknown_ref", "other_run", "stale_package"])
+def test_execution_replan_audits_exact_freeze_after_operator_retry(fault):
+    events, change = _case()
+    frozen = events[-2]
+    frozen.payload.update(schema_version="candidate-freeze-receipt.v1", freeze_id="freeze-2",
+                          candidate_ref="refs/heads/candidate/demo")
+    retry = ZfEvent(id="evt-retry", type="candidate.ready", origin="kernel", correlation_id="run-1", payload={
+        "workflow_run_id": "run-1", "candidate_snapshot_event_id": frozen.id, "freeze_id": "freeze-2",
+        "candidate_ref": frozen.payload["candidate_ref"], "candidate_head_commit": "c" * 40})
+    if fault == "wrong_commit":
+        retry.payload["candidate_head_commit"] = "a" * 40
+    elif fault == "wrong_freeze":
+        retry.payload["freeze_id"] = "another"
+    elif fault == "unknown_ref":
+        retry.payload["candidate_snapshot_event_id"] = "evt-unknown"
+    elif fault == "other_run":
+        frozen.payload["workflow_run_id"] = "run-2"
+    elif fault == "stale_package":
+        retry.payload["plan_artifact_package_digest"] = "p1"
+    events.insert(-1, retry)
+    events[-1].payload["candidate_event_id"] = retry.id
+    if fault:
+        with pytest.raises(AssertionError):
+            check_execution_order(events, change)
+    else:
+        result = check_execution_order(events, change)
+        assert result["candidate_event_id"] == frozen.id
+        assert result["completion_candidate_event_id"] == retry.id
+
+@pytest.mark.parametrize("fault", ["", "missing_receipt", "other_receipt", "worker", "untrusted_freeze", "other_target", "missing_failure"])
+def test_legacy_cli_retry_requires_provenance_and_the_delivered_git_object(fault):
+    events, change = _case()
+    freeze = events[-2]
+    freeze.payload.update(schema_version="candidate-freeze-receipt.v1", freeze_id="freeze",
+                          candidate_ref="refs/heads/candidate/product")
+    retry = ZfEvent(id="resume", type="candidate.ready", actor="zf-cli", origin="",
+                    correlation_id="run-1", causation_id="failed-reader", payload={
+                        **freeze.payload, "source": "workflow_resume_batch", "resume_checkpoint_ref": "checkpoint", "fanout_id": "verify",
+                        "candidate_snapshot_event_id": freeze.id,
+                    })
+    applied = ZfEvent(id="applied", type="workflow.resume.applied", actor="zf-cli", correlation_id="run-1",
+                      causation_id=retry.causation_id, payload={
+                          **retry.payload, "safe_resume_action": "reemit_candidate_ready", "checkpoint_id": "checkpoint",
+                          "emitted_event_id": "different" if fault == "other_receipt" else retry.id,
+                      })
+    events[-1].payload["candidate_event_id"] = retry.id
+    if fault != "missing_failure":
+        events.insert(-1, ZfEvent(id="failed-reader", type="fanout.aggregate.completed", origin="kernel",
+                                  correlation_id="run-1", payload={"fanout_id": "verify", "status": "failed"}))
+    events.insert(-1, retry)
+    if fault != "missing_receipt":
+        events.insert(-1, applied)
+    if fault == "worker":
+        retry.origin = "worker"
+    elif fault == "untrusted_freeze":
+        freeze.origin = ""
+    elif fault == "other_target":
+        events[-1].payload["target_commit"] = "x" * 40
+    if fault:
+        with pytest.raises(AssertionError):
+            check_execution_order(events, change)
+    else:
+        assert check_execution_order(events, change)["candidate_event_id"] == freeze.id

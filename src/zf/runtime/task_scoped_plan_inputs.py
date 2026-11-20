@@ -397,8 +397,9 @@ def current_plan_port_sources(
             if candidate and isinstance(body, Mapping) and isinstance(body.get("task_input_policy"), Mapping):
                 if "candidate_paths" in body["task_input_policy"]:
                     kinds[name] = "candidate_scoped_plan_input"
-            if selection is not None and name == "task_execution_input" and kinds[name] != "task_scoped_plan_input":
-                raise ValueError("selected task_execution_input must be task scoped")
+            if (selection is not None and name in {"execution_spec", "task_execution_input"}
+                    and kinds[name] != "task_scoped_plan_input"):
+                raise ValueError(f"selected {name} must be task scoped")
         except ValueError as exc:
             raise ArtifactReadError(f"invalid task input port {name!r}: {exc}") from exc
     return [

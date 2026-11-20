@@ -7,16 +7,16 @@ Usage:
   tools/start-webkanban.sh [options]
 
 Options:
-  --host HOST             Bind host (default: 0.0.0.0)
+  --host HOST             Bind host (new installations default to 127.0.0.1)
   --port PORT             Bind port (default: 8001)
   --session NAME          tmux session name (default: zf-web-<port>)
   --workspace-home PATH   Workspace registry root (default: ~/.zaofu)
-  --token TOKEN           Web action token. If omitted, read .env, then reuse/create token file.
+  --token TOKEN           Web action token. Legacy API/browser credential for installations using token access.
   --token-file PATH       Token file (default: <workspace-home>/web-action-token)
   --provider-token-envs N  Comma/space-separated provider token env names to load/pass.
                            Defaults to registry token_env values plus OPENCLAW_GATEWAY_TOKEN.
   --workspace-only        Start Web shell without binding default Project.
-  --read-only             Disable dashboard mutations (default: writable via the printed link).
+  --read-only             Disable dashboard mutations (default: authenticated local account).
   --no-build              Skip npm web build.
   --no-restart            Fail if tmux session or port is already in use.
   --stop                  Stop the tmux session and exit.
@@ -46,7 +46,7 @@ EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-host="${ZF_WEB_HOST:-0.0.0.0}"
+host="${ZF_WEB_HOST:-}"
 port="${ZF_WEB_PORT:-8001}"
 workspace_home="${ZF_WORKSPACE_HOME:-$HOME/.zaofu}"
 workspace_home_cli=0
@@ -244,6 +244,7 @@ fi
 
 session="${session:-zf-web-${port}}"
 workspace_home="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser())' "$workspace_home")"
+explicit_token_file="$token_file"
 token_file="${token_file:-$workspace_home/web-action-token}"
 log_file="$workspace_home/webkanban-${port}.log"
 runtime_env_file="$workspace_home/webkanban-${port}.env"
@@ -309,7 +310,7 @@ print_status() {
   else
     echo "port: free"
   fi
-  if curl -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
+  if curl -fsS "http://127.0.0.1:${port}/readyz" >/dev/null 2>&1; then
     echo "api: ok"
   else
     echo "api: unavailable"
@@ -327,6 +328,13 @@ print_status() {
   fi
 }
 
+if [[ -z "$host" ]]; then
+  host=127.0.0.1
+  if [[ ! -e "$workspace_home/web-account.json" && ( -n "$token" || -s "$token_file" ) ]]; then
+    host=0.0.0.0
+  fi
+fi
+
 if [[ "$mode" == "stop" ]]; then
   tmux kill-session -t "$session" 2>/dev/null || true
   echo "stopped tmux session: $session"
@@ -342,22 +350,22 @@ mkdir -p "$workspace_home"
 if [[ -z "$token" ]]; then
   token="$(dotenv_value ZF_WEB_ACTION_TOKEN || true)"
 fi
-if [[ -z "$token" ]]; then
-  if [[ -s "$token_file" ]]; then
-    token="$(tr -d '[:space:]' < "$token_file")"
-  else
-    umask 077
-    token="$(python3 - <<'PY'
-import secrets
-print(secrets.token_hex(16))
-PY
-)"
-    printf '%s\n' "$token" > "$token_file"
-  fi
-fi
+# Existing accounts take precedence over legacy environment credentials.
 umask 077
-printf '%s\n' "$token" > "$token_file"
-chmod 600 "$token_file"
+if [[ -e "$workspace_home/web-account.json" ]]; then
+  token=''
+elif [[ -L "$token_file" ]]; then
+  echo "Refusing symbolic link at the web token path" >&2
+  exit 2
+elif [[ -n "$token" ]]; then
+  printf '%s\n' "$token" > "$token_file"
+  chmod 600 "$token_file"
+elif [[ -s "$token_file" ]]; then
+  token="$(cat -- "$token_file")"
+elif [[ -n "$explicit_token_file" && ! -e "$token_file" ]]; then
+  token="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  (set -o noclobber; printf '%s\n' "$token" > "$token_file")
+fi
 
 if tmux has-session -t "$session" 2>/dev/null; then
   if [[ "$restart" == "1" ]]; then
@@ -397,8 +405,13 @@ if [[ "$workspace_only" == "1" ]]; then
 fi
 
 launch_env=(
+  PATH="$PATH"
   ZF_WORKSPACE_HOME="$workspace_home"
   ZF_WEB_ACTION_TOKEN="$token"
+  ZF_WEB_ACTION_TOKEN_FILE="$token_file"
+  ZF_WEB_API_TOKEN="${ZF_WEB_API_TOKEN:-}"
+  ZF_WEB_PASSCODE="${ZF_WEB_PASSCODE:-}"
+  ZF_WEB_TRUSTED_SESSION="${ZF_WEB_TRUSTED_SESSION:-}"
   ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX="$codex_headless_sandbox"
   ZF_KANBAN_AGENT_CODEX_HEADLESS_APPROVAL_POLICY="$codex_headless_approval_policy"
   ZF_KANBAN_AGENT_CLAUDE_HEADLESS_PERMISSION_MODE="$claude_headless_permission_mode"
@@ -430,14 +443,14 @@ tmux new-session -d -s "$session" -c "$repo_root" \
   ". $(shell_quote "$runtime_env_file"); uv run --extra web zf ${web_args[*]} 2>&1 | tee $(shell_quote "$log_file")"
 
 for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
+  if curl -fsS "http://127.0.0.1:${port}/readyz" >/dev/null 2>&1; then
     break
   fi
   sleep 0.5
 done
 
 print_status
-if [[ "$read_only" == "0" ]]; then
+if [[ "$read_only" == "0" && -n "$token" ]]; then
   ZF_WEB_ACTION_TOKEN="$token" python3 - "$host" "$port" <<'PY'
 import os, sys
 from urllib.parse import urlencode

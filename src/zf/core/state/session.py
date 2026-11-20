@@ -37,6 +37,7 @@ class SessionState:
     runtime_state: str = "created"
     latest_event_offset: int = 0
     workers: list[dict] = field(default_factory=list)
+    latest_event_identity: list[int] = field(default_factory=list)
 
 
 class SessionStore:
@@ -67,6 +68,12 @@ class SessionStore:
     def update(self, **kwargs) -> SessionState:
         with self._locked():
             state = self.load()
+            if "latest_event_offset" in kwargs:
+                offset = kwargs["latest_event_offset"]
+                kwargs["latest_event_offset"] = int(offset)
+                kwargs.setdefault("latest_event_identity", list(
+                    getattr(offset, "identity", None) or (),
+                ))
             for key, value in kwargs.items():
                 if hasattr(state, key):
                     setattr(state, key, value)

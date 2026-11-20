@@ -421,6 +421,7 @@ export function TracesPage({
           <div>
             <h2>Traces</h2>
             <p className="muted">Scoped execution history, loaded from a bounded trace index.</p>
+            <a href={`?page=observability&obs_tab=operations&project=${encodeURIComponent(projectId)}`}>Operations</a>
           </div>
         </header>
 

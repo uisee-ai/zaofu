@@ -11,7 +11,7 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.verification_result import (
     VerificationResultError,
-    validate_verification_result,
+    normalize_candidate_blocker, validate_verification_result,
 )
 from zf.runtime.goal_closure_result import (
     GoalClosureResultError,
@@ -757,6 +757,7 @@ def _normalize_verification(
     result.setdefault("schema_version", "verification-result.v1")
     issues: list[dict[str, str]] = []
     try:
+        normalize_candidate_blocker(result)
         validate_verification_result(result, strict=False)
     except VerificationResultError as exc:
         issues.append({"field": "control_result", "code": "schema_invalid", "message": str(exc)})

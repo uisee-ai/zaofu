@@ -357,7 +357,8 @@ _OVERSIZED_FILE_CAPS = {
     # +17 (2026-07-15): execute() emits kanban.agent.proposal.resolved after any
     # successful proposal action so its Triage card clears — an inline guard on
     # the central dispatch's own result, not a new action, so it stays here.
-    "src/zf/runtime/control_actions.py": 577,
+    # Three-line entrypoint delegate; Controller behavior lives in controller_actions.py.
+    "src/zf/runtime/control_actions.py": 580,
     # Reconciliation 2026-10-26: local lifecycle recovery handlers already
     # reached 2873 lines before this merge. Freeze that baseline; the next lifecycle
     # feature must move into a sibling module.

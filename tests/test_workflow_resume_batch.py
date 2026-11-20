@@ -441,6 +441,25 @@ def test_candidate_dependency_failure_does_not_reopen_quality_gate_owners(
     assert checkpoint["failed_children"] == []
 
 
+def test_integration_failure_task_ids_are_not_completed_dependencies(tmp_path: Path) -> None:
+    projection = _projection(tmp_path, [
+        ZfEvent(
+            type="integration.failed", id="evt-integration-failed", actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-impl", "stage_id": "prd-lanes-impl",
+                "pdd_id": "PRD-1", "task_map_ref": ".zf/artifacts/task_map.json",
+                "candidate_base_commit": "base123", "source_commit": "base123",
+                "task_ids": ["TASK-A", "TASK-B"],
+                "completed_task_ids": ["TASK-A"],
+                "failed_children": ["dev-lane-1-TASK-B"],
+            },
+        ),
+    ])
+    checkpoint = projection["batch_checkpoints"][0]
+    assert checkpoint["completed_task_ids"] == ["TASK-A"]
+    assert checkpoint["failed_children"] == ["dev-lane-1-TASK-B"]
+
+
 def test_failed_child_identity_prefers_manifest_task_id_over_transport_suffix(
     tmp_path: Path,
 ) -> None:

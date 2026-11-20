@@ -132,12 +132,23 @@ this skill.
    - inspect the source with
      `git -C <source_worktree> status --short --untracked-files=all`;
    - 同时用 `git -C <source_worktree> ls-files --others --ignored --exclude-standard`
-     检查被忽略的文件；若含未归档 backlog、候选代码或待保留资料，保留 worktree
-     并报告。只有确认可丢弃的缓存、构建产物等才可随 worktree 删除。
+     检查被忽略的文件，区分待开发代码/backlog、需保留证据及可丢弃缓存。
+     未归档 backlog、候选代码须先交接；不能当作缓存或仅因 ignored 就删除。
+   - 报告、截图、trace、回放证据先归档至实际 `dev` checkout 下的
+     `reports/worktree-archives/<UTC时间>-<分支标识>/`（gitignored）。保留相对目录，
+     避免同名覆盖；校验源/目标文件清单与内容哈希，记录 source_worktree、branch、
+     source_head、merge_sha 和路径映射。禁止跟随链接复制共享依赖或外部数据；
+     所需外部证据须明确处理，不能复制一个将失效的链接便宣称归档完整。
+   - 在归档入口和最终答复中提供新报告路径，修正可导航的本地链接；原始日志、
+     trace 和 provenance 中的旧路径保留为历史记录，不改写证据。归档校验通过后
+     继续清理，不再以“有报告/证据需保留”为 worktree 保留理由。
+     归档失败须解决或报告具体阻塞，不得先删除源资料。
    - confirm no tmux pane or active agent/process still uses the source path;
    - if any commit, staged change, tracked modification, untracked path, or
      active user remains, retain both worktree and branch and report
-     `closeout=merged_not_closed` with exact blockers;
+     `closeout=merged_not_closed` with exact blockers; an archived report or
+     disposable cache alone is not a blocker. Resolve owned residual work before
+     closeout; never discard another session's work or stop its processes;
    - otherwise run `git worktree remove <source_worktree>`,
      `git branch -d <source_branch>`, and `git worktree prune`;
    - 逐项检查命令结果，再用 `git worktree list --porcelain`、路径是否存在及
@@ -312,6 +323,8 @@ Final response should include:
 - validation run and result;
 - unrelated dirty files intentionally left out;
 - source worktree/branch, cleanup result, and exact blockers when retained;
+- archived report location and manifest/hash verification result; link to the
+  surviving archive rather than a deleted source worktree;
 - `worktree_removed`、`branch_deleted`，以及保留时的具体原因（含用户要求保留）；
 - `closeout=complete|merged_not_closed|not_applicable`;
 - diff risk level when the fallback applied.

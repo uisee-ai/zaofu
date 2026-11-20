@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 from zf.runtime import process_guard
 from zf.runtime.process_guard import SingleOwnerProcessGuard
+
+
+@pytest.mark.parametrize('state, alive', [('Z', False), ('X', False), ('S', True), ('R', True)])
+def test_guard_distinguishes_unreaped_exit_from_live_process(monkeypatch, state, alive):
+    monkeypatch.setattr(process_guard.os, 'kill', lambda *args: None)
+    monkeypatch.setattr(Path, 'read_text', lambda self: f'4321 (name with ) parens) {state} 1 2 3')
+    assert process_guard._pid_alive(4321) is alive
+
+
+def test_guard_keeps_live_probe_when_procfs_is_unavailable(monkeypatch):
+    monkeypatch.setattr(process_guard.os, 'kill', lambda *args: None)
+    def unavailable(self):
+        raise PermissionError('procfs unavailable')
+    monkeypatch.setattr(Path, 'read_text', unavailable)
+    assert process_guard._pid_alive(4321)
 
 
 def test_single_owner_guard_acquires_and_releases(tmp_path: Path) -> None:

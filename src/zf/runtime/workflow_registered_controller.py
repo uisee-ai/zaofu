@@ -224,6 +224,13 @@ def assemble_controller(
         if short_spec["flow_family"] != "PrdFlow" or type(value) is not bool:
             raise ValueError("plan_critic_enabled requires PrdFlow and a boolean")
         flow["spec"]["planCriticEnabled"] = value
+    if "plan_review" in parameters:
+        from zf.core.config.plan_review import resolve_plan_review
+        if short_spec["flow_family"] != "PrdFlow":
+            raise ValueError("plan_review requires PrdFlow")
+        flow["spec"]["planReview"] = resolve_plan_review(parameters)
+        for key in ("planCriticEnabled", "plan_critic_enabled", "plan_review"):
+            flow["spec"].pop(key, None)
     if "candidate_verify_width" in parameters:
         flow["spec"]["taskPipeline"].setdefault("candidate", {})["verifyWidth"] = parameters["candidate_verify_width"]
     config_docs = [d for d in documents if d.get("kind") == "ZfConfig"]
@@ -239,6 +246,9 @@ def assemble_controller(
     spec.pop("profile_sources", None)
     spec["project"] = copy.deepcopy(base["project"])
     spec["session"] = copy.deepcopy(base["session"])
+    # Resident operators belong to the project, not to a selected Flow template.
+    for key in ("run_manager", "autoresearch_resident"):
+        spec.setdefault("runtime", {})[key] = copy.deepcopy(base["runtime"][key])
     sources = copy.deepcopy(base.get("skill_sources") or [])
     sources = [s for s in sources if s["name"] != SOURCE_NAME]
     if package:

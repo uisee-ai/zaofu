@@ -1,3 +1,4 @@
+import { localWebActionToken } from "../../api/dashboardLaunch.js";
 import type {
   TerminalAttachmentMode,
   TerminalAttachmentTicket,
@@ -13,7 +14,7 @@ function projectTerminalPrefix(projectId: string): string {
 function actionHeaders(): Record<string, string> {
   // This is the dashboard's existing mutation credential. Attachment tickets
   // returned by these calls remain memory-only and never enter storage/URLs.
-  const token = window.localStorage.getItem("zf.webActionToken")?.trim() ?? "";
+  const token = localWebActionToken();
   return token
     ? { "X-ZF-Web-Token": token, Authorization: `Bearer ${token}` }
     : {};

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "readonly-verify-product-write",
+    "requirement": "T-READ 的独立 Verify 必须验证本片行为并提交绑定目标的验证报告。当前派发合同：impl 对 docs/evidence/read/ 有产品目录写权限，Verify 的 workdir_write_scopes=[]；Verify 可调用现有受控结果提交入口保存验证报告。未声明报告必须在产品目录，不能放宽独立验证。",
+    "candidate": "T-READ: impl 交付代码和测试；独立 Verify 执行测试并在产品目录写 docs/evidence/read/verify.md，该文件不存在则不得完成。",
+    "expected": "finding",
+    "expected_task_ids": [
+      "T-READ"
+    ]
+  },
+  {
+    "id": "readonly-verify-controlled-evidence",
+    "requirement": "T-READ 的独立 Verify 必须验证本片行为并提交绑定目标的验证报告。当前派发合同：impl 对 docs/evidence/read/ 有产品目录写权限，Verify 的 workdir_write_scopes=[]；Verify 可调用现有受控结果提交入口保存验证报告。未声明报告必须在产品目录，不能放宽独立验证。",
+    "candidate": "T-READ: impl 交付代码和测试；独立 Verify 只读核验目标与本片断言，通过既有受控结果提交入口交付绑定同一目标的完整验证证据。目标不符、测试失败或报告缺失不得完成；不要求 Verify 写产品目录。",
+    "expected": "pass",
+    "expected_task_ids": []
+  }
+]

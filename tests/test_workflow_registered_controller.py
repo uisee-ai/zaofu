@@ -77,6 +77,8 @@ def test_v5_selection_preserves_policy_and_applies_only_exact_approved_candidate
     assert config.project.name == "demo"
     assert config.project.state_dir == ".state-demo"
     assert config.session == load_config(base).session
+    assert config.runtime.run_manager == load_config(base).runtime.run_manager
+    assert config.runtime.autoresearch_resident == load_config(base).runtime.autoresearch_resident
     assert config.runtime.git.candidate_base_ref == "main"
     assert config.runtime.git.ship_target_branch == "main"
     assert config.runtime.git.auto_ship_on_judge_passed is False
@@ -247,3 +249,22 @@ def test_registered_controller_preserves_required_environment_paths(assembly):
     base.write_text(yaml.safe_dump_all(documents))
     _, _, candidate = _candidate(assembly)
     assert load_config(candidate).runtime.workdirs.required_paths == ['.venv', 'web/node_modules']
+
+
+@pytest.mark.parametrize("mode", ["none", "targeted", "full"])
+def test_registered_v5_preserves_explicit_review_choice_through_proposal(assembly, mode):
+    base, state, _, result, writer = assembly
+    selected = {"mode": mode, "reason": "Owner authorized risk-based selection",
+                "focus": ["Cross-task failure-state preservation"] if mode == "targeted" else []}
+    result["short_flow_spec"]["parameters"]["plan_review"] = selected
+    original = base.read_bytes()
+    outcome, request, candidate = _candidate(assembly)
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    config = load_config(candidate)
+    assert flow_metadata_for(config, "prd")["plan_review"] == selected
+    assert bool(next(s for s in config.workflow.stages if s.id == "prd-plan").aggregate.synth_role) == (mode != "none")
+    proposal, _ = build_workflow_proposal(state, request=request, base_config_path=base,
+        candidate_config_path=candidate, synthesis_result_ref=outcome.result_ref, flow_kind="prd", writer=writer,
+        preflight={"status": "GO", "blockers": []})
+    assert proposal["approval_status"] == "approvable", proposal["blockers"]
+    assert base.read_bytes() == original

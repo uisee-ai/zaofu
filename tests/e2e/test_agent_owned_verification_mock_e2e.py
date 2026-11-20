@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e.project_verification_probes import run_contract_probe
 from zf.core.config.loader import load_config
 from zf.core.config.render import renderable_config_to_primitive
 from zf.core.config.schema import (
@@ -36,6 +37,7 @@ from zf.runtime.product_acceptance import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.simulation_lifecycle import emit_simulation_done
 from zf.runtime.task_contract_snapshot import TASK_CONTRACT_AUTHORITY_FIELDS
+from zf.runtime.workdirs import WorkdirManager
 from zf.runtime.result_submit import (
     SemanticResultSubmitService,
     provision_role_submit_credential,
@@ -483,6 +485,9 @@ def test_light_profile_mock_e2e_exact_verify(
         "dev-lane-0",
         "dev-lane-1",
     }
+    assert len({item["workdir"] for item in impl_children}) == 2
+    assert {item[0] for item in transport.sent} >= {"dev-lane-0", "dev-lane-1"}
+    assert not any(e.type == "impl.self_check.completed" for e in log.read_all())
     receipt_ids: dict[str, str] = {}
     source_commits: set[str] = set()
     deliverables = {item[0]: item for item in DELIVERABLES}
@@ -504,6 +509,10 @@ def test_light_profile_mock_e2e_exact_verify(
         source_commits.add(source_commit)
         receipt_id = f"receipt-{command['command_id']}"
         receipt_ids[task_id] = receipt_id
+        probe = run_contract_probe(
+            state_dir=state_dir, workdir=workdir, target_commit=source_commit,
+            command=command, receipt_id=receipt_id,
+        )
         impl_self_check = {
             "schema_version": "impl-self-check.v1",
             "workflow_run_id": contract["workflow_run_id"],
@@ -520,25 +529,15 @@ def test_light_profile_mock_e2e_exact_verify(
                 for key in TASK_CONTRACT_AUTHORITY_FIELDS
                 if contract.get(key) not in (None, "", 0)
             },
-            "command_receipts": [{
-                "receipt_id": receipt_id,
-                "command_id": command["command_id"],
-                "command_digest": command["command_digest"],
-                "target_commit": source_commit,
-                "status": "passed",
-                "exit_code": 0,
-                "evidence_refs": [f"mock://command/{command['command_id']}"],
-            }],
+            "command_receipts": [probe],
             "acceptance_results": [{
                 "acceptance_id": criterion["acceptance_id"],
                 "status": "passed",
                 "command_receipt_ids": [receipt_id],
-                "evidence_refs": [
-                    f"mock://acceptance/{criterion['acceptance_id']}"
-                ],
+                "evidence_refs": probe["evidence_refs"],
                 "residual_risks": [],
             }],
-            "evidence_refs": [f"mock://impl/{task_id}"],
+            "evidence_refs": probe["evidence_refs"],
             "residual_risks": [],
         }
         submitted_impl = submitter.submit(
@@ -549,7 +548,7 @@ def test_light_profile_mock_e2e_exact_verify(
                 "verdict": "passed",
                 "target_commit": source_commit,
                 "changed_files": [path],
-                "evidence_refs": [f"mock://impl/{task_id}"],
+                "evidence_refs": probe["evidence_refs"],
                 "self_check": impl_self_check,
                 "known_gaps": [],
                 "summary": f"implemented {task_id}",
@@ -604,6 +603,21 @@ def test_light_profile_mock_e2e_exact_verify(
         )
         task_id = verify_payload["task_id"]
         verified_targets.add(verify_payload["target_commit"])
+        verify_role = next(role for role in config.roles
+                           if role.instance_id == verify_child["role_instance"])
+        verify_workdir = Path(WorkdirManager(
+            state_dir=state_dir, project_root=tmp_path, config=config,
+        ).plan(verify_role).project_path)
+        probes = [run_contract_probe(
+            state_dir=state_dir, workdir=verify_workdir,
+            target_commit=verify_payload["target_commit"], command=command,
+            receipt_id=f"verify-{command['command_id']}",
+        ) for command in verify_contract["verification_commands"]]
+        observed = {}
+        for _task_id, path, content, _lane in DELIVERABLES:
+            observed[path] = (verify_workdir / path).read_text(encoding="utf-8")
+            assert observed[path] == f"{content}\n"
+        probe_refs = [ref for probe in probes for ref in probe["evidence_refs"]]
         product_binding = product_acceptance_binding_from_package(
             state_dir,
             {
@@ -618,6 +632,8 @@ def test_light_profile_mock_e2e_exact_verify(
                 "task_id": task_id,
                 "target_commit": verify_payload["target_commit"],
                 "journeys": ["journey-result-1", "journey-result-2"],
+                "observed_files": observed,
+                "command_evidence_refs": probe_refs,
             },
             root="e2e/product-acceptance-evidence",
             kind="mock_product_acceptance_evidence",
@@ -657,18 +673,11 @@ def test_light_profile_mock_e2e_exact_verify(
                 "verification_owner": "task_verify",
                 "verification_tier": "task_non_smoke",
                 "summary": "verified",
-                "evidence_refs": [f"mock://verify/{task_id}"],
+                "evidence_refs": probe_refs,
                 "reused_command_receipt_ids": [],
-                "probe_receipts": [{
-                    "probe_id": f"verify-{command['command_id']}",
-                    "command_id": command["command_id"],
-                    "command": command["command"],
-                    "command_digest": command["command_digest"],
-                    "target_commit": verify_payload["target_commit"],
-                    "status": "passed",
-                    "exit_code": 0,
-                    "evidence_refs": [f"mock://verify/{task_id}/probe"],
-                } for command in verify_contract["verification_commands"]],
+                "probe_receipts": [
+                    {**probe, "probe_id": probe["receipt_id"]} for probe in probes
+                ],
                 "rework_items": [],
                 **({} if discovery_closeout else {
                     "product_acceptance_report": product_report,
@@ -678,7 +687,7 @@ def test_light_profile_mock_e2e_exact_verify(
                     "status": "passed",
                     "verification_owner": item["verification_owner"],
                     "verification_tier": item["verification_tier"],
-                    "evidence_refs": [f"mock://verify/{task_id}"],
+                    "evidence_refs": probe_refs,
                     "findings": [],
                     "reproduction_commands": [
                         command["command"]

@@ -66,6 +66,7 @@ for (const sameResponder of [false, true]) {
     await expect(page.getByRole("button", { name: "Context", exact: true })).toHaveCount(0);
     const identity = page.locator('.agent-run-block[data-member-id="product_pm"] .channel-message-identity');
     await expect(identity).toContainText("产品负责人");
+    await expect(page.locator('.agent-run-block[data-member-id="product_pm"]').getByText("生成中断 · 以下为未完成回复", { exact: true })).toBeVisible();
     await expect(identity).toContainText("主持人");
     if (sameResponder) await expect(identity).toContainText("默认回复");
     await expect(page.locator('.agent-run-block[data-member-id="arch"]')).toHaveCount(0);

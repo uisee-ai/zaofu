@@ -56,13 +56,14 @@ export function buildPlanTrace(artifacts: ReviewArtifacts): TraceRow[] {
   });
 }
 export const dispositionLabel = (value: string) => ({ covered: "已分配", pending_decision: "待决定", explicit_non_goal: "明确非目标", out_of_scope: "范围外", unmapped: "未分配", conflict: "记录冲突" }[value] || value || "未声明");
+export const taskTraceRows = (trace: TraceRow[], taskId: string) => taskId ? trace.filter(row => row.taskIds.includes(taskId)) : trace;
 export function traceSearch(row: TraceRow) {
   return [row.id, row.statement, row.disposition, dispositionLabel(row.disposition), ...row.sourceRefs, ...row.taskIds, ...row.acceptanceIds, ...row.commandIds, ...row.tasks.map(t => text(t.title))].join(" ").toLowerCase();
 }
 export function comparePlanTrace(before: TraceRow[], after: TraceRow[]) {
   const old = new Map(before.map(row => [row.id, row]));
   const current = new Map(after.map(row => [row.id, row]));
-  const signature = (row: TraceRow) => JSON.stringify([row.statement, [...row.sourceRefs].sort(), row.disposition, [...row.taskIds].sort(), [...row.acceptanceIds].sort(), [...row.commandIds].sort(), row.evidenceStatus]);
+  const signature = (row: TraceRow) => JSON.stringify([row.statement, [...row.sourceRefs].sort(), row.disposition, [...row.taskIds].sort(), [...row.acceptanceIds].sort(), [...row.commandIds].sort(), [...row.evidence].sort(), row.evidenceStatus]);
   return unique([...old.keys(), ...current.keys()]).flatMap(id => {
     const a = old.get(id), b = current.get(id);
     if (!a || !b || signature(a) !== signature(b)) return [{ id, kind: !a ? "新增" : !b ? "移除" : "修改", before: a, after: b }];

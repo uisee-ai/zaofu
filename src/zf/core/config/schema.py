@@ -7,6 +7,8 @@ from zf.core.config.task_publication import TaskPublicationConfig
 
 from dataclasses import dataclass, field, fields
 
+from zf.core.config.controller import ControllerObservationConfig
+
 
 @dataclass
 class ProjectConfig:
@@ -1846,8 +1848,15 @@ class ChannelConfig:
     semantic_source_max_chars: int = DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
     codex_context_window_tokens: int = 0  # 0 preserves the provider's model default.
     provider_timeout_seconds: int = 0  # 0 preserves the existing runtime default.
+    codex_model: str = ""  # Empty preserves the provider default; member model takes precedence.
+    codex_reasoning_effort: str = ""
 
     def __post_init__(self) -> None:
+        if (not isinstance(self.codex_model, str) or len(self.codex_model) > 200
+                or any(char.isspace() for char in self.codex_model)):
+            raise ValueError("channel.codex_model must be a model identifier without whitespace")
+        if not isinstance(self.codex_reasoning_effort, str) or self.codex_reasoning_effort not in {"", "none", "minimal", "low", "medium", "high", "xhigh"}:
+            raise ValueError("channel.codex_reasoning_effort must be empty, none, minimal, low, medium, high or xhigh")
         if (
             type(self.semantic_source_max_chars) is not int
             or not 1 <= self.semantic_source_max_chars <= MAX_CHANNEL_SEMANTIC_SOURCE_CHARS
@@ -2008,6 +2017,7 @@ class ObservabilityAlertConfig:
 
 @dataclass
 class ObservabilityConfig:
+    controller: ControllerObservationConfig = field(default_factory=ControllerObservationConfig)
     provider_telemetry: ProviderTelemetryConfig = field(
         default_factory=ProviderTelemetryConfig
     )

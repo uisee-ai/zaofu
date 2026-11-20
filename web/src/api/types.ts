@@ -1135,6 +1135,7 @@ export interface OperationsObservability {
   project_id: string;
   scope: { kind: string; note: string };
   owner_delivery?: { available: boolean; routes: Array<{ target: string; route: string; status: string; failure_count: number; reason: string; last_at: string }> };
+  source_requests?: { available: boolean; items: OperatorInboxItem[] };
   provider_telemetry: {
     requested_mode: string;
     updated_at: string;
@@ -1485,12 +1486,15 @@ export interface RuntimeSummary {
     requires_token?: boolean;
   };
   web_session?: {
-    mode: "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
+    mode: "controller_session" | "local_account" | "local_trusted" | "remote_passcode" | "token_required" | "read_only" | string;
     unlocked: boolean;
     actions_enabled: boolean;
     expires_at?: string | null;
     requires_token?: boolean;
     token_fallback_enabled?: boolean;
+    local_account?: boolean;
+    username?: string;
+    controller_managed?: boolean;
   };
   agent_surface?: {
     id: string;
@@ -3134,6 +3138,10 @@ export interface OperatorInboxItem {
   read_version?: string;
   resolution?: string;
   verification_required?: boolean;
+  reviewable?: boolean;
+  execution_status?: string;
+  proposal_digest?: string;
+  workflow_proposal_ref?: Record<string, unknown>;
   kind: string;
   status: string;
   title: string;
@@ -3231,6 +3239,7 @@ export interface OperatorInboxProjection {
 
 export interface PlanPreview {
   content_state?: "deferred";
+  critic_review?: { mode: string; label: string; reason: string; focus: string[]; error?: string };
   action_payload?: Record<string, unknown>;
   schema_version: string;
   ok: boolean;

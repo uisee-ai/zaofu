@@ -50,6 +50,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Start the Workspace shell without binding a default Project",
     )
+    credentials = parser.add_mutually_exclusive_group()
+    credentials.add_argument("--setup-account", action="store_true", help="Migrate this local installation to password login")
+    credentials.add_argument("--reset-password", action="store_true", help="Reset this installation's password locally")
     parser.set_defaults(func=run)
 
 
@@ -103,6 +106,14 @@ def run(args: argparse.Namespace) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     _load_project_env(context.project_root)
+    if getattr(args, "setup_account", False) or getattr(args, "reset_password", False):
+        from zf.cli.web_access import setup_account
+        try:
+            setup_account(reset=args.reset_password)
+        except (OSError, RuntimeError, ValueError, EOFError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
     set_default_zf_cli_cmd()
     state_dir = context.state_dir
     explicit_state_dir = getattr(args, "state_dir", None)
@@ -131,7 +142,7 @@ def run(args: argparse.Namespace) -> int:
     from zf.cli.web_access import configure_web_access, dashboard_launch_url
 
     try:
-        configure_web_access(host=args.host, read_only=getattr(args, "read_only", False))
+        local_account = configure_web_access(host=args.host, read_only=getattr(args, "read_only", False))
         validate_trusted_session_host(args.host)
     except (OSError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -141,7 +152,9 @@ def run(args: argparse.Namespace) -> int:
         state_dir,
         config=context.config,
         project_root=context.project_root,
+        local_account=local_account,
         default_project_enabled=(context.config is not None and not getattr(args, "workspace_only", False)),
+        read_only=getattr(args, "read_only", False),
     )
     mode = "workspace" if workspace_shell else "project"
     print(

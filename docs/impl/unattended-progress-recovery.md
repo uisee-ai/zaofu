@@ -1,5 +1,8 @@
 # 持续推进、恢复效果与无人资格
 
+2026-11-20 GitHub 集成的兼容边界与验证方法见
+[本地恢复能力与 GitHub dev 的集成核查](github-dev-integration-20261120.md)。
+
 ## 2026-11-20 多跳接力与重新入队效果补齐
 
 接续 b4f63e6e，任务 `2026-11-20-0808-unattended-lineage-and-effect.md`。

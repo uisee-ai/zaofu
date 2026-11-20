@@ -1156,20 +1156,9 @@ _RESUME_PLAN_IDENTITY_KEYS = (
 def _writer_resume_feedback(
     payload: Mapping[str, Any], feedback: list[str],
 ) -> list[str]:
-    """Do not replay planner-only findings into a current writer package."""
+    """Preserve findings unless their supersession is proven by evidence."""
 
-    if not str(payload.get("plan_artifact_package_ref") or "").strip():
-        return feedback
-    stale_markers = (
-        "mandatory_goal_claim_contract_rewritten",
-        "task_map_invalid",
-        "source_index_invalid",
-        "upstream dependency failed",
-    )
-    return [
-        line for line in feedback
-        if not any(marker in str(line).lower() for marker in stale_markers)
-    ]
+    return feedback
 
 
 def _resume_plan_identity(
@@ -1291,6 +1280,7 @@ def _apply_batch_candidate_ready(
     }
     event = writer.append(ZfEvent(
         type="candidate.ready",
+        origin="kernel",
         actor="zf-cli",
         payload=payload,
         causation_id=checkpoint.blocking_event_id or checkpoint.source_event_id,

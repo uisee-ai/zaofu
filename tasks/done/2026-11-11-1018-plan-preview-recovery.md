@@ -1,0 +1,61 @@
+# Plan Preview 规划冲突、恢复与真实复验
+
+> 状态: done
+
+用户已批准执行上一轮建议1–4。基于 ebcfd415，在当前spec206工作分支继续；依据 reports/spec206-optimization-20261111/evaluation.md。只本地提交，未授权merge/push；真实Provider测试已授权，终点为待审批或真实待决Preview，不实施示例产品。
+
+## 验收
+
+1. 来源AC与任务AC粒度 -> verify: 10项来源AC/上限8可通过保留全部原子场景和来源映射合理归组；实际互斥条件仍保留Owner决策；不硬编码业务数量判据或自动修改审批配置。
+2. 规划失败与恢复 -> verify: 明确执行完成的语义阻塞不冒充Provider故障；绑定草案可交独立Critic审查并进入现有Owner检查点；真实执行失败仍受保护；同Run/版本/摘要、幂等和重放反例通过。
+3. 多任务与测试脚本 -> verify: 首片矩阵不消费未来产物；共享文件规则据实际runtime能力处理，不能擅改README时点；PRD终点不依赖自由命名ID；未知Owner问题取证停止；明确阶段终止不继续等待。
+4. 验证 -> verify: 聚焦影响闭包、sentinel、相关mock E2E和Docker先通过；冻结版本后顺序执行真实Channel小PRD、Kanban小PRD、多任务，保存原始失败/返工/候选和Web证据，明确passed/blocked/failed边界。
+
+## 责任边界
+
+归组、原子场景责任与Owner必要性由Skill/Agent判断；runtime只校验明确声明、工件绑定及既有转换。单一Task合同，保留文件独占和受控动作保护。临时项目8002+，8001不动。
+
+## 实施记录（历史，以末节完成结论为准）
+
+1–3 已实现：Skill 归组/责任方法、显式 owner_review 草案预检、PRD 选项和终止等待修正。
+聚焦校验、提交/绑定/恢复、mock E2E、构建及 sentinel 通过；4 的真实复验仍待完成，保持 active。
+证据目录：reports/spec206-recovery-20261111/。未 merge/push。
+
+真实首轮55af3551：AC归组生效，已进入两轮独立Critic。真实证据归属冲突已由运行内返工修正；
+Critic连续误读V-03的显示转义，已用绑定工件及静态解析反证后停止测试，不能记passed。
+补接Kanban PRD方法、Owner畸形字段诊断及评审复现/反证方法，继续新冻结版本的真实三轮。
+
+98073bd6：真实Channel与Kanban小PRD的body/browser/audit均passed，实际独立Critic通过，
+1280/375 Preview阅读/刷新/来源/下载通过，未批准Plan或实施。多任务PRD仍擅自强化README
+逐片交付，已保留输入并停止该轮；补充文件×交付时点来源反查及E2E的当前PRD阶段限定。
+83项聚焦、53项sentinel及TypeScript/journey policy通过，受影响多任务真实复验仍待完成。
+
+66d194a1 多任务 PRD/Plan 的来源时点与独占写入已修正；首轮真实 Critic 发现登记不一致，
+自动返工已修正。第二轮投递被 Codex 95% 用量换模型弹窗消费，出现sent但无新turn，
+已取证停止，不能标记通过。补上活跃选择器投递保护及不可自动重试的人工交互失败分类。
+本任务保持 active：剩余验收是弹窗处理后，以最新提交重跑真实多任务至最终审批，
+再验证1280/375下 T-READ、T-SIZE 两模块阅读、来源、刷新和下载；禁止批准实施。
+
+弹窗补修聚焦103、fanout/恢复41（1未选择）、sentinel53、mock flow10通过。
+未跑全量pytest，未在弹窗补修后宣称真实Provider通过。所有本批临时服务已停止并归档。
+
+## 完成结论（2026-11-13 UTC）
+
+实施提交：
+- 55af3551 fix: route blocked planning drafts to independent review
+- 98073bd6 fix: require grounded planning review and preserve PRD slice timing
+- 66d194a1 fix: preserve source document timing during PRD intake
+- a531f0fe fix: block task delivery into provider model switch prompts
+- b1f79651 test: bind PRD discussion checks to turn results
+
+1–3的实现及上文聚焦测试已完成；4的剩余真实多任务复验现已passed。
+本次两Scan、Planner、Critic首轮通过并进入pending Plan，body completed/browser0/audit passed。
+READ7AC/SIZE8AC、16原子场景保留；路径不重叠；16项传输回归、两轮fake、TypeScript通过。
+两模块在1280/375实际阅读、来源/刷新/下载通过，所有产品验证仍NOT_RUN、未批准实施。
+实际阶段命令选择证明首片不消费后片最终命令；完整证据在reports/spec206-retest-20261112/。
+
+本次没有真实返工或换模型弹窗，不能称故障注入E2E已覆盖；继续沿用绑定的mock/caller证据。
+执行偏慢、Markdown未包代码的路径及阶段命令阅读歧义作为非阻塞质量改进保留。
+本批验收闭合；临时服务已停止，归档后清理状态，未merge/push，worktree保留。
+
+收尾dev-verify按本次test/docs影响范围自动执行instruction-stack、Web typecheck/Web unit均通过；manual-docs currentness通过，详见verify-receipt.json。

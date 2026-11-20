@@ -416,6 +416,7 @@ class StreamJsonTransport(TransportAdapter):
             self._record_telemetry_launch(context, launch)
         started_at = time.monotonic()
         def _drain_once(sid: str, resume: bool):
+            from zf.integrations.controller.execution import stream_turn
             from zf.runtime.environment_usage import environment_in_use
 
             from zf.runtime.environment_exec import resource_environment
@@ -423,14 +424,15 @@ class StreamJsonTransport(TransportAdapter):
                 role_env.update(resource_environment(environment_plan))
                 from zf.runtime.stream_turn_lifecycle import run_stream_turn
 
-                return run_stream_turn(self.state_dir, context, sid, lambda: asyncio.run(
+                return stream_turn(lambda: run_stream_turn(self.state_dir, context, sid, lambda: asyncio.run(
                     self._turn_cancellation.drain(role_name, lambda: self._drain(
                         prompt=prompt, session_id=sid,
                         role=role, is_resume=resume,
                         cwd=role_cwd,
                         env=role_env,
                     ))
-                ))
+                )), root=role_cwd, context=context, role=role, session_id=sid,
+                    cancel=lambda: self._turn_cancellation.cancel_and_join(role_name, None))
 
         try:
             messages, status = _drain_once(session_id, is_resume)
@@ -540,6 +542,11 @@ class StreamJsonTransport(TransportAdapter):
             duration_s=time.monotonic() - started_at,
         )
 
+        from zf.integrations.controller.binding import managed_config
+        if managed_config() is not None:
+            for event in agent_events:
+                if event.type == 'agent.usage':
+                    event.payload['_controller_accounted'] = True
         self._queue_pending_events(agent_events)
 
     def _record_telemetry_launch(self, context: DispatchContext, launch: Any) -> None:

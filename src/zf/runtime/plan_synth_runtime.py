@@ -218,7 +218,12 @@ class PlanSynthRuntimeMixin:
             ):
                 continue
             recovery_attempts = sum(index > replay_boundary for index in recovery_losses.get(fanout_id, []))
-            if recovery_attempts >= allowed_recoveries:
+            from zf.runtime.reader_loss_progress import reader_loss_progress
+
+            read_checkpoint, made_progress = reader_loss_progress(
+                self.state_dir, events, latest_dispatch, lost_event,
+            )
+            if recovery_attempts >= allowed_recoveries and not made_progress:
                 self._fail_lost_fanout_synth_dispatch(
                     manifest=manifest,
                     latest_dispatch=latest_dispatch,
@@ -230,6 +235,7 @@ class PlanSynthRuntimeMixin:
                 latest_dispatch=latest_dispatch,
                 lost_event=lost_event,
                 attempt=recovery_attempts + 1,
+                read_checkpoint=read_checkpoint,
             ):
                 return True
         return False
@@ -311,6 +317,7 @@ class PlanSynthRuntimeMixin:
         latest_dispatch: ZfEvent,
         lost_event: ZfEvent,
         attempt: int,
+        read_checkpoint: dict[str, Any] | None = None,
     ) -> bool:
         payload = (
             dict(latest_dispatch.payload)
@@ -432,6 +439,7 @@ class PlanSynthRuntimeMixin:
                 "lost_signal_event_id": lost_event.id,
                 "lost_signal_type": lost_event.type,
                 "semantic_attempt_consumed": False,
+                **(read_checkpoint or {}),
             },
             causation_id=lost_event.id,
             correlation_id=trace_id,
@@ -910,12 +918,19 @@ class PlanSynthRuntimeMixin:
                     (outcome.envelope_ref or {}).get("sha256") or ""
                 ),
             }
-            if payload.get("failure_class") == "reader_execution_failure":
+            if (
+                payload.get("failure_class") == "reader_execution_failure"
+                or payload.get("owner_decision_items")
+                or (control_result.get("execution_status") == "completed"
+                    and control_result.get("verdict") == "rejected")
+            ):
                 from zf.runtime.artifact_context_events import artifact_context_events
                 from zf.runtime.plan_synth_recovery_refs import failed_critic_candidate_refs
 
                 payload["previous_plan_candidate_refs"] = failed_critic_candidate_refs(
-                    self.state_dir, artifact_context_events(self.event_log), payload,
+                    self.state_dir, artifact_context_events(self.event_log),
+                    {**payload, "execution_status": control_result.get("execution_status"),
+                     "verdict": control_result.get("verdict")},
                 )
             event = replace(event, payload=payload)
         from zf.runtime.plan_synth_owner_checkpoint import (

@@ -104,3 +104,29 @@ def test_channel_prd_reader_source_preserves_canonical_body_and_digest(tmp_path)
         state_dir=state, workflow_dir=tmp_path / "unused",
         input_contract={"source_ref": "docs/PRD.md"},
     ) == ""
+
+
+def test_empty_constraints_do_not_invent_owner_approval_or_change_legacy_input_digest():
+    task = Task(id="T-PLAIN", title="plain", contract=TaskContract())
+    params, _, contract, _ = bind_task_workflow_inputs({}, task, task_contract_digest="legacy")
+    assert "constraints" not in params
+    assert "constraints" not in contract
+
+
+def test_source_constraints_roundtrip_and_missing_coverage_is_rejected(tmp_path):
+    import pytest
+    from zf.runtime.workflow_request_acceptance import (
+        assert_task_workflow_input_coverage, TaskWorkflowInputCoverageError,
+    )
+    task = Task(id="T-CONDITIONS", title="CLI", contract=TaskContract(
+        constraints=["Plan 需审批后实施", "仅标准库"],
+        explicit_non_goals=["不接入网络"],
+    ))
+    params, binding, contract, _ = bind_task_workflow_inputs({}, task, task_contract_digest="bound")
+    assert params["constraints"] == ["Plan 需审批后实施", "仅标准库", "不接入网络"]
+    args = dict(binding=binding, input_contract=contract, source_ref="",
+                source_refs=params.get("source_refs", {}), artifact_refs=[],
+                acceptance=params["acceptance"], scope=[], project_root=tmp_path)
+    assert_task_workflow_input_coverage(**args, constraints=params["constraints"])
+    with pytest.raises(TaskWorkflowInputCoverageError, match="constraints coverage"):
+        assert_task_workflow_input_coverage(**args, constraints=["不接入网络"])

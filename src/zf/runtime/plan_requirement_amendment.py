@@ -230,11 +230,11 @@ def amendment_binding(state_dir: Path, workflow_run_id: str, *, events=None) -> 
             "requirement_spec_digest": amendment["requirement"]["sha256"]}
 
 
-def amended_claim_set_baseline(state_dir: Path, workflow_run_id: str, previous: Mapping | None) -> dict | None:
+def amended_claim_set_baseline(state_dir: Path, workflow_run_id: str, previous: Mapping | None, *, events=None) -> dict | None:
     """Authorize exact before/after text pairs; preserve all other safeguards."""
     if previous is None:
         return None
-    amendment = current_owner_amendment(state_dir, workflow_run_id)
+    amendment = current_owner_amendment(state_dir, workflow_run_id, events=events)
     baseline = copy.deepcopy(dict(previous))
     if not amendment:
         return baseline

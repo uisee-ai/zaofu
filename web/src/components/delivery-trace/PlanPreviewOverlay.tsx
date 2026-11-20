@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Check, X, MessageSquare } from "lucide-react";
+import "./planOwnerResponse.css";
 import type { PlanPreview } from "../../api/types";
 import { usePlanReviewBody } from "./usePlanReviewBody";
 import { MarkdownText } from "../agent-session/MarkdownText";
@@ -49,6 +50,18 @@ export function PlanPreviewOverlay({
   const [showContext, setShowContext] = useState(false);
   const [bodyRequested, setBodyRequested] = useState(false);
   const { preview, loading: bodyLoading, error: bodyError } = usePlanReviewBody(envelope, projectId, editing || showContext || bodyRequested);
+  const [focused, setFocused] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("reader") === "focus");
+  const toggleFocus = () => {
+    const next = !focused;
+    setFocused(next);
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.hash.slice(1));
+    if (next) { params.set("reader", "focus"); params.set("view", "original"); } else params.delete("reader");
+    if (preview?.plan_id) params.set("plan", preview.plan_id);
+    url.hash = params.toString();
+    window.history.replaceState(window.history.state, "", url);
+    window.dispatchEvent(new Event("hashchange"));
+  };
   useEffect(() => { const element = modal.current; element?.showModal(); return () => element?.close(); }, []);
   const planId = preview?.plan_id || "";
   const disabled = Boolean((actionKey && busy.endsWith(`:${actionKey}`)) || (planId && busy.endsWith(`:${planId}`)));
@@ -56,20 +69,26 @@ export function PlanPreviewOverlay({
     || preview?.pdd_id?.startsWith("TASK-")
     || preview?.trace_id?.includes("-prd-");
   return (
-    <dialog ref={modal} className="plan-preview-overlay" aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
+    <dialog ref={modal} className={`plan-preview-overlay${focused ? " is-focused" : ""}`} aria-label="Plan preview" onCancel={(event) => { event.preventDefault(); if (!reviewBusy) onClose(); }}>
       <div className="plan-preview-toolbar">
         <div>
           <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : isPrdPlan ? "PRD Plan Preview" : "Plan Preview"}</strong>
           <span className="mono">{planId || "loading"}</span>
+          <span>{preview?.status === "pending" ? "待审批" : preview?.status || "加载中"}</span>
           {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
             <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>
           ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
-          <button type="button" className="delivery-action-button" aria-expanded={showContext} onClick={() => setShowContext(!showContext)}>工程上下文</button>
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
-            <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
+          <button type="button" className="delivery-action-button" data-reading-mode aria-pressed={focused} disabled={editing || loading || !preview} onClick={toggleFocus}>
+            {focused ? "返回审阅" : "专注阅读"}
           </button>
+          <button type="button" className="delivery-action-button" aria-expanded={showContext} onClick={() => setShowContext(!showContext)}>工程上下文</button>
+          {!ownerDecision && <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || preview.content_kind === "unavailable"}>
+            <Check size={14} /> Approve
+          </button>
+          }
+          {!ownerDecision && <>
           <input
             value={rejectReason}
             placeholder="reject reason"
@@ -79,6 +98,7 @@ export function PlanPreviewOverlay({
           <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || preview.status !== "pending" || !decisionReady || disabled || reviewBusy || !rejectReason.trim()}>
             <X size={14} /> Reject
           </button>
+          </>}
           <button type="button" className="delivery-action-button" onClick={editing ? onRead : onRepair} disabled={!preview || disabled || reviewBusy}>
             <MessageSquare size={14} /> {editing ? "返回审阅" : "引用编辑"}
           </button>
@@ -89,6 +109,20 @@ export function PlanPreviewOverlay({
       </div>
       <div className={`plan-preview-body${showContext ? "" : " plan-context-collapsed"}`}>
         <main className={`plan-preview-reader${editing ? " plan-preview-editing" : ""}`}>
+          {ownerDecision && preview && <section aria-label="Owner 答复" className="plan-owner-response">
+            <strong>候选计划待澄清，尚未通过 Critic</strong>
+            <p>请逐项回答下列问题。提交后在当前 Run 重新规划，之后仍需审批新版 Plan 才能实施。</p>
+            <ol>{preview.owner_decision_items?.map((item) => <li key={item.decision_id || item.question}>
+              <strong>{item.decision_id}</strong>：{item.question}
+            </li>)}</ol>
+            <textarea aria-label="Owner 答复内容" rows={4} value={rejectReason}
+              placeholder="按问题编号填写选择、理由和适用范围；保留仍未授权的操作。"
+              onChange={(event) => onRejectReason(event.target.value)} disabled={preview.status !== "pending" || disabled || reviewBusy} />
+            <button type="button" className="delivery-action-button" onClick={onReject}
+              disabled={preview.status !== "pending" || !decisionReady || disabled || reviewBusy || loading || !rejectReason.trim()}>
+              提交答复并重新规划
+            </button>
+          </section>}
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {bodyError && <p role="alert">审阅正文读取失败：{bodyError}</p>}
@@ -104,6 +138,7 @@ export function PlanPreviewOverlay({
           <dl className="plan-approval-meta">
             <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
             <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>
+            <div><dt>版本</dt><dd className="mono">{planId || "-"}</dd></div>
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>

@@ -13,6 +13,43 @@ def register(sub):
     parser.add_argument('--offset', type=int, default=0)
     parser.add_argument('--limit', type=int, default=5)
     parser.set_defaults(func=run)
+    scope = sub.add_parser('prepare-scope-review', help='Assemble scope evidence; does not approve or establish runtime eligibility')
+    scope.add_argument('--baseline-bundle', required=True)
+    scope.add_argument('--candidate-bundle', required=True)
+    scope.add_argument('--claim', required=True, help='Agent scope claim JSON; semantic assertions are never inferred')
+    scope.set_defaults(func=run_scope)
+
+
+def _bounded(path: Path, limit: int) -> bytes:
+    with path.open('rb') as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError(f'input exceeds {limit} bytes')
+    return raw
+
+
+def run_scope(args):
+    from zf.runtime.plan_scope_evidence import prepare_scope_evidence
+    try:
+        bundles = []
+        for filename in (args.baseline_bundle, args.candidate_bundle):
+            path = Path(filename).resolve()
+            mapping = json.loads(_bounded(path, 8192))
+            if not isinstance(mapping, dict) or 'task_map' not in mapping or len(mapping) > 32:
+                raise ValueError('bundle must map task_map and complete relevant ports to files')
+            bundles.append({name: _bounded(path.parent / ref, 8*1024*1024) for name, ref in mapping.items()})
+        claim = json.loads(_bounded(Path(args.claim), 8192))
+        if not isinstance(claim, dict):
+            raise ValueError('scope claim must be an object')
+        result = prepare_scope_evidence(*bundles, claim)
+        output = json.dumps(result, ensure_ascii=False)
+        if len(output.encode()) > 8192:
+            raise ValueError('scope certificate exceeds 8192 bytes')
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        return 1
+    print(output)
+    return 0
 
 
 def run(args):

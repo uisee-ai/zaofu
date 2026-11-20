@@ -170,9 +170,16 @@ class WorkflowConfigApplyService:
             payload.get("idempotency_key")
             or f"workflow-config-apply:{expected_proposal_digest}"
         )
-        with locked_path(target):
+        with locked_path(target), locked_path(self.state_dir / "locks" / "run-admission"):
             self._require_current_proposal(proposal)
             target = self._target_config(payload)
+            from zf.runtime.workflow_config_consumer import consumer_policy_digest
+            from zf.runtime.workflow_config_handoff import current_handoff_blockers
+            if consumer_policy_digest(load_config(target)) != consumer_policy_digest(candidate_config):
+                blockers = current_handoff_blockers(self.state_dir)
+                if blockers:
+                    raise WorkflowConfigApplyError("runtime_config_in_use",
+                        "现有工作仍绑定原执行策略；等待结束后再应用配置：" + "; ".join(blockers[:8]))
             try:
                 outcome = self._apply_locked(
                     payload=payload,

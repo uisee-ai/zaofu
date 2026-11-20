@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict
 
-from zf.core.task.schema import TaskContract, TaskExecutionBinding
+from zf.core.task.schema import TaskContract, TaskExecutionBinding, task_contract_identity_payload
 
 
 # These fields are mutable capsule/evidence projections. They may be merged
@@ -46,7 +46,7 @@ def without_execution_binding_evidence(evidence: object) -> dict:
 
 
 def contract_authority_payload(contract: TaskContract) -> dict:
-    payload = asdict(contract)
+    payload = task_contract_identity_payload(contract)
     for key in CONTRACT_METADATA_FIELDS:
         payload.pop(key, None)
     payload["evidence_contract"] = without_execution_binding_evidence(

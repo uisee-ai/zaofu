@@ -13,6 +13,8 @@ from zf.runtime.plan_preview_sources import plan_authority_refs, plan_source_pay
 from zf.runtime.plan_canonical_content import _plan_markdown, _bound_plan_refs
 from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 from zf.runtime.plan_review_decisions import read_decision_review
+from zf.runtime.plan_review_policy_view import plan_review_policy_view
+from zf.runtime.plan_content_profile import preview_author_profile
 from zf.runtime.plan_preview_artifacts import (
     preview_artifact_path,
     preview_package_artifacts,
@@ -251,6 +253,7 @@ def build_plan_preview(
         decision_items=decision_review["items"],
         status=status,
         review_packet=review_packet,
+        decision_register_available=decision_review["available"],
     )
     digest_source = "stored_digest"
     if task_map_digest:
@@ -296,6 +299,7 @@ def build_plan_preview(
         "markdown": markdown,
         "review_dossier_markdown": review_dossier,
         "review_packet": review_packet,
+        "critic_review": plan_review_policy_view(state_dir, payload),
         "content_kind": content_kind,
         "content_error": markdown_error,
         "digest_markdown": digest_markdown,
@@ -303,10 +307,11 @@ def build_plan_preview(
         "source_event_id": _event_id(bound_source) or _event_id(source_event),
         "artifacts": artifacts,
         "artifacts_error": artifacts_error,
-        "content_profile": str(
-            preview_bundle.get("content_profile")
+        "content_profile": preview_author_profile(
+            state_dir, events, bound_source, plan_ref=markdown_ref, markdown=markdown,
+            fallback=str(preview_bundle.get("content_profile")
             or payload.get("plan_content_profile")
-            or ("derived_plan" if markdown else "unknown")
+            or ("derived_plan" if markdown else "unknown")),
         ),
         "authority_refs": authority_refs,
         "requirement_artifacts": requirement_artifacts,

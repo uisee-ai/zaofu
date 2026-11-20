@@ -69,7 +69,7 @@ def test_review_advice_is_suggestion_not_decision(tmp_path: Path):
 
     simple = tmp_path / "task_map.json"
     simple.write_text(json.dumps({"tasks": [
-        {"task_id": "pi-core", "allowed_paths": ["packages/pi/**"],
+        {"task_id": "pi-core", "owner_role": "core-dev", "allowed_paths": ["packages/pi/**"],
          "verification": "pnpm test"},
     ]}), encoding="utf-8")
     advice = review_advice(simple)
@@ -79,9 +79,9 @@ def test_review_advice_is_suggestion_not_decision(tmp_path: Path):
 
     bad = tmp_path / "bad_map.json"
     bad.write_text(json.dumps({"tasks": [
-        {"task_id": "pi-core", "allowed_paths": ["packages/pi/**"],
+        {"task_id": "pi-core", "owner_role": "core-dev", "allowed_paths": ["packages/pi/**"],
          "verification": "pnpm test"},
-        {"task_id": "pi-web", "allowed_paths": ["packages/web/**"],
+        {"task_id": "pi-web", "owner_role": "web-dev", "allowed_paths": ["packages/web/**"],
          "verification": "pnpm test"},
     ]}), encoding="utf-8")
     advice = review_advice(bad)
@@ -91,7 +91,7 @@ def test_review_advice_is_suggestion_not_decision(tmp_path: Path):
 
     good = tmp_path / "good_map.json"
     good.write_text(json.dumps({"tasks": [
-        {"task_id": "CJMIN-ASSEMBLY-001", "root_owner_class": "assembly",
+        {"task_id": "CJMIN-ASSEMBLY-001", "owner_role": "assembly", "root_owner_class": "assembly",
          "allowed_paths": ["packages/assembly/**", "package.json"],
          "verification": "pnpm -r build && node boot.js"},
     ]}), encoding="utf-8")

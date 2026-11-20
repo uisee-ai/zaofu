@@ -2,6 +2,7 @@
 import hashlib
 import json
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -307,3 +308,27 @@ def test_export_omits_empty_review_catalogs():
         body[field] = []
     markdown = render_prd_document(body, channel_id="ch", thread_id="main", source_refs=[])
     assert "## 假设、风险与分歧" not in markdown
+
+
+def test_chinese_and_mixed_role_index_matches_shared_web_contract():
+    fixture = json.loads((Path(__file__).resolve().parents[1] / "web/tests/fixtures/prd205/reading.json").read_text())
+    assert prd_view_index(fixture["markdown"]) == fixture["read_views"]
+
+
+def test_catalog_labels_preserve_original_keys_unknown_values_and_input():
+    from zf.runtime.channel_prd_render import render_channel_prd_artifact
+
+    body = document()
+    body["implementation_companion"] = {"design": [{
+        "owner": "designer", "ref": "design:current", "status": "candidate",
+        "custom_layout": {"columns": [1, 2], "note": "<script> | `raw`\nnext"},
+    }]}
+    original = deepcopy(body)
+    text = render_channel_prd_artifact(channel={}, channel_id="ch", thread_id="main",
+                                       source_requirement="", synthesis=body, summary="", source_refs=[])
+    assert "负责人（owner）" in text and "引用（ref）" in text and "状态（status）" in text
+    assert "custom_layout" in text and '"columns":[1,2]' in text
+    assert "&lt;script&gt; \\| \\`raw\\`" in text
+    assert "candidate" in text and "design:current" in text
+    assert text.startswith(original["prd_markdown"].rstrip())
+    assert body == original

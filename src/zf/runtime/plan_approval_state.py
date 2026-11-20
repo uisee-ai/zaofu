@@ -65,6 +65,15 @@ def decide_pending_plan(
             except ValueError as exc:
                 return None, str(exc)
             payload = {**payload, "dispatch_task_ids": ids}
+        if event_type == "plan.rejected" and "changed_task_ids" in payload:
+            from zf.runtime.plan_revision_scope import validate_changed_task_ids
+
+            try:
+                payload = {**payload, "changed_task_ids": validate_changed_task_ids(
+                    payload["changed_task_ids"], request=request, state_dir=state_dir,
+                    project_root=project_root or state_dir.parent)}
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                return None, str(exc)
         if event_type == "plan.rejected" and payload.get("plan_review_ref"):
             from zf.runtime.plan_requirement_amendment import authorize_plan_review
             try:

@@ -218,7 +218,7 @@ class OtlpExporter:
                     operation_trace_ids=_operation_trace_map(
                         state.get("operation_trace_ids")
                     ),
-                    sample_rate=_sample_rate(self.config),
+                    sample_rate=_controller_sample_rate(self.state_dir, self.config),
                     project_id=self.project_id,
                 )
                 policy = pending.get("policy") if isinstance(pending.get("policy"), dict) else {}
@@ -869,6 +869,11 @@ def _batch_size(config: Any | None) -> int:
 
 def _sample_rate(config: Any | None) -> float:
     return max(0.0, min(1.0, float(getattr(config, "healthy_sample_rate", 0.1) or 0.0)))
+
+
+def _controller_sample_rate(state_dir: Path, config: Any | None) -> float:
+    from zf.integrations.controller.runtime_settings import diagnostic_rate
+    return diagnostic_rate(state_dir, _sample_rate(config))
 
 
 def _hash_hex(seed: str, length: int) -> str:

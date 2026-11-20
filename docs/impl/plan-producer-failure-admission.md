@@ -38,10 +38,16 @@ Plan Critic 使用 `plan-synth` 结果时，只有明确声明
 `repaired_failure_event_id`、`approval_ref`、`reason` 合同受控恢复；
 显式 failure_kind、原失败、读取账本和审批门禁保持有效。
 回归：`tests/test_reader_failure_kind_recovery.py`。
-Critic 执行失败时，恢复从该次派发绑定的不可变 source manifest 与
+Critic 执行失败或完整读取后语义拒绝时，恢复从该次派发绑定的不可变 source manifest 与
 plan-synth contract 对账当前子结果及工件引用；新引用优先于旧触发的候选，
 并保留原有读取范围和 access scope。身份、摘要或来源不匹配时不猜测当前
 候选，也不回退到旧候选。回归：`tests/test_plan_synth_recovery_refs.py`。
+同请求 transport retry 只有显式连接原派发、未消费语义尝试且请求/manifest/合同
+身份完全相同时才归为同一候选；无关联重复派发仍拒绝。已结算的语义拒绝可通过
+`stage-replan-new-generation` 的 `resume_candidate_synth_event_id` 指向其直接原因
+`fanout.synth.completed`：受控入口必须复核唯一准入与 envelope/control 绑定、
+完整执行的 rejected 结论、同一 Run/stage 和未被后续候选取代。保留原失败，
+只为新代际绑定返修输入，不批准 Plan 或重试旧不可重试操作。
 新代次受控动作可显式指定紧邻的失败 Critic 检查点；必须核对 Run、阶段、
 因果链和已准入结果，并拒绝已被更新候选取代的检查点。Planner 自报读取失败
 时直接保留该执行失败分类，不误报缺少计划候选。

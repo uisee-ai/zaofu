@@ -479,7 +479,13 @@ def plan_reader_stage_replan(
         and stage_flow_kind != canonical_flow_kind
     ):
         return None, "cross_flow_failure"
-    from zf.runtime.reader_replan_ownership import active_candidate_replan_owns_failure
+    from zf.runtime.reader_replan_ownership import (
+        active_candidate_replan_owns_failure,
+        admitted_candidate_plan_recovery_owns_failure,
+    )
+
+    if admitted_candidate_plan_recovery_owns_failure(stage, failure_event):
+        return None, "owned_by_candidate_plan_recovery"
 
     if (
         getattr(stage, "attempt_domain", "") != "plan"
@@ -495,6 +501,7 @@ def plan_reader_stage_replan(
     if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
     origin_payload: dict[str, Any] = {}
+    prior_trigger: ZfEvent | None = None
     for event in events:
         if (
             event.type == trigger_type
@@ -502,6 +509,7 @@ def plan_reader_stage_replan(
             and isinstance(event.payload, dict)
             and _same_replan_scope(event, failure_event)
         ):
+            prior_trigger = event
             origin_payload = dict(event.payload)
     lineage = reader_stage_lineage_payload(
         events,
@@ -806,7 +814,19 @@ def plan_reader_stage_replan(
     ).strip()
     if attempt_domain:
         origin_payload["attempt_domain"] = attempt_domain
+    # A standalone CLI writer has no default origin. Retain the authority
+    # of the exact frozen receipt named by this kernel-verified failure.
+    bound_candidate_retry = (
+        trigger_type == "candidate.ready" and failure_run_id
+        and prior_trigger is not None and prior_trigger.origin == failure_event.origin == "kernel"
+        and prior_trigger.id == failure_payload.get("candidate_event_id")
+        and prior_trigger.payload.get("schema_version") == "candidate-freeze-receipt.v1"
+        and all(prior_trigger.payload.get(key) and prior_trigger.payload[key] == origin_payload.get(key)
+                for key in ("freeze_id", "candidate_ref", "candidate_head_commit",
+                            "plan_artifact_package_digest", "task_map_generation"))
+    )
     return ZfEvent(
+        origin="kernel" if bound_candidate_retry else "",
         type=trigger_type,
         actor="zf-cli",
         payload=origin_payload,

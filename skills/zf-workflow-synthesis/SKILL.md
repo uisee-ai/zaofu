@@ -68,6 +68,11 @@ project constraints. Treat every allowlist as closed.
 
 ## Hard Boundaries
 
+`plan_review.mode: none` 或 `plan_critic_enabled: false` 会从 PrdFlow 移除 Plan Critic。
+`requested_roles` 必须对应修改后的有效角色，不机械复制 catalog 的默认名单，不能仍
+请求 `plan-critic` 或其改名实例。Channel 的 PRD reviewer 与 Workflow Plan 角色分开。
+targeted 保留 Critic 并给出明确问题；保留 Owner 要求的 Plan 审批，不以免审代表实施授权。
+
 已注册 `bounded-agent-v1` 时，有界报告交付可用 `intent=bounded_execution`，参数为
 `executor_role`、`verifier_role`、可选 `deadline_seconds`（1..3600，默认 600）。
 完成要求为 `artifact_delivery`，必需产物 `agent-execute.result`。执行者和验证者
@@ -125,3 +130,19 @@ Requirement 的 `kind=auto` 表示尚未作语义选路；不代表 IssueFlow，
 ## Candidate Verify 宽度
 
 注册 blocking Task Pipeline 可通过 `parameters.candidate_verify_width` 选择 1..已注册 lanes 个独立 Candidate 验证者。根据验收范围、风险与实际可分工检查选择最小足够宽度；简单单任务通常为 1，确有独立检查维度再使用 2 或更多，并在 synthesis 解释理由。此参数只改变全局验证 fanout，不改变 Impl/Task Verify 池容量、验证命令、产品验收、Discovery 或 Judge 门禁。不得将减少宽度写成豁免验收。
+
+
+## PRD 的按需 Plan 评审
+
+Owner 授权按风险选择评审时，在现有 short FlowSpec.parameters 中使用 `plan_review`：
+`{mode: none|targeted|full, reason: "依据原始需求说明选择", focus: ["具名审查问题"]}`。
+targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 lanes 一起生成受控配置
+候选；注册控制器保留其固定 lanes/pipeline，并绑定 controller_id/controller_digest。
+不能直接修改运行状态、当前 zf.yaml 或跳过提案批准；不得降低原本明确要求的评审。
+
+先判断已有独立审查覆盖了什么，再看本次 Plan 新增的任务拆分、共享产物、状态/异常、
+交付时点与权限风险。低风险且边界明确可提议 none；局部影响明确用 targeted；原始
+需求冲突、影响未知或高风险用 full。任务数量、文档长度不是风险判定依据。保留既有
+审批和执行验收；机械检查先行，选读减量必须另满足运行时证据条件。未获得风险选择
+授权时维持现有配置，不自动切换默认方式。兼容既有 plan_critic_enabled 开关，不能
+与 plan_review.mode 给出矛盾设置。PrdFlow light 没有 Plan 阶段，不接收此策略。

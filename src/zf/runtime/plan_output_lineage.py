@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.core.events.model import ZfEvent
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_map import load_task_map, resolve_artifact_file
 
@@ -35,7 +36,7 @@ def assert_package_explicit_ports_match(
     """A frozen generation may replay inputs, but cannot silently discard new ones."""
     from zf.runtime.call_result_envelope import canonical_json_sha256
     from zf.runtime.plan_artifact_package_ports import (
-        PlanArtifactPackageError, materialize_explicit_plan_ports,
+        PlanArtifactPackageError, bind_product_acceptance_identity, materialize_explicit_plan_ports,
     )
 
     current = {port["logical_name"]: port
@@ -47,16 +48,13 @@ def assert_package_explicit_ports_match(
             flow_kind=flow_kind, required_ports=current,
         )
         for name, port in supplied.items():
-            body = hydrate_sidecar_ref(state_dir, port).payload
-            if name == "product_acceptance_spec" and isinstance(body, Mapping):
-                from zf.runtime.product_acceptance import bind_product_acceptance_spec_identity
-
-                body = bind_product_acceptance_spec_identity(
-                    body, workflow_run_id=package["workflow_run_id"],
-                    flow_kind=package["flow_kind"], plan_revision=package["plan_revision"],
-                    task_map_generation=package["task_map_generation"],
+            incoming = hydrate_sidecar_ref(state_dir, port).payload
+            if name == "product_acceptance_spec":
+                incoming = bind_product_acceptance_identity(
+                    incoming, workflow_run_id=package["workflow_run_id"], flow_kind=package["flow_kind"],
+                    plan_revision=package["plan_revision"], task_map_generation=package["task_map_generation"],
                 )
-            if name not in current or canonical_json_sha256(body) != canonical_json_sha256(
+            if name not in current or canonical_json_sha256(incoming) != canonical_json_sha256(
                 hydrate_sidecar_ref(state_dir, current[name]).payload
             ):
                 raise PlanArtifactPackageError(
@@ -64,3 +62,15 @@ def assert_package_explicit_ports_match(
                     "changed input requires a new plan generation")
     except (OSError, ValueError) as exc:
         raise PlanArtifactPackageError(f"explicit plan port replay rejected: {exc}") from exc
+
+
+def reviewed_plan_generation(event: ZfEvent) -> str:
+    """Bind a fresh generation to the exact independently reviewed candidate."""
+    from zf.runtime.call_result_envelope import canonical_json_sha256
+
+    body = event.payload
+    digest = body.get("plan_synth_contract_digest")
+    if not digest or digest != body.get("reviewed_plan_candidate_digest"):
+        raise ValueError("reviewed Plan generation requires an exact candidate digest")
+    return canonical_json_sha256({"schema_version": "reviewed-plan-generation.v1",
+        "workflow_run_id": body.get("workflow_run_id"), "candidate_digest": digest})

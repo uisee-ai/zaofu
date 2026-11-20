@@ -45,7 +45,7 @@ def _checklist(task_map_path: Path) -> list[str]:
 
     tasks = data.get("tasks") or []
     return [
-        f"[X] {check['label']}: {check['detail']}"
+        f"[{'?' if check['ok'] is None else 'X'}] {check['label']}: {check['detail']}"
         for check in plan_digest_checklist(tasks)
         if not check["ok"]
     ]
@@ -57,13 +57,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--state-dir", default=None)
     sub = parser.add_subparsers(dest="plan_cmd", required=True)
+    from zf.cli.plan_baseline_draft import register as register_baseline_draft
     from zf.cli.plan_execution import register as register_execution
+    from zf.cli.plan_input_review import register as register_input_review
 
     register_execution(sub)
-    from zf.cli.plan_input_review import register as register_input_review
     register_input_review(sub)
     from zf.cli.plan_review_inspection import register as register_review_inspection
     register_review_inspection(sub)
+    register_baseline_draft(sub)
 
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.add_argument("--workflow-run-id", default=None)
@@ -78,6 +80,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
                     help="Prioritize a task's complete input on replan; repeat for more tasks")
     rj.add_argument("--dispatch-task", action="append", default=None,
                     help="Explicit future execution task scope for a newly reviewed Plan; repeat for each task")
+    rj.add_argument("--changed-task", action="append", default=None,
+                    help="Declare proposed edit scope; does not narrow execution or grant incremental review")
     rj.set_defaults(func=_run)
 
 
@@ -145,6 +149,8 @@ def _run(args: argparse.Namespace) -> int:
         decision_payload["reason"] = args.reason
         if getattr(args, "dispatch_task", None) is not None:
             decision_payload["dispatch_task_ids"] = args.dispatch_task
+        if getattr(args, "changed_task", None) is not None:
+            decision_payload["changed_task_ids"] = args.changed_task
         if getattr(args, "input_task", None) is not None:
             from zf.runtime.reader_replan_feedback import input_task_ids
 
@@ -160,6 +166,7 @@ def _run(args: argparse.Namespace) -> int:
         plan_id=args.plan_id,
         event_type="plan.approved" if args.plan_cmd == "approve" else "plan.rejected",
         payload=decision_payload,
+        project_root=context.project_root,
     )
     if result is None:
         print(f"plan {args.plan_id} decision rejected: {reason}")

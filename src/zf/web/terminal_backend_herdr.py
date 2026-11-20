@@ -240,8 +240,18 @@ class HerdrTerminalBackend:
             ) from exc
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
-            status = self._run(self._session(session_name, "workspace", "list"), timeout=2.0)
-            if status.returncode == 0:
+            try:
+                status = self._run(
+                    self._session(session_name, "workspace", "list"),
+                    timeout=min(2.0, max(deadline - time.monotonic(), 0.01)),
+                )
+            except TerminalRuntimeError as exc:
+                if exc.code != "herdr_timeout":
+                    raise
+                # A cold sandbox may accept the socket before the server answers.
+                # Retry only within the existing startup deadline, without spawning again.
+                status = None
+            if status is not None and status.returncode == 0:
                 return HerdrProjectRuntime(session_name=session_name, server_pid=process.pid)
             if process.poll() is not None:
                 break
