@@ -1,10 +1,11 @@
-> 状态: active
+> 状态: done
+> 实现提交: `2d50db26 feat: preserve recovery lineage and external waits`
 
 # 无人恢复续批：多跳接力与重新入队效果
 
 来源：用户批准上一轮两项确定代码缺口及 Provider 共因故障 mock 验证。
 对齐 ZF-SPEC-004 UE-04/05/09/10；原综合任务见
-[无人恢复续批](2026-11-20-0717-unattended-recovery-continuation.md)。
+[无人恢复续批](../active/2026-11-20-0717-unattended-recovery-continuation.md)。
 
 1. Reader A 写记录、B 接力后未写新记录即退出、C 再接力 -> verify:
    实际 runtime 重试入口保留 A 的不可变记录；不展开无限历史；篡改拒绝，
