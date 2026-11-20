@@ -172,3 +172,11 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 19:14:43受控启动后，19:16:14被systemd默认90秒启动期限终止；已配置的300秒watchdog未覆盖READY之前的首轮批量Reader准备。宿主监督在19:16:20自动重启并继续派发，当前观察没有人工恢复。用户服务生成器现为notify模式显式设置`TimeoutStartSec=max(90, host_watchdog_seconds)`，保留有限启动上限和完整tick之后才通知READY的约束。该配置不是任意规模启动的时延保证；更重的启动仍需相应部署预算或有界首轮执行。此修复在独立源码分支验证，当前真实窗口继续使用8255b300，不热更新。
 
 验证：3项启动期限回归先红后绿；17聚焦、25影响闭包（含design200宿主监督mock）、53哨兵通过。真实旧版本自动重启后8个唯一child均已派发，无重复；当前未部署本次启动期限修复，不能将旧版本的自动恢复当作新配置验证。
+
+## 2026-11-20：旧失败恢复抢占已接纳的新审核
+
+同一窗口中，RM仍将首轮候选的`test.failed`投影为`needs_stage_replan`，即使受控重触发已经被Kernel接纳并派发8路审核。19:18:08自动重规划产生另一trigger，19:18:19起Kernel取消8个在途operation，后补的恢复说明也没有随旧因果输入传递。当前窗口因此失败，并在修复前关闭。
+
+修复在stage-replan投影和执行共用入口识别显式`redrive_of/rework_of`来源链：必须能找到原失败的可信fanout、同Run/同stage/任务代际的继任trigger及其更晚的Kernel fanout接纳事实。未接纳、自报、异来源、异Run/stage和循环/乱序引用不屏蔽旧失败。旧失败与发现继续保留，但其恢复已由新代际负责；这不表示业务通过，继任者自己的失败仍需独立恢复。
+
+验证：1红7绿的实际ControlledActionService→恢复checkpoint回归转绿，54聚焦、4161影响闭包（7 skipped）、53哨兵与10流程通过。真实事件前缀21149条：旧代码planned=true，修复后planned=false/owned_by_admitted_reader_retrigger。未写运行态或改历史结果。部署前精确kernel provider_stop_confirmed+cancelled operation以及宿主进程/tmux不存在共同证明8个Reader已停止；保留未收到stop hook的旧记录，不伪造Provider收尾。

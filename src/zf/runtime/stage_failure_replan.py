@@ -494,8 +494,11 @@ def plan_reader_stage_replan(
     from zf.runtime.reader_replan_ownership import (
         active_candidate_replan_owns_failure,
         admitted_candidate_plan_recovery_owns_failure,
+        admitted_reader_retrigger_owns_failure,
     )
 
+    if admitted_reader_retrigger_owns_failure(stage, failure_event, index):
+        return None, "owned_by_admitted_reader_retrigger"
     if admitted_candidate_plan_recovery_owns_failure(stage, failure_event):
         return None, "owned_by_candidate_plan_recovery"
 
