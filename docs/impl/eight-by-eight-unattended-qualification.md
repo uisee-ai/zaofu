@@ -41,3 +41,20 @@ Run Manager 诊断请求；RM 自身也受同一环境问题阻塞，无法读�
 的两次 Provider turn closed 重现失败，经 Run Manager recommendation → controlled
 child-rebuild → Kernel 派发验证恢复；同时覆盖进程重建、幂等和错误身份拒绝。
 真实 Provider 的恢复与后续 8×8 仍等待宿主修复，mock 通过不替代该层结论。
+
+## 2026-11-20：宿主修复与旧升级记录关闭
+
+获得用户授权后，执行现有 `scripts/setup-codex-sandbox.sh --apply` 安装发行版
+bubblewrap 与 AppArmor profile，普通用户 doctor 实际沙箱命令成功。userns 限制
+保持开启；没有关闭 Provider 沙箱。隔离 systemd runtime 重新启动，RM 原生会话
+已能执行工具，但旧失败对应的人工升级仍阻止后续恢复。
+
+已有 ControlledActionService 支持以精确 escalation_event_id、approval_ref 和
+reason 关闭无合同字段的旧升级。Web 入口却提前统一拒绝，导致安全兼容路径不可达。
+本轮仅把 legacy dismiss 接回已有实现，保持 token、当前性、幂等和绑定检查；
+无合同的批准恢复仍拒绝。实际 Web 入口到 RM 消费由
+`tests/test_web_legacy_escalation_dismiss.py` 覆盖。关闭提示不等于恢复任务，
+后续必须观察新的合法 Reader Operation、派发和产物。
+
+宿主修复、重启与人工关闭发生在 Plan 批准前。16 项业务验收和 8+8 并发尚未开始，
+本段操作不能计入无人干预成功证据。
