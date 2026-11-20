@@ -249,6 +249,12 @@ def build_resident_run_manager_briefing(
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
         "   先读取本次 context 的 recovery_capabilities；关闭或未知的能力不得当作已可用。",
+        "   同时核对 preauthorized_host_recovery 的宿主策略、同Run执行事件和绑定收据；",
+        "   reflect/source_repair关闭不代表宿主验证关闭。策略声明不证明执行，单条命令",
+        "   通过不证明产品验收；部分非浏览器收据也不证明浏览器恢复队列不存在。",
+        "   升级前沿合同命令和最新宿主事件核对尚缺项、执行owner及失败/授权缺口。",
+        "   有界宿主工作仍在推进时，判断是否等待其结果，并说明owner、缺失命令和唤醒条件；",
+        "   不为查看完整队列再申请抽象人工批准，也不能据此自动解除已有人工门。",
         "   证据不可用不等于执行失败。先由本 resident 做一次有界只读对账，沿",
         "   continuation_evidence_refs 核对原 Run、任务、目标和工具记录，说明缺失、矛盾或范围未决。",
         "   不必为已有材料的读取再请求 reflect/repair。人工门禁保留：只读诊断不释放门禁，",

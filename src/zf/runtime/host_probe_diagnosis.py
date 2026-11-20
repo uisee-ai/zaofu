@@ -1,5 +1,4 @@
 """Expose unresolved, authenticated container failures to semantic diagnosis."""
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +7,7 @@ from zf.core.task.store import TaskStore
 from zf.runtime.recovery_step import IDENTITY_FIELDS
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_host_manifest import digest
+from zf.runtime.host_verification_policy import policy_receipt_matches
 
 
 def bound_container_probe_receipt(
@@ -38,7 +38,7 @@ def bound_container_probe_receipt(
                 return None
         if (receipt.get("schema_version") != "task-host-receipt.v1"
                 or receipt.get("execution_origin") != "preauthorized_container"
-                or receipt.get("policy_digest") != digest(asdict(policy))
+                or not policy_receipt_matches(state_dir, policy, receipt)
                 or receipt.get("source_stable") is not True
                 or type(receipt.get("exit_code")) is not int
                 or receipt.get("status") not in {"completed", "failed"}

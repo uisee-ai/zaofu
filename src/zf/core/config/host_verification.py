@@ -13,6 +13,8 @@ class HostVerificationConfig:
     commands: list[str] = field(default_factory=list)
     max_executions_per_run: int = 0
     timeout_seconds: int = 180
+    max_artifact_bytes: int = 20 * 1024 * 1024
+    max_total_evidence_bytes: int = 64 * 1024 * 1024
 
 
 def parse_host_verification(raw) -> HostVerificationConfig:
@@ -21,6 +23,11 @@ def parse_host_verification(raw) -> HostVerificationConfig:
     if not isinstance(raw, dict) or set(raw) - set(HostVerificationConfig.__dataclass_fields__):
         raise ValueError('runtime.host_verification contains unknown keys or is not a mapping')
     policy = HostVerificationConfig(**raw)
+    if (type(policy.max_artifact_bytes) is not int
+            or not 1 <= policy.max_artifact_bytes <= 64 * 1024 * 1024
+            or type(policy.max_total_evidence_bytes) is not int
+            or not policy.max_artifact_bytes <= policy.max_total_evidence_bytes <= 128 * 1024 * 1024):
+        raise ValueError('host verification evidence limits require 1..64MiB per file and at most 128MiB total')
     if policy.network not in {'none', 'host'}:
         raise ValueError('host verification network must be none or explicitly authorized host')
     if not isinstance(policy.protected_files, dict) or any(

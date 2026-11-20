@@ -97,7 +97,8 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
                 or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'):
             continue
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
-        if (receipt.get('policy_digest') == digest(asdict(policy))
+        from zf.runtime.host_verification_policy import policy_receipt_matches
+        if (policy_receipt_matches(service.state_dir, policy, receipt)
                 and receipt.get('execution_origin') == 'preauthorized_container'
                 and receipt.get('command_id') in required
                 and receipt.get('status') in {'completed', 'failed'}

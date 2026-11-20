@@ -4373,6 +4373,7 @@ def _write_run_manager_context_sidecars(
         )
     safe_request = _safe_ref_slug(request_id)
     from zf.runtime.diagnosis_runtime_context import diagnosis_runtime_sources
+    from zf.runtime.diagnosis_host_recovery import host_recovery_context
     from zf.runtime.continuation_evidence import continuation_input_refs
 
     events = _read_events(state_dir)
@@ -4398,6 +4399,10 @@ def _write_run_manager_context_sidecars(
             "human_gate_bypass": False,
         },
         "continuation_evidence_refs": continuation_refs,
+        "preauthorized_host_recovery": host_recovery_context(
+            state_dir, events, config,
+            str(action.get("workflow_run_id") or action.get("run_id") or ""),
+        ),
         "continuation_evidence_error": continuation_error,
         "reconciliation_method": "First perform bounded read-only reconciliation in this resident. "
             "Missing evidence is not proof of absent execution. Do not request disabled or unknown "

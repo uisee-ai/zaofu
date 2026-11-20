@@ -144,3 +144,17 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 接续期间Run Manager只读查询events.jsonl，Python比较运算符`>=`被shell词法分析当作重定向，PreToolUse拒绝了没有写目标的查询。Agent自行改用其他只读查询，业务未停。修复在独立worktree验证，不热更新当前验收窗口。
 
 守卫只对一个带引用heredoc、可证明无文件写入的有限Python AST子集免除shell重定向误判：允许JSON/Path读取、局部赋值、循环筛选与stdout输出。未知程序、动态调用、危险import、可调用名称重绑定、属性赋值、写模式open、shell尾随命令均保留原拒绝判断；不执行待检查代码，不扩大文件访问范围。真实Hook入口覆盖dev和Run Manager。
+
+## 2026-11-20：候选恢复中的诊断与宿主边界
+
+16/16业务任务通过独立Verify并整合到冻结候选`09094c2d`。首次候选8路派发跨过60秒watchdog，宿主自动重启后补派剩余2路，总计8个唯一child；源码树/入口代码摘要和候选不变。此项证明自动续接，不证明最终验收。
+
+候选Worker报告浏览器执行环境未就绪后，Runtime按预授权自动执行Docker命令。Resident案卷只列reflect/source_repair等能力，未显示宿主验证声明和执行进度，Agent在已有队列推进时误建议人工修环境。现在实际诊断sidecar增加同Run宿主策略声明、可信执行事件和绑定收据；坏收据保留unavailable，异Run/非可信自报不混入。方法要求核对合同命令、最新执行owner和唤醒条件；不把部分非浏览器收据理解为没有恢复队列，不替Agent作决定或解除human gate。
+
+宿主probe原先只在遍历到owner后才抑制兄弟执行，较早注册、稍后失败的Reader会重复抢占。修复先检查整个精确Run/fanout/target/contract cohort，优先保留最早真实宿主effect owner；已有收据和结果未知的effect均保留责任。异scope不合并，未知结果继续要求检查，不凭新owner重试。
+
+浏览器采证再次被60秒watchdog中断，宿主命令允许180秒。配置现在拒绝启用watchdog且其上限小于等于同步宿主命令timeout的组合；操作者还须为其余tick开销留余量。本实验后续配置300秒，不增加后台心跳、不关闭watchdog。冻结脚本生成约24MB移动端trace，原20MiB逐文件限制不足。`runtime.host_verification.max_artifact_bytes`默认20MiB、可配置至64MiB；`max_total_evidence_bytes`默认64MiB、最高128MiB且不小于逐文件值。保留常规文件/链接限制。旧执行策略摘要只在执行字段相同且实际旧采证字节满足当前上下限时兼容，不假设旧实现有总量限制。
+
+原观察窗口已关闭，暂停记录和未知宿主effect保留。新真实窗口需单独记录接续、Docker验收、Judge、Goal和本地交付；不能追认原窗口无人通过。
+
+验证：实际入口回归6红转绿；owner乱序回归1红/9绿转全绿。合并聚焦121项通过，补充owner未知结果/乱序与限制50项通过（有重叠）。影响闭包首跑13,210 passed、17 skipped，因测试环境缺少controller依赖有13收集错误和1失败；使用依赖齐全的实验venv对14个受影响文件补跑182 passed。Web typecheck/unit、53哨兵、10流程、2项真实Docker执行器检查通过。重复后端验证因错误tier名被操作者停止，已用正确deterministic tier完成剩余检查，未停止运行态进程。当前代码尚待窗口外部署，真实接续结论单独记录。

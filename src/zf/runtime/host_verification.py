@@ -99,12 +99,16 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
             # The Docker client may exit while its container stays alive.
             _run_container(['docker', 'rm', '-f', name], timeout=15)
             code, text = 124, 'preauthorized container probe timed out'
+        total_bytes = 0
         for artifact in sorted(output.rglob('*')):
             if artifact.is_dir() and not artifact.is_symlink():
                 continue
-            if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_size > 20 * 1024 * 1024:
-                raise ValueError('container evidence must be regular files under 20 MiB')
+            if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_size > policy.max_artifact_bytes:
+                raise ValueError('container evidence must be regular files within the configured per-file limit')
             data = artifact.read_bytes()
+            total_bytes += len(data)
+            if len(data) > policy.max_artifact_bytes or total_bytes > policy.max_total_evidence_bytes:
+                raise ValueError('container evidence exceeds configured size limits')
             artifacts.append({'path': str(artifact.relative_to(output)),
                 'sha256': hashlib.sha256(data).hexdigest(), 'base64': base64.b64encode(data).decode()})
         evidence_ref = write_sidecar_json(service.state_dir,
@@ -130,7 +134,9 @@ def reconcile_host_verification(service) -> int:
         if is_dispatch_paused(service.state_dir, events=events):
             return 0
         operations = reduce_workflow_operations(events)
-        candidate_probe_owners: set[tuple[str, ...]] = set()
+        from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
+        eligible = []
+        candidate_probe_owners = {}
         for operation_id, operation in operations.items():
             if operation.get('status') != 'settled' or operation.get('semantic_verdict') not in {'blocked', 'failed', 'abstained'}:
                 continue
@@ -155,19 +161,31 @@ def reconcile_host_verification(service) -> int:
                          request.get('result_identity', {}).get('contract_snapshot_digest'))
                 if not all(group):
                     group = ()
-                if group and group in candidate_probe_owners:
-                    continue
+            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
+            eligible.append((operation_id, operation, contract, group, failed_probe))
+            # Choose from the complete cohort before processing any sibling.
+            # A later failure can precede the existing owner in operation order.
+            starts = [index for index, event in enumerate(events)
+                if group and event.origin == 'kernel'
+                and event.type == 'runtime.action.attempt.started'
+                and event.payload.get('action') == 'task-host-assist'
+                and event.payload.get('kind') == 'verify'
+                and event.payload.get('workflow_run_id') == operation.get('workflow_run_id')
+                and event.payload.get('operation_id') == operation_id]
+            if group and (starts or receipts):
+                rank = (0, min(starts), operation_id) if starts else (1, 0, operation_id)
+                if group not in candidate_probe_owners or rank < candidate_probe_owners[group]:
+                    candidate_probe_owners[group] = rank
+
+        for operation_id, operation, contract, group, failed_probe in eligible:
+            owner = candidate_probe_owners.get(group)
+            if owner and owner[-1] != operation_id:
+                continue
             from zf.runtime.task_host_verification_handoff import resume_task_after_probes
             if resume_task_after_probes(service, operation, contract, policy, events):
                 return 1
-            from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
-            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
-            if group and receipts:
-                # One exact Candidate cohort owns the probes while awaiting its
-                # aggregate; sibling Readers must not repeat the same effects.
-                candidate_probe_owners.add(group)
             if failed_probe:
                 # The aggregate failure may still await a sibling Reader. Keep
                 # this failure for handoff; do not spend its remaining probes.
