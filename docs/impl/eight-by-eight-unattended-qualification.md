@@ -186,3 +186,11 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 第二次接续的8路审核均在`provider_turn_active`等待。取消路径已确认transport退出并写入`provider_stop_confirmed`，但活动投影没有消费该停止路径，新的launch又被旧turn阻挡。现按可信kernel取消、相同role/dispatch/operation/request/attempt和取消事件配对`cancelling`与确认`idle`，只清除开始停止时捕获的旧turn集合。期间新turn继续活动，未确认、身份错误、缺开始或非kernel证据均不清除。实现复用现有正式回执，不补造Provider hook或业务完成事件。
 
 验证：使用与实际Orchestrator一致的kernel EventWriter重新对基线复现失败；69聚焦、3267影响闭包、53哨兵和10流程通过。真实账本只读重放由8个活动角色变为0；未知/不匹配回执和停止期间的新turn反例保持。未补写hook或修改历史状态。
+
+## 2026-11-20 19:52 UTC：修复后的真实接续证据
+
+4d1564df部署后从已接纳c6870392 pending fanout继续，8个真实Reader均被派发，没有新增trigger；当前窗口只读、无人工恢复。启动期限300秒已部署，首轮跨90秒仍以同一PID完成并进入active。旧失败不再抢占，已确认停止的旧Provider不再占用派发。此观察不证明任意启动负载都受有限期限保护。
+
+真实RM案卷rmd-2d226c8e1e519f24包含启用的19条宿主命令、授权和同Run执行事实，Agent核对后提出有owner与唤醒条件的等待，runtime已消费。新cohort的19条冻结Docker命令始终由同一lane6 owner完成。浏览器正式收据evt-db22dcbf5981记录exit0、source_stable=true；固定候选09094c2d及镜像绑定正确，桌面/移动16功能、非法输入恢复、键盘和布局断言成功。PNG/trace/WebM/environment均通过摘要核验，当前控制器未重启。旧未知浏览器effect不被覆盖或追认。
+
+此时只可判定16项Task、8×8容量及19条最终命令通过；Candidate独立总判定、Judge、Goal、本地交付仍待执行。原始Plan后完整无人资格未通过。局部修复与本轮后续接续不可改变首窗口失败结论。
