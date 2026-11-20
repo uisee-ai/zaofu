@@ -1,6 +1,6 @@
 # Reader 语义检查点与外部等待核验
 
-> 状态: active
+> 状态: done — 3b6ae7ab feat: add reader checkpoints and preserve recovery pause fences
 
 来源：ZF-SPEC-004 UE-07/09；用户授权继续剩余实现，明确本轮不做新版真实 8×8。
 沿用当前工作分支，上一批 merge-ready 交接失效，完成后重新审计。
