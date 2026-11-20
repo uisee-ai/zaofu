@@ -86,6 +86,24 @@ Classify command paths before emitting the plan:
 
 ## Split-quality Preflight
 
+增量任务仍须满足当前 `zf-plan-task-map-contract`，不能只校验 gap 封套：
+
+- v4 要求 rolling smoke 时，每个新增/替代任务必须拥有具名可执行命令，显式设置
+  `rolling_smoke: true`、`deterministic: true`、`reusable: true`，层级为 static/runtime。
+- 保留结构化 `acceptance_criteria` 的 id、mandatory、验证 owner/tier 和 command ids；
+  不把对象转成字符串，也不以自然语言摘要替代机器验收绑定。
+- 绑定当前已接纳需求的 ref/digest，完整保留 mandatory goal claims。旧需求端口可继承，
+  但新任务不能只继承没有自己分片的 execution_spec；为每个新增 task id 提供实施分片，
+  更新来源索引和验收/测试矩阵中的生产者映射，保留原 source anchors。
+- 提交前同时核对完整包目标连续性及每个必需 task-scoped port 的新任务分片。
+  Task Map JSON 合法不等于该任务能取得所有派发输入；缺分片必须先修订产物。
+- 必读输入过大时由 Planner 划定完整正文读取范围，不能让 worker 自行省略规则。
+  原生 Task Map／矩阵可附 `task_input_policy`（`task-input-policy.v1`）：
+  `shared_paths` 为共享正文 JSON paths，`tasks` 为 `{task_id, paths}` 列表。
+  所有原文必须被共享范围或至少一个任务分片覆盖；任务读共享与自己的完整正文，
+  候选验收读全量。复核跨任务依赖、验收责任和未决决定，再比较各任务实际输入体积。
+  不修改已派发的不可变包；新声明进入新 Plan 包、预检与批准。
+
 Before emitting a gap plan, read the effective workflow work-unit contract from
 the current briefing/effective config. When
 `workflow.work_units.split_quality.max_acceptance_criteria` is non-zero, every

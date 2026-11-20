@@ -32,6 +32,13 @@ def checkpoint_root(state_dir: Path, project_root: Path, config: Any,
     if assigned_worker and owner != assigned_worker:
         raise ValueError("checkpoint worker does not match canonical task assignee")
     worker = assigned_worker or owner
+    from zf.core.events import EventLog
+    from zf.runtime.task_workspace_binding import resolve_task_workspace
+
+    pipeline_root = resolve_task_workspace(state_dir=state_dir, project_root=project_root,
+        config=config, task=task, events=EventLog(state_dir / "events.jsonl").read_all())
+    if pipeline_root is not None:
+        return pipeline_root
     if not worker or not config.runtime.workdirs.enabled:
         return project_root
     role = next((r for r in config.roles if r.instance_id == worker), None)

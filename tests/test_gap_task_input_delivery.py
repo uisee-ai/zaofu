@@ -44,7 +44,8 @@ def test_controlled_retrigger_delivers_pinned_ports_or_rejects_before_ready(tmp_
 
 
 @pytest.mark.parametrize('present', [False, True])
-def test_package_admission_rejects_new_task_without_input_partition(tmp_path, present):
+@pytest.mark.parametrize('resume_scope', ['', 'gap_tasks_only'])
+def test_package_admission_rejects_new_task_without_input_partition(tmp_path, present, resume_scope):
     state = tmp_path / '.zf'
     state.mkdir()
     contract = {'schema_version': 'run-contract.v1', 'workflow': {'kind': 'prd'}}
@@ -58,6 +59,7 @@ def test_package_admission_rejects_new_task_without_input_partition(tmp_path, pr
     args = dict(state_dir=state, project_root=tmp_path, events=[], workflow_run_id='run',
         flow_kind='prd', producer_stage_id='plan', goal_id='P1',
         payload={'task_map_ref': '.zf/task-map.json', 'prd_ref': '.zf/requirement.md',
+          'resume_scope': resume_scope,
           'task_ids': ['NEW'], 'plan_ports': [_port(state, ['OLD', 'NEW'] if present else ['OLD'])]})
     if present:
         package, _, _ = prepare_plan_artifact_package(**args)

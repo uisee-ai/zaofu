@@ -46,13 +46,24 @@ async function fetchReadyJson<T>(path: string, signal?: AbortSignal): Promise<T>
   const deadline = Date.now() + 180_000;
   while (true) {
     const response = await fetch(path, { headers: { Accept: "application/json" }, signal });
-    if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-    const value = await response.json();
-    if (response.status !== 202 || value?.read_projection?.state !== "building") return value as T;
-    if (Date.now() >= deadline) throw new Error("首次数据准备仍未完成，请稍后刷新。");
+    const retryAfter = response.headers.get("Retry-After");
+    const retrySeconds = Number(retryAfter);
+    const declaredRetry = response.status === 503 && retryAfter !== null
+      && /^\d+$/.test(retryAfter.trim()) && Number.isFinite(retrySeconds);
+    if (!response.ok && !declaredRetry) throw new Error(`${path} returned ${response.status}`);
+    const value = await response.json().catch((error: unknown) => {
+      if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+      throw error;
+    });
+    const unavailable = declaredRetry && value?.status === "unavailable";
+    if (!response.ok && !unavailable) throw new Error(`${path} returned ${response.status}`);
+    if (!unavailable && (response.status !== 202 || value?.read_projection?.state !== "building")) return value as T;
+    if (Date.now() >= deadline) throw new Error(unavailable
+      ? "数据暂不可用，请稍后刷新。" : "首次数据准备仍未完成，请稍后刷新。");
+    const delay = Math.min(unavailable ? Math.max(1, retrySeconds) * 1000 : 1000, deadline - Date.now());
     await new Promise<void>((resolve, reject) => {
       const abort = () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); };
-      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, 1000);
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, delay);
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });

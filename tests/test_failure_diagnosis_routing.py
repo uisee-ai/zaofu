@@ -51,15 +51,33 @@ def test_structured_known_environment_failure_preserves_policy(config):
     assert not result.should_increment_retry
 
 
+@pytest.mark.parametrize("authorized", [True, False])
+def test_publication_has_one_recovery_owner(tmp_path, config, authorized):
+    from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
+    state, log, writer = _state(tmp_path)
+    TaskStore(state / "kanban.json").add(Task(id="T1", status="in_progress"))
+    config.runtime.task_publication.enabled = authorized
+    writer.emit("dev.blocked", task_id="T1", payload={"failure_class": "host_publication_required",
+        "operation_id": "op-1", "workflow_run_id": "run-1", "reason": "host Git publication denied"})
+    actions = pending_failure_diagnoses(state, log.read_all(), config)
+    assert bool(actions) is not authorized
+    if not authorized:
+        assert actions[0]["target_operation_id"] == "op-1"
+
+
 @pytest.mark.parametrize('background_diagnosis', [False, True, 'busy', 'unavailable', 'human'])
-def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch, background_diagnosis):
+@pytest.mark.parametrize('reader_failure', [False, True])
+def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch, background_diagnosis, reader_failure):
     from zf.runtime.run_manager import run_manager_tick
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
     from zf.runtime.recovery_case import build_recovery_case_projection
     state, log, writer = _state(tmp_path)
     TaskStore(state / "kanban.json").add(Task(id="T1", title="CSV", status="blocked"))
+    if reader_failure:
+        config.workflow.orchestration.normal_frontier_owner = "run_manager"
     failure = writer.append(ZfEvent(type="dev.failed", origin="kernel", task_id="T1", correlation_id="run-1",
-        payload={"failure_class": "unknown", "workflow_run_id": "run-1", "reason": "database probe failed"}))
+        payload={"failure_class": "reader_execution_failure" if reader_failure else "unknown",
+                 "workflow_run_id": "run-1", "reason": "required input or evidence missing"}))
     briefing = state / "briefings" / "run-manager.md"
     briefing.parent.mkdir()
     briefing.write_text("Read current request and deliver evidence")

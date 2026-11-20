@@ -14,6 +14,11 @@ def run_replay_sweep(
 ) -> None:
     event_batch = list(events or [])
     if not event_batch:
+        from zf.runtime.candidate_continuation_runtime import recover_pending_continuations
+
+        runtime._safe_housekeeping(
+            "candidate_continuation_replay", lambda: recover_pending_continuations(runtime),
+        )
         from zf.runtime.channel_prd_evaluation_reactor import reconcile_channel_prd_evaluations
 
         runtime._safe_housekeeping(
@@ -54,6 +59,10 @@ def run_replay_sweep(
             runtime, replay_readers=not event_batch or provider_turn_closed,
         ),
     )
+
+    from zf.runtime.completed_turn_continuation import reconcile_completed_turns
+
+    runtime._safe_housekeeping("completed_turn_continuation", lambda: reconcile_completed_turns(runtime))
 
 
 def _recover_reader_results_and_goal(runtime: Any, *, replay_readers: bool = True) -> None:

@@ -1,14 +1,13 @@
 /* Product reading stays separate from the optional engineering context. */
 .plan-preview-body.plan-context-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .plan-preview-context[hidden] { display: none; }
-.plan-product-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 0; flex: 1; }
+.plan-product-layout { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 0; flex: 1; }
 .plan-product-nav { padding: 16px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: auto; background: var(--panel); }
 .plan-product-eyebrow { font-size: var(--text-12); color: var(--muted-foreground); margin: 0 0 8px; }
 .plan-product-nav > button { justify-content: flex-start; min-height: 36px; }
 .plan-product-nav [aria-pressed="true"], .plan-module-links [aria-current="true"] { background: var(--muted); font-weight: 600; border-color: var(--line); }
 .plan-product-content, .plan-source-reader { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .plan-product-content .plan-review-scroll { padding: 24px max(20px, calc((100% - 900px) / 2)); }
-.plan-product-content .plan-preview-markdown-pane { padding: 24px max(20px, calc((100% - 900px) / 2)); }
 .plan-product-content input, .plan-product-content select, .plan-product-nav input { min-width: 0; max-width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--panel); font: inherit; }
 .plan-product-nav label { display: grid; gap: 6px; margin-top: 16px; font-size: var(--text-12); }
 .plan-module-links { display: flex; flex-direction: column; gap: 4px; }
@@ -21,12 +20,46 @@
 .plan-document-outline { max-height: 30vh; overflow: auto; flex-shrink: 0; }
 .plan-document-outline input { margin-left: 8px; }
 .plan-review-card > .delivery-action-button { margin: 4px; }
+.plan-task-command { max-width: 100%; overflow: auto; white-space: pre; }
+.plan-document-status { margin: 0; padding: 8px 16px; font-size: var(--text-12); color: var(--muted-foreground); border-bottom: 1px solid var(--line); }
+.plan-document-search { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 14px; flex-shrink: 0; }
+.plan-document-search label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.plan-document-search input { width: min(240px, 40vw); }
+.plan-document-search span { font-size: var(--text-12); color: var(--muted-foreground); }
+.plan-product-content .plan-preview-markdown-pane { padding: 40px max(24px, calc((100% - 760px) / 2)) 80px; background: var(--panel); }
+.plan-original-excerpt .agent-markdown { font-size: var(--text-16); line-height: 1.8; }
+.plan-original-excerpt .agent-markdown :is(h1,h2,h3,h4) { text-transform: none; letter-spacing: normal; line-height: 1.4; }
+.plan-original-excerpt { margin-block: 20px 32px; min-width: 0; }
+.plan-original-excerpt .agent-markdown table { width: max-content; min-width: 100%; max-width: none; }
+.plan-original-excerpt .agent-markdown :is(th,td) { min-width: 110px; max-width: 400px; padding: 10px 14px; overflow-wrap: break-word; }
+.plan-preview-markdown-pane [data-plan-anchor] { scroll-margin-top: 16px; min-width: 0; }
 .plan-product-content :is(button, input, select, summary, a):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.plan-preview-overlay .plan-product-nav > button { border-color: transparent; background: transparent; border-radius: 6px; color: var(--muted-foreground); }
+.plan-preview-overlay .plan-product-nav > button[aria-pressed="true"] { color: var(--text); background: var(--muted); }
+.plan-document-toolbar { position: relative; }
+.plan-document-tools { flex: none; color: var(--muted-foreground); }
+.plan-document-tools > summary { cursor: pointer; padding: 8px 4px; }
+.plan-document-tools-panel { position: absolute; z-index: 3; inset-inline: 14px; top: 100%; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow) 12%, transparent); max-height: 50vh; overflow: auto; }
+.plan-document-tools .plan-document-search { padding: 0; }
+.plan-document-tools .plan-document-outline { border: 0; background: transparent; padding: 8px 0; margin: 0; max-width: 100%; max-height: none; }
+.plan-document .plan-document-toolbar .delivery-action-button { border-color: transparent; background: transparent; }
+.plan-document .plan-preview-markdown-pane > .plan-review-card { border: 0; padding: 0; margin: 0 0 24px; background: transparent; color: var(--muted-foreground); font-size: var(--text-12); }
+.plan-preview-overlay .plan-preview-toolbar-actions input { width: 160px; }
 @media (max-width: 760px) {
   .plan-product-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .plan-product-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 8px; max-height: 126px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .plan-product-nav > button { min-height: 32px; font-size: var(--text-12); }
+  .plan-product-nav { flex-direction: row; flex-wrap: nowrap; gap: 4px; padding: 8px; max-height: 52px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .plan-product-nav > button { flex-shrink: 0; white-space: nowrap; min-height: 32px; font-size: var(--text-12); }
   .plan-product-nav > label, .plan-module-links, .plan-product-eyebrow { display: none; }
   .plan-product-content .plan-review-scroll, .plan-product-content .plan-preview-markdown-pane { padding: 14px; }
   .plan-document-outline { max-height: 24vh; }
 }
+
+.plan-preview-overlay.is-focused .plan-product-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.plan-preview-overlay.is-focused .plan-product-nav,
+.plan-preview-overlay.is-focused .plan-preview-context,
+.plan-preview-overlay.is-focused .plan-preview-toolbar > div:first-child > span,
+.plan-preview-overlay.is-focused .plan-preview-toolbar-actions > :not([data-reading-mode]):not([title="Close preview"]) { display: none; }
+.plan-preview-overlay.is-focused .plan-preview-body { grid-template-columns: minmax(0, 1fr); }
+.plan-preview-overlay.is-focused .plan-preview-toolbar { min-height: 48px; padding: 10px 24px; flex-direction: row; align-items: center; }
+.plan-preview-overlay.is-focused .plan-preview-toolbar-actions { width: auto; flex-wrap: nowrap; }
+.plan-preview-overlay.is-focused .plan-preview-markdown-pane { padding-top: 32px; }

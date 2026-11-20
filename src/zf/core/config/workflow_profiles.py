@@ -86,6 +86,7 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "artifactPackageMode", "artifact_package_mode",
     "productAcceptanceMode", "product_acceptance_mode",
     "taskPipeline", "task_pipeline",
+    "planInputPolicy", "plan_input_policy",
 })
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # light(default single lane goal loop) | fanout
@@ -99,7 +100,10 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "reviewInputMaxBytes", "review_input_max_bytes",
+    "reviewInputMaxPages", "review_input_max_pages",
     "planCriticEnabled", "plan_critic_enabled",
+    "planReview", "plan_review",
     "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
     "targetRef", "target_ref",
@@ -156,6 +160,7 @@ _PRD_PLAN_INSTRUCTIONS = [
     "Convert the completed PRD scan into a machine-readable task_map and a human-readable plan.",
     "The task_map must be JSON and must contain implementable tasks with stable ids, owned paths, acceptance criteria, and verification.",
     "Do not treat unimplemented product requirements as plan failure; they belong in the task_map.",
+    "Read artifact_package.task_input_policy in the effective flow metadata. When task-scoped-v1 is selected, every Task must declare evidence_contract.plan_input_selection; produce execution_spec and task_execution_input plus the full acceptance/test/real-E2E matrices. Follow zf-plan-task-map-contract for complete shared and task-specific obligations; do not leave this policy implicit.",
     *_TASK_MAP_CONTRACT_INSTRUCTIONS,
 ]
 
@@ -1052,6 +1057,12 @@ def _controller_metadata(
         required_ports.append("product_acceptance_spec")
     elif product_acceptance_mode == "shadow":
         conditional_ports.append("product_acceptance_spec")
+    input_policy = str(_pick(params, "planInputPolicy", "plan_input_policy", default="full"))
+    if input_policy not in {"full", "task-scoped-v1"}:
+        raise WorkflowProfileError("planInputPolicy must be full or task-scoped-v1")
+    if input_policy == "task-scoped-v1":
+        required_ports.extend(["execution_spec", "task_execution_input",
+                               "acceptance_matrix", "test_matrix", "real_e2e_matrix"])
     return {
         "flow_kind": kind,
         "quality_floor": str(_pick(
@@ -1087,6 +1098,7 @@ def _controller_metadata(
             "package_slot": "execution_plan",
             "required_ports": required_ports,
             "conditional_ports": conditional_ports,
+            "task_input_policy": input_policy,
         },
         "product_acceptance": {
             "mode": product_acceptance_mode,
@@ -1501,11 +1513,12 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         raise WorkflowProfileError(
             f"PrdFlow: unknown param(s) {unknown} (fail-closed)"
         )
-    if "planCriticEnabled" in params and "plan_critic_enabled" in params:
-        raise WorkflowProfileError("PrdFlow.planCriticEnabled aliases are ambiguous")
-    plan_critic_enabled = _pick(params, "planCriticEnabled", "plan_critic_enabled", default=True)
-    if not isinstance(plan_critic_enabled, bool):
-        raise WorkflowProfileError("PrdFlow.planCriticEnabled must be a boolean")
+    from zf.core.config.plan_review import resolve_plan_review
+    try:
+        plan_review = resolve_plan_review(params)
+    except ValueError as exc:
+        raise WorkflowProfileError(str(exc)) from exc
+    plan_critic_enabled = plan_review["mode"] != "none"
     lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
     backend = str(_pick(params, "backend", default="codex"))
     verify_backend = str(_pick(
@@ -1515,6 +1528,12 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         default="",
     ))
     topology = str(_pick(params, "topology", default="fanout")).strip() or "fanout"
+    for external, canonical in (("reviewInputMaxBytes", "review_input_max_bytes"),
+                                ("reviewInputMaxPages", "review_input_max_pages")):
+        if external in params and canonical in params:
+            raise WorkflowProfileError(f"PrdFlow.{external} aliases are ambiguous")
+        if (external in params or canonical in params) and (topology != "fanout" or not plan_critic_enabled):
+            raise WorkflowProfileError(f"PrdFlow.{external} requires fanout with Plan Critic enabled")
     if topology not in {"fanout", "light"}:
         raise WorkflowProfileError(
             f"PrdFlow: unknown topology {topology!r} (fanout|light)"
@@ -1537,6 +1556,8 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             "prd-flow-v4-task-pipeline requires topology: fanout"
         )
     if topology == "light":
+        if "planReview" in params or "plan_review" in params:
+            raise WorkflowProfileError("planReview requires fanout topology with a Plan stage")
         return _expand_prd_flow_light(
             params,
             backend=backend,
@@ -1662,6 +1683,11 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
                 "child_success_event": "prd.plan.child.completed",
                 "child_failure_event": "prd.plan.child.failed",
                 **({"synth_role": plan_critic_role} if plan_critic_enabled else {}),
+                **{canonical: _pick(params, external, canonical)
+                   for external, canonical in (
+                       ("reviewInputMaxBytes", "review_input_max_bytes"),
+                       ("reviewInputMaxPages", "review_input_max_pages"))
+                   if external in params or canonical in params},
             },
         },
     ]
@@ -1706,6 +1732,8 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
     )
     if discovery_stage:
         stages.append(discovery_stage)
+    if "planReview" in params or "plan_review" in params or not plan_critic_enabled:
+        metadata["plan_review"] = plan_review
     metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
     metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))
     metadata["stack"] = str(_pick(params, "stack", default=""))

@@ -318,8 +318,7 @@ zf project init --kind refactor ...
 launcher 会复用或创建 action token，输出 `write_url`。用该链接打开页面即可自动
 获得操作权限，无需手动粘贴 Token；`--host 0.0.0.0` 时将链接中的主机换成服务器 IP。
 launcher 统一加载 Workspace/provider 环境和可信本地 Codex headless sandbox 策略。
-显式传入 `--read-only` 可禁用写操作。直接 `zf web` 在 loopback 且未配置权限策略时
-也默认可写；网络监听使用授权链接，已有 Token/Passcode 配置继续生效。
+显式传入 `--read-only` 可禁用写操作。standalone 直接运行 `zf web` 时，各监听地址默认使用授权链接，显式配置的 Token、Passcode 或可信本地会话继续生效。云端实例经 Gateway 登录后即可使用工作台和受控操作。
 
 首次安装引导固定为：
 

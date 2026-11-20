@@ -164,6 +164,25 @@ class RecoveryActionsMixin:
     def _child_rebuild_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if any(payload.get(k) for k in ("fanout_id", "fanout_child_id", "target_operation_id")):
+            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
+            error = reader_rebuild_error(self.state_dir, self.writer.event_log.read_all(), payload)
+            if error:
+                return self._recovery_failed(requested, action, requested_action, error, 409)
+            action_id = f"child-rebuild-{requested.id}"
+            emitted = self.writer.append(ZfEvent(
+                type="repair.action.requested", actor=self.actor, origin="kernel",
+                correlation_id=payload["workflow_run_id"], causation_id=requested.id,
+                payload={**{k: payload[k] for k in (
+                    "fanout_id", "fanout_child_id", "workflow_run_id",
+                    "target_operation_id", "active_attempt_id", "source_event_id")},
+                    "action_id": action_id, "kind": "rerun_fanout_child",
+                    "recovery_action": action,
+                    "idempotency_key": f"reader-rebuild:{payload['target_operation_id']}:{payload['source_event_id']}",
+                    "reason": str(payload.get("reason") or "retry the exact failed Reader")},
+            ))
+            return self._recovery_ok(requested, emitted, action, requested_action,
+                {"fanout_id": payload["fanout_id"], "repair_action_id": action_id})
         task_id = str(payload.get("task_id") or "").strip()
         if not task_id:
             return self._recovery_failed(
@@ -330,7 +349,9 @@ class RecoveryActionsMixin:
                 try:
                     trigger = repaired_reader_stage_trigger(
                         self.state_dir, self.config, self.writer.event_log.read_all(), payload, requested)
-                except ValueError as exc:
+                    from zf.runtime.reader_failure_repair import retire_misrouted_readers
+                    retire_misrouted_readers(self, self.writer.event_log.read_all(), payload, requested)
+                except (ValueError, OSError) as exc:
                     return self._recovery_failed(requested, action, requested_action, str(exc), 409)
                 emitted = self.writer.append(trigger)
                 return self._recovery_ok(requested, emitted, action, requested_action, {
@@ -479,6 +500,7 @@ class RecoveryActionsMixin:
             self.config,
             events,
             source,
+            state_dir=self.state_dir,
             authorized_generation=generation,
             generation_source_event_id=escalation.id,
             authorization_event_id=requested.id,
@@ -630,7 +652,7 @@ class RecoveryActionsMixin:
         if (
             aggregate_event is None
             or (
-                aggregate_event.type != "flow.discovery.completed"
+                aggregate_event.type not in {"flow.discovery.completed", "flow.discovery.failed"}
                 and schema_failure_event is None
             )
         ):
@@ -638,7 +660,7 @@ class RecoveryActionsMixin:
                 requested,
                 action,
                 requested_action,
-                "aggregate rebuild only accepts flow.discovery.completed, "
+                "aggregate rebuild only accepts flow.discovery.completed/failed, "
                 "its goal.closure.identity.invalid event, or a discriminator "
                 "that blocked goal.closure.synthesized",
                 409,
@@ -762,7 +784,12 @@ class RecoveryActionsMixin:
             if schema_failure_event is not None
             else aggregate_event.type
         )
-        if aggregate_config and expected_success_event != observed_success_event:
+        expected_source_event = (
+            str(aggregate_config.get("failure_event") or "")
+            if aggregate_event.type == "flow.discovery.failed"
+            else expected_success_event
+        )
+        if aggregate_config and expected_source_event != observed_success_event:
             return self._recovery_failed(
                 requested,
                 action,

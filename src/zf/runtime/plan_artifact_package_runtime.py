@@ -127,6 +127,18 @@ def admit_synthesized_plan_package(
             "reviewed_plan_candidate_digest": reviewed_digest,
         })
         return "failed", "reject", failure
+    # Keep the reviewed producer's explicit completeness claim across aggregation.
+    # Missing claims remain missing; neither Markdown nor an older input promotes them.
+    profile = event_payload.get("plan_content_profile")
+    plan_ref = str(artifact_payload.get("plan_artifact_ref") or "")
+    if profile in (None, "", "derived_plan") and contract_digest and plan_ref:
+        from zf.runtime.plan_content_profile import reviewed_author_profile
+
+        profile = reviewed_author_profile(
+            runtime.state_dir, event_payload, plan_ref=plan_ref,
+        ) or profile
+    if profile:
+        artifact_payload = {**artifact_payload, "plan_content_profile": profile}
     trigger_payload = (
         manifest.get("trigger_payload")
         if isinstance(manifest.get("trigger_payload"), dict)
@@ -144,8 +156,17 @@ def admit_synthesized_plan_package(
     ).strip()
     try:
         from zf.runtime.plan_local_review_output import validate_local_review_output
+        from zf.runtime.plan_output_lineage import reviewed_plan_generation
 
-        validate_local_review_output(runtime, event=event, payload=payload)
+        scoped = validate_local_review_output(runtime, event=event, payload=payload)
+        if contract_digest or scoped:
+            # Supplemental ports can change while the Task Map ref stays the
+            # same. Keep old generations immutable; this reviewed candidate
+            # gets its own deterministic identity, including on replay.
+            generation = reviewed_plan_generation(event)
+            for key in _TASK_MAP_GENERATION_IDENTITY_KEYS:
+                payload.pop(key, None)
+            payload.update(task_map_generation=generation, plan_revision=generation)
         metadata = flow_metadata_for(runtime.config, payload=payload)
         identity = _admit(
             runtime,

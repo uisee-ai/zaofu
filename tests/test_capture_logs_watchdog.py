@@ -118,6 +118,25 @@ def config():
 
 
 class TestWatchdogThreshold:
+    @pytest.mark.parametrize("active_child", [False, True])
+    def test_parent_progress_does_not_idle_a_new_fanout_reader(self, state_dir, config, active_child):
+        transport = _AliveControllableTransport()
+        orch = Orchestrator(state_dir, config, transport)
+        task_id = "TASK-LIVENESS-REVIEW"
+        orch.event_writer.append(ZfEvent(type="task.dispatched", task_id=task_id,
+            payload={"role_instance": "review", "dispatch_id": "disp-review"}))
+        orch.event_writer.append(ZfEvent(type="discriminator.failed", task_id=task_id,
+            payload={"dispatch_id": "disp-review"}))
+        if active_child:
+            orch.event_writer.append(ZfEvent(type="fanout.child.dispatched", task_id=task_id,
+                payload={"fanout_id": "new-review", "child_id": "review", "run_id": "new-reader-dispatch",
+                         "role_instance": "review", "task_id": task_id}))
+        orch._set_worker_state("review", "busy", reason="current work", task_id=task_id)
+        orch._capture_logs()
+        changes = [e for e in orch.event_log.read_all() if e.type == "worker.state.changed"
+                   and e.payload.get("instance_id") == "review"]
+        assert changes[-1].payload["to"] == ("busy" if active_child else "idle")
+
     def test_single_is_alive_false_does_not_respawn(self, state_dir, config):
         transport = _AliveControllableTransport()
         transport.spawn(RoleConfig(name="dev"), argv=[])  # seed the alive state
@@ -367,6 +386,7 @@ class TestWatchdogEvents:
 
         orch._on_worker_state_changed_event(ZfEvent(
             type="worker.state.changed",
+            origin="kernel",
             actor="dev",
             payload={
                 "instance_id": "dev",

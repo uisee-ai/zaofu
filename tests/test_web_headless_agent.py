@@ -878,8 +878,12 @@ def test_codex_headless_in_flight_tool_uses_longer_idle_budget(
     assert result.reply == "done"
 
 
+@pytest.mark.parametrize(("details", "expect_hint"), [
+    ("quota exhausted", False),
+    ("The 'requested-model' model is not supported when using Codex with a ChatGPT account.", True),
+])
 def test_codex_headless_failed_turn_is_not_reported_completed(
-    tmp_path: Path,
+    tmp_path: Path, details: str, expect_hint: bool,
 ):
     script = tmp_path / "fake_codex_failed_turn.py"
     script.write_text(
@@ -899,7 +903,7 @@ def test_codex_headless_failed_turn_is_not_reported_completed(
             "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-1'}}), flush=True)",
             "    elif req_id and method == 'turn/start':",
             "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'turn':{'id':'turn-1','status':'inProgress'}}}), flush=True)",
-            "        print(json.dumps({'jsonrpc':'2.0','method':'turn/completed','params':{'threadId':'codex-thread-1','turn':{'id':'turn-1','status':'failed','error':{'message':'model failed','additionalDetails':'quota exhausted'}}}}), flush=True)",
+            "        print(json.dumps({'jsonrpc':'2.0','method':'turn/completed','params':{'threadId':'codex-thread-1','turn':{'id':'turn-1','status':'failed','error':{'message':'model failed','additionalDetails':" + repr(details) + "}}}}), flush=True)",
         ]),
         encoding="utf-8",
     )
@@ -918,7 +922,8 @@ def test_codex_headless_failed_turn_is_not_reported_completed(
 
     assert result.ok is False
     assert result.status == "failed"
-    assert "codex turn failed: model failed: quota exhausted" in result.error
+    assert f"codex turn failed: model failed: {details}" in result.error
+    assert ("Codex CLI version" in result.error) is expect_hint
 
 
 def test_headless_backends_accept_thinking_level(
@@ -1552,11 +1557,16 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     assert turn_completed.payload["retryable"] is False
 
 
+@pytest.mark.parametrize('admission_denied', [False, True])
 def test_chat_orchestrator_failed_turn_carries_timing(
     state_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
+    admission_denied: bool,
 ) -> None:
     def fail_turn(_self, **_kwargs):  # noqa: ANN001
+        if admission_denied:
+            from zf.runtime.provider_usage import ProviderCallNotStarted
+            raise ProviderCallNotStarted('managed quota denied before provider')
         raise RuntimeError("provider failed before output")
 
     monkeypatch.setattr(KanbanHeadlessAgent, "run_turn", fail_turn)
@@ -1574,6 +1584,9 @@ def test_chat_orchestrator_failed_turn_carries_timing(
     )
 
     assert response.status_code == 503
+    terminal = [e for e in EventLog(state_dir / 'events.jsonl').read_all()
+                if e.type == 'agent.session.run.failed'][-1]
+    assert (terminal.payload.get('provider_started') is False) is admission_denied
     failed = [
         event
         for event in EventLog(state_dir / "events.jsonl").read_all()

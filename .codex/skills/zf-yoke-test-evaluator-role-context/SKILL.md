@@ -18,20 +18,51 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 ## Context consumption
 
+- On a recovery attempt, consume the pinned recovery context before probing the
+  runner or declaring it unavailable. Inspect any bound host receipts against
+  this target, command, source stability, exit code and evidence; a denied local
+  Docker socket alone does not invalidate authorized host execution. Receipts
+  are execution facts, not a product verdict. All required product reads and
+  independent acceptance judgments still apply; missing commands stay unverified.
+- Before declaring the recovered runner unavailable, reconcile each frozen
+  command with the pinned receipts: target, command identity, source stability,
+  exit code and complete output. Name the specific still-uncovered command or
+  explain why its bound receipt is unusable. When execution facts cover the
+  declared commands, continue the remaining required reads and acceptance review;
+  a denied local `docker version` does not undo those facts or justify stopping
+  before review. Do not rerun that unavailable runner merely to rediscover the
+  same permission error. Input truncation belongs to bounded rereading and, if
+  genuinely unrecoverable, `reader_execution_failure`; it is not missing test
+  execution. Existing receipts never authorize an automatic product pass.
 - Start with the current stage card and its controlled required-read batch. Consume
   every `next_cursor` page; identical authorized aliases share content, not authority.
 - Read this role method once per unchanged skill digest. Load dependency references
   only for the current stage's verification method; do not concatenate all skills,
   briefing, task docs and global plans into a truncated tool response.
-- When a required batch spans many pages, use a bounded tool call to consume a
-  few sequential CLI cursor pages together when its output budget can carry all
-  bodies (for example, three 8 KiB pages with an explicit 24 KiB output budget).
+- Start a required batch with one page; increase `--pages` only after observing
+  complete delivery within the tool's actual capacity, including JSON metadata.
+  Requesting a larger output token budget does not guarantee a larger response;
+  `--page-bytes` counts UTF-8 bytes, not tokens. A fixed four-page batch is not
+  a safe default. Consume every page body and continue with the last `next_cursor`.
+  On `Warning: truncated output` or another truncation marker, reduce page count
+  or size and reread the affected page from its original cursor. Do not keep
+  retrying a known oversized batch while the tool capacity is unchanged.
   Preserve every page in the returned tool output; do not replace bodies with
-  digests, discard output, or pipe it to a summary. Stop at the bounded page
-  count and keep the exact next cursor. Each CLI read retains its own receipt.
+  digests, discard output, or pipe it to a summary. End each bounded batch at its
+  page count, then continue the next batch with the exact next cursor; this is
+  not the end of the verification attempt. `complete:false` with a cursor is
+  remaining work, not an execution failure. If an invalid page-size option is
+  corrected and reads succeed, continue with the accepted size/default; the
+  recovered error does not justify a terminal failed/abstained result.
+  Each page retains its own authorization,
+  validation, and receipt.
   Avoid one model round trip for each tiny page and avoid restarting page one
   after inspecting the manifest. Provider output truncation still requires
   consuming the missing body, never assuming it was delivered.
+- Apply the same bounded reads to briefing, role instructions, task docs and
+  method files; read affected excerpts instead of concatenating whole files.
+  Check read gaps with `zf attempt missing-reads <current-attempt>`;
+  `artifact recover` context reconstruction advice is not a read-gap verdict.
 - Do not reread `task.md`, `source.md`, `progress.md` merely to reconstruct fields
   already present in the pinned contract. For missing context, retrieve the exact
   authorized source/slice. Mandatory acceptance and independent verification remain required.
@@ -43,6 +74,25 @@ amendment are separate role capabilities supplied by the workflow profile.
   时也适用。不等最终交付才大范围回查历史；未检查的条款不提前填通过，也不提前提交。
   续跑只使用既有授权记录位置，不新增 scratch 字段、产品文件或写权限。记录帮助恢复，
   不替代当前必读正文、独立检查或正式准入；无新进展不重复抄录。
+- For `verification-result.v1`, an environment/provider execution failure uses
+  exactly `execution_status: failed` and `verdict: abstained`, with truthful
+  failure_class and evidence. `blocked` and `inconclusive` are not execution_status
+  values. Do not copy prose status words into typed fields.
+- Runner unavailable before product evaluation: prefer the briefing's compact
+  `result validate --stdin --submit` failure command, with the actual error
+  and durable failed-probe evidence. Structurally remove unperformed product
+  reports and assertions; omission is not JSON null, duplicate keys, or moving
+  a report into findings. Preserve the scratch path and Kernel identity binding.
+  A Docker socket path and template placeholders are not execution evidence.
+  The stdin path accepts the complete semantic body without editing a large
+  prefilled success scratch; it retains the same operation/role/capability gates.
+  Do not submit the success scratch after the failure was admitted.
+- Correct a preflight diagnostic using the pinned profile/schema, then validate
+  again. After two corrections of the same error without progress, stop guessing:
+  report the operation ID, exact diagnostic and attempted corrections through the
+  briefing's sanctioned blocker channel. Do not emit passed, fabricate evidence,
+  or loop on validation commands. Read-only preflight itself does not consume a
+  lease or emit failure events; the blocker report lets recovery observe the gap.
 
 ## Dependency Triggers
 
@@ -51,6 +101,9 @@ amendment are separate role capabilities supplied by the workflow profile.
 - Always use `yoke/verify-review` for independent review order and evidence
   quality.
 - Load `zf-harness-verification-checklist` before issuing a product verdict.
+  For project acceptance or new test coverage, load its project-verification
+  reference before selecting probes, then the project method named by the
+  briefing. Keep project-specific skills out of generic workflow defaults.
 - Load `zf-mechanical-claim-verifier` only when narrative or aggregate claims
   must be mapped to acceptance criteria and evidence.
 - Return a typed, evidence-backed pass/reject/blocked result for the immutable
@@ -82,6 +135,12 @@ amendment are separate role capabilities supplied by the workflow profile.
    无需切换时继续原cursor，不为切换重读已保留正文或完整别名。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
+   大体积正文使用 `zf artifact read --attempt <本次attempt> --required` 的有界分页，
+   完整读取每页 `items[].content`，按 `next_cursor` 继续直到为空；相同正文的 aliases
+   已分别鉴权和记账，无须按别名重复阅读。按上述有界批读方法减少往返；工具输出
+   预算较小时降低 `--pages` 或使用 `--page-bytes 2048`，截断时补读缺失正文，
+   不把全部页合并成超大输出。读取收据不证明模型理解；
+   未读完继续读取，不据此提交产品失败或要求删除必读来源。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce
@@ -154,6 +213,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    evidence_contract.required；路径必须已在原合同写入范围内。不要只列源码/测试，
    使后继无法刷新本来就必须交付的证据；也不能借证据义务扩大权限。若原合同本身
    不允许必需输出，列明真正冲突交 OA 受控修订，不改合同或补造历史通过记录。
+   候选冻结后外部协议或 Owner 决定使当前 Plan 无法授权所需实现时，独立核实冲突，
+   保留旧/新依据和 commit。将受阻的验收行及对应 rework item 标为 blocked，
+   allowed_scope 填 plan_ports:<实际工件名>，并按 verification checklist 提交 blocked
+   verdict。已运行通过的行保留证据，确有实现缺陷的行保留失败；关联产品旅程同样如实记录。
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
    Treat content-addressed `completion-payloads/<kind>/<digest>.json` files as
@@ -177,6 +240,26 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 When Candidate Verify receives a current `product_acceptance_spec`:
 
+- If an execution failure prevented product evaluation, submit exactly
+  `execution_status: failed` + `verdict: abstained`, retain the actual failure
+  and available tool evidence, and omit `product_acceptance_report`,
+  `product_acceptance_report_ref`, and `product_acceptance_report_digest`.
+  Remove any unperformed report template already in scratch; an empty object,
+  null, or blocked rows with invented assertion evidence are not substitutes.
+  This reports an external wait, not product acceptance. If a product report is
+  supplied, all its identity and evidence checks still apply. After recovery,
+  independently complete the full mandatory product evaluation below.
+- 环境探针（例如 Docker socket）失败时，不要等读完全部产品材料才上报环境等待。
+  使用 `failure_class: verifier_execution_failure`，填写具体 `summary` 和实际失败的
+  `evidence_refs`。可以引用本次实际工具调用 ID 或返回的输出/chunk ID，附原命令、
+  退出码和错误；工具已提供持久 ref 时使用该 ref。不需要为同一工具失败再创建
+  证据副本或查找账本 event ID。不得编造标识、将其他 attempt 的输出冒充本次
+  事实；工具未提供标识时如实说明限制。未执行的 `requirement_results`、`probe_receipts`、
+  `reused_command_receipt_ids` 留空，移除未执行的产品验收报告模板。保留 briefing
+  绑定的身份，在授权 scratch 原位填写，执行提供的 validate/submit 命令并确认
+  提交成功；只在聊天中说明失败、修改两个状态字段后结束，都不构成结果提交。
+  此路径只承认执行失败，不承认产品通过或拒绝；不扩大 sandbox 权限。恢复后
+  使用当前 operation 的身份继续必读材料和独立验收，不能将旧失败当作通过证据。
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免
@@ -195,7 +278,8 @@ When Candidate Verify receives a current `product_acceptance_spec`:
 - 产品证据每项使用当前工具结果提供的 `{ref, sha256}` 描述符；事件字符串不能替代
   该结构，不伪造摘要。任务切片范围不豁免已绑定产品规格所需的跨切片只读检查。
 - Deterministic product failure is semantic rework. Provider/environment
-  execution failure is `blocked`/external wait and must not be reported as a
+  execution failure is an external wait (`verification-result.v1`: `failed` +
+  `abstained`) and must not be reported as a
   failed product journey or consume semantic rework.
 
 ## Role Boundary
@@ -220,7 +304,8 @@ to perform a meaningful independent evaluation.
 
 以当前 attempt 输入索引定位本任务的 contract、原始约束、目标版本、验证命令和
 依赖接口，完整消费 required reads；索引/命中摘要不算正文已读。Impl 自检用于
-确定复核线索，不能替代 Verify 自己运行检查并绑定当前 target 的证据。共享
+确定复核线索；仅按上述第3条复用合同允许的同版确定性收据，其他必需独立探测
+仍由 Verify 执行并绑定当前 target，不能被自检替代。共享
 规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
 缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
 压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
@@ -235,3 +320,15 @@ to perform a meaningful independent evaluation.
 范围总数不会因读取变为已知或零。不要等这些字段变化或检查点自动出现。先核验当前
 身份/租约/版本及真实暂停要求，再补足缺失必读和遗忘正文，按当前角色推进检查；
 来源不可读或需要重绑定仍走受控恢复。历史收据不能证明当前理解。
+
+## 受控宿主测试回执
+
+先核对冻结合同与 reusable_command_receipts：允许复用的同版确定性命令沿现有
+reused_command_receipt_ids 明确引用，不伪称本次独立执行，也不因其沙箱重跑失败
+否定有效宿主事实。其余必需命令无法执行时报告技术阻塞，不修改权限或删除验收。
+操作员可针对该已结束的 Verify operation 审阅并执行原合同命令，保留独立的一次宿主
+采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
+Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。
+如需新探测仍提出具体需求；不能用 Impl 的宿主回执冒充 Verify 自己的独立执行证据。
+结果注明 execution_origin=operator_authorized_host及原执行身份；新结果使用当前派发
+身份。宿主动作不发 test.passed/task.done，也不代替 Verify/Judge 的语义判断。

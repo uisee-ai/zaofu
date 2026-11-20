@@ -6,6 +6,7 @@ from zf.core.config.schema import ProjectConfig, ZfConfig
 from zf.core.events import EventLog, EventWriter
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.task_contract_authority import TaskContractAuthorityService
 
 
 def _runtime(
@@ -54,6 +55,7 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
         "title": "Implement the canonical PRD",
         "contract": {
             "behavior": "Implement the approved requirement.",
+            "constraints": ["实施必须等待 Owner 审批", "Python 3.11 标准库"],
             "verification": "Run the acceptance contract.",
             "spec_ref": "channel-artifacts/ch-prd/prd.md",
             "source_ref": "channel:ch-prd/main",
@@ -74,6 +76,7 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
     store = TaskStore(state_dir / "kanban.json")
     task = store.get("TASK-LINEAGE")
     assert task is not None
+    assert task.contract.constraints == ["实施必须等待 Owner 审批", "Python 3.11 标准库"]
     assert task.contract.spec_ref == "channel-artifacts/ch-prd/prd.md"
     assert task.contract.source_ref == "channel:ch-prd/main"
     assert task.contract.handoff_artifacts == [
@@ -97,6 +100,10 @@ def test_create_and_partial_update_preserve_task_contract_lineage(
     assert refreshed is not None
     assert refreshed.contract.behavior.startswith("Implement and document")
     assert refreshed.contract.spec_ref == task.contract.spec_ref
+    assert refreshed.contract.constraints == task.contract.constraints
+    from zf.runtime.workflow_request_acceptance import bind_task_workflow_inputs
+    parameters, _, _, _ = bind_task_workflow_inputs({}, refreshed, task_contract_digest="test")
+    assert parameters["constraints"] == task.contract.constraints
     assert refreshed.contract.source_ref == task.contract.source_ref
     assert refreshed.contract.handoff_artifacts == task.contract.handoff_artifacts
     assert refreshed.contract.evidence_contract == task.contract.evidence_contract
@@ -127,6 +134,46 @@ def test_task_contract_payload_normalizes_invalid_container_types(
     assert task.contract.fanout_force is False
     assert task.contract.wave == 2
 
+
+def test_update_task_uses_contract_authority_after_workflow_binding(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service = _runtime(tmp_path)
+    created = _execute(service, writer, "create-task", {
+        "task_id": "TASK-AUTHORITY",
+        "title": "Update an authority-stamped contract",
+        "contract": {
+            "behavior": "Initial behavior.",
+            "verification": "Run the contract check.",
+        },
+    })
+    assert created["ok"] is True
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get("TASK-AUTHORITY")
+    assert task is not None
+    stamped = TaskContractAuthorityService(
+        task_store=store,
+        event_writer=writer,
+        state_dir=state_dir,
+    ).replace(
+        task,
+        contract=task.contract,
+        source="workflow-binding-test",
+        actor="web",
+    ).task
+    assert stamped.contract_authority_revision
+
+    updated = _execute(service, writer, "update-task", {
+        "task_id": task.id,
+        "contract": {"behavior": "Updated behavior."},
+    })
+
+    assert updated["ok"] is True
+    refreshed = store.get(task.id)
+    assert refreshed is not None
+    assert refreshed.contract.behavior == "Updated behavior."
+    assert refreshed.contract.verification == "Run the contract check."
+    assert refreshed.contract_authority_revision
 
 def test_create_task_causation_binds_original_requirement_for_critical_context(tmp_path):
     from zf.runtime.critical_context import critical_context_sources

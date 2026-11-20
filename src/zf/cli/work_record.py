@@ -21,31 +21,36 @@ def register(sub):
             mode,
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description=(
-                "发布可选的非终态工作记录，不完成 Task 或替代正式验收。"
+                "Publish an optional nonterminal checkpoint without completing a task or replacing acceptance."
                 if mode == 'publish' else None
             ),
             epilog=(
-                '正文和附件须为 pinned workdir 内已有授权的普通文件；不增加写权限。\n'
-                '--file 指下面的四字段正文，不能直接传原生 CommandExecution 或日志。\n'
-                'evidence_files 必须相对工作区（不是正文目录），禁止绝对路径及 ..。\n'
-                '正文示例（tests.log 须为已存在、获准保存的附件）：\n'
+                'Files and attachments must already be authorized regular files in the pinned workdir.\n'
+                '--file accepts the JSON below, not a native CommandExecution object or raw log.\n'
+                'Use --stdin to publish JSON without writing a checkpoint file.\n'
+                'The four fields below are required; report_draft is optional (at most 8192 UTF-8 bytes).\n'
+                'evidence_files are relative to the workdir, not the JSON file; no absolute paths or .. .\n'
+                'Example (tests.log must exist and be authorized; readers may use an empty evidence_files list):\n'
                 '{\n'
-                '  "completed_actions": ["已运行并记录本轮检查，逐项验收尚未完成"],\n'
-                '  "pending": ["核对剩余验收项"],\n'
-                '  "next_step": "将核验后的证据引用填入当前授权结果",\n'
+                '  "completed_actions": ["Ran and recorded checks; acceptance remains pending"],\n'
+                '  "pending": ["Check remaining acceptance criteria"],\n'
+                '  "next_step": "Bind verified evidence refs to the authorized result",\n'
                 '  "evidence_files": ["tests.log"]\n'
                 '}\n'
-                '方法：zf-harness-evidence-collection/references/work-record.md。\n'
-                '已有合格证据 refs 可按原结果合同引用，不必额外发布 WRC。'
+                'Method: zf-harness-evidence-collection/references/work-record.md.\n'
+                'Existing qualified evidence refs may satisfy the result contract without an extra WRC.'
                 if mode == 'publish' else None
             ),
         )
         child.add_argument('--operation', required=True)
         child.add_argument('--state-dir', default=None)
         if mode == 'publish':
-            child.add_argument('--file', required=True)
+            source = child.add_mutually_exclusive_group(required=True)
+            source.add_argument('--file')
+            source.add_argument('--stdin', action='store_true', help='Read bounded checkpoint JSON without a workspace write')
             child.add_argument('--request-id', required=True)
         else:
+            child.add_argument('--predecessor', action='store_true', help='Read the predecessor record pinned in this operation handoff')
             child.add_argument('--evidence', type=int, help='Read an immutable evidence envelope by zero-based index')
             child.add_argument('--page-start', type=int, default=0)
             child.add_argument('--digest', help='Pin continuation pages to the first returned record digest')
@@ -58,16 +63,27 @@ def run(args):
         log = event_log_from_project(ctx.state_dir, config=ctx.config)
         role, credential = credential_from_environment()
         if args.work_record_command == 'publish':
+            body = None
+            if args.stdin:
+                raw = sys.stdin.read(16385)
+                if len(raw.encode('utf-8')) > 16384:
+                    raise ValueError('work record payload exceeds byte budget')
+                body = json.loads(raw)
             result = publish_work_record(state_dir=ctx.state_dir, event_log=log, operation_id=args.operation,
-                role=role, credential=credential, record_file=Path(args.file), request_id=args.request_id)
+                role=role, credential=credential, record_file=Path(args.file) if args.file else None,
+                record_body=body, request_id=args.request_id)
         else:
             service = SemanticResultSubmitService(state_dir=ctx.state_dir, event_log=log, event_writer=EventWriter(log))
-            _, manifest, _ = authorize_work_record(service, args.operation, role, credential)
-            record = current_work_record(ctx.state_dir, log.read_all(), manifest, role)
-            if record['status'] != 'bound':
-                raise ValueError('current work record unavailable')
-            descriptor = record['work_record_ref']
-            body = hydrate_sidecar_ref(ctx.state_dir, descriptor).payload
+            binding, manifest, _ = authorize_work_record(service, args.operation, role, credential)
+            if args.predecessor:
+                from zf.runtime.task_handoff import predecessor_work_record
+                descriptor, body = predecessor_work_record(ctx.state_dir, manifest, binding)
+            else:
+                record = current_work_record(ctx.state_dir, log.read_all(), manifest, role)
+                if record['status'] != 'bound':
+                    raise ValueError('current work record unavailable')
+                descriptor = record['work_record_ref']
+                body = hydrate_sidecar_ref(ctx.state_dir, descriptor).payload
             if args.evidence is not None:
                 if not 0 <= args.evidence < len(body['evidence_refs']):
                     raise ValueError('invalid evidence index')

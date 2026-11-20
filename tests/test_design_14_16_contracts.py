@@ -10,6 +10,7 @@ and quotes the claim being checked.
 
 from __future__ import annotations
 
+import ast
 import inspect
 from dataclasses import fields
 from pathlib import Path
@@ -38,10 +39,12 @@ class TestLayer1NoLLM:
     def test_zf_core_has_no_llm_imports(self):
         """zf.core.* is the deterministic kernel — NO LLM SDK imports at all."""
         for py in Path("src/zf/core").rglob("*.py"):
-            text = py.read_text()
-            assert "claude_code_sdk" not in text, f"{py} imports claude_code_sdk"
-            assert "anthropic" not in text.lower() or "Anthropic" in text, \
-                f"{py} references anthropic SDK"
+            tree = ast.parse(py.read_text())
+            imports = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                       for alias in node.names]
+            imports.extend(node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom))
+            assert not {name.split(".")[0] for name in imports} & {"claude_code_sdk", "anthropic"}, \
+                f"{py} imports an LLM SDK"
 
     def test_orchestrator_housekeeping_handles_three_event_types(self):
         """Design 14: Layer 1 housekeeping handles agent.usage / memory.note /

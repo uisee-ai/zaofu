@@ -1,10 +1,10 @@
 """Bound execution-only OA decisions to existing configuration and Task contracts."""
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.core.task.schema import task_contract_identity_payload
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator_agent_policy import _effective_policy
 from zf.runtime.run_contract import stable_json_sha256
@@ -42,7 +42,7 @@ def bounded_actions(config: Any, flow_kind: str) -> list[str] | None:
 def task_execution_binding(task: Any) -> dict[str, Any]:
     """Heartbeat, cost and timestamps are deliberately outside the authority hash."""
     return {
-        "contract_digest": stable_json_sha256(asdict(task.contract)),
+        "contract_digest": stable_json_sha256(task_contract_identity_payload(task.contract)),
         "blocked_by": sorted(task.blocked_by),
         "status": task.status,
         "active_dispatch_id": task.active_dispatch_id or "",
@@ -135,6 +135,22 @@ def build_execution_context(
     }
 
 
+def checkpoint_operation_rejection(state_dir, events, request: Mapping[str, Any]) -> str:
+    """Use the same immutable operation snapshot before dispatch and admission."""
+    if request.get("checkpoint") != "semantic_failure":
+        return ""
+    body = hydrate_sidecar_ref(state_dir, request["checkpoint_input_ref"]).payload
+    descriptor = body.get("execution_context_ref")
+    if descriptor is None:
+        return ""
+    context = hydrate_sidecar_ref(state_dir, descriptor).payload
+    expected = context.get("operation_bindings")
+    if not isinstance(expected, Mapping) or not expected:
+        return ""
+    current = operation_bindings(events, context["workflow_run_id"], set(expected))
+    return "execution_operation_changed" if current != expected else ""
+
+
 def execution_decision_rejection(
     runtime: Any, *, decision: Mapping[str, Any], request: Mapping[str, Any],
 ) -> str:
@@ -142,6 +158,9 @@ def execution_decision_rejection(
     checkpoint = str(request.get("checkpoint") or "")
     if checkpoint not in EXECUTION_CHECKPOINTS:
         return ""
+    stale = checkpoint_operation_rejection(runtime.state_dir, runtime.event_log.read_all(), request)
+    if stale:
+        return stale
     input_body = hydrate_sidecar_ref(runtime.state_dir, request["checkpoint_input_ref"]).payload
     descriptor = input_body.get("execution_context_ref")
     flow = str(input_body.get("flow_kind") or "")

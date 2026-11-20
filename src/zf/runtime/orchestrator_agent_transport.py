@@ -33,7 +33,23 @@ def dispatch_orchestrator_agent_operation(
     orch_role: Any,
     trigger: ZfEvent,
 ) -> None:
+    from zf.runtime.orchestrator_agent_obsolete import reconcile_obsolete_checkpoint_operations
+
+    reconcile_obsolete_checkpoint_operations(
+        workflow_operation_service(runtime), role_instance=orchestrator_instance_id(runtime),
+    )
     prepared = prepared_operation_from_checkpoint_event(runtime, trigger)
+    if prepared and reduce_workflow_operations(runtime.event_log.read_all()).get(
+        prepared.operation_id, {},
+    ).get("status") == "superseded":
+        return
+    from zf.runtime.orchestrator_advisory_queue import next_advisory_event
+
+    next_event = next_advisory_event(runtime.event_log.read_all(), orchestrator_instance_id(runtime))
+    if next_event is not None and next_event.payload.get("operation_id") != (
+        prepared.operation_id if prepared else ""
+    ):
+        return
     if prepared is None or orchestrator_checkpoint_busy(
         runtime, exclude_operation_id=prepared.operation_id,
     ):
@@ -60,12 +76,21 @@ def dispatch_orchestrator_agent_operation(
         trigger_payload.get("checkpoint_dispatch_retry_max_attempts") or 1
     )
     if retry_attempt:
+        missing_result = bool(trigger_payload.get("missing_result_turn_event_id"))
+        if missing_result:
+            prompt += (
+                " Resume the same checkpoint after the prior turn ended without a typed result. "
+                "Reuse its saved read receipts/cursor, consume remaining required inputs, and submit "
+                "the typed result or a supported failure; a chat summary does not close this obligation."
+            )
         retry_orchestrator_agent_operation(
             runtime,
             prepared,
             retry_attempt=retry_attempt,
             dispatch_id=trigger.id,
             causation_id=trigger.id,
+            reason=("retry_after_closed_turn_without_result" if missing_result
+                    else "retry_after_orchestrator_pane_respawn"),
         )
     else:
         activate_orchestrator_agent_operation(
@@ -147,12 +172,17 @@ def dispatch_orchestrator_agent_operation(
 
 def orchestrator_checkpoint_busy(runtime: Any, *, exclude_operation_id: str = "") -> bool:
     role_instance = orchestrator_instance_id(runtime)
+    from zf.runtime.orchestrator_advisory_queue import guidance_inflight
+
+    events = runtime.event_log.read_all()
+    if guidance_inflight(events, role_instance):
+        return True
     return any(
         row.get("operation_id") != exclude_operation_id
         and row.get("operation_type") == "orchestrator_agent_semantic"
         and row.get("role_instance") == role_instance
         and row.get("status") in {"reserved", "running", "suspended"}
-        for row in reduce_workflow_operations(runtime.event_log.read_all()).values()
+        for row in reduce_workflow_operations(events).values()
     )
 
 

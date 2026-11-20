@@ -91,6 +91,25 @@ def test_docs_only_plan_uses_instruction_contract_without_backend_full() -> None
     assert all("tests" not in step.command for step in plan.steps)
 
 
+def test_large_impact_closure_does_not_select_unrelated_tests(mini_repo: Path) -> None:
+    impacted = []
+    for index in range(81):
+        name = f"tests/test_impacted_{index}.py"
+        (mini_repo / name).write_text("from zf.leaf import VALUE\n")
+        impacted.append(name)
+    (mini_repo / "tests/test_unrelated.py").write_text("def test_other(): pass\n")
+
+    plan = dev_verify.build_plan(mini_repo, ["src/zf/leaf.py"])
+
+    assert not plan.errors
+    command = next(step.command for step in plan.steps if step.id == "python-deterministic")
+    assert set(impacted) <= set(command)
+    assert "tests/test_leaf.py" in command
+    assert "tests/test_caller.py" in command
+    assert "tests" not in command
+    assert "tests/test_unrelated.py" not in command
+
+
 def test_web_only_plan_stays_out_of_backend_pytest() -> None:
     plan = dev_verify.build_plan(
         ROOT,

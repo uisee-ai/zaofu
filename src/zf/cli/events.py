@@ -128,6 +128,9 @@ def run_emit(args: argparse.Namespace) -> int:
     if not isinstance(payload, dict):
         print("Error: payload must be a JSON object", file=sys.stderr)
         return 1
+    if args.type in {"plan.approved", "plan.rejected"} and "dispatch_task_ids" in payload:
+        print("Error: dispatch scope requires the controlled 'zf plan reject' action", file=sys.stderr)
+        return 2
     if getattr(args, "dispatch_id", None):
         payload["dispatch_id"] = args.dispatch_id
     if args.type == "worker.heartbeat":

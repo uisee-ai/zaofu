@@ -93,6 +93,36 @@ def test_preparation_worker_services_every_open_project(tmp_path, monkeypatch):
         worker.stop()
 
 
+def test_workspace_only_web_does_not_consume_workspace_config_as_project(tmp_path, monkeypatch):
+    from zf.web.workflow_preparation_worker import WorkflowPreparationWorker
+
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "registry"))
+    root = tmp_path / "installation"
+    root.mkdir()
+    workspace = root / "zf.yaml"
+    workspace.write_text("kind: WorkspaceConfig\nversion: '1.0'\nworkspace: {}\n")
+    visited = []
+    original = WorkflowPreparationWorker._consume
+
+    def consume(self, project_root):
+        visited.append(project_root)
+        original(self, project_root)
+
+    monkeypatch.setattr(WorkflowPreparationWorker, "_consume", consume)
+    # Run the first scheduled batch synchronously so the negative assertion
+    # cannot pass merely because the background thread has not run yet.
+    def start(self):
+        for project_root in tuple(self._roots):
+            self._consume(project_root)
+    monkeypatch.setattr(WorkflowPreparationWorker, "start", start)
+    app = create_app(root / "state", project_root=root, default_project_enabled=False)
+    with TestClient(app) as client:
+        assert client.get("/api/workspace/projects").status_code == 200
+        assert root not in visited
+    assert root not in visited
+    assert not (root / "state" / "events.jsonl").exists()
+
+
 def test_new_workspace_task_prepares_without_opening_workflows(tmp_path, monkeypatch):
     from tests.test_workflow_prepare import _create_payload
     from zf.core.workspace.registry import WorkspaceProject, WorkspaceRegistry
@@ -105,7 +135,7 @@ def test_new_workspace_task_prepares_without_opening_workflows(tmp_path, monkeyp
     _write_config(bootstrap / "zf.yaml")
     app = create_app(
         bootstrap / ".zf", config=load_config(bootstrap / "zf.yaml"),
-        project_root=bootstrap,
+        project_root=bootstrap, default_project_enabled=False,
     )
     with TestClient(app) as client:
         # Registered after Dashboard startup; no workflow GET may activate it.

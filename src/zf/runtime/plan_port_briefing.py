@@ -14,6 +14,15 @@ def plan_port_contract_lines(*, flow_kind: str = "") -> list[str]:
         "`{\"logical_name\": \"acceptance_matrix\", \"schema_version\": "
         "\"acceptance-matrix.v1\", \"body\": {...}}`; do not use a "
         "`{logical_name: body}` object map.",
+        "For large bodies, keep the complete JSON in an allowed workdir-relative "
+        "artifact and use a descriptor `{\"logical_name\": \"execution_spec\", "
+        "\"schema_version\": \"task-scoped-plan-input.v1\", "
+        "\"ref\": \"artifacts/plan/execution_spec.json\", "
+        "\"sha256\": \"<SHA-256 of the file bytes>\"}` instead of `body`. "
+        "This also applies to product_acceptance_spec and every other plan port. "
+        "Use `ref`, not `artifact_ref`; top-level `<name>_ref` alone does not "
+        "declare arbitrary ports. The Kernel relocates the referenced file and "
+        "checks its digest. Do not truncate bodies or enlarge the result limit.",
         "Return `plan_ports` once at the top level of the success payload; "
         "do not duplicate the matrix bodies inside `report`.",
         "Every required matrix body must set top-level `status: ready` and "

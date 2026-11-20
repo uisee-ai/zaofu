@@ -12,6 +12,42 @@ IDENTITY_FIELDS = (
 )
 
 
+def triage_completion_matches(event: ZfEvent, request: Mapping[str, Any]) -> bool:
+    """Only admitted completion of the exact task generation can retire triage."""
+    if event.origin != 'kernel' or event.type not in {'task.done', 'task.done.accepted'}:
+        return False
+    body = event.payload or {}
+    for key in ('workflow_run_id', 'task_map_generation'):
+        if not request.get(key) or body.get(key) != request[key]:
+            return False
+    if not request.get('task_id') or (event.task_id or body.get('task_id')) != request['task_id']:
+        return False
+    return not (
+        (body.get('task_id') and body['task_id'] != request['task_id'])
+        or (event.correlation_id and event.correlation_id != request['workflow_run_id'])
+    )
+
+
+def diagnosis_reply_matches_request(event: ZfEvent, request: Mapping[str, Any]) -> bool:
+    """The exact request and designated responder bind omitted reply identity."""
+    body = event.payload or {}
+    if (event.type != "run.manager.agent.recommendation"
+            or not request.get("request_id") or not request.get("instance_id")
+            or body.get("request_id") != request["request_id"]
+            or event.actor != request["instance_id"]):
+        return False
+    for key in (*IDENTITY_FIELDS, "recovery_case_id", "fanout_id"):
+        if request.get(key) and body.get(key) and body[key] != request[key]:
+            return False
+    expected_run = request.get("workflow_run_id") or request.get("run_id")
+    if expected_run and any(value and value != expected_run for value in (
+        body.get("workflow_run_id"), body.get("run_id"), event.correlation_id,
+    )):
+        return False
+    return not (event.task_id and request.get("task_id")
+                and event.task_id != request["task_id"])
+
+
 def admitted_recovery_continuation(
     events: Iterable[ZfEvent], action: Mapping[str, Any], state: Mapping[str, Any],
 ) -> bool:
@@ -94,7 +130,7 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
     if delivery is None or event.actor != delivery.payload.get("instance_id"):
         raise ValueError("recommendation_responder_mismatch")
     bound = dict(payload)
-    for key in (*IDENTITY_FIELDS, "recovery_case_id"):
+    for key in (*IDENTITY_FIELDS, "recovery_case_id", "target_operation_id", "operation_precondition"):
         value = request.payload.get(key)
         if value:
             if bound.get(key) and bound[key] != value:
@@ -103,3 +139,33 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
     bound["checkpoint_id"] = f"recommendation:{event.id}"
     bound["recorded_event_id"] = event.id
     return bound
+
+
+def recommendation_target_current(events, action: Mapping[str, Any]) -> bool:
+    """A diagnosis of an old attempt cannot freeze its live successor."""
+    target = str(action.get("target_operation_id") or "")
+    attempt = str(action.get("active_attempt_id") or "")
+    if not target and not attempt:
+        return True
+    from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+    task_id = str(action.get("task_id") or "")
+    run_id = str(action.get("workflow_run_id") or action.get("run_id") or "")
+    current = operation_bindings(events, run_id, {task_id}).get(task_id, {})
+    if not current:
+        # Planning/readers precede the Task Pipeline. Compare that owner's
+        # operation lineage, not unrelated parallel readers on the root Task.
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+        rows = list(reduce_workflow_operations(events).values())
+        bound = next((row for row in rows if
+            row.get("workflow_run_id") == run_id and row.get("task_id") == task_id
+            and (row.get("operation_id") == target if target else
+                 row.get("active_attempt_id") == attempt)), None)
+        if bound:
+            current = next((row for row in reversed(rows) if all(
+                row.get(key) == bound.get(key) for key in
+                ("workflow_run_id", "task_id", "operation_type", "role_instance"))), {})
+    if not current or (target and current.get("operation_id") != target):
+        return False
+    if attempt and current.get("active_attempt_id") != attempt:
+        return False
+    return current.get("status") not in {"superseded", "cancelled"}

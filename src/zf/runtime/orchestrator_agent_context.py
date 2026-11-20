@@ -142,6 +142,8 @@ def build_orchestrator_agent_context(
             key: str(payload.get(key) or "")
             for key in (
                 "failure_fingerprint",
+                "candidate_failure_id",
+                "candidate_operation_id",
                 "target_task_id",
                 "target_stage_id",
                 "target_attempt_id",
@@ -258,12 +260,19 @@ def build_orchestrator_agent_context(
         if input_mode == "compact"
         else list(manifest["sources"])
     )
+    config_body = hydrate_sidecar_ref(runtime.state_dir, effective_config_ref).payload
+    config_read_path = (
+        "$.config" if isinstance(config_body, Mapping)
+        and config_body.get("schema_version") == "effective-config-snapshot.v1"
+        and ("yaml" in config_body or "compiled_graph" in config_body)
+        and isinstance(config_body.get("config"), Mapping) else "$"
+    )
     required_reads = [
         {
             "source_id": str(source["source_id"]),
             "artifact_id": str(source["artifact_id"]),
             "artifact_sha256": str(source["sha256"]),
-            "json_path": "$",
+            "json_path": config_read_path if source["source_id"] == "effective-config" else "$",
             "min_returned_bytes": 1,
             "max_items": 0,
             "max_chars": 0,

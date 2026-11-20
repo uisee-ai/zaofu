@@ -70,7 +70,9 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
     )
 
 
-def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
+def _seed_frozen_candidate(
+    runtime: SimpleNamespace, tier: str = "task_non_smoke", *, package_fields=None, additional_completed=(),
+) -> dict[str, str]:
     run_id = "run-candidate-authority"
     generation = "generation-1"
     child_task_id = "TASK-1"
@@ -99,7 +101,7 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
             "text": "pulse status is filterable",
             "mandatory": True,
             "verification_owner": "task_verify",
-            "verification_tier": "task_non_smoke",
+            "verification_tier": tier,
             "verification_command_ids": ["cmd-1"],
         }],
         "verification_command": command,
@@ -109,12 +111,13 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
             "command_digest": command_digest,
             "acceptance_ids": ["AC-1"],
             "owner": "task_verify",
-            "tier": "task_non_smoke",
+            "tier": tier,
+            "producer_paths": ["artifacts/probe.json"],
             "deterministic": True,
             "reusable": False,
             "timeout_seconds": 60,
         }],
-        "verification_tiers": ["task_non_smoke"],
+        "verification_tiers": [tier],
         "required_source_outputs": [],
         "required_contract_tests": ["tests/test_pulse.py"],
         "source_refs": {},
@@ -125,6 +128,7 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
         "risk_class": "low",
         "integration_admission_profile": "standard",
     }
+    contract.update({k: v for k, v in (package_fields or {}).items() if k.startswith("plan_artifact_package_")})
     contract_descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target_descriptor = write_target_snapshot(
         runtime.state_dir,
@@ -173,8 +177,9 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
         "candidate_head_commit": candidate_head,
         "candidate_ref": "refs/heads/candidate/demo",
         "integration_ledger_digest": "d" * 64,
-        "completed_task_ids": [child_task_id],
-        "task_ids": [child_task_id],
+        "completed_task_ids": [child_task_id, *additional_completed],
+        "task_ids": [child_task_id, *additional_completed],
+        **(package_fields or {}),
         "status": "frozen",
     }
     freeze_descriptor = write_immutable_json_sidecar(
@@ -188,6 +193,7 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
     runtime.event_log.append(ZfEvent(
         id="evt-candidate-ready",
         type="candidate.ready",
+        origin="kernel",
         correlation_id=run_id,
         payload={
             **freeze_receipt,
@@ -205,11 +211,12 @@ def _seed_frozen_candidate(runtime: SimpleNamespace) -> dict[str, str]:
     }
 
 
+@pytest.mark.parametrize("tier", ["task_non_smoke", "real_e2e"])
 def test_candidate_verify_operation_pins_aggregate_contract_and_target(
-    tmp_path: Path,
+    tmp_path: Path, tier: str,
 ) -> None:
     runtime = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(runtime)
+    seeded = _seed_frozen_candidate(runtime, tier)
     payload = {
         "workflow_run_id": seeded["run_id"],
         "task_id": "FLOW-ANCHOR",
@@ -249,6 +256,9 @@ def test_candidate_verify_operation_pins_aggregate_contract_and_target(
     assert aggregate["task_id"] == "FLOW-ANCHOR"
     assert aggregate["completed_task_ids"] == [seeded["child_task_id"]]
     assert aggregate["verification_commands"][0]["command"] == seeded["command"]
+    assert aggregate["verification_commands"][0]["tier"] == tier
+    assert aggregate["verification_commands"][0]["producer_paths"] == ["artifacts/probe.json"]
+    assert aggregate["acceptance_criteria"][0]["verification_tier"] == tier
     template = verification_result_template(aggregate)
     assert template["execution_status"] == "completed"
     assert template["verification_owner"] == "candidate_verify"

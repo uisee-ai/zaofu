@@ -94,6 +94,17 @@ submit、start调用生产入口；不拼接假task事件或写canonical状态�
 命中“命令含项目根绝对路径、未含assigned workdir绝对路径”的条件。此证据不足以断言
 所有命令副作用都安全，未绕过保护或手工执行被拒命令。
 
+2026-11-11 的 Datal 独立验证再次复现了一个可界定的子类：单条
+`apply_patch <<'PATCH'` 中报告正文引用归档路径，被粗粒度 shell 检查误拒。
+`hook_workdir_guard` 现在仅识别单条、引用 delimiter、首个结束 delimiter 即命令结尾
+的字面 heredoc 补丁，将 Add/Update/Delete/Move 的实际目标交给已有 runtime、workdir
+及任务 scope 门禁；正文中的路径和反引号不再当作命令。真实越界目标仍拒绝，
+结果 scratch 仍只允许当前授权文件的更新，不允许兄弟报告文件或删除重建。
+未引用 delimiter、重定向、管道、附加命令及无法识别的 shell 保留保守检查。
+这不解决上文复合 shell 的全部问题，也不宣称输入恢复或预算问题已修复。
+入口回归见 `tests/test_hook_literal_patch_guard.py`；原生补丁和 scratch 回归分别在
+`tests/test_hook_runtime_write_guard.py`、`tests/test_hook_recv_codex.py`。
+
 A在被拒后通过逐文件补丁继续，先后两次预提交校验失败：第一次包含assembly与依赖bundle
 共用owner的自锁风险及capability映射不一致；第二次剩余product acceptance的
 `assertion_id` / `observation_kind`缺失。B未到达预提交校验。两边最终均因操作预算超限

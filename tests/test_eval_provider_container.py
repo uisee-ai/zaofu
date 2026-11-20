@@ -47,6 +47,9 @@ def test_container_uses_writable_ephemeral_home_and_verified_tls(tmp_path, monke
     assert command[command.index("--user") + 1] == "0:0"
     assert "--read-only" in command
     assert "/root:rw,nosuid,size=128m" in command
+    # The Playwright image sets HOME=/tmp; the CLI must use its auth mount.
+    assert "CODEX_HOME=/root/.codex" in command
+    assert f"{args.auth_file}:/root/.codex/auth.json:ro" in command
     assert f"{project}:/workspace:ro" in command
     assert f"{ca}:/etc/zf-eval-ca.pem:ro" in command
     assert "SSL_CERT_FILE=/etc/zf-eval-ca.pem" in command

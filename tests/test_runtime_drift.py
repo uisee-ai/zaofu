@@ -220,3 +220,8 @@ class TestEscalateAnomaly:
         d = DriftDetector()
         signals = d.check(events)
         assert any(s.signal == "escalate_anomaly" for s in signals)
+
+
+def test_process_observations_do_not_refresh_a_working_provider():
+    events = [{'type': 'worker.runtime.observed', 'actor': 'verify-lane-0'}] * 10
+    assert not any(s.signal == 'repeat_decisions' for s in DriftDetector().check(events))

@@ -34,10 +34,11 @@ def test_explicit_late_usage_preserves_released_role(
     # A blocked child leaves the canonical task unfinished until its successor.
     orch.task_store.add(Task(id="T1", title="unfinished", status="in_progress", assigned_to="dev"))
     orch._apply_housekeeping(ZfEvent(
-        type="worker.state.changed", actor="dev", task_id="T1",
+        type="worker.state.changed", actor="dev", task_id="T1", origin="kernel",
         payload={"instance_id": "dev", "from": "busy", "to": released_state,
                  "reason": "task result admitted", "task_id": "T1"},
     ))
+    assert orch._last_worker_state["dev"] == released_state
     payload = {"backend": "codex", "usage": {"input_tokens": 100, "output_tokens": 10}}
     if task_location == "payload":
         payload["task_id"] = "T1"

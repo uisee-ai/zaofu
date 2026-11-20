@@ -735,9 +735,11 @@ def test_rerun_fanout_child_rebuilds_suspended_initial_dispatch(
     assert applied[-1].payload["action_id"] == "ra-rerun-suspended-initial"
 
 
+@pytest.mark.parametrize("preparation_error", [False, True])
 def test_rerun_fanout_child_repair_action_rejects_deferred_dispatch(
     state_dir: Path,
     config: ZfConfig,
+    preparation_error: bool,
 ) -> None:
     TaskStore(state_dir / "kanban.json").add(
         Task(id="TASK-1", title="fanout child task", status="in_progress"),
@@ -780,11 +782,10 @@ def test_rerun_fanout_child_repair_action_rejects_deferred_dispatch(
     )
     orch = Orchestrator(state_dir, config, _RepairTransport())
 
-    with patch.object(
-        orch,
-        "_ensure_fanout_role_dispatchable",
-        return_value=False,
-    ):
+    patched = patch.object(orch, "_retry_fanout_child",
+        side_effect=ValueError("reader retry target could not be pinned")) if preparation_error else patch.object(
+        orch, "_ensure_fanout_role_dispatchable", return_value=False)
+    with patched:
         orch.run_once([event])
 
     events = _events(state_dir)
@@ -801,7 +802,8 @@ def test_rerun_fanout_child_repair_action_rejects_deferred_dispatch(
         and item.payload.get("action_id") == "ra-rerun-deferred"
     ]
     assert rejected[-1].payload["reason"] == (
-        "fanout child rerun deferred before transport dispatch"
+        "reader retry preparation failed: reader retry target could not be pinned"
+        if preparation_error else "fanout child rerun deferred before transport dispatch"
     )
 
 

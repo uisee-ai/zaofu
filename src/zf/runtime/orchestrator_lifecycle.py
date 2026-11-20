@@ -31,6 +31,7 @@ from zf.runtime.injection import (
 )
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.provider_context import has_provider_context_exhausted
+from zf.runtime.provider_interactive_prompt import live_provider_interactive_prompt_marker
 from zf.runtime.role_lifecycle_runtime import complete_respawn, watchdog_should_skip
 from zf.runtime.recovery import build_recovery_briefing, capture_recovery_git_context
 from zf.runtime.remediation_cascade import (
@@ -43,6 +44,7 @@ from zf.runtime.recovery_sufficiency import run_recovery_sufficiency_gate
 from zf.runtime.repair_action_fanout_runtime import RepairActionFanoutRuntimeMixin
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
+from zf.runtime.task_attempt_continuation import claim_completion_nudge
 
 if TYPE_CHECKING:
     from zf.runtime.spawn_coordinator import SpawnCoordinator
@@ -280,7 +282,9 @@ class LifecycleManagerMixin(
         try:
             self.escalation.escalate(
                 f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)"
+                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
+                task_id=task.id,
+                metadata={"failure_class": "orphaned_task"},
             )
         except Exception:
             pass
@@ -381,53 +385,28 @@ class LifecycleManagerMixin(
     ) -> Path | None:
         """Find the admitted Task Workspace for a live role attempt."""
 
-        try:
-            events = self.event_log.read_all()
-        except Exception:
-            return None
-        terminal_attempts: set[str] = set()
-        for event in events:
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            attempt_id = str(payload.get("attempt_id") or "").strip()
-            if attempt_id and event.type in {
-                "task.attempt.failed",
-                "task.attempt.completed",
-                "task.attempt.succeeded",
-                "task.attempt.superseded",
-                "task.attempt.expired",
-            }:
-                terminal_attempts.add(attempt_id)
-        task_root = (Path(self.state_dir) / "workdirs" / "tasks").resolve(
-            strict=False
+        from zf.runtime.task_workspace_binding import resolve_task_workspace
+
+        terminal = self._terminal_task_pipeline_assignments()
+        tasks = [task for task in self.task_store.list_all()
+                 if task.status == "in_progress" and task.assigned_to == role.instance_id
+                 and not ((task.id, role.instance_id) in terminal
+                          and task.active_dispatch_id in {"", terminal[(task.id, role.instance_id)]})]
+        events = self.event_log.read_all()
+        from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+
+        pipeline_ids = set(task_pipeline_generation_contexts(events)) | {
+            event.task_id for event in events if event.type == "task.pipeline.stage.dispatched"
+        }
+        if not any(task.id in pipeline_ids for task in tasks):
+            return None  # Legacy roles may own several tasks in their role checkout.
+        if len(tasks) > 1:
+            raise ValueError("task workspace owner has multiple active tasks")
+        return resolve_task_workspace(
+            state_dir=self.state_dir, project_root=self.project_root,
+            config=self.config, task=tasks[0] if tasks else None,
+            events=events, require_live=True,
         )
-        for event in reversed(events):
-            if event.type != "task.pipeline.stage.dispatched":
-                continue
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if str(
-                payload.get("role_instance") or payload.get("assignee") or ""
-            ).strip() != role.instance_id:
-                continue
-            attempt_id = str(payload.get("attempt_id") or "").strip()
-            if attempt_id in terminal_attempts:
-                continue
-            raw = str(payload.get("workdir") or "").strip()
-            if not raw:
-                continue
-            candidate = Path(raw)
-            if not candidate.is_absolute():
-                candidate = Path(self.project_root) / candidate
-            candidate = candidate.resolve(strict=False)
-            if candidate.name != "project" or not candidate.is_dir():
-                continue
-            if not (candidate / ".git").exists():
-                continue
-            try:
-                candidate.relative_to(task_root)
-            except ValueError:
-                continue
-            return candidate
-        return None
 
 
     def _capture_logs(self) -> list[WorkflowRuntimeDecision]:
@@ -506,7 +485,19 @@ class LifecycleManagerMixin(
                         role.instance_id,
                     )
                     stale, stale_basis = self._worker_liveness_stale(role)
+                    if not stale and (active_task is not None or active_fanout is not None):
+                        from zf.runtime.provider_exit_evidence import active_provider_exit_confirmed
+                        if active_provider_exit_confirmed(self, role):
+                            stale, stale_basis = True, "registered_provider_exited_workspace_idle"
                     instance_state = getattr(self, "_instance_state", {})
+                    # Fast adoption is for a restarted watcher with no local
+                    # recycle marker. Local recycle failures retain the
+                    # existing stale-liveness recovery path below.
+                    interrupted_recycle = (
+                        role.instance_id not in instance_state
+                        and self._last_worker_state.get(role.instance_id)
+                        == "recycling"
+                    )
                     pending_recycle = (
                         instance_state.get(role.instance_id)
                         == "pending_recycle"
@@ -517,13 +508,14 @@ class LifecycleManagerMixin(
                     # must be replaced once its active obligation drains. If
                     # the pane is already gone, waiting for the normal worker
                     # heartbeat threshold only preserves a dead lease.
-                    if pending_recycle and (
+                    if (pending_recycle or interrupted_recycle) and (
                         active_task is not None or active_fanout is not None
                     ):
                         stale = True
                         stale_basis = (
-                            "pane_dead_during_pending_recycle_with_active_"
-                            "obligation"
+                            "pane_dead_during_interrupted_recycle_with_active_obligation"
+                            if interrupted_recycle else
+                            "pane_dead_during_pending_recycle_with_active_obligation"
                         )
                     if stale:
                         # Pending manifest recovery precedes normal respawn,
@@ -550,7 +542,15 @@ class LifecycleManagerMixin(
                                     f"evidence ({stale_basis})"
                                 ),
                             )
-                            decisions.append(self._respawn_instance(role))
+                            if interrupted_recycle:
+                                decisions.append(self._respawn_instance(
+                                    role,
+                                    recovery_reason="interrupted_context_recycle",
+                                    inject_idle_prompt=False,
+                                    force_fresh_session=True,
+                                ))
+                            else:
+                                decisions.append(self._respawn_instance(role))
                         # else: idle worker with no pending obligations —
                         # evidence only (the R18 completed-worker falsepos
                         # class); recovery happens at next dispatch/stuck.
@@ -615,7 +615,9 @@ class LifecycleManagerMixin(
                 detector.reset()
                 self._stuck_already_reported.discard(role.instance_id)
                 continue
-            if active_task is not None:
+            # A live fanout child has its own dispatch/terminal identity. Parent
+            # Task progress must not suppress monitoring of this later operation.
+            if active_task is not None and active_fanout_child is None:
                 dispatch = self._latest_dispatch_event_for_task(active_task.id)
                 dispatch_payload = dispatch.payload if dispatch is not None else {}
                 dispatch_id = ""
@@ -663,56 +665,11 @@ class LifecycleManagerMixin(
 
         return decisions
 
-    def _emit_worker_runner_failed(
-        self,
-        *,
-        role: "RoleConfig",
-        task: Task | None,
-        source: str,
-        reason: str,
-    ) -> None:
-        """Record deterministic runner/process failure observed by Layer 1."""
-        lifecycle: dict[str, object] = {
-            "role_name": role.instance_id,
-            "alive": False,
-            "pane_pid": "",
-            "current_command": "",
-            "current_path": "",
-        }
-        snapshot_fn = getattr(self.transport, "lifecycle_snapshot", None)
-        if snapshot_fn is not None:
-            try:
-                snapshot = snapshot_fn(role.instance_id)
-                to_payload = getattr(snapshot, "to_payload", None)
-                if to_payload is not None:
-                    raw = to_payload()
-                    if isinstance(raw, dict):
-                        lifecycle.update(raw)
-            except Exception:
-                pass
+    def _emit_worker_runner_failed(self, *, role: "RoleConfig", task: Task | None,
+                                   source: str, reason: str) -> None:
+        from zf.runtime.stuck_recovery_signal import emit_worker_runner_failed
 
-        dispatch_id = ""
-        if task is not None:
-            dispatch_id = getattr(task, "active_dispatch_id", "") or ""
-        try:
-            self.event_writer.append(ZfEvent(
-                type="worker.runner.failed",
-                actor=role.instance_id,
-                task_id=task.id if task is not None else None,
-                payload={
-                    "role": role.name,
-                    "instance_id": role.instance_id,
-                    "backend": role.backend,
-                    "task_id": task.id if task is not None else "",
-                    "dispatch_id": dispatch_id,
-                    "source": source,
-                    "reason": reason,
-                    "dead_threshold": self._dead_threshold,
-                    "lifecycle": lifecycle,
-                },
-            ))
-        except Exception:
-            pass
+        emit_worker_runner_failed(self, role=role, task=task, source=source, reason=reason)
 
     def _apply_repair_action_request(self, event: ZfEvent) -> None:
         from zf.runtime.repair_action_executor import RepairActionExecutor
@@ -986,6 +943,7 @@ class LifecycleManagerMixin(
 
     def restart_role_instance(
         self, role: "RoleConfig", *, resume_failed_synth: str = "",
+        resume_failed_reader: str = "", recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Restart one role through the same recovery path as the watchdog.
 
@@ -1011,6 +969,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=not force_fresh_session,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance(
@@ -1021,6 +981,8 @@ class LifecycleManagerMixin(
         inject_idle_prompt: bool = True,
         force_fresh_session: bool = False,
         resume_failed_synth: str = "",
+        resume_failed_reader: str = "",
+        recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Serialize replacement of one provider session across processes.
 
@@ -1038,6 +1000,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=inject_idle_prompt,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance_with_lease(
@@ -1364,6 +1328,8 @@ class LifecycleManagerMixin(
                 continue
             if age is None or age < 600.0:
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             self._instance_state[instance_id] = "recycling"
             self._set_worker_state(
                 instance_id, "recycling",
@@ -1495,6 +1461,17 @@ class LifecycleManagerMixin(
                 and (self._now() - over_hard_cap) >= role.drain_hold_seconds
             )
             if force_recycle and current != "recycling":
+                if live_provider_interactive_prompt_marker(self.transport, role.instance_id):
+                    continue
+                from zf.runtime.native_compaction_recycle import defer_native_compaction_recycle
+
+                if defer_native_compaction_recycle(
+                    self,
+                    role,
+                    session_id=session_id_str,
+                    hard_cap_since=over_hard_cap,
+                ):
+                    continue
                 self._instance_state[role.instance_id] = "recycling"
                 self._set_worker_state(
                     role.instance_id, "recycling",
@@ -1621,22 +1598,16 @@ class LifecycleManagerMixin(
         command = str(getattr(caps, "compact_command", "") or "").strip()
         if not getattr(caps, "native_compact", False) or not command:
             return False
+        if bool(getattr(caps, "compact_requires_idle", False)):
+            # This path owns an active task. Defer to the existing drain/recycle
+            # policy; an unsent command is neither an attempt nor a failure.
+            return False
         attempts.add(role.instance_id)
         payload = dict(warning_payload)
         payload.update({
             "compact_command": command,
             "strategy": "compact_first",
         })
-        if bool(getattr(caps, "compact_requires_idle", False)):
-            self._emit_compact_failed(
-                role,
-                active_task,
-                payload,
-                reason="backend compact requires idle session",
-                causation_id=None,
-                correlation_id=None,
-            )
-            return False
         requested = self.event_writer.append(ZfEvent(
             type="worker.context.compact.requested",
             actor=role.instance_id,
@@ -1770,6 +1741,8 @@ class LifecycleManagerMixin(
         for instance_id, state in list(self._instance_state.items()):
             if state != "pending_recycle":
                 continue
+            if live_provider_interactive_prompt_marker(self.transport, instance_id):
+                continue
             is_idle = self.wip.can_accept(
                 instance_id,
                 self.task_store,
@@ -1799,6 +1772,10 @@ class LifecycleManagerMixin(
         recycling state so _check_pending doesn't re-trigger."""
         instance_id = role.instance_id
         try:
+            from zf.runtime.idle_context_recycle import hibernate_idle_context_recycle
+
+            if hibernate_idle_context_recycle(self, role):
+                return
             active_fanout = self._active_fanout_child_for_instance(instance_id)
             session_replacement = self._replace_provider_session_for_recycle(
                 role,
@@ -1963,12 +1940,9 @@ class LifecycleManagerMixin(
                 "The original request identity and required reads remain unchanged."
             )
             if role.role_kind == "reader":
-                from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+                from zf.runtime.reader_respawn_continuation import reader_recovery_guidance
 
-                prompt += reader_continuation_guidance(
-                    attempt_id=str(fanout_child.get("attempt_id") or ""),
-                    backend=role.backend, cli=zf_cli_cmd(),
-                )
+                prompt += reader_recovery_guidance(self, role, fanout_child)
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
@@ -2088,6 +2062,9 @@ class LifecycleManagerMixin(
                 briefing_path=path,
                 task_id=task_id,
             )
+            from zf.runtime.task_attempt_continuation import continuation_context
+
+            context = continuation_context(self, role.instance_id, context)
             self._send_transport_task(role.instance_id, path, prompt, context)
             self._get_spawn_coordinator().notify_first_dispatch(role)
         except Exception:
@@ -2193,8 +2170,18 @@ class LifecycleManagerMixin(
         heartbeat_age_s: float | None = None,
     ) -> "WorkflowRuntimeDecision":
         """Emit worker.stuck and try to recover the active task/worker."""
+        from zf.runtime.heartbeat_work_obligation import on_demand_work_obligation
         from zf.runtime.stuck_recovery_signal import emit_stuck_signal
 
+        if on_demand_work_obligation(self, role) is False:
+            return WorkflowRuntimeDecision(action="noop", role=role.instance_id,
+                                           reason="on-demand worker has no active work obligation")
+        blocker = live_provider_interactive_prompt_marker(self.transport, role.instance_id)
+        if blocker:
+            return WorkflowRuntimeDecision(
+                action="wait", role=role.instance_id,
+                reason=f"provider external input required: {blocker}",
+            )
         signal = emit_stuck_signal(
             self,
             role,
@@ -2723,6 +2710,12 @@ class LifecycleManagerMixin(
                 return None
         elif key in registry:
             return None
+        claim = None
+        if progress_state is not None:
+            claim = claim_completion_nudge(self, role.instance_id, task.id, dispatch_id,
+                causation_id=causation_id, correlation_id=correlation_id)
+            if not claim:
+                return None
         registry.add(key)
 
         detector = getattr(self, "_stuck_detectors", {}).get(role.instance_id)
@@ -2748,13 +2741,14 @@ class LifecycleManagerMixin(
                 task=task,
                 dispatch_id=dispatch_id,
                 expected_event=expected_event,
+                claim_id=claim.id if claim else "",
             )
             prompt_injected = True
         except Exception as exc:  # noqa: BLE001 — best-effort nudge
             prompt_error = str(exc)
         try:
             self.event_writer.append(ZfEvent(
-                type="worker.stuck.recovered",
+                type="worker.stuck.recovered", origin="kernel",
                 actor=role.instance_id,
                 task_id=task.id,
                 causation_id=causation_id or "",
@@ -2794,59 +2788,11 @@ class LifecycleManagerMixin(
         task: Task,
         dispatch_id: str,
         expected_event: str,
+        claim_id: str = "",
     ) -> Path:
-        briefing_dir = self.state_dir / "briefings"
-        briefing_dir.mkdir(parents=True, exist_ok=True)
-        path = briefing_dir / f"{role.instance_id}-{task.id}-completion-nudge.md"
-        lines = [
-            f"Active task: {task.id}",
-            "",
-            "# Resume or complete the active task",
-            "",
-            (
-                "The worker became silent before the kernel observed a terminal "
-                "event. The kernel does not know whether implementation is complete. "
-                "Preserve the current worktree and use the original active briefing "
-                "and role instructions as the authoritative task contract."
-            ),
-            "",
-            "## Required action (run these now, in order)",
-            (
-                f"1. `{zf_cli_cmd()} guard ownership --task {task.id} "
-                f"--actor {role.instance_id}` — if it exits non-zero, STOP "
-                "(your ownership is stale)."
-            ),
-            (
-                "2. Inspect the current worktree and the original active briefing. "
-                "If acceptance is not yet met and no real external blocker exists, "
-                "continue the original task from the preserved state. Do not emit a "
-                "failure solely because this nudge arrived, the worktree is clean, "
-                "or expected tests do not exist yet."
-            ),
-            (
-                "3. When acceptance is met, commit any task-owned changes before "
-                "completion. Stage only this task's changed files with explicit "
-                "pathspecs (`git add -- <path>...`); never use `git add -A`, `git add .`, "
-                "or `git commit -a`."
-            ),
-            (
-                f"4. Emit your terminal event `{expected_event}` with the active "
-                f"dispatch id `{dispatch_id or '-'}` (see your role instructions "
-                "for the exact command). Emit the failure event only when a real "
-                "acceptance blocker remains after attempting to resume the task."
-            ),
-        ]
-        from zf.runtime.attempt_read_progress import input_continuation_lines
-        lines.extend(input_continuation_lines(self, role_instance=role.instance_id, task_id=task.id, dispatch_id=dispatch_id))
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        prompt = build_task_prompt(role.instance_id, path)
-        context = self._dispatch_context(
-            role=role,
-            briefing_path=path,
-            task_id=task.id,
-        )
-        self._send_transport_task(role.instance_id, path, prompt, context)
-        return path
+        from zf.runtime.continuation_delivery import inject_completion_prompt
+        return inject_completion_prompt(self, role=role, task=task, dispatch_id=dispatch_id,
+            expected_event=expected_event, claim_id=claim_id)
 
     def _rejected_artifact_manifest_event_ids(
         self,

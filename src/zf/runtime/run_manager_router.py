@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any
+from zf.runtime.run_manager_recovery_actions import RESIDENT_RECOVERY_ACTIONS, recovery_preflight
 
 from zf.runtime.run_manager_rework_triage import (
     ORCHESTRATOR_TRIAGE_ACTIONS,
@@ -175,6 +176,12 @@ def decide_action_policy(
     payload: dict[str, Any],
     mutating_resume_supported: bool = False,
 ) -> dict[str, Any]:
+    if action in RESIDENT_RECOVERY_ACTIONS and action != "stage-replan-new-generation":
+        preflight = recovery_preflight(action, payload)
+        automatic = action == "child-rebuild" and preflight["status"] == "passed"
+        return _decision("auto_decide" if automatic else "needs_approval",
+            executable=automatic, payload=payload, preflight=preflight,
+            reason="exact Reader retry is bounded; broader recovery requires owner approval")
     if action in SURGERY_ACTIONS:
         return _decision(
             "needs_approval",
@@ -443,6 +450,8 @@ def preflight_action(
     payload: dict[str, Any],
     mutating_resume_supported: bool = False,
 ) -> dict[str, Any]:
+    if action in RESIDENT_RECOVERY_ACTIONS and action != "stage-replan-new-generation":
+        return recovery_preflight(action, payload)
     failures = []
     warnings = []
     safe_action = str(payload.get("safe_resume_action") or "")
@@ -790,6 +799,10 @@ def _no_progress_fingerprint(
     *,
     fallback: str,
 ) -> str:
+    if event_type == "fanout.child.dispatch_deferred":
+        raw = "|".join(str(payload.get(key) or "") for key in
+                       ("fanout_id", "child_id", "stage_id", "reason", "target_ref"))
+        return "rmfp-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
     if event_type == "task.dispatch_context.bound":
         source = str(payload.get("source") or "")
         if source == "writer_fanout_task_binding_recovery":

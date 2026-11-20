@@ -1,0 +1,8 @@
+[
+  {
+    "id": "future-decision-positive-corrected",
+    "requirement": "R1：本期仅本地单用户清单，无账号/同步/后端。R2：D-sync 为未来是否同步的决定，owner Product owner，最迟下一版本立项前确认，本期不阻塞；不能自行选择同步方案。R3：本期新增/刷新行为可实现，保存失败保持原值；所有验证尚未执行。完整决定登记和 Task Spec 对 D-sync 状态/阻塞范围必须一致。",
+    "spec": "本期仅本地单用户清单，不做账号、同步、后端。D-sync 保持未决，负责人 Product owner，最迟下一版本立项前确认，不阻塞本期。T-LOCAL 承担新增和刷新，保存失败保持原值；来源 R1–R3。当前所有检查 NOT_RUN；具体新增字段、刷新数据来源与命令待接线前确认，不能把 D-sync 当阻塞。 完整决定登记与 Task Spec 都引用同一个 D-sync，保持未决、Product owner、下一版本立项前以及本期不阻塞完全一致；若发生差异必须纠正。",
+    "expected": "positive"
+  }
+]

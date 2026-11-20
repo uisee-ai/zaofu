@@ -966,17 +966,6 @@ def _task_detail(
         task_id=task_id,
         trace_id=str(trace_id or ""),
     )
-    task_run_panel = _safe_task_run_panel_projection(
-        task=task,
-        task_events=task_events,
-        operations_projection=operations_projection,
-        progress_projection=progress_projection,
-        runs=runs,
-        execution_route=execution_route,
-        workdir=workdir,
-        role_instance=role_instance,
-        transcript_count=int(interaction_evidence.get("transcript_count") or 0),
-    )
     from zf.web.projections.events import task_event_index
 
     lh_index = task_event_index(state_dir, config=config)
@@ -988,6 +977,24 @@ def _task_detail(
         config=config,
         project_root=project_root,
         index=lh_index,
+    )
+    pipeline = handoff_summary.get("pipeline")
+    if isinstance(pipeline, dict):
+        execution_route = {**execution_route,
+            "current_stage": handoff_summary["current_stage"],
+            "current_stage_label": handoff_summary["current_stage"],
+            "current_stage_source": "task_pipeline",
+        }
+    task_run_panel = _safe_task_run_panel_projection(
+        task=task,
+        task_events=task_events,
+        operations_projection=operations_projection,
+        progress_projection=progress_projection,
+        runs=runs,
+        execution_route=execution_route,
+        workdir=workdir,
+        role_instance=role_instance,
+        transcript_count=int(interaction_evidence.get("transcript_count") or 0),
     )
     artifact_refs = _task_artifact_refs(
         state_dir,

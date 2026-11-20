@@ -3,6 +3,9 @@
 适用于 Planner 生成和 Critic 审查。语义由 Agent 判断；UI 只投影同版工件，Kernel
 只校验既有身份、摘要、分区及引用。无需新增任务 schema 或业务词汇 gate。
 
+先按依赖技能的[正文阅读与审查](../../zf-document-reading/SKILL.md)
+检查实际完整原文开头和场景，记录位置/短引文与判断。以下阅读字段不能代替此检查。
+
 ## 四层阅读顺序
 
 1. 审批首页：用户/问题、交付目标、本期范围与非目标、条件扩展、阶段可演示结果、
@@ -15,13 +18,20 @@
 4. 工程附件：Task Map、依赖图、路径、命令、环境协议和评审历史。正文只保留本版
    决策结果与业务影响，详细 PC 返修时间线放附件，不掩盖未关闭问题。
 
+审批首页以少量段落回答目标、范围/非目标、交付顺序、每片完成条件和现在需要的决定；
+Task ID 与前置关系引用现有 Task Map，不重写全套验收矩阵。路径、命令及代码标识必须
+包行内代码或代码块，例如 `tests/__init__.py`，防止 Markdown 改变读者看到的路径。
+验证责任在任务入口分为“本片验证”“具名后继验证”“最终候选验证”“人工验收”；
+引用后续命令不意味着当前必须执行。决定显示原始状态、当前 blocking、负责人、
+最迟时点和关闭证据；pending_validation 不是已授权，proposed 不是已确认。
+
 首次阅读者应能回答“交付什么、怎么使用、异常怎样、如何验收、这次批准什么”。
 保留原文和完整工程附件，不用 UI 折叠来删除需求或生成另一份业务真相。
 
 ## 既有 execution_spec 的作者约定
 
-这是一种可选阅读表示约定，不是新的可派发 Task 合同。标准 PRD 新生成时应填写；
-旧计划保持兼容，缺失明确显示为尚未细化。Task ID、AC ID、命令 ID 继续来自现有
+这是既有可选端口的阅读表示约定，不是新的可派发 Task 合同。新完整 Plan 必须选择本文的结构化入口或下文精确 Markdown 入口；选择此端口时应填写；
+旧计划保持兼容，缺失明确显示为未映射，并提供同版原文；不得断言原文没有该内容。Task ID、AC ID、命令 ID 继续来自现有
 Task Map/矩阵。所有内容与本次 accepted_plan 一起提交到同一个 Plan Package。
 不把下列字段添加到 execution_spec 顶层，保持其 shared/tasks 分区合同：
 
@@ -58,7 +68,15 @@ Task Map/矩阵。所有内容与本次 accepted_plan 一起提交到同一个 P
 示例仅展示表达形式，不是任何项目需求。任务已有 body 字段必须保留；shared 的原有
 安全、集成和跨模块义务不能移入仅 UI 可见的未绑定文件。无需在 prose 中自填 run/
 revision/digest；由正式 Package 绑定身份。未启用 execution_spec 的路线可在既有
-Plan Markdown 内采用同样阅读层次，不为版式强加新 runtime 端口。
+Plan Markdown 内使用精确二级标题 `## Task Spec: <exact task_id>`，每个任务一次；
+业务标题另起段或三级标题。共享规则及准备/清理写在 `## Shared Spec`，各任务引用
+适用规则和自身责任。`### T-SAVE：标题` 或任务表不能被局部阅读器定位为独立规格。
+不为版式强加新 runtime 端口。结构化正文中的 schema_version 不能只放端口描述符，
+tasks 必须是数组；不要把 `{T-SAVE: {...}}` 当作合法分区。
+
+正文与决定登记逐 ID 对账后，再核对局部关联字段：决定用 `affected_task_ids`，
+或任务用 `decision_ids` / `prerequisite_decision_ids`。`affected_tasks` 不是消费者合同。
+完整原文和可选阅读正文应共享同一权威描述，不另抄一套容易漂移的规则。
 
 ## 条款覆盖与测试先行
 
@@ -84,10 +102,14 @@ Plan Markdown 内采用同样阅读层次，不为版式强加新 runtime 端口
   原始参考图 ID、设计状态、实现状态、视觉验收状态分别记录，素材存在不等于设计完成。
 - 场景标题兼容 `title` / `name`；`source_ids` 必须在同版 source_index 唯一解析到
   来源引用，或显式提供 `source_refs`。缺 AC/命令绑定要补证，不能靠近似文本推断。
-  `test_matrix.formal_acceptance_scenarios` 与人工阅读场景分别核对，不以任一列表替代另一份。
+  既有 `test_matrix.tests[]` 中的 Given/When/Then 是可读场景的正式来源之一，按
+  `task_id`、AC、command 和 source 引用核对，保持 `evidence_status` 原值。
+  可选 `test_matrix.formal_acceptance_scenarios` 独立核对；不为阅读再造同义场景列表。
 - 决定登记沿用 `task_map.owner_decision_items`，区分待决定、已授权待落实、已关闭，
   当前阻塞仅按显式 `blocking` 声明。负责人、最迟时点与关闭证据保留原值；
   当前审批动作的问题列表只表示本次动作范围，数量为零不代表全部决定关闭。
+  正文已列出的决定必须逐 ID 出现在此完整登记；“没有新增范围取舍”不是写空数组的
+  理由。先核对两边 ID 集合，再核对共同条目的状态，避免整条漏记被共同项检查掩盖。
 - 对账来源正文、覆盖分配、Task、AC、命令及证据声明，并记录语义判断依据；
   `covered` 只表示分配，`NOT_RUN` 保持未运行。版本比较只比较同一需求或流程的
   已绑定快照，比较无变化也不是业务完整性或独立验证通过。

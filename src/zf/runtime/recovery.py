@@ -85,6 +85,11 @@ def build_recovery_briefing(
     3 days, events to 10, progress.md to 50 lines, and instructions to
     200 lines — useful for Sprint E recycle where we want to minimize
     the context footprint of the briefing itself."""
+    from zf.runtime.task_pipeline_recovery_briefing import current_pipeline_recovery_briefing
+
+    pipeline_briefing = current_pipeline_recovery_briefing(state_dir, role, task)
+    if pipeline_briefing is not None:
+        return pipeline_briefing
     if compact:
         memory_days = 3
         events_limit = 10

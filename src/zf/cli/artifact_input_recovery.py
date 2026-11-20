@@ -23,6 +23,8 @@ def run_input_recovery(args: argparse.Namespace) -> int:
         log = event_log_from_project(context.state_dir, config=context.config)
         identity = authorize_artifact_read_from_environment(context.state_dir, manifest=manifest,
             event_log=log, use_artifact_context=True)
+        from zf.runtime.worker_load_receipt import record_worker_cli_load
+        record_worker_cli_load(context.state_dir, log, manifest, identity, run_input_recovery)
         events = artifact_context_events(log)
         required = required_reads_for_attempt(events, args.attempt, state_dir=context.state_dir, operation_id=identity["operation_id"])
         service = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)

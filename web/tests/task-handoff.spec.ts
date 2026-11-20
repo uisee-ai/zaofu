@@ -1,0 +1,44 @@
+import { expect, test } from "@playwright/test";
+
+test("current task handoff links its workspace, target, inputs and partial failures", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  let inputRequests = 0;
+  await page.route("**/api/projects/handoff/attempts/*/inputs?*", route => {
+    inputRequests++;
+    expect(route.request().url()).toContain("/attempt-current/");
+    return route.fulfill({ status: 403, json: { detail: "denied" } });
+  });
+  await page.goto("/tests/task-handoff.html");
+  await expect(page.locator(".task-run-title-row")).toContainText("verify");
+  await expect(page.locator(".handoff-summary-panel")).toContainText("verify-2");
+  await expect(page.locator(".handoff-line")).toContainText("admitted");
+  await expect(page.locator(".handoff-line")).toContainText("generation 1 · failed");
+  await expect(page.locator(".handoff-line")).not.toContainText("done");
+  await expect(page.locator(".task-summary-view")).not.toContainText("implement");
+  const binding = page.getByTestId("handoff-binding-details");
+  await binding.locator("summary").click();
+  await expect(binding).toContainText("target-current");
+  await expect(binding).toContainText("/custom-state/execution/tasks/TASK-HANDOFF/g1/project");
+  await expect(binding).toContainText("3 项；历史读取缺口 1 项");
+  await expect(binding).toContainText("未知；历史读取不能证明当前仍保留内容");
+  await expect(binding).toContainText("保存与读取记录不授予执行权限");
+  await expect(binding).toContainText("已有绑定快照");
+  await expect(binding).toContainText("快照不包含忽略文件、Git 历史和运行时状态");
+  await page.screenshot({ path: test.info().outputPath("handoff-current.png"), fullPage: true });
+  await page.getByRole("button", { name: "查看输入与成果" }).click();
+  await expect(page.getByTestId("task-input-panel").getByRole("alert")).toContainText("403");
+  await expect(page.locator(".task-run-title-row")).toContainText("verify");
+  await page.getByRole("button", { name: "Summary", exact: true }).click();
+  await binding.locator("summary").click();
+  await page.getByRole("button", { name: "切换过期绑定" }).click();
+  await expect(binding).toContainText("绑定已过期，等待受控重新绑定");
+  await expect(binding).toContainText("task workspace metadata does not match");
+  await expect(binding).not.toContainText("/custom-state/execution/tasks/TASK-HANDOFF/g1/project");
+  await page.getByRole("button", { name: "查看交接历史" }).click();
+  await expect(page.getByRole("button", { name: "Activity", exact: true })).toHaveClass(/active/);
+  await page.getByRole("button", { name: "Summary", exact: true }).click();
+  await expect(page.locator(".handoff-summary-panel")).toContainText("等待当前阶段提交并接纳结果");
+  expect(inputRequests).toBe(1);
+  expect(errors).toEqual([]);
+});

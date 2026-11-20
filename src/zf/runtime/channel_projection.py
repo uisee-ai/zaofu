@@ -2309,6 +2309,7 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             "proposed_by": _payload_str(payload, "proposed_by") or event.actor,
             "proposed_event_id": event.id,
             "signed": {},
+            "reviews": {},
             "blocked": [],
             "reached_event_id": "",
             "reopened": False,
@@ -2324,6 +2325,15 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             return
         if member_id in _channel_agent_member_ids(channel):
             item.setdefault("signed", {})[member_id] = event.ts
+            item.setdefault("reviews", {})[member_id] = {
+                "summary": _payload_str(payload, "summary"),
+                "artifact_digest": _payload_str(payload, "artifact_digest"),
+                "evidence_refs": _string_list(payload.get("evidence_refs")),
+                "review_ref": _payload_str(payload, "review_ref"),
+                "review_digest": _payload_str(payload, "review_digest"),
+                "evidence_status": "recorded" if payload.get("review_ref") else "legacy_unrecorded",
+                "event_id": event.id,
+            }
         else:
             item["human_confirmed"] = True
             item["human_confirmed_by"] = member_id
@@ -2343,6 +2353,9 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
             "blocker_question": _payload_str(payload, "blocker_question"),
             "dissent": _payload_str(payload, "dissent"),
             "evidence_refs": _string_list(payload.get("evidence_refs")),
+            "review_ref": _payload_str(payload, "review_ref"),
+            "review_digest": _payload_str(payload, "review_digest"),
+            "summary": _payload_str(payload, "summary"),
             "event_id": event.id,
             "ts": event.ts,
         })
@@ -3029,6 +3042,8 @@ def _compact_channel_message(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_reply_request(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "request_id": str(item.get("request_id") or ""),
+        "event_id": str(item.get("event_id") or ""),
+        "run_generation": int(item.get("run_generation") or 1),
         "run_id": str(item.get("run_id") or item.get("provider_run_id") or ""),
         "thread_id": str(item.get("thread_id") or "main"),
         "message_id": str(item.get("message_id") or ""),

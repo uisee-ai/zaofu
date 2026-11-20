@@ -1679,10 +1679,23 @@ def detect_completion_without_gate(
     *,
     state_dir: Path,
 ) -> list[FailureSignal]:
-    types = {event.type for event in events}
-    if types & _GATE_EVIDENCE:
-        return []
-    terminal = [event for event in events if _is_terminal_done(event)]
+    from zf.autoresearch.completion_gate_scope import completion_scope, gate_matches_completion
+    from zf.runtime.run_scope import run_aliases
+
+    aliases = run_aliases(events)
+    terminal = []
+    gates: dict[tuple[str, str], list[ZfEvent]] = {}
+    for event in events:
+        scope = completion_scope(event, aliases)
+        if event.type in {"task.requeued", "task.rework.requested", "task.contract.update"}:
+            gates.pop(scope, None)
+        if event.type in _GATE_EVIDENCE | {"integration.queue.integrated"}:
+            gates.setdefault(scope, []).append(event)
+        if _is_terminal_done(event) and not any(
+            gate_matches_completion(gate, event, aliases=aliases, state_dir=state_dir)
+            for gate in gates.get(scope, [])
+        ):
+            terminal.append(event)
     if not terminal:
         return []
     ids = [event.id for event in terminal]
@@ -1694,7 +1707,7 @@ def detect_completion_without_gate(
         severity="high",
         summary="Terminal completion appeared without gate evidence",
         expected="done requires task evidence and gate/verification support",
-        actual="terminal done event exists but no gate evidence event was found",
+        actual="terminal done event exists but no matching task/Run/generation gate evidence was found",
         event_ids=ids,
         metric_impacts={"eval_strength": -0.35},
     )]

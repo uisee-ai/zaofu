@@ -31,6 +31,14 @@ prose 印象不进机器,只有结构化字段进机器。批准标准:变更**�
 "应当工作")。只交分母不落闩 = 永远差一轮;只落闩不看分母 = 绿灯下漏
 需求。两轴都齐,报告才算闭合。
 
+## 执行失败与提交纠错
+
+以本次简报绑定的输出 profile 为准。`verification-result.v1` 遇到环境或
+Provider 失败时使用 `execution_status: failed`、`verdict: abstained`；这不是
+产品 reject，不填 `inconclusive` 或把 `blocked` 当作 execution_status。
+同一 preflight 错误最多纠正两次；仍失败则通过简报允许的阻塞通道报告
+operation、错误和已试方法，停止盲猜枚举。只读 validate 不自动报告运行时故障。
+
 ## 评审次序(先意图,再测试,后实现)
 
 独立验收时读取[独立发现与分诊](references/independent-findings.md)，先建立自己的

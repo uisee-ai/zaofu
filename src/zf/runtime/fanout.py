@@ -434,6 +434,11 @@ class FanoutManifestProjector:
                     "status": "requested",
                 })
             elif event.type == "fanout.started":
+                if (payload.get("recovery_kind") == "operator_reader_checkpoint"
+                        and event.origin == "kernel" and event.actor == "zf-cli"):
+                    # A producer lost before any admitted output has no current
+                    # synth result. Historical failures remain in the event log.
+                    manifest.pop("synth", None)
                 manifest.update({
                     "trace_id": _payload_str(payload, "trace_id") or event.correlation_id or "",
                     "stage_id": _payload_str(payload, "stage_id"),
@@ -569,6 +574,9 @@ class FanoutManifestProjector:
                 })
             elif event.type == "fanout.child.dispatched":
                 child = _child(children, payload)
+                from zf.runtime.fanout_retry_projection import project_reader_retry
+
+                project_reader_retry(manifest, child, payload, event.id)
                 child.update({
                     "status": "dispatched",
                     "run_id": _payload_str(payload, "run_id"),
@@ -609,11 +617,20 @@ class FanoutManifestProjector:
                 _apply_child_metadata(child, payload)
                 _apply_report_payload(child, payload)
             elif event.type == "fanout.aggregate.started":
+                prior_aggregate = manifest.get("aggregate") or {}
                 manifest["aggregate"] = {
                     "status": "started",
                     "mode": _payload_str(payload, "mode"),
                     "last_event_id": event.id,
                 }
+                if (event.origin == "kernel"
+                        and payload.get("recovery_kind") == "partial_reader_idle_timeout"
+                        and prior_aggregate.get("reason") == "timeout"
+                        and prior_aggregate.get("status") == "failed"
+                        and payload.get("recovered_from_event_id") == prior_aggregate.get("last_event_id")):
+                    manifest["status"] = "running"
+                    manifest["aggregate"].update(status="pending",
+                        recovered_from_event_id=payload["recovered_from_event_id"])
             elif event.type == "fanout.aggregate.completed":
                 manifest["aggregate"] = {
                     "status": _payload_str(payload, "status") or "completed",

@@ -216,7 +216,13 @@ def prepare_request_revision(
         if status in {"failed", "blocked"} and payload.get("retry_failed") is True:
             context["retry_of_operation_id"] = operation["operation_id"]
             context.pop("reusable_synthesis_result_ref", None)
-            if operation.get("admitted_call_result_ref"):
+            requires_resynthesis = any(
+                event.type == "workflow.synthesis.proposal.failed"
+                and event.payload.get("operation_id") == operation["operation_id"]
+                and event.payload.get("requires_resynthesis") is True
+                for event in writer.event_log.read_all()
+            )
+            if operation.get("admitted_call_result_ref") and not requires_resynthesis:
                 context["reusable_synthesis_result_ref"] = operation["admitted_call_result_ref"]
         else:
             terminal = status in {"failed", "blocked", "cancelled", "superseded"}

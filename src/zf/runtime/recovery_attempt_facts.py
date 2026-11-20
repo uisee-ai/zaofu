@@ -9,7 +9,7 @@ from zf.core.state.task_attempts import TaskAttemptStore, TaskAttemptStoreError
 
 
 def recovery_attempt_facts(
-    state_dir: Path, task: Any, *, run_id: str, dispatch_id: str = "",
+    state_dir: Path, task: Any, *, run_id: str, dispatch_id: str = "", operation_id: str = "",
 ) -> dict[str, Any]:
     facts: dict[str, Any] = {
         "status": "unknown", "identity": {}, "authorizes_continuation": False,
@@ -23,9 +23,17 @@ def recovery_attempt_facts(
         facts["reason"] = "requested dispatch differs from canonical active dispatch"
         return facts
     try:
-        attempt = TaskAttemptStore(Path(state_dir) / "task_attempts.json").current(
-            run_id=run_id, task_id=task.id,
-        )
+        store = TaskAttemptStore(Path(state_dir) / "task_attempts.json")
+        if operation_id:
+            # An authenticated current operation + canonical dispatch selects its
+            # operation-v2 lane. Historical task lanes must not make it ambiguous.
+            matches = [row for row in store.current_rows()
+                       if row.get("run_id") == run_id and row.get("task_id") == task.id
+                       and row.get("operation_id") == operation_id
+                       and row.get("dispatch_id") == active_dispatch]
+            attempt = matches[0] if len(matches) == 1 else None
+        else:
+            attempt = store.current(run_id=run_id, task_id=task.id)
     except (OSError, ValueError, TaskAttemptStoreError):
         facts["reason"] = "canonical attempt store is unreadable"
         return facts

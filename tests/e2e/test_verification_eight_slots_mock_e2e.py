@@ -24,7 +24,7 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 pytestmark = pytest.mark.mock_e2e
 
 
-def _runtime(root: Path, monkeypatch, stage: str):
+def _runtime(root: Path, monkeypatch, stage: str, *, task_count: int | None = None):
     _git(root, "init", "-q")
     _git(root, "config", "user.name", "Eight Slot Test")
     _git(root, "config", "user.email", "test@example.com")
@@ -91,7 +91,7 @@ def _runtime(root: Path, monkeypatch, stage: str):
                  "package_id": descriptor["package_id"], "package_ref": descriptor["ref"],
                  "package_digest": descriptor["sha256"]},
     ))
-    count = 17 if stage == "mixed" else 9
+    count = task_count if task_count is not None else (17 if stage == "mixed" else 9)
     for i in range(count):
         runtime.task_store.add(Task(
             id=f"TASK-{i}", title=f"Independent behavior {i}", priority=i,

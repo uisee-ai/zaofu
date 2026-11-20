@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **317** addressable command paths.
+The parser currently exposes **70** top-level families and **326** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -36,6 +36,8 @@ Artifact manifest helpers
 | `zf artifact catalog show` | Show one artifact identity |
 | `zf artifact checkpoint` | Create an immutable dynamic continuation checkpoint |
 | `zf artifact costs` | Inspect attempt input costs without inferring provider savings |
+| `zf artifact handoff-accept` | Acknowledge a completely read current handoff, without completing the task |
+| `zf artifact handoff-evidence` | Read causally bound predecessor tool observations without accepting them |
 | `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
@@ -43,7 +45,7 @@ Artifact manifest helpers
 | `zf artifact read` | Read one attempt input and append read evidence |
 | `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
 | `zf artifact work-record` | Publish or read current worker progress without completing a task |
-| `zf artifact work-record publish` | 发布可选的非终态工作记录，不完成 Task 或替代正式验收。 |
+| `zf artifact work-record publish` | Publish an optional nonterminal checkpoint without completing a task or replacing acceptance. |
 | `zf artifact work-record show` | No parser summary. |
 
 ## `zf attach`
@@ -181,6 +183,14 @@ Inspect/render the effective canonical config
 | `zf config` | Inspect/render the effective canonical config |
 | `zf config inspect` | Inspect expanded config |
 | `zf config render` | Render expanded config and lock |
+
+## `zf controller`
+
+Deliver Controller observation records
+
+| Command | Parser description |
+|---|---|
+| `zf controller` | Deliver Controller observation records |
 
 ## `zf cost`
 
@@ -479,8 +489,11 @@ Review, approve, or reject a plan
 |---|---|
 | `zf plan` | Review, approve, or reject a plan |
 | `zf plan approve` | Approve a plan and unlock writer fanout |
+| `zf plan draft-baseline` | Export pinned Plan ports as a tar stream for local editing |
 | `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
 | `zf plan inspect-inputs` | Inspect declared task input coverage without approving semantic completeness |
+| `zf plan inspect-review` | Inspect Critic input cost, scope and read progress |
+| `zf plan prepare-scope-review` | Assemble scope evidence; does not approve or establish runtime eligibility |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 
@@ -545,9 +558,12 @@ Recover deterministic runtime state from append-only events
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
+| `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |
+| `zf recover host-assist` | Preview exact task host assistance without executing it |
 | `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
+| `zf recover host-unit` | Render or install an opt-in user systemd supervisor |
 | `zf recover oa-review` | Re-review a proven OA role-binding defect |
-| `zf recover task-impl` | Preview or request retry after a blocked Impl repair |
+| `zf recover task-impl` | Preview or request Impl retry after blocked Impl or rejected Verify |
 | `zf recover task-integration` | Retry integration after a reviewed repair |
 | `zf recover task-verify` | Retry verify after an execution repair |
 | `zf recover workflow` | Inspect or resume pending workflow stage handoffs |

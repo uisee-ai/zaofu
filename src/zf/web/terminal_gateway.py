@@ -32,6 +32,7 @@ class AttachmentTicket:
     cols: int
     rows: int
     expires_at: float
+    browser_binding: str
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class AttachmentTicketStore:
         rows: int,
         ttl_seconds: int,
         max_attachments: int,
+        browser_binding: str = "",
     ) -> AttachmentTicket:
         now = time.monotonic()
         with self._lock:
@@ -91,6 +93,7 @@ class AttachmentTicketStore:
                 cols=cols,
                 rows=rows,
                 expires_at=now + ttl_seconds,
+                browser_binding=browser_binding,
             )
             self._tickets[token] = ticket
             return ticket
@@ -102,6 +105,7 @@ class AttachmentTicketStore:
         project_id: str,
         session_id: str,
         mode: str,
+        browser_binding: str = "",
     ) -> ConsumedAttachment:
         now = time.monotonic()
         with self._lock:
@@ -114,6 +118,7 @@ class AttachmentTicketStore:
             if (
                 ticket.project_id != project_id
                 or ticket.session_id != session_id
+                or ticket.browser_binding != browser_binding
                 or ticket.mode != mode
             ):
                 raise TerminalRuntimeError(

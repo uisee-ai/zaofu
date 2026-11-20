@@ -134,6 +134,7 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     "run.manager.autoresearch.requested",
     "task.continuation_scheduled",
     "task.retry_scheduled",
+    "task_map.amend.failed",
     "codex.hook.stop",
     "provider.turn.closed",
     "autoresearch.trigger.accepted",
@@ -366,6 +367,7 @@ class WorkflowRuntimeCoordinator(
         transport: TransportAdapter,
         *,
         project_root: Path | None = None,
+        control_plane_only: bool = False,
     ) -> None:
         self.state_dir = state_dir
         self.config = config
@@ -583,7 +585,7 @@ class WorkflowRuntimeCoordinator(
             inst for inst, st in self._last_worker_state.items()
             if st == "blocked_human"
         ]
-        if blocked_instances:
+        if blocked_instances and not control_plane_only:
             import sys
             print(
                 f"⚠ zf start: clearing blocked_human on "
@@ -629,7 +631,8 @@ class WorkflowRuntimeCoordinator(
                     latest_pause = event
                     break
             if (
-                latest_pause is not None
+                not control_plane_only
+                and latest_pause is not None
                 and isinstance(latest_pause.payload, dict)
                 and latest_pause.payload.get("source") == "remediation_cascade"
             ):
@@ -777,6 +780,9 @@ class WorkflowRuntimeCoordinator(
         shape only) and restart reconciliation all skipped it. Rolling back at
         the primitive covers every caller, current and future.
         """
+        if getattr(context, "continuation", False):
+            # A follow-up send failure does not revoke the original task lease.
+            return
         task_id = getattr(context, "task_id", None)
         dispatch_id = getattr(context, "dispatch_id", None)
         if not task_id or not dispatch_id:
@@ -1760,6 +1766,7 @@ class WorkflowRuntimeCoordinator(
             for replan_event in replan_resynth.plan_missing_replan_resynth_events(
                 events,
                 config=self.config,
+                state_dir=self.state_dir,
             ):
                 replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, replan_event)
             events = read_runtime_events(self.event_log, self.state_dir)
@@ -1815,6 +1822,7 @@ class WorkflowRuntimeCoordinator(
             plan=plan,
             events=events,
             config=self.config,
+            state_dir=self.state_dir,
         )
         if event is not None:
             replan_resynth.append_replan_resynth_once(self.event_writer, self.state_dir, event)
@@ -2074,58 +2082,10 @@ class WorkflowRuntimeCoordinator(
         registry: RoleSessionRegistry,
         instance_id: str,
     ) -> bool:
-        """Return false only for a confirmed stale handoff heartbeat."""
-        try:
-            _, payload = registry.get_last_heartbeat(instance_id)
-        except Exception:
-            return True
-        if not isinstance(payload, dict):
-            return True
-        current_task_id = str(
-            payload.get("current_task_id") or payload.get("task_id") or ""
-        ).strip()
-        if not current_task_id:
-            return True
-        fanout_id = str(payload.get("fanout_id") or "").strip()
-        child_id = str(payload.get("child_id") or "").strip()
-        if current_task_id.startswith("fanout:") or (fanout_id and child_id):
-            try:
-                active = self._active_fanout_child_for_instance(instance_id)
-            except Exception:
-                return True
-            if not active:
-                return False
-            if fanout_id and active.get("fanout_id") != fanout_id:
-                return False
-            if child_id and active.get("child_id") != child_id:
-                return False
-            return True
-        try:
-            tasks = self.task_store.list_all()
-        except Exception:
-            return True
-        task = next((t for t in tasks if t.id == current_task_id), None)
-        if task is None:
-            return False
-        if task.status != "in_progress":
-            return False
-        try:
-            terminal_dispatch = self._terminal_task_pipeline_assignments().get(
-                (task.id, instance_id),
-            )
-        except Exception:
-            terminal_dispatch = None
-        if terminal_dispatch and task.active_dispatch_id in {"", terminal_dispatch}:
-            # Task status can remain in_progress after a blocked result or
-            # while awaiting integration; the ended stage no longer owes heartbeats.
-            return False
-        if (task.assigned_to or "") == instance_id:
-            return True
-        try:
-            latest_dispatched = self._latest_dispatched_per_task()
-        except Exception:
-            latest_dispatched = {}
-        return latest_dispatched.get(task.id, "") == instance_id
+        """Use actual work ownership before interpreting heartbeat silence."""
+        from zf.runtime.heartbeat_work_obligation import heartbeat_current_task_still_owned
+
+        return heartbeat_current_task_still_owned(self, registry, instance_id)
 
     def _heartbeat_worker_finished_current_dispatch(self, instance_id: str) -> bool:
         """True if the worker already produced a result for its current dispatch.
@@ -2368,7 +2328,11 @@ class WorkflowRuntimeCoordinator(
             raise BudgetExceededError(
                 f"dispatch to {role_name} blocked: budget exceeded"
             )
-        if role_on_demand:
+        if context is not None and context.continuation:
+            from zf.runtime.task_attempt_continuation import validate_task_continuation
+
+            validate_task_continuation(self, role_name, context)
+        if role_on_demand and not (context is not None and context.continuation):
             try:
                 self._ensure_role_active(
                     role,
@@ -2439,16 +2403,7 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.orchestrator_agent_role import configured_orchestrator_role
 
         decisions: list[WorkflowRuntimeDecision] = []
-        if pushed is not None:
-            recent = pushed
-            # The watcher acknowledges its immutable batch boundary only
-            # after every callback has completed.
-            if consumed_offset is not None and consumed_offset < 0:
-                raise ValueError("consumed event offset must be non-negative")
-            new_offset = consumed_offset
-        else:
-            offset = self._load_offset()
-            recent, new_offset = self.event_log.read_from_offset(offset)
+        recent, new_offset = self._read_reaction_events(pushed, consumed_offset)
 
         # Keep 194 Layer 2 authority activation tied to the legacy role's
         # presence. ``oa_profile`` binds semantic checkpoint transport but
@@ -3230,7 +3185,10 @@ class WorkflowRuntimeCoordinator(
                 # heartbeat; the sweep must see that idle state rather than the
                 # previous busy heartbeat.
                 from zf.core.state.role_sessions import RoleSessionRegistry
+                from zf.runtime.worker_state_runtime import apply_external_worker_transition
                 try:
+                    if not apply_external_worker_transition(self, event):
+                        return
                     registry = RoleSessionRegistry(
                         self.state_dir / "role_sessions.yaml",
                         project_root=str(self.project_root),
@@ -3910,17 +3868,25 @@ class WorkflowRuntimeCoordinator(
         # Keep a replacement crash-safe: first make the successor addressable,
         # then migrate retained dependency edges, and only then archive the old
         # task. A gap-only resume still dispatches only its requested tasks.
+        from zf.runtime.task_map_supersession_history import historical_supersession_proofs
+
+        history = historical_supersession_proofs(
+            loaded=loaded, events=self.event_log.read_all(), task_store=self.task_store,
+            state_dir=self.state_dir, project_root=self.project_root,
+        )
         reconcile_retained_task_dependencies(
             task_store=self.task_store,
             event_writer=self.event_writer,
             loaded=loaded,
             state_dir=self.state_dir,
             project_root=self.project_root,
+            historical_proofs=history,
         )
         apply_explicit_task_supersedes(
             task_store=self.task_store,
             event_writer=self.event_writer,
             loaded=loaded,
+            historical_proofs=history,
         )
 
     @staticmethod
@@ -4354,6 +4320,7 @@ class WorkflowRuntimeCoordinator(
                 source_event_id=event.id,
                 gap_tasks=gap_tasks,
                 gap_plan_ref=gap_plan_ref,
+                source_index_ref=str(payload.get("source_index_ref") or ""),
                 replacement_context=payload,
                 admission_metadata=metadata,
             )
@@ -4446,7 +4413,7 @@ class WorkflowRuntimeCoordinator(
                 "flow_kind": flow_kind,
                 "task_map_ref": str(amend.get("task_map_ref") or ""),
                 "task_map_digest": task_map_digest,
-                "source_index_ref": str(payload.get("source_index_ref") or ""),
+                "source_index_ref": str(amend.get("source_index_ref") or payload.get("source_index_ref") or ""),
                 "source_commit": str(payload.get("source_commit") or ""),
                 "candidate_base_commit": str(
                     payload.get("candidate_base_commit") or payload.get("source_commit") or ""

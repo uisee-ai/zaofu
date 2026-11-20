@@ -105,3 +105,29 @@ def test_scope_comparison_does_not_equate_json_boolean_and_number():
     changed = deepcopy(body)
     changed["tasks"][0]["body"]["enabled"] = 1
     assert not unchanged_task_input(body, changed, task_id="T")
+
+
+@pytest.mark.parametrize("changed", ["other", "shared", "owned", "unassigned", "boolean"])
+def test_native_declared_input_continuity_preserves_complete_task_scope(changed):
+    from zf.runtime.task_scoped_plan_inputs import unchanged_task_input
+
+    before = {
+        "shared": {"rule": "keep"}, "owned": {"enabled": True}, "other": {"step": "old"},
+        "task_input_policy": {"schema_version": "task-input-policy.v1",
+            "shared_paths": ["$.shared"], "tasks": [
+                {"task_id": "T", "paths": ["$.owned"]},
+                {"task_id": "OTHER", "paths": ["$.other"]},
+            ]},
+    }
+    after = deepcopy(before)
+    if changed == "boolean":
+        after["owned"]["enabled"] = 1
+    elif changed == "unassigned":
+        after["hidden"] = "must be declared"
+    else:
+        after[changed]["new"] = "changed"
+    if changed == "unassigned":
+        with pytest.raises(ValueError):
+            unchanged_task_input(before, after, task_id="T")
+    else:
+        assert unchanged_task_input(before, after, task_id="T") is (changed == "other")

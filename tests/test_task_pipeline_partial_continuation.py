@@ -22,18 +22,19 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 
 
-def setup(tmp_path, fault=''):
+def setup(tmp_path, fault='', product_path='product.txt'):
     git(tmp_path, 'init', '-q', '-b', 'worker/partial')
     git(tmp_path, 'config', 'user.name', 'ZaoFu Test')
     git(tmp_path, 'config', 'user.email', 'test@example.invalid')
-    product = tmp_path / 'product.txt'
+    product = tmp_path / product_path
+    product.parent.mkdir(parents=True, exist_ok=True)
     product.write_text('base\n')
-    git(tmp_path, 'add', '--', 'product.txt')
+    git(tmp_path, 'add', '--', product_path)
     git(tmp_path, 'commit', '-qm', 'base')
     base = git(tmp_path, 'rev-parse', 'HEAD')
     if fault != 'no_partial':
         product.write_text('partial implementation\n')
-        git(tmp_path, 'add', '--', 'product.txt')
+        git(tmp_path, 'add', '--', product_path)
         git(tmp_path, 'commit', '-qm', 'partial')
     head = git(tmp_path, 'rev-parse', 'HEAD')
     state, log, writer = _state(tmp_path)
@@ -99,7 +100,7 @@ def setup(tmp_path, fault=''):
         'retryable':False,'is_terminal':False})
     if fault == 'corrupt_result': (state/ref['ref']).write_text('{}')
     if fault == 'branch_moved':
-        product.write_text('later unrelated modification\n');git(tmp_path,'add','--','product.txt')
+        product.write_text('later unrelated modification\n');git(tmp_path,'add','--',product_path)
         git(tmp_path,'commit','-qm','later')
     if fault == 'newer_impl':
         service.ensure_operation(workflow_run_id='run',operation_id='newer',operation_type='task-stage',

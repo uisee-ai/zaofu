@@ -83,6 +83,8 @@ def validate_provider_session_config(
     if session is None:
         return
     caps = capabilities or get_adapter(role.backend).capabilities
+    if session.sandbox and role.backend != "codex":
+        raise ValueError("provider_session.sandbox is supported only by codex")
     if session.native_delegation is True and not caps.native_multi_agent:
         raise ValueError("native delegation has not been admitted for this provider")
     if session.native_delegation is False and role.backend not in {"codex", "claude-code", "mock"}:
@@ -318,13 +320,19 @@ class CodexAdapter(BackendAdapter):
         # telemetry hooks still fire (no stall, no lost briefings).
         cmd = ["codex", "--enable", "hooks", "--dangerously-bypass-hook-trust"]
 
-        # Provider sandboxing is intentionally uniform across all ZaoFu
-        # workers. Logical role constraints are still enforced by the kernel,
-        # not delegated to Codex's host-dependent bwrap/unshare sandbox.
-        cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        # Explicit host confinement is independent of logical role policy.
+        # Never silently fall back to full access when sandboxing is requested.
+        if role.provider_session is not None and role.provider_session.sandbox:
+            cmd.extend(["--sandbox", role.provider_session.sandbox,
+                        "--ask-for-approval", "never"])
+        else:
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if role.model and role.model != "placeholder":
             cmd.extend(["--model", role.model])
+        # Automation keeps the configured model; a savings suggestion must not
+        # consume the next task prompt. Actual quota errors remain visible.
+        cmd.extend(["-c", "notice.hide_rate_limit_model_nudge=true"])
         provider_session = role.provider_session
         if provider_session is not None and provider_session.native_delegation is False:
             cmd.extend(["--disable", "multi_agent", "--disable", "multi_agent_v2"])

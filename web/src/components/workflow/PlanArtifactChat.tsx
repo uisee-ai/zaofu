@@ -93,16 +93,19 @@ export default function PlanArtifactChat({ preview, projectId, disabled, onBusy,
     } catch (reason) { if (generation === epoch.current) setError(String(reason)); }
     finally { if (generation === epoch.current) setWorking(false); }
   }
-  return <section className="plan-artifact-review" aria-label="PRD Plan Agent Chat">
-    <label>Document <select aria-label="Plan review artifact" value={name} disabled={disabled || working || !!draft} onChange={e => setName(e.target.value)}>
+  const showDocument = context || !name || (disabled && name === "accepted_plan");
+  const documentControls = <label>Document <select aria-label="Plan review artifact" value={name} disabled={disabled || working || !!draft} onChange={e => setName(e.target.value)}>
       <option value="">Plan Preview</option>
       {preview.artifacts?.map(a => <option key={a.name} value={a.name}>{a.name === "accepted_plan" ? "Plan" : a.name}</option>)}
-    </select></label>
+    </select></label>;
+  return <section className="plan-artifact-review" aria-label="PRD Plan Agent Chat">
+    {!showDocument && documentControls}
     {unavailableReason && <p role="status">{unavailableReason}</p>}
     {contextError && <p role="alert">文档加载失败：{contextError} <button type="button" onClick={() => setReload(value => value + 1)}>重试</button></p>}
     {!context && !contextError && !disabled && name && <p role="status">正在读取已绑定文档…</p>}
-    {(context || !name || (disabled && name === "accepted_plan")) && <PlanReviewDocument key={`${preview.plan_id}:${name}`} body={context?.body ?? preview.markdown ?? ""}
+    {showDocument && <PlanReviewDocument key={`${preview.plan_id}:${name}`} body={context?.body ?? preview.markdown ?? ""}
       disabled={disabled || working || !!draft || !context?.editable} onSelect={capture}
+      documentControls={documentControls}
       agentControls={<>
         <button type="button" data-preview-agent-trigger aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>Agent</button>
         <div ref={setAnchor} className="plan-agent-anchor" />

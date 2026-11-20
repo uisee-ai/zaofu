@@ -6,8 +6,8 @@ Layout (active+archive):
     .zf/events/<date>.jsonl    ← historical archived days
 
 Rotation happens lazily on append(): if active file's mtime is not
-today, it gets moved to events/<mtime_day>.jsonl via the shared
-rotate_if_needed helper (zf.core.state.rotation, G-ROT-0).
+today, it gets moved to an immutable event segment. Same-day collisions
+keep separate files so durable byte positions retain their file identity.
 """
 
 from __future__ import annotations
@@ -19,11 +19,13 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from zf.core.events.model import ZfEvent
+from zf.core.events.offset import EventOffset, current_offset, read_tail
+from zf.core.events.rotation import archive_segment, rotate_by_date
 from zf.core.state.locks import locked_path
-from zf.core.state.rotation import list_archives, rotate_if_needed
+from zf.core.state.rotation import list_archives
 
 if TYPE_CHECKING:
     from zf.core.security.signing import EventSigner
@@ -80,9 +82,11 @@ class EventLog:
         *,
         signer: "EventSigner | None" = None,
         allow_unsigned: bool = False,
+        durable_observer: Callable[[ZfEvent], None] | None = None,
     ) -> None:
         self.path = path
         self.signer = signer
+        self.durable_observer = durable_observer
         # Read-path tolerance: when a signer is configured, plain
         # (non-envelope) lines are rejected as event.malformed unless the
         # project explicitly opted in to legacy tolerance. Without this,
@@ -113,7 +117,7 @@ class EventLog:
     def append(self, event: ZfEvent) -> None:
         with locked_path(self.path):
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            rotate_if_needed(self.path, self._archive_dir)
+            rotate_by_date(self.path)
             self._rotate_by_size_if_needed()
             line = self._encode(event)
             prefix = ""
@@ -130,6 +134,13 @@ class EventLog:
                 pass
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(prefix + line + "\n")
+                if self.durable_observer is not None:
+                    f.flush()
+                    os.fsync(f.fileno())
+            if self.durable_observer is not None:
+                # Required configured observation is not a best-effort diagnostic projector.
+                # A failed queue append leaves the occurrence replayable and propagates failure.
+                self.durable_observer(event)
         if self.index is not None:
             try:
                 self.index.observe(event)
@@ -171,14 +182,7 @@ class EventLog:
         if stat.st_size < max_bytes:
             return False
         day = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d")
-        self._archive_dir.mkdir(parents=True, exist_ok=True)
-        ordinal = 1
-        while True:
-            archive_path = self._archive_dir / f"{day}-{ordinal:04d}{self.path.suffix}"
-            if not archive_path.exists():
-                break
-            ordinal += 1
-        self.path.rename(archive_path)
+        archive_segment(self.path, day, numbered=True)
         return True
 
     def _encode(self, event: ZfEvent) -> str:
@@ -266,38 +270,18 @@ class EventLog:
             },
         )
 
-    def current_offset(self) -> int:
-        try:
-            return self.path.stat().st_size
-        except FileNotFoundError:
-            return 0
+    def current_offset(self) -> EventOffset:
+        return current_offset(self.path)
 
-    def read_from_offset(self, offset: int) -> tuple[list[ZfEvent], int]:
-        """Return events appended since `offset`, plus the new end offset.
+    def read_from_offset(
+        self, offset: int, *, through: int | None = None,
+    ) -> tuple[list[ZfEvent], EventOffset]:
+        """Read complete events, following bound offsets across lazy rotation.
 
-        Handles rotation: if the active file's current size is smaller than
-        `offset` (because the old content got moved to an archive), we start
-        from 0 of the new active file.
+        ``through`` pins a pushed watcher batch so callback appends remain
+        unconsumed. Bare legacy integers still address the active file only.
         """
-        if not self.path.exists():
-            return [], 0
-        current_size = self.path.stat().st_size
-        effective_offset = offset if offset <= current_size else 0
-        with self.path.open("rb") as f:
-            f.seek(effective_offset)
-            data = f.read()
-        # Only consume up to the last newline. A trailing line without a newline
-        # is a partial write: a large event (e.g. a 16KB scan report) is flushed
-        # in chunks, and a poll can read the file between chunks. Advancing the
-        # offset past such a line drops the event from the live stream forever —
-        # decode fails now and the next poll starts after it — even though a full
-        # re-read still sees it (why the manifest projector and live reactor can
-        # disagree). Leaving it unconsumed lets the next poll re-read it whole.
-        last_newline = data.rfind(b"\n")
-        if last_newline < 0:
-            return [], effective_offset
-        complete = data[: last_newline + 1]
-        new_offset = effective_offset + len(complete)
+        complete, new_offset = read_tail(self.path, offset, through=through)
         events: list[ZfEvent] = []
         for raw in complete.split(b"\n"):
             line = raw.decode("utf-8", "replace").strip()

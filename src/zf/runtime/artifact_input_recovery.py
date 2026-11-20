@@ -81,21 +81,56 @@ def build_input_recovery(
         "commands": {"index": f"{prefix} index --attempt {attempt}",
                      "recover": f"{prefix} recover --attempt {attempt}"},
         "instructions": "This report is informational, not an execution permission or denial. "
+                        "It does not revoke existing execution authority. "
                         "authorizes_execution=false and current_memory=unknown remain unchanged after reads; "
                         "reconstruction_required is the required-input scope count, not a remaining-read counter. "
                         "Do not wait for true/zero or a checkpoint to appear. Execution remains governed by the "
                         "current dispatch, identity, workdir, lease and runtime gates. Rebind when required; "
                         "otherwise consume missing required bodies and reconstruct forgotten clauses/interfaces "
                         "from their bound sources, then perform the next in-scope check. History/checkpoints "
-                        "never prove current memory. Use --resume only while current-session material remains available.",
+                        "never prove current memory. After the latest known compaction, re-read missing or forgotten "
+                        "required bodies with complete untruncated delivery. Repeated notices do not restart an "
+                        "unchanged completed read set. Use --resume only while current-session material remains available.",
+        "recovery_exit": {"after_complete_delivery": "continue_current_step",
+                          "requires_current_execution_authority": True,
+                          "requires_complete_untruncated_delivery": True,
+                          "missing_environment_or_unknown_effect": "wait_for_specific_dependency"},
     }
     from zf.runtime.work_record import current_work_record
     result["work_record"] = current_work_record(state_dir, events, manifest, identity.get("actor", ""))
+    if (manifest.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child":
+        from zf.runtime.reader_work_record import reader_checkpoint_entry
+        entry = reader_checkpoint_entry(state_dir, events, manifest, identity.get("actor", ""))
+        if entry:
+            result["work_record_publish"] = entry
+            from zf.runtime.task_handoff import predecessor_work_record
+            try:
+                binding = {key: str(manifest.get(key) or "") for key in ("workflow_run_id", "task_id")}
+                from zf.runtime.workflow_operation import reduce_workflow_operations
+                operation = next(op for op in reduce_workflow_operations(events).values()
+                    if op.get("active_attempt_id") == manifest["attempt_id"] and op.get("role_instance") == identity.get("actor"))
+                binding["operation_id"] = operation["operation_id"]
+                predecessor_work_record(state_dir, manifest, binding)
+                result["commands"]["predecessor_work_record_read"] = (
+                    f"{prefix} work-record show --operation {shlex.quote(binding['operation_id'])} --predecessor")
+            except (OSError, ValueError, KeyError, StopIteration):
+                pass
     if result["work_record"].get("status") == "bound":
         op = shlex.quote(str(result["work_record"]["operation_id"]))
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
-        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --reason recovery"
+        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
+        from zf.runtime.task_handoff_receipt import handoff_receipt_projection
+
+        handoff_sources = [s for s in manifest.get("sources", []) if s.get("source_id") == "task-handoff"]
+        if handoff_sources:
+            receipt = handoff_receipt_projection(state_dir, events, str(manifest.get("task_id") or ""))
+            if receipt.get("handoff_ref", {}).get("sha256") == handoff_sources[0].get("sha256"):
+                result["handoff_receipt"] = {key: receipt[key] for key in ("status", "target_operation_id")}
+                if receipt["status"] == "awaiting_receipt":
+                    operation = shlex.quote(receipt["target_operation_id"])
+                    digest = shlex.quote(handoff_sources[0]["sha256"])
+                    result["commands"]["handoff_accept_after_read"] = f"{prefix} handoff-accept --operation {operation} --digest {digest}"
     result["next_action"] = "request_controlled_rebind" if lifecycle["requires_rebind"] else "reconstruct_required_inputs"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.

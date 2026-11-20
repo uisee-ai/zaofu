@@ -7,8 +7,8 @@ from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_fail
 from zf.runtime.recovery_case import build_recovery_case_projection
 
 
-def _diagnosed(tmp_path):
-    runtime, identity = _case(tmp_path)
+def _diagnosed(tmp_path, *, failure_class="none", progress_fence=False):
+    runtime, identity = _case(tmp_path, failure_class=failure_class)
     writer = runtime.event_writer
     runtime.config.workflow.orchestration.normal_frontier_owner = "wrc"
     failed = writer.emit("dev.blocked", task_id="TASK-1", payload={
@@ -18,18 +18,65 @@ def _diagnosed(tmp_path):
         "checkpoint_id": "failure-diagnosis:" + failed.id, "recovery_case_id": "case-1",
     })
     admitted = next(e for e in runtime.event_log.read_all() if e.type == "workflow.call.result.admitted")
+    precondition = {}
+    if progress_fence:
+        from zf.runtime.run_manager import build_run_goal_projection, build_run_continuation_projection
+        events = runtime.event_log.read_all()
+        goal = build_run_goal_projection(events, run_id="run-semantic-1")
+        projection = build_run_continuation_projection(events, goal=goal, pending_actions=[], completion_profile={})
+        precondition = {k: projection[k] for k in ("run_id", "generation", "progress_digest")}
     writer.emit("run.manager.action.effect.pending", task_id="TASK-1", payload={
         "request_id": "diagnose-1", "checkpoint_id": "failure-diagnosis:" + failed.id, "recovery_case_id": "case-1",
         "task_id": "TASK-1", "workflow_run_id": "run-semantic-1", "task_map_generation": "g1",
         "active_attempt_id": "lease-task-1", "failure_event_ids": [admitted.id],
         "continuation_expected_events": ["run.manager.agent.recommendation"],
         "expected_event_types": ["task.done"],
+        "operation_precondition": precondition,
     })
     writer.emit("run.manager.resident.prompted", payload={
         "request_id": "diagnose-1", "instance_id": "run-manager", "prompted": True,
         "expected_output": ["run.manager.agent.recommendation"],
     })
     return runtime, identity
+
+
+def test_parallel_task_progress_does_not_discard_current_diagnosis(tmp_path):
+    runtime, _ = _diagnosed(tmp_path, progress_fence=True)
+    runtime.event_writer.emit("task.done", task_id="OTHER", correlation_id="run-semantic-1",
+                              payload={"workflow_run_id": "run-semantic-1"})
+    _recommend(runtime)
+    _tick(runtime)
+    events = runtime.event_log.read_all()
+    requests = [e for e in events if e.type == "orchestrator.semantic.failure.requested"]
+    assert len(requests) == 1 and requests[0].payload["target_operation_id"] == "impl-1"
+
+
+@pytest.mark.parametrize('change', ['unrelated_progress', 'new_operation', 'new_goal', 'terminal'])
+def test_bound_task_precondition_tracks_its_owner_and_goal(tmp_path, change):
+    from zf.runtime.recovery_step import bind_recommendation_to_request
+    from zf.runtime.resident_semantic_handoff import bind_resident_semantic_handoff
+    from zf.runtime.run_manager import _action_from_agent_recommendation, _operation_precondition_holds
+    runtime, identity = _diagnosed(tmp_path, progress_fence=True)
+    advice = _recommend(runtime)
+    events = runtime.event_log.read_all()
+    payload = bind_recommendation_to_request(events, advice, advice.payload)
+    payload = bind_resident_semantic_handoff(state_dir=runtime.state_dir, config=runtime.config,
+                                           events=events, payload=payload)
+    action = _action_from_agent_recommendation(advice, payload)
+    assert _operation_precondition_holds(events, action)
+    if change == 'new_operation':
+        runtime.event_writer.emit('workflow.operation.requested', task_id='TASK-1', payload={
+            **identity, 'operation_id': 'impl-2', 'operation_generation': 2})
+    elif change == 'new_goal':
+        runtime.event_writer.emit('run.goal.updated', correlation_id='run-semantic-1',
+            payload={'run_id': 'run-semantic-1', 'objective': 'different objective'})
+    elif change == 'terminal':
+        runtime.event_writer.emit('run.cancelled', correlation_id='run-semantic-1',
+                                  payload={'run_id': 'run-semantic-1'})
+    else:
+        runtime.event_writer.emit('task.done', task_id='OTHER', correlation_id='run-semantic-1',
+                                  payload={'workflow_run_id': 'run-semantic-1'})
+    assert _operation_precondition_holds(runtime.event_log.read_all(), action) == (change == 'unrelated_progress')
 
 
 def _tick(runtime):
@@ -88,7 +135,7 @@ def test_tick_hands_bound_diagnosis_to_existing_semantic_checkpoint_once(tmp_pat
     assert retries["TASK-1"]["fault"] == "task_pipeline_oa_rework"
 
 
-@pytest.mark.parametrize("blocker", ["wrong_task", "wrong_operation", "new_operation", "disabled", "paused", "human", "missing_request"])
+@pytest.mark.parametrize("blocker", ["wrong_task", "wrong_operation", "new_operation", "new_goal", "disabled", "paused", "human", "missing_request"])
 def test_semantic_handoff_preserves_currentness_and_owner_gates(tmp_path, blocker):
     runtime, identity = _diagnosed(tmp_path)
     changes = {}
@@ -102,6 +149,9 @@ def test_semantic_handoff_preserves_currentness_and_owner_gates(tmp_path, blocke
         runtime.event_writer.emit("workflow.operation.requested", task_id="TASK-1", payload={
             **identity, "operation_id": "impl-2", "request_hash": "r2", "operation_generation": 2,
         })
+    elif blocker == "new_goal":
+        runtime.event_writer.emit("run.goal.updated", correlation_id="run-semantic-1",
+            payload={"run_id": "run-semantic-1", "objective": "changed before diagnosis response"})
     elif blocker == "disabled":
         runtime.config.workflow.orchestration.review_blocked_tasks = False
     elif blocker == "paused":

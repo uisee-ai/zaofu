@@ -5,6 +5,10 @@
 1. 对账完整原始材料，将条款、例外、共享规则、依赖接口、图片的页面/状态/位置绑定来源版本和定位。来源清单与覆盖账本不能只列摘要；排除要有理由，未知不得标成覆盖。
 2. 按 Task Map 的精确 ID 生成一次 owned partition；跨任务约束放 shared，说明消费者义务。保留验收 ID、source_ref、image_ref，以及接口错误语义。仅复制 ID 不算语义完整。
 3. 保留完整原始产物与矩阵。Impl / Task Verify 的 selection 只引用批准包内实际存在的端口；Candidate Verify、任务集成评审和 Goal Judge 保持各自 profile，不补造通用 judge selection。
+   使用 `task_input_policy` 的端口可明确声明 `candidate_paths`：Candidate 必读为 shared + candidate_paths；
+   未声明则维持全文。必须包含全部验收行为、异常、跨任务接口、命令、来源与证据义务，
+   只能排除纯实现步骤，不能通过裁剪把失败条件隐藏。Critic 逐条从原始材料反向对账，
+   并记录排除理由；机械路径校验不证明语义完整。全局 contract、target 和完整验收矩阵仍须消费。
 4. 冻结前列出 Impl / Task Verify 实际选择的 shared / owned 路径、各自必要性与排除理由，以及完整来源的固定版本和获授权精确读取位置；在现有 rationale/输入正文或工件说明中记录，不新增字段。制作端口名到相对 JSON 文件的映射，运行 `zf plan inspect-inputs --bundle bundle.json --task T1`。按 next_offset 继续；缺失资料、未知引用、重复/多余切片和依赖错误均需解释或修复。字节与页数仅是核查重复和适用性的审查信号，不作为阈值准入或自动裁剪依据。预检不批准 Plan，也不修改原文件。
 5. Critic 独立从原始材料反向对账 shared + owned；逐条说明异常、共享规则、图片状态、依赖和验收责任是否保留。引用存在、结构合法或预检无问题都不能证明语义完整。
 
@@ -13,7 +17,10 @@
 将本消费者必需的完整条款、异常、用例和依赖接口正文放入该端口的 `shared` / `tasks[].body`；
 完整来源与全局矩阵仍保留在已绑定的权威产物中并可精确回取。大型端口可通过既有
 `plan_ports` 的 `{logical_name, ref, sha256}` 描述符交付，避免重复内嵌进结果正文。
-不要提高结果大小上限或删减正文。提交前从正式迁移后的工件与下游实际选择路径检查：
+不要提高结果大小上限或删减正文。作者脚本与中间工件使用分配 workdir 内的相对路径；
+最终结果只写 briefing 精确授权的 scratch。不要用全局 /tmp 脚本、裸项目根路径变量
+拼接输出或修改宿主保护来生成工件；合法命令仍遭拒时保留回执，经受控问题路径处理。提交前从正式迁移后的工件与下游实际选择路径检查：
+
 离开作者工作目录后仍能读到完整正文和同版引用，才算交接成立。
 
 这里“完整”按本消费者的适用义务判断，不等于前置任务全文。反例是将每个前置的
@@ -61,6 +68,12 @@
 `artifact index` 的 v2 页面用 `sources[item.source]` 解析来源，item.navigation 保存字段/章节位置。每页独立携带所需来源元数据；读取命令仍使用父授权 selector。看到 `navigation_complete=false` 时应核对固定原文，不能把未命中判为无需求；目录不产生必读回执。
 
 ## 跨版本 Critic：完整性优先的按需输入
+
+- 新 rework manifest 可将两个前版候选中的相同大字段绑定到一次必读正文：
+  `access_scope.read_equivalents` 记录原路径、等价 source/digest/path 与内容摘要。
+  根据该定位读第一份完整正文，并阅读第二份所有独有字段；这不是语义摘要或旧批准复用。
+  原工件不改写，已运行 attempt 不更换输入。生产者优先使用 `plan_ports` 的 ref/digest
+  描述符，避免将大矩阵反复内嵌到 report 和 control result。
 
 - 先对账来源、已声明任务、验收与 coverage disposition；一个 source 可对应多个任务，
   排除或未来决定须保留理由。ID、引用与当前版本机械核验；遗漏异常或视觉语义仍由独立 Critic 判断。

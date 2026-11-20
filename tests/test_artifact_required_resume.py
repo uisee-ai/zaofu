@@ -11,12 +11,15 @@ from zf.cli.main import main
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.artifact_read_ledger import build_attempt_source_manifest, write_attempt_source_manifest
+from zf.runtime.artifact_text_page import parse_artifact_page
 
 
+@pytest.mark.parametrize("pages", [1, 4])
 @pytest.mark.parametrize("witness", ["observed", "missing", "wrong_session", "truncated",
                                       "wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output",
                                       "compacted_event", "compacted_transcript", "compacted_before_delivery"])
-def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness):
+@pytest.mark.parametrize("output_format", ["json", "text"])
+def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_path, monkeypatch, capsys, witness, output_format, pages):
     state = tmp_path / "state"
     source_path = state / "artifacts" / "input.json"
     source_path.parent.mkdir(parents=True)
@@ -32,10 +35,10 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         writer.append(ZfEvent(type=typ, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
     writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
         {"source_id": "s", "artifact_id": "a", "artifact_sha256": source["sha256"], "json_path": "$.body"}]}))
-    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required"]
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required", "--format", output_format]
     assert main(command) == 0
     first_raw = capsys.readouterr().out.strip()
-    first = json.loads(first_raw)
+    first = parse_artifact_page(first_raw)
     assert first["next_cursor"]
     if witness in {"wrong_bundle", "wrong_operation", "wrong_actor", "gap", "tampered_output"}:
         from zf.runtime.artifact_read_ledger import active_read_ledger_path
@@ -74,8 +77,22 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         writer.append(ZfEvent(type="worker.context.compacted", actor="dev-1", task_id="T1",
                               ts=(datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()))
 
-    assert main([*command, "--resume"]) == 0
-    resumed = json.loads(capsys.readouterr().out)
+    assert main([*command, "--resume", "--pages", str(pages)]) == 0
+    raw = capsys.readouterr().out.rstrip("\n")
+    chunks = raw.split("\nZF_ARTIFACT_TEXT_PAGE_END\n") if output_format == "text" else raw.splitlines()
+    outputs = [parse_artifact_page(chunk + ("\nZF_ARTIFACT_TEXT_PAGE_END" if output_format == "text" and i < len(chunks)-1 else ""))
+               for i, chunk in enumerate(chunks)]
+    assert len(outputs) == pages
+    resumed = outputs[0]
+    compatible = witness in {"observed", "compacted_before_delivery"}
+    assert resumed["continuation"]["mode"] == ("resume" if compatible else "full")
+    assert resumed["continuation"]["skipped_chars"] == (first["items"][0]["page_end"] if compatible else 0)
+    assert resumed["continuation"]["current_memory"] == "unknown"
+    assert resumed["continuation"]["reason"]
+    assert resumed["continuation"]["required_occurrences"] == 1
+    assert resumed["continuation"]["distinct_bodies"] == 1
+    for before, after in zip(outputs, outputs[1:]):
+        assert after["items"][0]["page_start"] == before["items"][-1]["page_end"]
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
 
 
@@ -117,7 +134,22 @@ def test_resume_requires_matching_operation_and_gap_free_pages(tmp_path, monkeyp
         f.write(json.dumps({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat(),
             "type": "response_item", "payload": {"type": "function_call_output", "call_id": "2", "output": raw2}}) + "\n")
     assert main([*cmd, "--resume"]) == 0
-    assert json.loads(capsys.readouterr().out)["items"] == []
+    third_raw = capsys.readouterr().out.strip()
+    third = json.loads(third_raw)
+    assert third["items"] == []
+    assert third["continuation"]["reason"] == "observed_complete"
+    assert third["continuation"]["skipped_chars"] == 10000
+    assert len(third_raw.encode()) < len(raw.encode())
+    # Explicit opt-out reproduces the full first page despite prior witnesses.
+    assert main(cmd) == 0
+    full_raw = capsys.readouterr().out.strip()
+    full = json.loads(full_raw)
+    assert full["items"][0]["page_start"] == 0
+    assert "continuation" not in full
+    # Independent reconstruction proves that the resumed delivery omitted no body.
+    reconstructed = page["items"][0]["content"] + page2["items"][0]["content"]
+    assert reconstructed == "x" * 10000
+    print(f"continuation comparison: full-first-page={len(full_raw.encode())}B complete-resume={len(third_raw.encode())}B; body=10000 chars")
     from zf.runtime.artifact_read_ledger import seal_read_ledger
     from zf.runtime.artifact_read_ledger_validation import validate_required_reads
 

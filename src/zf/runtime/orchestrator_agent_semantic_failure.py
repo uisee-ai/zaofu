@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.orchestrator_agent_operations import (
     PreparedOrchestratorAgentOperation,
@@ -54,14 +55,6 @@ def request_semantic_failure_checkpoint(
     events = runtime.event_log.read_all()
     current: dict[str, Any] = {}
     bound_operation: Mapping[str, Any] = {}
-    if payload.get("target_operation_id"):
-        from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
-        from zf.runtime.workflow_operation import reduce_workflow_operations
-
-        current = operation_bindings(events, str(payload.get("workflow_run_id") or ""), {task_id}).get(task_id, {})
-        if current.get("operation_id") != payload["target_operation_id"] or current.get("status") != "settled":
-            raise SemanticFailureCheckpointError("target_operation_stale")
-        bound_operation = reduce_workflow_operations(events).get(str(payload["target_operation_id"]), {})
     workflow_run_id, package = _current_plan_package(
         events,
         task_id=task_id,
@@ -90,12 +83,39 @@ def request_semantic_failure_checkpoint(
         )
         if run_id != workflow_run_id or (failure.task_id and failure.task_id != task_id):
             raise SemanticFailureCheckpointError("failure_target_scope_mismatch")
+    candidate = {}
+    operation_id = str(payload.get("target_operation_id") or "")
+    if operation_id:
+        from zf.runtime.orchestrator_agent_execution_policy import operation_bindings
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        bound_operation = reduce_workflow_operations(events).get(operation_id, {})
+        if bound_operation.get("operation_type") == "fanout_reader_child":
+            try:
+                candidate = candidate_checkpoint_binding(
+                    runtime.state_dir, events, failure_id=failures[-1].id,
+                    operation_id=operation_id, run_id=workflow_run_id, task_id=task_id,
+                )
+            except (ValueError, OSError) as exc:
+                raise SemanticFailureCheckpointError(str(exc)) from exc
+            if (candidate["task_map_generation"] != package.get("task_map_generation")
+                    or candidate["plan_artifact_package_digest"] != package.get("package_digest")):
+                raise SemanticFailureCheckpointError("candidate Plan package superseded")
+            for key, bound_key in (("active_attempt_id", "attempt_id"), ("dispatch_id", "attempt_id"),
+                                   ("role", "role_instance"), ("target_stage_id", "stage_id")):
+                if payload.get(key) and payload[key] != candidate[bound_key]:
+                    raise SemanticFailureCheckpointError(f"candidate target mismatch: {key}")
+        else:
+            current = operation_bindings(events, workflow_run_id, {task_id}).get(task_id, {})
+            if current.get("operation_id") != operation_id or current.get("status") != "settled":
+                raise SemanticFailureCheckpointError("target_operation_stale")
     latest_failure_payload = (
         failures[-1].payload if failures and isinstance(failures[-1].payload, dict)
         else {}
     )
     active_attempt_id = str(
-        payload.get("active_attempt_id")
+        candidate.get("attempt_id")
+        or payload.get("active_attempt_id")
         or getattr(task, "active_dispatch_id", "")
         or current.get("active_attempt_id")
         or payload.get("dispatch_id")
@@ -113,7 +133,8 @@ def request_semantic_failure_checkpoint(
         or ""
     )
     target_stage = str(
-        payload.get("target_stage_id")
+        candidate.get("stage_id")
+        or payload.get("target_stage_id")
         or getattr(getattr(task, "contract", None), "phase", "")
         or payload.get("trigger_event_type")
         or "semantic-recovery"
@@ -121,12 +142,14 @@ def request_semantic_failure_checkpoint(
     from zf.runtime.orchestrator_agent_execution_policy import run_goal_objective_snapshot
 
     goal_snapshot = run_goal_objective_snapshot(events, workflow_run_id)
+    fingerprint = (f"{operation_id}/{failures[-1].id}" if candidate
+                   else str(payload.get("failure_fingerprint") or ""))
     failure_body = {
         "schema_version": SEMANTIC_FAILURE_INPUT_SCHEMA,
         "workflow_run_id": workflow_run_id,
         "run_goal": goal_snapshot,
         "request_event_id": event.id,
-        "failure_fingerprint": str(payload.get("failure_fingerprint") or ""),
+        "failure_fingerprint": fingerprint,
         "target": {
             "task_id": task_id,
             "stage_id": target_stage,
@@ -138,6 +161,11 @@ def request_semantic_failure_checkpoint(
         "task_contract": asdict(task.contract),
         "failure_events": [_event_row(item) for item in failures],
     }
+    if candidate:
+        failure_body["candidate_verify"] = {
+            **candidate, "failure_event_id": failures[-1].id, "operation_id": operation_id,
+            "permitted_recovery_action": "return_to_plan",
+        }
     failure_ref = write_immutable_json_sidecar(
         runtime.state_dir,
         failure_body,
@@ -151,6 +179,8 @@ def request_semantic_failure_checkpoint(
         **failure_ref,
         "source_id": "semantic-failure-input",
     }]
+    if candidate:
+        artifact_refs.append({**candidate["control_result_ref"], "source_id": "candidate-verification"})
     recovery_ref = payload.get("recovery_context_ref")
     if isinstance(recovery_ref, Mapping):
         hydrate_sidecar_ref(runtime.state_dir, dict(recovery_ref))
@@ -161,6 +191,9 @@ def request_semantic_failure_checkpoint(
         })
     checkpoint_payload = {
         **payload,
+        "failure_fingerprint": fingerprint,
+        "candidate_failure_id": failures[-1].id if candidate else "",
+        "candidate_operation_id": operation_id if candidate else "",
         "workflow_run_id": workflow_run_id,
         "flow_kind": flow_kind,
         "plan_revision": str(package.get("plan_revision") or ""),

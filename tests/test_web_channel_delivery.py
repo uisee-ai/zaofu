@@ -1,5 +1,8 @@
 """Real HTTP registration, project confinement and evidence-only Channel reads."""
 
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,6 +11,31 @@ from zf.runtime.channel_contract_artifacts import persist_channel_prd
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.web.channel_delivery_routes import delivery_evidence
 from zf.web.server import create_app
+
+
+def test_preview_serves_mixed_language_index_bound_to_same_artifact(fixture):
+    client, state, writer, _, _, _ = fixture
+    sample = json.loads((Path(__file__).resolve().parents[1] / "web/tests/fixtures/prd205/reading.json").read_text())
+    descriptor = persist_channel_prd(
+        state, channel_id="ch-preview", thread_id="kanban:project", revision=3,
+        previous_ref="", previous_digest="", body={"title": "合成设计", "markdown": sample["markdown"]},
+        readiness_descriptor={}, created_by="leader", source_event_id="fixture",
+    )
+    writer.emit("channel.synthesis.proposed", actor="leader", payload={
+        "channel_id": "ch-preview", "thread_id": "kanban:project", "prd_revision": 3,
+        "artifact_ref": descriptor["ref"], "artifact_digest": descriptor["sha256"],
+    })
+    before = (state / "events.jsonl").read_bytes()
+    response = client.get("/api/projects/default/channels/ch-preview/prd-preview", params={
+        "thread_id": "kanban:project", "revision": 3, "digest": descriptor["sha256"],
+    })
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["read_views"] == sample["read_views"]
+    assert body["markdown"] == sample["markdown"]
+    assert body["artifact_digest"] == descriptor["sha256"]
+    assert body["revision"] == 3
+    assert (state / "events.jsonl").read_bytes() == before
 
 
 @pytest.fixture

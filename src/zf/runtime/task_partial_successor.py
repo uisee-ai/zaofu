@@ -117,10 +117,10 @@ def _partial_successor_proof(
     partial_commits = list(dict.fromkeys([*inherited_commits, *commits.splitlines()]))
     paths = set()
     for commit in partial_commits:
-        changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+        changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", commit)
         if changed is None:
             return {}
-        paths.update(changed.splitlines())
+        paths.update(path for path in changed.split("\0") if path)
     if not paths or any(
         not _path_allowed_by_scope(path, task.contract.scope) for path in paths
     ):

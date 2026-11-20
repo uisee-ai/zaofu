@@ -76,6 +76,21 @@ task、attempt、command identity，再执行 Plan 指定的全局验收命令�
 并发观察材料应由实际观察者持久化并经受控 ref/digest 交接，不能假设未来产生的
 运行证据已经存在于不可变候选源码中。
 
+### 冻结候选续跑的历史证据
+
+出现 `critical-continuation-context` 时先完整读取它，再沿索引核对相关原始
+Verify control/envelope、Impl self-check、引用的工具事实及 dispatch/hook 观察。
+历史 Task、Run、代际和提交保持原身份；历史记录可以证明原执行事实，不能算作
+后继 Run 新执行了 Impl/并发，也不能直接继承旧 Candidate/Judge 的 verdict。
+对账本次批准的续跑范围、原产品条款与执行资格要求；产品交付和无人监工资格
+分别报告。人工介入发生过就保留，不能追认零干预；范围冲突仍未解决时明确阻塞。
+
+证据未接入、原始收据缺失、资格范围未决与 provider/工具执行失败分开报告。
+已完成审阅但无法证明要求时用既有 `execution_status=completed`、
+`recommendation=block` / `verdict=blocked`（`dependency_blocked`）；列出精确缺失
+来源和所需决策。仅真实 provider/transport/工具执行错误才报告 execution failed。
+不得用成功计数、自述或暂时未取得资料来断言原执行从未发生；也不得因此重做全部任务。
+
 声明无缺口前，为 Plan 中要求的 `product_acceptance_spec` 提交完整
 `product_acceptance_report`，包含每个 mandatory journey/assertion 的证据和
 固定候选版本。没有完整报告时报告 blocked/gaps；最终 Thin Judge 只消费已准入

@@ -470,6 +470,7 @@ def _append_stage_result(
     role: str,
     output: Mapping[str, Any],
     ledger: Mapping[str, Any],
+    evidence_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     identity = _identity(invoke)
     control_ref = _artifact(
@@ -494,6 +495,7 @@ def _append_stage_result(
             "role_instance": role,
             "read_ledger_ref": str(ledger.get("ref") or ""),
             "read_ledger_digest": str(ledger.get("sha256") or ""),
+            "evidence_refs": list(evidence_refs or []),
         },
         control_result={
             "schema_version": "generic-stage-result.v1",

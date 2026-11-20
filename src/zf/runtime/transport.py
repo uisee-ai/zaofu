@@ -21,6 +21,7 @@ from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.events.model import ZfEvent
 from zf.runtime.provider_context import has_provider_context_exhausted
 from zf.runtime.tmux import TmuxError, TmuxSession
+from zf.integrations.controller.tmux import managed_dispatch
 from zf.runtime.tmux_readiness import (
     TmuxReadinessMixin,
     build_tmux_readiness_error,
@@ -80,6 +81,8 @@ class DispatchContext:
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
     worker_envelope_digest: str | None = None
+    continuation: bool = False
+    continuation_id: str | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -121,6 +124,8 @@ class DispatchContext:
             payload["task_stage_session_binding"] = (
                 self.task_stage_session_binding
             )
+        if self.continuation_id:
+            payload["continuation_id"] = self.continuation_id
         if self.worker_envelope_digest:
             payload["worker_envelope_digest"] = self.worker_envelope_digest
         return payload
@@ -203,6 +208,14 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         self._launch_records: dict[str, dict[str, object]] = {}
         self._readiness_failures: dict[str, dict[str, object]] = {}
         self._dry_run_stopped: set[str] = set()
+        self._roles: dict[str, RoleConfig] = {}
+
+    def register_role(self, role: RoleConfig) -> None:
+        """Retain the runtime's launch contract, including generated resident roles."""
+        self._roles[role.instance_id] = role
+
+    def execution_role(self, role_name: str) -> RoleConfig | None:
+        return self._roles.get(role_name)
 
     @property
     def session_name(self) -> str:
@@ -229,6 +242,9 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         cwd: Path | None = None,
     ) -> None:
         # 1206 Phase B: delegate slot allocation to the active layout.
+        from zf.integrations.controller.execution import check_project
+        check_project(cwd or Path.cwd())
+        self.register_role(role)
         # WindowPerRoleLayout issues new-window (legacy behavior),
         # PaneGridLayout issues new-window for the first role and
         # split-window for every subsequent role.
@@ -248,6 +264,10 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             # tokens like `Bash(zf kanban *)` break the shell command
             # line with "syntax error near unexpected token '('".
             command = shlex.join(argv)
+            if cwd is not None and role.backend in {"codex", "claude-code"}:
+                from zf.runtime.environment_usage import guarded_provider_argv
+
+                command = shlex.join(guarded_provider_argv(cwd, argv))
             env_prefix = self._agent_env_prefix(cwd)
             if env_prefix:
                 command = f"{env_prefix} {command}"
@@ -355,7 +375,13 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         command = self.pane_current_command(role_name).strip()
         leaf = command.rsplit("/", 1)[-1].strip().lower()
         if leaf in self._SHELL_COMMANDS:
-            return False, "shell"
+            foreground = getattr(self.tmux, "pane_foreground_command", None)
+            try:
+                leaf = foreground(role_name) if callable(foreground) else ""
+            except (OSError, ValueError):
+                leaf = ""
+            if leaf not in {"codex", "claude"}:
+                return False, "shell"
         if self._pane_has_provider_context_exhausted(role_name):
             return False, "provider_context_exhausted"
         if leaf == "node":
@@ -458,11 +484,29 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
+        if backend == "codex":
+            from zf.runtime.provider_interaction import (
+                ProviderInteractionRequired, has_codex_model_switch_prompt,
+            )
+
+            capture = getattr(self.tmux, "capture_pane", None)
+            if callable(capture) and has_codex_model_switch_prompt(capture(role_name, lines=0)):
+                raise ProviderInteractionRequired(
+                    f"refusing to send task to {role_name}: Codex model-switch prompt "
+                    "requires operator interaction; no input was sent"
+                )
+        self._assert_dispatch_prompt_ready(role_name)
+        return self._send_admitted_task(role_name, briefing_path, prompt, context=context)
+
+    @managed_dispatch
+    def _send_admitted_task(self, role_name: str, briefing_path: Path, prompt: str,
+                            *, context: DispatchContext | None = None) -> None:
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
         paste = getattr(self.tmux, "send_paste", None)
-        backend = context.backend if context else self.pane_current_command(role_name).strip()
         if backend == "codex" and callable(paste):
             paste(role_name, prompt)
             return
@@ -474,6 +518,10 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         if not self._agent_process_alive(role_name):
             return False
         self._assert_expected_cwd(role_name)
+        return self._compact_admitted_context(role_name, command)
+
+    @managed_dispatch
+    def _compact_admitted_context(self, role_name: str, command: str) -> bool:
         self.tmux.send_keys(role_name, command)
         return True
 

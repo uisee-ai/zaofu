@@ -21,7 +21,7 @@ from zf.runtime.task_contract_snapshot import (
     target_descriptor_from_payload,
 )
 from zf.runtime.verification_result import (
-    VerificationResultError,
+    VerificationResultError, candidate_plan_ports,
     validate_verification_result,
     validate_verification_acceptance,
 )
@@ -100,6 +100,18 @@ def _implementation_issues(
     except TaskContractSnapshotError as exc:
         return [_plan_contract_issue(exc)]
 
+    placeholder = _implementation_placeholder(result)
+    if placeholder:
+        return [_issue(
+            field=placeholder,
+            code="implementation_result_placeholder",
+            message=("Implementation result contains an unresolved placeholder, including on a blocked "
+                     "result. Fill target_commit from the observed HEAD and changed_files from the "
+                     "actual task diff; replace evidence slots with durable refs. Unknown facts may "
+                     "be empty and unexecuted self-check rows omitted on failure; never claim they passed."),
+            owner="implementation_owner",
+            action="result_repair",
+        )]
     execution_status = str(result.get("execution_status") or "completed")
     verdict = str(result.get("verdict") or "passed")
     if execution_status == "failed" or verdict in {"rejected", "blocked", "abstained"}:
@@ -152,6 +164,26 @@ def _implementation_issues(
     return []
 
 
+def _implementation_placeholder(value: Any, path: str = "control_result") -> str:
+    """Validate template slots, not the meaning or completeness of a failure."""
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            field = f"{path}.{key}"
+            if key in {"source_commit", "target_commit", "evidence_refs", "changed_files"}:
+                if any("<" in item or ">" in item for item in _strings(child)):
+                    return field
+            elif isinstance(child, (Mapping, list)):
+                found = _implementation_placeholder(child, field)
+                if found:
+                    return found
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            found = _implementation_placeholder(child, f"{path}[{index}]")
+            if found:
+                return found
+    return ""
+
+
 def _verification_issues(
     state_dir: Path,
     result: Mapping[str, Any],
@@ -192,6 +224,22 @@ def _verification_issues(
             owner="task_verify",
             action="result_repair",
         )]
+
+    try:
+        ports = candidate_plan_ports(result, require_named_port=True)
+        if ports:
+            from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+
+            package = hydrate_plan_artifact_package(state_dir, {
+                "ref": contract.get("plan_artifact_package_ref"),
+                "sha256": contract.get("plan_artifact_package_digest"),
+            }, validate_ports=False)
+            unknown = ports - {port["logical_name"] for port in [*package["produced"], *package["inherited"]]}
+            if unknown:
+                raise VerificationResultError("unknown Plan ports: " + ", ".join(sorted(unknown)))
+    except (ValueError, OSError) as exc:
+        return [_issue(field="control_result.rework_items", code="candidate_plan_port_invalid",
+                       message=str(exc), owner="candidate_verify", action="result_repair")]
 
     expected_owner = str(
         contract.get("verification_owner") or "task_verify"

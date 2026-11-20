@@ -42,6 +42,9 @@ class ReaderDispatchRecoveryMixin:
                 if fanout_id and child_id:
                     key = (fanout_id, child_id)
                     dispatches.setdefault(key, []).append(event)
+                    # Prior terminal receipts belong to the replaced dispatch;
+                    # they must not hide loss of this newly admitted attempt.
+                    terminal_children.discard(key)
                     if pending_loss.pop(key, None) is not None:
                         dispatch_lost_count[key] = dispatch_lost_count.get(key, 0) + 1
                 continue
@@ -188,10 +191,26 @@ class ReaderDispatchRecoveryMixin:
                 ):
                     continue
                 provider_turn_closed = lost_event.type == "provider.turn.closed"
+                from zf.runtime.reader_progress_continuation import continue_progressing_reader
+
+                continued = continue_progressing_reader(
+                    self, events=events, manifest=manifest, child=child,
+                    dispatch=latest_dispatch, operation=operation,
+                    closed=lost_event, attempt=len(child_dispatches),
+                )
+                if continued is None:
+                    continue
+                if continued:
+                    return True
                 loss_reason = (
                     "provider_turn_closed_without_child_result"
                     if provider_turn_closed
                     else "reader_worker_session_replaced_after_dispatch"
+                )
+                from zf.runtime.reader_loss_progress import reader_loss_progress
+
+                read_checkpoint, made_progress = reader_loss_progress(
+                    self.state_dir, events, latest_dispatch, lost_event,
                 )
                 dispatch_lost_event = pending_loss.get(key)
                 if (
@@ -213,6 +232,8 @@ class ReaderDispatchRecoveryMixin:
                             "reason": loss_reason,
                             "lost_signal_event_id": lost_event.id,
                             "lost_signal_type": lost_event.type,
+                            "semantic_attempt_consumed": False,
+                            **read_checkpoint,
                         },
                         causation_id=lost_event.id,
                         correlation_id=str(manifest.get("trace_id") or ""),
@@ -223,7 +244,7 @@ class ReaderDispatchRecoveryMixin:
                     reason=loss_reason,
                     force=True,
                 )
-                if dispatch_lost_count.get(key, 0) >= allowed_recoveries:
+                if dispatch_lost_count.get(key, 0) >= allowed_recoveries and not made_progress:
                     self._fail_exhausted_reader_fanout_dispatch(
                         manifest=manifest,
                         child=child,

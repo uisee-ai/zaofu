@@ -111,3 +111,54 @@ def test_runtime_caller_retains_failure_without_terminalizing_run(tmp_path):
     assert result is None
     assert [event.id for event in log.read_all()] == [event.id for event in events]
     reactor.escalation.escalate.assert_not_called()
+
+
+def _candidate_plan_blocker():
+    config = _config()
+    stage = config.workflow.stages[1]
+    stage.id, stage.trigger, stage.failure_event = "candidate-verify", "candidate.ready", "test.failed"
+    stage.aggregate.failure_event = "test.failed"
+    config.workflow.rework_routing = {"test.failed": "dev"}
+    origin = _event("candidate.ready", target_ref="candidate/PDD-1")
+    started = _event("fanout.started", stage_id=stage.id, fanout_id="verify-candidate",
+                     trigger_event_id=origin.id)
+    failure = _event("test.failed", stage_id=stage.id, fanout_id="verify-candidate",
+                     target_ref="candidate/PDD-1", failure_class="dependency_blocked",
+                     recovery_action="replan", rework_scope="plan_ports",
+                     semantic_result_refs=["artifacts/call-results/control/result.json"],
+                     failed_task_ids=["TASK-1"])
+    failure.origin = "kernel"
+    return config, [origin, started, failure]
+
+
+def test_admitted_candidate_blocker_replans_instead_of_rechecking_old_candidate():
+    from zf.runtime.candidate_rework import plan_candidate_rework
+
+    config, events = _candidate_plan_blocker()
+    assert plan_reader_stage_replan(config, events, events[-1]) == (
+        None, "owned_by_candidate_plan_recovery",
+    )
+    plans = plan_candidate_rework(events, config=config)
+    assert len(plans) == 1
+    assert plans[0].action == "replan"
+    assert plans[0].failed_task_ids == ("TASK-1",)
+
+
+@pytest.mark.parametrize("change", ["untrusted", "no_refs", "blank_refs", "product", "dependency", "other_stage"])
+def test_candidate_owner_guard_does_not_infer_semantic_intent(change):
+    config, events = _candidate_plan_blocker()
+    failure = events[-1]
+    if change == "untrusted":
+        failure.origin = "agent"
+    elif change == "no_refs":
+        failure.payload.pop("semantic_result_refs")
+    elif change == "blank_refs":
+        failure.payload["semantic_result_refs"] = [""]
+    elif change == "product":
+        failure.payload["failure_class"] = "product_rejection"
+    elif change == "dependency":
+        failure.payload["rework_scope"] = "dependency"
+    elif change == "other_stage":
+        config.workflow.stages[1].trigger = "flow.discovery.requested"
+        events[0].type = "flow.discovery.requested"
+    assert plan_reader_stage_replan(config, events, failure)[1] != "owned_by_candidate_plan_recovery"

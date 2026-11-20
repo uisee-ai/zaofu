@@ -1,4 +1,4 @@
-# ZaoFu PRD workflow configuration v5.0.1.
+# ZaoFu PRD workflow configuration v5.1.0.
 #
 # This is the versioned PRD controller for the 194 + 195 runtime contract:
 # plan/task-map admission stays semantic, the blocking Task Pipeline owns
@@ -8,7 +8,7 @@ apiVersion: zaofu.dev/v1
 kind: PrdFlow
 metadata:
   name: zaofu-prd/v5-production
-  version: "5.0.1"
+  version: "5.1.0"
 spec:
   flowProfile: prd-flow-v4-task-pipeline
   topology: fanout
@@ -28,6 +28,7 @@ spec:
   evidencePolicy: strict_refs
   deliveryPolicy: ship_candidate
   artifactPackageMode: blocking
+  planInputPolicy: task-scoped-v1
   productAcceptanceMode: blocking
   semanticSubmitProfiles:
     workflow-read: blocking
@@ -95,7 +96,7 @@ spec:
   profile_sources:
     - examples/prod/controller/common/profiles.yaml
   uses: [prod-runtime/v1, kanban-collaboration/v1]
-  version: "5.0.1"
+  version: "5.1.0"
   project:
     name: zaofu
     state_dir: .zf

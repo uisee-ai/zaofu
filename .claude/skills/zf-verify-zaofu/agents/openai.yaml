@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu 项目验证"
+  short_description: "验证 ZaoFu 启动、恢复与多 lane，区分模拟和真实执行证据"
+  default_prompt: "使用 $zf-verify-zaofu 验证当前候选的启动、恢复与多 lane 行为，并逐项报告执行证据和未覆盖层级。"

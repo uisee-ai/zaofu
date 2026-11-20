@@ -673,6 +673,21 @@ class ChannelMessageActionsMixin:
         payload: dict,
     ) -> dict:
         channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
+        if payload.get("reconcile_request_id"):
+            from zf.runtime.channel_reply_reconcile import reconcile_channel_reply
+            try:
+                recovery = reconcile_channel_reply(self, requested=requested, payload=payload)
+            except (ValueError, TimeoutError) as exc:
+                return self._failed(requested=requested, action=action, requested_action=requested_action,
+                    task_id=None, reason=str(exc), status_code=409, status="recovery_blocked")
+            self.writer.emit("runtime.action.completed", actor=self.actor, causation_id=requested.id,
+                correlation_id=channel_id, payload={"action": action, "requested_action": requested_action,
+                    "status": "recovery_requested", "channel_id": channel_id, "result": recovery})
+            dispatch_channel_replies_background(state_dir=self.state_dir, channel_id=channel_id,
+                actor=self.actor, source=self.surface, project_root=self.project_root,
+                config=self.config, openclaw_client=self.openclaw_client, max_dispatch=6)
+            return {"_status_code": 202, "ok": True, "status": "recovery_requested",
+                    "action": action, "requested_action": requested_action, "channel_id": channel_id, **recovery}
         result = dispatch_pending_replies(
             state_dir=self.state_dir,
             writer=self.writer,

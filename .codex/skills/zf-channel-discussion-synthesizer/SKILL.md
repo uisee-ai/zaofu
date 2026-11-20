@@ -17,6 +17,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 没有完整文件时不要用内存中的字节数/哈希代替交付。
 
 正式 synthesis 由 Runtime 保存 PRD，`read_only` 不妨碍结构化交付，无需因此请求提权。
+完整 PRD 只出现在一种结构化正文载体中；JSON 外、reply_text 和 summary 不重复整篇。
+结构/类型修复保留已有效的需求和正文，只修复被指出的字段及关联一致性；返回完整修正对象，
+不先写另一篇长草稿。独立需求复核仍须执行，不能为省 token 忽略来源或替 Owner 决策。
 若请求给出 `prd_source_file`，完整阅读该不可变快照与所需讨论来源。保留全文时返回
 `prd_file: {ref, sha256}`（与该 descriptor 精确一致），同时提供完整需求覆盖、验收、
 决策和来源声明；需要修改长文件时优先 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`，
@@ -27,7 +30,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 实现与操作约束见 `docs/impl/channel-prd-file-publication.md`。
 
 质量增强版 synthesis 必须声明 `quality_contract=channel-prd-quality.v1`。需求覆盖表逐行
-提供直接 `evidence_refs`，研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
+提供直接 `evidence_refs: list[str]`，例如 `["sources/requirement.md"]`；此字段不是
+`{ref,digest,location}` 对象数组，不能用对象代替合同要求的字符串引用。引用取自当前
+绑定来源，不照抄示例路径。研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
 attestation 的读取状态不能与 partial/不可读 artifact 同时出现。贡献物分为互斥的
 `canonical_cross_review_refs` 和 `supporting_contribution_refs`，两者并集必须等于消费列表。
 同时提供 `permission_audit_contract`，明确 `deny_by_default`、审计事件字段、查询字段、
@@ -144,6 +149,10 @@ Task 创建和 Workflow 点火仍需 owner 单独发起。
 
 ## 完整 PRD 与可追溯评估
 
+完整 `prd_markdown` 先执行依赖技能的
+[正文阅读与审查](../zf-document-reading/SKILL.md)，
+以业务问题和交付行为开头，场景分段；原文位置与自检发现进入已有质量清单。
+
 执行 `zf-requirement-reconciliation` 的“五项质量闭环”：把来源基线、独立评审覆盖、
 验收数据计划及阶段交接索引放进 `implementation_companion`；Owner 决策沿用
 `decision_log`。`prd_quality_checklist` 记录维度、检查范围、位置/证据、状态与发现，
@@ -158,9 +167,13 @@ Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制�
 这次 synthesis 就须交付完整 PRD；不能只给摘要并建议后续 Workflow 再编制。
 先从实际源文档生成需求清单，保留范围、主流程、异常流程、权限、数据约束、状态变化、
 非功能要求和可执行验收；按项目取舍，不套用固定条数或固定产品功能表。
-`requirement_coverage` 每项包含唯一 `id`、`source_refs`、正文 `section`、
+`requirement_coverage` 每项包含唯一 `id`、`source_refs`、字符串数组 `evidence_refs`、正文 `section`、
 `acceptance_ids` 和 `status: covered|deferred|gap`；covered 必须指向声明过的验收 ID，
 其他状态提供具体 `reason`，不得将未覆盖项静默删除。
+先形成验收 ID 登记，再由登记生成 coverage 引用，提交前查空引用及未声明 ID。
+当前会话“只讨论 PRD、以后审批实施”等流程约束保留在 document_control、正文阶段边界
+及其来源记录中；不另造无产品 AC 的 covered 行，也不把流程限制伪装成产品功能 AC。
+产品需求的真实未覆盖项仍须如实列为 gap/deferred，不能借流程分类隐藏。
 `decision_log` 逐项记录问题/决定、依据、理由、异议及处置；没有新决定可为空。
 这些映射与完整正文共同进入 canonical PRD、同版审查和下载文件。
 
@@ -208,6 +221,10 @@ Criteria；Dependencies、Assumptions、Risks and Open Questions。需要上线�
 保留原始需求的必要条款，已有长篇来源可按 composition 方法保留；不以固定字数删需求。
 新 Owner 决定进入 decision_log；原文既定事实按来源覆盖引用，不重复包装成新裁定。
 签收进展、审批和演练执行记录归 readiness 或后续运行证据，不重复塞进产品正文。
+提交前按行为 ID 检查 user_stories / requirements / NFR / success_metrics / AC：
+同一条件与反例只在最适合的权威条款展开，其余给出稳定引用及本层责任。
+不要把每个失败场景再扩写成五份目录；路径与原因、清理顺序、失败不变项等必要反例不能删。
+正文自读可理解，完整同版目录继续保留；同时检查最终导出体积，不能只统计 prd_markdown。
 
 准确性靠原文对照，完整性靠动态清单逐项核验，一致性靠交叉质询与反例，角色覆盖靠
 职责与缺口判断，可实施性靠可执行验收。不得凭 digest 齐全或自评分宣布高质量。
@@ -239,3 +256,16 @@ artifact 当成待澄清产品问题。已合并问题只表示去重，不表�
 - 评估时逐项核对：Owner 决定是否全部继承；暂缓是否被当成批准或删除；新问题是否有新增
   证据；每条需求是否有章节与验收；异议是否有处置；review 是否绑定当前版本。
   输出具体反例及 source_refs，区分文档修订、Owner 决策与缺少证据，禁止无差别重跑所有角色。
+
+
+## 按需 Critic
+
+显式选择 `prd-clarification-on-demand` 模板时，没有固定专门 Critic；产品、开发等
+现有成员仍对各自职责独立分析与签收。默认 `prd-clarification` 不改变。
+先利用已有成员的定向 cross-review 处理具名歧义、来源冲突与反例；存在未覆盖的
+专业风险时，主席通过现有 member_invitations 提议独立审查者并说明来源、风险、
+问题范围和 required_reviewer，沿受控批准入群，不另建选人 Agent。
+
+不得因为“按需”而删除当前 review_roster 已有必审责任，也不能在未获批准时把提议
+成员当成已审。批准后以运行时持久化的名单为准；修订只签收绑定的新版本。产品
+取舍归 Owner，事实核查归能取得证据的成员，不为减少成员数而把所有未知推给 Owner。

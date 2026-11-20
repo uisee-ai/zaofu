@@ -1,0 +1,1 @@
+只读当前目录，不联网、不使用子代理、不实现、不写文件。完整读取input.md与method.md。独立评审此候选的需求保留、验收责任和证据交接一致性。产品NOT_RUN合理，不因版式或未要求的功能阻断。输出JSON verdict(approve/reject/incomplete)、findings(来源、反例、最小修正)、reviewed_scope、unreviewed_scope。不提供预期答案。

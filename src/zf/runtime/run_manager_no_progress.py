@@ -8,6 +8,7 @@ from typing import Any
 NO_PROGRESS_EVENT_TYPES = frozenset({
     "task.dispatch_context.bound",
     "fanout.child.stale_completion",
+    "fanout.child.dispatch_deferred",
     "run.manager.action.blocked",
     "run.manager.action.failed",
     "run.manager.action.verify.failed",
@@ -55,6 +56,17 @@ def build_no_progress_projection(
             counts.pop(key, None)
             latest.pop(key, None)
         etype = str(getattr(event, "type", "") or "")
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if etype in {"fanout.child.dispatched", "fanout.child.completed", "fanout.child.failed", "fanout.cancelled"}:
+            run = event_run_id(event, aliases=aliases) or event.correlation_id or ""
+            for key, row in list(latest.items()):
+                if (key[0] == run and row.get("event_type") == "fanout.child.dispatch_deferred"
+                        and row.get("fanout_id") == payload.get("fanout_id")
+                        and (etype == "fanout.cancelled" or row.get("child_id") == payload.get("child_id"))):
+                    counts.pop(key, None)
+                    latest.pop(key, None)
+        if etype == "fanout.child.dispatch_deferred" and payload.get("reason") != "reader_environment_busy":
+            continue
         if etype not in NO_PROGRESS_EVENT_TYPES or event.id in dismissed:
             continue
         payload = getattr(event, "payload", None)
@@ -67,10 +79,12 @@ def build_no_progress_projection(
             payload,
             fallback=str(getattr(event, "id", "") or ""),
         )
-        key = (event_run_id(event, aliases=aliases), fp)
+        key = (event_run_id(event, aliases=aliases) or event.correlation_id or "", fp)
         counts[key] += 1
         latest[key] = {
             "fingerprint": fp,
+            "fanout_id": str(payload.get("fanout_id") or ""),
+            "child_id": str(payload.get("child_id") or ""),
             "count": counts[key],
             "event_id": str(getattr(event, "id", "") or ""),
             "event_type": etype,

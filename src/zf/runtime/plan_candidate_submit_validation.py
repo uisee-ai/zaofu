@@ -67,7 +67,7 @@ def validate_plan_candidate_semantic(
             }
     from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
 
-    return evaluate_plan_candidate_preflight(
+    result = evaluate_plan_candidate_preflight(
         state_dir=Path(state_dir),
         project_root=Path(project_root),
         reports=[{"report": semantic}],
@@ -76,7 +76,18 @@ def validate_plan_candidate_semantic(
         writer_policy=(
             dict(writer_policy) if isinstance(writer_policy, Mapping) else None
         ),
+        review_input_limits=validation.get("review_input_limits"),
     )
+    if result.get("candidate_kind") == "owner_review":
+        return result  # A draft has no executable review package to estimate.
+    from zf.runtime.plan_candidate_delivery_cost import candidate_delivery_cost
+
+    result["input_cost"]["delivery_estimate"] = candidate_delivery_cost(
+        state_dir=Path(state_dir), project_root=Path(project_root), request=request,
+        semantic=semantic, execution_review=result["execution_review"],
+        limits=validation.get("review_input_limits"),
+    )
+    return result
 
 
 def validate_plan_synth_result(

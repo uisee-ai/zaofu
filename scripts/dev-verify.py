@@ -22,7 +22,6 @@ from typing import Iterable, Sequence
 DEFAULT_MARKERS = "not perf and not host and not real_provider"
 PARALLEL_MARKERS = f"not serial and {DEFAULT_MARKERS}"
 SERIAL_MARKERS = f"serial and {DEFAULT_MARKERS}"
-MAX_FOCUSED_TEST_FILES = 80
 
 
 @dataclass(frozen=True)
@@ -603,19 +602,11 @@ def build_plan(
 
     selected = set(_existing(root, selected))
     plan.selected_tests = sorted(selected)
-    plan.broad_python = len(selected) > MAX_FOCUSED_TEST_FILES
     worker_count = _worker_count(workers)
 
     if selected:
-        targets = ["tests"] if plan.broad_python else sorted(selected)
-        reasons = (
-            (
-                f"{len(selected)} impacted test files exceed "
-                f"{MAX_FOCUSED_TEST_FILES}; run deterministic suite"
-            )
-            if plan.broad_python
-            else "changed tests + direct imports/callers + boundary sentinels"
-        )
+        targets = sorted(selected)
+        reasons = "changed tests + direct imports/callers + boundary sentinels"
         plan.steps.append(
             VerificationStep(
                 id="python-deterministic",
@@ -629,11 +620,7 @@ def build_plan(
                 reasons=(reasons,),
             )
         )
-        serial_targets = (
-            sorted(SERIAL_TEST_FILES)
-            if plan.broad_python
-            else sorted(selected.intersection(SERIAL_TEST_FILES))
-        )
+        serial_targets = sorted(selected.intersection(SERIAL_TEST_FILES))
         if serial_targets:
             plan.steps.append(
                 VerificationStep(

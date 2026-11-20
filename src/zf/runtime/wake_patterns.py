@@ -300,6 +300,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "worker.completed",
     "task.continuation_scheduled",
     "task.retry_scheduled",
+    "task_map.amend.failed",
     # 2026-06-03: stale task-capsule completion rejections are emitted by
     # the revision gate and must wake the reactor so same-lane rework can
     # be dispatched before orphan/max-iteration recovery takes over.

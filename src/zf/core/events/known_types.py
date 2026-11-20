@@ -42,6 +42,11 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "owner.visible_message.suppressed",
     "goal.dossier.inconsistent",
     "dispatch.paused", "dispatch.resumed",
+    "worker.continuation.claimed", "worker.runtime.observed",
+    "worker.continuation.prepared", "worker.continuation.reconciled",
+    "workspace.cleanup.requested", "workspace.cleanup.worktree_removed",
+    "workspace.cleanup.completed", "workspace.cleanup.blocked",
+    "task.handoff.prepared", "task.handoff.accepted",
     # doc 79 remediation cascade (no-dead-end): cascade decision + safe-halt floor
     "remediation.cascade", "runtime.safe_halted", "runtime.resumed",
     # doc 80 Remediation State Machine transitions (interpreter)
@@ -647,6 +652,9 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Agent (stream-json transport)
     "agent.thinking", "agent.text", "agent.tool.use", "agent.tool.result",
     "agent.usage", "agent.api_blocked", "agent.timeout",
+    "controller.usage.receipt",
+    "controller.execution.started",
+    "controller.execution.finished",  # Bound accounting projection; not another native cost sample.
     # Autoresearch trigger decisions and supervisor diagnostic injection.
     "autoresearch.trigger.accepted", "autoresearch.trigger.skipped",
     "autoresearch.invocation.requested",
@@ -837,6 +845,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Codex hook events reserved for LH-3.5 (config + adapter arrive there).
     "codex.hook.session_start", "codex.hook.user_prompt_submit",
     "codex.hook.pre_tool_use", "codex.hook.post_tool_use", "codex.hook.stop",
+    "provider.turn.opened",
     "provider.turn.closed",
     # Provider-native telemetry is a diagnostic projection only. These events
     # never wake a workflow or participate in Gate/task transitions.

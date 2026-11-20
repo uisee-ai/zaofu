@@ -11,6 +11,18 @@
 没有唤醒的观察批次继续由 idle durable catch-up 处理；不提前确认其游标。
 反应追加的事件位于 snapshot_end 之后，留给下一轮或重启补读。
 
+2026-10-31 一致性修复：带 `consumed_offset` 的运行时调用从 Session 已确认位置
+读到 watcher 的不可变上界，补齐前一观察批次；idle 已消费的事件不会再次应用。
+`EventOffset` 保持整数 byte-offset 兼容，同时携带 device/inode。正常读取只读活动
+文件尾部；身份变化时定位归档中的原 segment，读完未消费尾部，再读后续 segment。
+SessionStore 原子保存 `latest_event_offset` 与可选的 `latest_event_identity`；
+watcher 即使遇到新旧文件长度相同，也会交付新事件。捕获字节时复用 writer 锁，
+解码和业务反应在释放锁后进行，避免反应追加越过批次上界。
+
+旧 Session 缺少身份字段时保持 active-file 数字 offset 的兼容语义，首次成功读取后
+保存身份；升级不会自动重放无法定位的旧历史事件。保留归档是跨轮转补读的前提。
+其他自行把 offset 转为普通整数的持久化消费者也需要显式保留身份，才能获得相同保障。
+
 模拟终态仍先由 Kernel 结算 Task / 看板，成功后才写 simulation.done 并停止 watcher。
 不修改事件类型、业务状态所有权、任务依赖或并发配额；整轮协调自身的开销仍然存在。
 
@@ -31,3 +43,12 @@
 若前次写入留下未终止尾行，先追加非 JSON 标记和换行，再追加新事件：原字节
 保留，未完成记录不会因补换行而被误接纳，后续完整事件仍可单独重放。此机制
 不修复已经拼接的历史损坏行，也不推断中断调用的业务结果。
+本次回归与任务归档语义见 [事件与任务当前态修复](review-state-consistency.md)。
+
+2026-11-17 整合补充：事件账本的同日归档碰撞改为独立 segment，禁止拼接改写
+旧文件。常规大小段为 `day-0001.jsonl`，日期尾段为 `day.jsonl`；尾段后的碰撞
+使用 `day~0001.jsonl`，保持目录排序与发生顺序一致，也保留 inode 和原字节位置。
+已绑定游标的原 segment 丢失时显式报错，不能静默跳到新文件冒充消费完成。
+这不追溯修复升级前已经被拼接或删除的历史。Memory / Cost 的通用归档行为不变。
+Watcher 仅在全部回调成功后推进自身游标；失败批次可重试。
+回归覆盖见 `tests/test_events_rotation.py` 与 `tests/test_review_consistency_regressions.py`。

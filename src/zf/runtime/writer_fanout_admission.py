@@ -107,7 +107,7 @@ def writer_fanout_dispatch_base_commit(
     fallback: str = "",
     independent_task_bases: bool = False,
 ) -> str:
-    """Resolve the single candidate base shared by a writer fanout."""
+    """Keep an additive task on the shared target, not a sibling's partial."""
 
     task_bases = list(dict.fromkeys(
         base
@@ -121,7 +121,20 @@ def writer_fanout_dispatch_base_commit(
             "writer fanout tasks declare conflicting base_commit values: "
             + ", ".join(task_bases)
         )
+    if task_bases and any(not task_map_successor_base_commit(item) for item in task_items):
+        if not str(fallback or "").strip():
+            raise ValueError("mixed task-local bases require an explicit dispatch target")
+        return str(fallback).strip()
     return task_bases[0] if task_bases else str(fallback or "").strip()
+
+
+def writer_task_map_dispatch_target(data: Mapping[str, Any], payload: Mapping[str, Any]) -> str:
+    """A bounded amendment's current dispatch target outranks its original Plan target."""
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    if payload.get("resume_scope") == "gap_tasks_only" and payload.get("dispatch_base_commit"):
+        return str(payload["dispatch_base_commit"]).strip()
+    return str(data.get("target_commit") or metadata.get("target_commit")
+               or payload.get("dispatch_base_commit") or "").strip()
 
 
 def select_writer_task_items(
@@ -135,6 +148,15 @@ def select_writer_task_items(
     resume_scope = str(
         data.get("resume_scope") or payload.get("resume_scope") or ""
     ).strip()
+    from zf.runtime.writer_amend_selection import writer_amend_selection
+    from zf.runtime.writer_gap_diagnostic_selection import select_gap_from_diagnostic_scope
+
+    requested, resume_scope = writer_amend_selection(
+        data, requested_task_ids=requested, resume_scope=resume_scope,
+    )
+    requested, resume_scope = select_gap_from_diagnostic_scope(
+        data, payload, requested_task_ids=requested, resume_scope=resume_scope,
+    )
     requested = _canonical_replan_task_ids(
         data=data, task_items=task_items,
         requested_task_ids=requested, resume_scope=resume_scope,
@@ -367,13 +389,7 @@ def load_writer_task_map(
             )
     feature_id = str(payload.get("feature_id") or data.get("feature_id") or pdd_id or "").strip()
     source_refs = data.get("source_refs") if isinstance(data.get("source_refs"), dict) else {}
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
-    task_map_dispatch_base = str(
-        data.get("target_commit")
-        or metadata.get("target_commit")
-        or payload.get("dispatch_base_commit")
-        or ""
-    ).strip()
+    task_map_dispatch_base = writer_task_map_dispatch_target(data, payload)
     return LoadedWriterTaskMap(
         task_items=items,
         task_map_ref=task_map_ref,

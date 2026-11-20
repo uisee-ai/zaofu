@@ -36,12 +36,12 @@ def test_anchorless_escalation_is_side_scope(tmp_path: Path) -> None:
     assert payload["decision_token"] in payload["approval_command"]
 
 
-def test_task_anchored_escalation_is_run_scope(tmp_path: Path) -> None:
+def test_task_anchored_escalation_defaults_to_task_scope(tmp_path: Path) -> None:
     payload = _emit(tmp_path, {
         "action": "failure-closeout-activate",
         "checkpoint_id": "ck", "task_id": "T-1",
     })
-    assert payload["blocking_scope"] == "run"
+    assert payload["blocking_scope"] == "task"
 
 
 def _explain(pending_human: list[dict]) -> dict:

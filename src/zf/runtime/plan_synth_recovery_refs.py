@@ -17,8 +17,28 @@ def failed_critic_candidate_refs(
     Missing, ambiguous, tampered or mismatched evidence is not a reason to
     substitute a candidate from an earlier replan.
     """
-    if payload.get("failure_class") != "reader_execution_failure":
+    from zf.runtime.plan_synth_feedback import normalize_plan_synth_owner_decision_items
+
+    owner_questions = normalize_plan_synth_owner_decision_items(payload.get("owner_decision_items"))
+    semantic_rejection = (
+        payload.get("execution_status") == "completed"
+        and payload.get("verdict") == "rejected"
+    )
+    if (payload.get("failure_class") != "reader_execution_failure"
+            and not semantic_rejection
+            and not any(item.get("blocking") is not False for item in owner_questions)):
         return []
+    return bound_critic_candidate_refs(state_dir, events, payload)
+
+
+def bound_critic_candidate_refs(
+    state_dir: Path, events: Sequence[ZfEvent], payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return only child sources pinned by this Critic's contract and manifest.
+
+    Missing, ambiguous, tampered or mismatched evidence cannot select an older
+    Plan. Reading these inputs confers neither retry authority nor a verdict.
+    """
     operation_id = str(payload.get("operation_id") or "")
     attempt_id = str(payload.get("attempt_id") or "")
     fanout_id = str(payload.get("fanout_id") or "")
@@ -32,8 +52,24 @@ def failed_critic_candidate_refs(
                and event.payload.get("operation_id") == operation_id
                and event.payload.get("attempt_id") == attempt_id
                and event.payload.get("fanout_id") == fanout_id]
-    if len(matches) != 1:
+    if not matches:
         return []
+    # A transport retry may redispatch the same frozen request. It is not a
+    # second candidate; unlinked or differently bound dispatches stay ambiguous.
+    first = matches[0]
+    seen = {first.id}
+    identity_keys = (
+        "request_hash", "run_id", "workflow_run_id", "plan_revision",
+        "plan_synth_contract_ref", "plan_synth_contract_digest",
+        "reviewed_plan_candidate_digest", "attempt_source_manifest",
+    )
+    for retry in matches[1:]:
+        if (retry.payload.get("retry_of_event_id") not in seen
+                or retry.payload.get("semantic_attempt_consumed") is not False
+                or not first.payload.get("request_hash")
+                or any(retry.payload.get(key) != first.payload.get(key) for key in identity_keys)):
+            return []
+        seen.add(retry.id)
     descriptor = matches[0].payload.get("attempt_source_manifest")
     if not isinstance(descriptor, dict):
         return []
@@ -89,10 +125,13 @@ def failed_critic_candidate_refs(
 def resume_failed_critic_candidate(
     state_dir: Path, events: Sequence[ZfEvent], failure: ZfEvent, synth_id: str,
 ) -> list[dict[str, Any]]:
-    """Recover an immediately preceding Critic checkpoint after a failed replan."""
+    """Recover the rejected candidate, or a preceding failed reader checkpoint."""
     by_id = {event.id: event for event in events}
     synth = by_id.get(synth_id)
     previous = by_id.get(str(failure.payload.get("rework_of") or ""))
+    direct_rejection = failure.causation_id == synth_id
+    if direct_rejection:
+        previous = failure
     if (synth is None or synth.type != "fanout.synth.completed" or previous is None
             or previous.type != failure.type or previous.causation_id != synth.id):
         raise ValueError("candidate checkpoint is not the preceding failed Critic")
@@ -128,7 +167,10 @@ def resume_failed_critic_candidate(
         control = hydrate_admitted_control_result(state_dir, admission.get("envelope_ref") or {})
     except (ValueError, SidecarRefError) as exc:
         raise ValueError("candidate checkpoint admitted result cannot be read") from exc
-    if control.get("execution_status") != "failed" or control.get("failure_class") != "reader_execution_failure":
+    if direct_rejection:
+        if control.get("execution_status") != "completed" or control.get("verdict") != "rejected":
+            raise ValueError("candidate checkpoint is not an admitted semantic rejection")
+    elif control.get("execution_status") != "failed" or control.get("failure_class") != "reader_execution_failure":
         raise ValueError("candidate checkpoint is not an admitted reader failure")
     refs = failed_critic_candidate_refs(state_dir, events, {**synth.payload, **control})
     if not refs:

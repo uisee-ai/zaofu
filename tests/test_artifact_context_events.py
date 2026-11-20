@@ -116,3 +116,33 @@ def test_rotation_during_snapshot_falls_back_to_complete_ledger(tmp_path: Path, 
 
     monkeypatch.setattr(log, "decode_line", rotate_once)
     assert [event.id for event in ArtifactContextEvents(log).read_all()] == ["older", "rotated", "current"]
+
+
+def test_live_append_reuses_unchanged_archives_without_hiding_cancellation(tmp_path, monkeypatch):
+    log = EventLog(tmp_path / 'events.jsonl')
+    archive = tmp_path / 'events'
+    archive.mkdir()
+    (archive / '2026-10-29.jsonl').write_text(ZfEvent(type='workflow.operation.requested',
+        id='old', payload={'operation_id': 'op'}).to_json() + '\n')
+    log.append(ZfEvent(type='workflow.operation.started', payload={'operation_id': 'op'}))
+    decoded = []
+    original = log.decode_line
+
+    def record(line):
+        event = original(line)
+        if event is not None:
+            decoded.append(event.id)
+        return event
+
+    monkeypatch.setattr(log, 'decode_line', record)
+    view = ArtifactContextEvents(log)
+    assert reduce_workflow_operations(view.read_all())['op']['status'] == 'running'
+    log.append(ZfEvent(type='workflow.operation.cancelled', payload={'operation_id': 'op'}))
+    assert reduce_workflow_operations(view.read_all())['op']['status'] == 'cancelled'
+    assert decoded.count('old') == 1, 'live traffic must not decode every historical archive again'
+    replacement = archive / 'replacement'
+    replacement.write_text(ZfEvent(type='workflow.operation.requested', id='new',
+        payload={'operation_id': 'op'}).to_json() + '\n')
+    replacement.replace(archive / '2026-10-29.jsonl')
+    assert view.read_all()[0].id == 'new'
+    assert 'new' in decoded

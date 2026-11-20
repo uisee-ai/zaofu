@@ -39,6 +39,7 @@ from __future__ import annotations
 import glob
 import hashlib
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -128,6 +129,15 @@ class UsageReport:
 
     input_semantics: str = ""
     """Whether raw input is fresh-only or combined with cache counters."""
+
+    series_started_at: str = ""
+    """Observed native session creation time, when the provider records it."""
+
+    source_request_id: str = ""
+    """Provider-issued ID of this exact incremental request, when available."""
+
+    provider_session_id: str = ""
+    """Native session confirmed by both the record and transcript filename."""
 
 
 # Claude 4.x large-context models report a 1M context window. The 200k
@@ -241,6 +251,8 @@ class ClaudeSessionReader(BackendSessionReader):
         latest: dict | None = None
         latest_ts: str = ""
         latest_model: str = ""
+        latest_request = ""
+        native_session = ""
         try:
             text = session_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -259,6 +271,9 @@ class ClaudeSessionReader(BackendSessionReader):
             if not isinstance(usage, dict):
                 continue
             latest = usage
+            native_session = session_path.stem if obj.get("sessionId") == session_path.stem else ""
+            request = obj.get("requestId")
+            latest_request = request if isinstance(request, str) and re.fullmatch(r'req_[A-Za-z0-9_-]{16,120}', request) else ""
             latest_ts = obj.get("timestamp", "")
             latest_model = obj.get("message", {}).get("model", "") or latest_model
         if latest is None:
@@ -282,6 +297,8 @@ class ClaudeSessionReader(BackendSessionReader):
             timestamp=latest_ts,
             raw=dict(latest),
             model=latest_model,
+            source_request_id=latest_request,
+            provider_session_id=native_session,
             provider="anthropic",
             input_semantics="fresh_plus_cache",
         )
@@ -529,6 +546,7 @@ class CodexSessionReader(BackendSessionReader):
         latest_info: dict | None = None
         latest_ts: str = ""
         session_id: str = ""
+        series_started_at: str = ""
         latest_model: str = ""
         model_provider: str = "openai"
         latest_rate_limits: dict = {}
@@ -546,6 +564,7 @@ class CodexSessionReader(BackendSessionReader):
                         payload = obj.get("payload") or {}
                         if isinstance(payload, dict):
                             session_id = str(payload.get("id") or session_id)
+                            series_started_at = str(payload.get('timestamp') or obj.get('timestamp') or '')
                             model_provider = str(
                                 payload.get("model_provider") or model_provider
                             )
@@ -593,6 +612,7 @@ class CodexSessionReader(BackendSessionReader):
             raw=dict(accounting_usage),
             model=str(latest_info.get("model") or latest_model),
             usage_semantics="cumulative" if cumulative else "incremental",
+            series_started_at=series_started_at,
             usage_series_id=(
                 f"codex:{session_id}"
                 if session_id

@@ -76,6 +76,8 @@ origin request
 - @mention 一个成员回答具体问题；
 - 补充约束并继续同一 thread；
 - 显式触发多视角讨论；
+- 自然对话结束后切换为 `multi_lens`，等待在途回复结束，再点击 `Start discussion`；
+  该动作通过受控重启关闭旧讨论会话，保留消息并启动当前模式的独立多角色讨论；
 - 查看成员 identity、provider、状态和权限；
 - 要求 Finalize 形成 PRD draft；
 - 继续、修订或由 Owner 确认某个 revision。
@@ -144,3 +146,7 @@ Channel-to-PRD 完成只表示：Owner 已确认一个有 ref/digest/revision �
 - [15 Channel 深度使用手册](../15-channel-collaboration.md)
 - [受控 Workflow 启动](controlled-workflow-start.md)
 - [Feishu AI-Native Bridge](../19-feishu-ai-native-direct-bridge.md)
+
+新建 Task 的交接默认使用 `prepare_workflow=true`：Task 确认后准备 Workflow YAML Preview，
+再由 Owner 独立确认启动。可信项目目录在编译提案时绑定为 `target_root`；明确选择的目标目录保留，
+不再只给旧的嵌套路由传目录。

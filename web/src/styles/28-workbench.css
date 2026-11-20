@@ -93,7 +93,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .settings-time-preview { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; padding: 16px; background: var(--surface); border-radius: 6px; font-size: var(--text-13); }
 .settings-time-preview > span { color: var(--text-tertiary); font-size: var(--text-12); }
 @media (max-width: 1150px) { .general-settings-content { padding-inline: 24px; } .general-setting-row { grid-template-columns: 1fr; gap: 10px; } .settings-readonly { text-align: left; } }
-@media (max-width: 680px) { .general-settings-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .general-settings-nav { display: flex; gap: 4px; overflow-x: auto; border-right: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); } .settings-nav-caption { display: none; } .general-settings-nav button { width: auto; white-space: nowrap; flex-shrink: 0; font-size: var(--text-12); padding: 0 8px; gap: 6px; } .general-settings-content { padding: 24px 16px; } }
+@media (max-width: 680px) { .general-settings-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .general-settings-nav { display: flex; flex-wrap: wrap; gap: 4px; border-right: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); } .settings-nav-caption { display: none; } .general-settings-nav button { width: auto; white-space: nowrap; flex-shrink: 0; font-size: var(--text-12); padding: 0 8px; gap: 6px; } .general-settings-content { padding: 24px 16px; } }
 /* Project title, view tabs and tools are three distinct full-width rows. */
 .tasks-heading { display: flex; align-items: center; gap: 12px; height: 68px; min-height: 68px; padding: 18px 24px 10px; margin: 0; }
 .tasks-heading h2 { font-size: var(--text-19); letter-spacing: -.02em; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -310,3 +310,10 @@ dialog.plan-preview-overlay::backdrop { background: #0005; }
   .tasks-heading { gap: 8px; }
   .project-task-count { display: none; }
 }
+
+.settings-password-form { display:grid; gap:16px; max-width:400px; }
+.settings-password-form .settings-description { margin:0; }
+.settings-password-form label { display:grid; gap:6px; font-weight:550; }
+.settings-password-form input { width:100%; min-height:40px; padding:8px 10px; border:1px solid var(--input); border-radius:6px; background:var(--panel); color:var(--text); font:inherit; }
+.settings-password-form .primary-action { justify-self:start; }
+.settings-password-form [role=alert] { margin:0; color:var(--danger); }

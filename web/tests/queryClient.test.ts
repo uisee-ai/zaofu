@@ -166,6 +166,75 @@ async function testPendingProjectionCanBeCancelled(): Promise<void> {
   );
 }
 
+async function testUnavailableProjectionRetriesWithoutCachingPlaceholder(): Promise<void> {
+  clearGetCache();
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return calls === 1
+      ? new Response(JSON.stringify({ status: "unavailable" }), { status: 503, headers: { "Retry-After": "1" } })
+      : new Response(JSON.stringify({ delivery_features: ["active"] }), { status: 200 });
+  }) as typeof fetch;
+  const path = "/api/projects/p/delivery-features";
+  const rows = await Promise.all([
+    cachedGetJson<{ delivery_features: string[] }>(path),
+    cachedGetJson<{ delivery_features: string[] }>(path),
+  ]);
+  assert(calls === 2, "transient consumers must share the retry chain");
+  assert(rows.every(row => row.delivery_features[0] === "active"), "503 placeholder must not become page data");
+  await cachedGetJson(path);
+  assert(calls === 2 && cacheStats().cached === 1, "only the successful projection should be cached");
+}
+
+async function testUnavailableProjectionAbortAndDeadline(): Promise<void> {
+  clearGetCache();
+  const controller = new AbortController();
+  let calls = 0;
+  const response = () => new Response(JSON.stringify({ status: "unavailable" }), { status: 503, headers: { "Retry-After": "1" } });
+  globalThis.fetch = (async () => {
+    calls += 1;
+    queueMicrotask(() => controller.abort());
+    return response();
+  }) as typeof fetch;
+  await cachedGetJson("/api/projects/p/delivery-features", { signal: controller.signal }).then(
+    () => { throw new Error("cancelled retry resolved"); },
+    error => assert(error instanceof DOMException && error.name === "AbortError", "unavailable retry must be cancellable"),
+  );
+  assert(calls === 1, "abort must prevent another request");
+  const originalNow = Date.now;
+  let now = 0;
+  Date.now = () => now;
+  try {
+    globalThis.fetch = (async () => { now = 180_001; return response(); }) as typeof fetch;
+    await cachedGetJson("/api/projects/p/delivery-features").then(
+      () => { throw new Error("expired retry resolved"); },
+      error => assert(error instanceof Error && error.message.includes("暂不可用"), "unavailable retries must retain a deadline"),
+    );
+    assert(cacheStats().cached === 0 && cacheStats().inFlight === 0, "expired placeholders must not remain cached or in flight");
+  } finally {
+    Date.now = originalNow;
+  }
+}
+
+async function testOtherUnavailableResponsesRemainErrors(): Promise<void> {
+  for (const [body, headers] of [
+    [{ status: "error" }, { "Retry-After": "1" }],
+    [{ status: "unavailable" }, {}],
+  ] as const) {
+    clearGetCache();
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return new Response(JSON.stringify(body), { status: 503, headers }); }) as typeof fetch;
+    await cachedGetJson("/api/projects/p/delivery-features").then(
+      () => { throw new Error("ordinary HTTP failure resolved"); },
+      error => assert(error instanceof Error && error.message.includes("503"), "ordinary HTTP error must remain visible"),
+    );
+    assert(calls === 1, "an undeclared transient failure must not retry");
+  }
+}
+
+await testUnavailableProjectionRetriesWithoutCachingPlaceholder();
+await testUnavailableProjectionAbortAndDeadline();
+await testOtherUnavailableResponsesRemainErrors();
 await testPendingProjectionIsNotCachedAsData();
 await testPendingProjectionCanBeCancelled();
 await testSingleFlightAndTtlCache();

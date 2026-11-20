@@ -11,6 +11,22 @@ class TaskCompletionLivenessMixin:
             events = self.event_log.read_all()
         except Exception:
             return False
+        # Task Pipeline owns already-admitted terminal outcomes, including
+        # blocked/abstained results awaiting recovery. They are not lost workers.
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        dispatch = next((e for e in reversed(events) if e.type in {"task.dispatched", "fanout.child.dispatched"}
+                         and str(e.task_id or e.payload.get("task_id") or "") == task_id), None)
+        if dispatch is not None and dispatch.type == "task.dispatched" and dispatch.payload.get("operation_id"):
+            operation = reduce_workflow_operations(events).get(dispatch.payload["operation_id"], {})
+            return bool(
+                operation.get("task_id") == task_id
+                and operation.get("task_pipeline_stage")
+                and operation.get("status") == "settled"
+                and operation.get("call_result_admitted_event_id")
+                and operation.get("admitted_control_result_ref")
+                and operation.get("dispatch_id") == dispatch.payload.get("dispatch_id")
+            )
         latest_dispatch = -1
         latest_completion = -1
         for index, event in enumerate(events):

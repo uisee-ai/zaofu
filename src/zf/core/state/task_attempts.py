@@ -290,6 +290,24 @@ class TaskAttemptStore:
             self._save_unlocked(data)
             return dict(row), True
 
+    def release_unsent_delivery(
+        self, attempt_id: str, *, updated_at: str, lease_expires_at: str,
+    ) -> bool:
+        """Release only the current claim after transport proves no input sent."""
+        with locked_path(self.path):
+            data = self._load_unlocked()
+            row = data["attempts"].get(attempt_id)
+            if not isinstance(row, dict) or row.get("status") != "delivering":
+                return False
+            scope = _scope_key(row["run_id"], row["task_id"], row["attempt_key"])
+            if data["current"].get(scope) != attempt_id:
+                return False
+            row.update(status="prepared", updated_at=updated_at,
+                       lease_expires_at=lease_expires_at)
+            row.pop("delivery_claimed_at", None)
+            self._save_unlocked(data)
+            return True
+
     def mark_sent(
         self,
         attempt_id: str,

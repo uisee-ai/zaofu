@@ -212,7 +212,8 @@ def test_implicit_init_generates_v5_config_without_workflow_request(
         timeout=10,
         check=True,
     ).stdout == ""
-    assert config.version == "5.0.1"
+    assert config.version == "5.1.0"
+    assert config.workflow.flow_metadata["artifact_package"]["task_input_policy"] == "task-scoped-v1"
     assert config.workflow.kind_routes["prd"].pattern_id == "prd-scan"
     event_types = {
         event.type for event in EventLog(Path(body["state_dir"]) / "events.jsonl").read_all()

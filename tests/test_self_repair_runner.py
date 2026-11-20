@@ -108,7 +108,7 @@ def test_claude_code_backend_uses_claude_cli_spawn_command(tmp_path):
         spawned.payload["launch_ref"]["ref"],
     ).read_text(encoding="utf-8"))
     command = launch["argv"]
-    assert command[:3] == ["claude", "--dangerously-skip-permissions", "-p"]
+    assert command[:3] == ["claude", "--permission-mode", "default"]
 
 
 def test_codex_backend_uses_codex_exec_spawn_command(tmp_path):
@@ -137,10 +137,10 @@ def test_codex_backend_uses_codex_exec_spawn_command(tmp_path):
     assert command[:4] == [
         "codex",
         "exec",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "-C",
+        "--sandbox",
+        "workspace-write",
     ]
-    assert command[5].startswith("# Authorized self-repair")
+    assert command[-1].startswith("# Authorized self-repair")
 
 
 def test_spawn_without_backend_is_blocked_not_guessed(tmp_path):
@@ -250,10 +250,20 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
             candidate_path="/x/cand.md",
             repair_task_payload={
                 "contract": {
-                    "scope": ["src/zf/**"],
-                    "verification": "pytest x",
+                    "scope": ["fix.txt"],
+                    "verification": "focused regression passes",
+                    "verification_commands": ["pytest x"],
                 },
                 "continuation": {
+                    "schema_version": "self-repair.request-continuation.v1",
+                    "recovery_case_id": "case-original",
+                    "workflow_run_id": "workflow-original",
+                    "task_map_generation": "generation-original",
+                    "target_commit": "candidate-original",
+                    "active_attempt_id": "attempt-original",
+                    "run_id": "",
+                    "fanout_id": "",
+                    "source_event_ids": [],
                     "checkpoint_id": "checkpoint-1",
                     "safe_resume_action": "needs_stage_dispatch",
                 },
@@ -311,6 +321,16 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
         closeout.payload["continuation"]["resume_strategy"]
         == "snapshot_replay_then_preserve_run_manager_control_plane_restart"
     )
+
+    # Exercise the actual consumer, not just a few projected fields. The live
+    # request includes schema, empty identity slots and recovery bindings.
+    from zf.runtime.repair_dispatch import validate_repair_contract_action, RepairContractError
+    validate_repair_contract_action(tmp_path, closeout.payload)
+    for field in repair_contract["continuation"]:
+        changed = dict(closeout.payload)
+        changed["continuation"] = {**closeout.payload["continuation"], field: "drift"}
+        with pytest.raises(RepairContractError, match="continuation"):
+            validate_repair_contract_action(tmp_path, changed)
 
     second = emit_self_repair_closeouts(
         [dispatched, closeout],
@@ -482,3 +502,57 @@ def _repair_process_events(
         },
     )
     return dispatched, spawned
+
+
+def test_self_repair_never_disables_provider_sandbox_and_accepts_explicit_model():
+    from zf.runtime.self_repair_runner import _spawn_command
+    command = _spawn_command('codex', worktree=Path('/tmp/isolated-repair'), briefing='repair',
+                             model='gpt-6.1-terra', effort='high')
+    assert not any('dangerously' in arg for arg in command)
+    assert command[command.index('--sandbox') + 1] == 'workspace-write'
+    assert command[command.index('--model') + 1] == 'gpt-6.1-terra'
+    assert 'model_reasoning_effort="high"' in command
+
+
+def test_closeout_calls_authorized_kernel_publisher_before_independent_validation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from zf.core.config.schema import ZfConfig
+    root, worktree, base = _repair_worktree(tmp_path)
+    log, writer = _writer(tmp_path)
+    dispatched, spawned = _repair_process_events(tmp_path, worktree=worktree, base_commit=base,
+                                                status='completed', returncode=0)
+    dispatched.payload['branch'] = 'self-repair/test'
+    config = ZfConfig()
+    policy = config.runtime.run_manager.source_repair
+    policy.enabled = policy.publish_candidate = True
+    policy.apply_policy = 'verified_checkpoint_apply'
+    policy.allow_paths = ['src/zf/**']
+    monkeypatch.setattr('zf.core.config.project_context.resolve_project_context', lambda **kwargs: SimpleNamespace(config=config))
+    (worktree / 'src/zf').mkdir(parents=True)
+    (worktree / 'src/zf/fixed.py').write_text('fixed = True\n')
+    assert emit_self_repair_closeouts([dispatched, spawned], writer, root=str(root)) == 1
+    closeout = next(e for e in log.read_all() if e.type == CLOSEOUT_REQUIRED)
+    assert closeout.payload['repair_commit'] != base
+    assert closeout.payload['repair_contract_digest'] == dispatched.payload['repair_contract_digest']
+    assert _git(root, 'rev-parse', 'HEAD') == base
+    assert not any(e.type == 'run.manager.repair.merge.merged' for e in log.read_all())
+
+
+def test_dispatch_freezes_checkout_relative_contract_and_absolute_evidence_locator(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    log, writer = _writer(tmp_path)
+    event = _dispatch_requested()
+    event.payload['repair_task_payload']['contract'].update(
+        scope=[str(tmp_path / 'src/zf/fix.py')],
+        verification_commands=[f'cd {tmp_path} && .venv/bin/python -m pytest tests/test_fix.py'],
+    )
+    with patch('zf.runtime.self_repair_runner.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0, stderr='')
+        assert dispatch_pending_self_repairs([event], writer, root=str(tmp_path), tmp_root=str(tmp_path)) == 1
+    dispatched = next(e for e in log.read_all() if e.type == 'autoresearch.repair.dispatched')
+    contract = hydrate_sidecar_ref(tmp_path, dispatched.payload['repair_contract_ref']).payload
+    assert contract['scope'] == ['src/zf/fix.py']
+    assert 'PYTHONPATH=src' in contract['verification_commands'][0]
+    briefing = Path(dispatched.payload['briefing_path']).read_text()
+    assert str(tmp_path / dispatched.payload['repair_contract_ref']['ref']) in briefing
+    assert 'kernel dispatch authorization' in briefing

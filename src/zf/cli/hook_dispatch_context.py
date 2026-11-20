@@ -31,12 +31,42 @@ def active_task_pipeline_dispatch(events: list[ZfEvent], actor: str) -> ZfEvent 
                     "dispatch_id",
                     "task_map_generation",
                     "workspace_generation",
-                    "placement_epoch",
                 )
             )
+            and _matches_attempt_placement(events, current, event)
         ):
             return event
     return None
+
+
+def _matches_attempt_placement(
+    events: list[ZfEvent], current: dict, dispatch: ZfEvent,
+) -> bool:
+    """Redrives retain request identity but acquire a new attempt placement."""
+    payload = dispatch.payload
+    if payload.get("placement_epoch") == current.get("placement_epoch"):
+        return True
+    attempt_id = current.get("active_attempt_id")
+    lease_id = current.get("lease_id")
+    if not attempt_id or not lease_id:
+        return False
+    if payload.get("attempt_id") != attempt_id or payload.get("lease_id") != lease_id:
+        return False
+    for event in reversed(events):
+        if event.type != "task.attempt.started" or event.origin != "kernel":
+            continue
+        proof = event.payload
+        if (
+            proof.get("attempt_id") == attempt_id
+            and proof.get("lease_id") == lease_id
+            and proof.get("operation_id") == current.get("operation_id")
+            and proof.get("dispatch_id") == current.get("dispatch_id")
+            and proof.get("workflow_run_id") == current.get("workflow_run_id")
+            and str(event.task_id or proof.get("task_id") or "") == current.get("task_id")
+            and str(proof.get("placement_epoch")) == str(payload.get("placement_epoch"))
+        ):
+            return True
+    return False
 
 
 def _fanout_key(payload: dict) -> tuple[str, str, str]:

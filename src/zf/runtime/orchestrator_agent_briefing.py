@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from zf.runtime.result_workspace_guidance import result_workspace_guidance
+
 from pathlib import Path
 
 from zf.runtime.orchestrator_agent_operations import (
@@ -122,20 +124,26 @@ def build_orchestrator_agent_operation_briefing(
                     "exclusions": [],
                 },
                 "graph": {
-                    "work_units": [{"work_unit_id": "replace-with-task-or-stage"}],
+                    "work_units": [{
+                        "work_unit_id": "replace-with-unit-label",
+                        **({
+                            "task_ids": ["replace-with-plan-task-id"],
+                            "stage_ids": ["replace-with-configured-stage"],
+                        } if prepared.checkpoint == "pre_impl" else {}),
+                    }],
                     "edges": [],
                     "barriers": [],
                     "semantic_checkpoints": [],
                 },
                 "delegation": [{
-                    "work_unit_id": "replace-with-task-or-stage",
+                    "work_unit_id": "replace-with-unit-label",
                     "capability_refs": [],
                     "preferred_role_refs": ["replace-with-configured-role"],
                     "skill_refs": [],
                     "dispatch_rank": 0,
                 }],
                 "context_routes": [{
-                    "work_unit_id": "replace-with-task-or-stage",
+                    "work_unit_id": "replace-with-unit-label",
                     "required_sources": [],
                     "return_policy": "selective",
                 }],
@@ -198,6 +206,11 @@ def build_orchestrator_agent_operation_briefing(
                 "manifest; previous source authority does not carry over automatically. "
                 "Repair invalid refs in the same scratch before resubmission."
             )
+            if prepared.checkpoint == "pre_impl":
+                output_rules.append(
+                    "- bind task_ids to existing Plan IDs. A stage label alone in "
+                    "work_unit_id is not a stage selector; declare stage_ids explicitly."
+                )
         elif prepared.checkpoint in {"stage_barrier", "pre_closeout"}:
             output_rules.append(
                 "- include `orchestration-result.v1`; every input result ref "
@@ -215,7 +228,7 @@ def build_orchestrator_agent_operation_briefing(
     read_commands: list[str] = []
     state_root = Path(state_dir).expanduser().resolve()
     required = {
-        (str(item.get("source_id") or ""), str(item.get("artifact_id") or ""))
+        (str(item.get("source_id") or ""), str(item.get("artifact_id") or "")): str(item.get("json_path") or "$")
         for item in context.read_policy.get("required_reads", [])
         if isinstance(item, Mapping)
     }
@@ -229,13 +242,14 @@ def build_orchestrator_agent_operation_briefing(
         if (source_id, artifact_id) not in required:
             optional_source_lines.append(line)
             continue
+        json_path = required[(source_id, artifact_id)]
         source_lines.append(line)
         read_commands.append(
             "zf artifact read "
             f"--attempt {prepared.attempt_id} "
             f"--source {source_id} "
             f"--artifact {artifact_id} "
-            f"--json-path '$' --state-dir {state_root}"
+            f"--json-path '{json_path}' --state-dir {state_root}"
         )
     return "\n".join([
         "# Orchestrator Agent Semantic Checkpoint",
@@ -262,6 +276,9 @@ def build_orchestrator_agent_operation_briefing(
         "",
         "Consume every required body through the controlled interface before submitting. "
         "Prefer the deduplicated paged bundle:",
+        "For effective-config, consume the complete $.config subtree when required; "
+        "the same pinned snapshot's YAML and derived graph remain available on demand. "
+        "No runtime permission, budget, role or routing field is summarized away.",
         "",
         "```bash",
         f"zf artifact read --attempt {prepared.attempt_id} --required --state-dir {state_root}",
@@ -292,6 +309,7 @@ def build_orchestrator_agent_operation_briefing(
         "",
         f"- schema: `{output_schema}`",
         *output_rules,
+        *result_workspace_guidance(scratch),
         f"- edit `{scratch}`; preserve all prefilled identity fields",
         "- update that prefilled file in place; with apply_patch use `*** Update File`; "
         "never delete, add, move, or recreate the scratch path",

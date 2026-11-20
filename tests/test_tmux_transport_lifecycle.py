@@ -362,6 +362,10 @@ def test_codex_ready_timeout_is_bounded_and_structured(
     }
     monkeypatch.setattr(TmuxTransport, "_CODEX_READY_TIMEOUT_CAP_SECONDS", 0.01)
     monkeypatch.setattr(TmuxTransport, "_READY_POLL_INTERVAL_SECONDS", 0.0)
+    # Exercise timeout between polls, independently of host scheduling at the
+    # shared launch-grace/ready deadline (which legitimately has another reason).
+    ticks = iter([0, 0, .001, .002, .003, .011])
+    monkeypatch.setattr("zf.runtime.tmux_readiness.time.monotonic", lambda: next(ticks, .011))
 
     assert transport.wait_ready("dev-1", r"[›>]", timeout=240.0) is False
     error = transport_readiness_error(

@@ -168,6 +168,9 @@ class ControlledActionService(
         payload: dict,
         requested: ZfEvent,
     ) -> dict:
+        if action == 'controller-command':
+            from zf.runtime.controller_actions import execute
+            return execute(self, payload)
         if action == "create-task":
             return self._create_task(
                 requested=requested,

@@ -8,7 +8,8 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
 
 
-def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) -> None:
+def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
+                                    *, approval_ref: str = "") -> None:
     """Keep the call/reads intact; never reopen a semantic or admitted result.
 
     The caller holds the same per-role lease as provider replacement. Existing
@@ -20,16 +21,17 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
     if failure is None or failure.type != "fanout.synth.completed":
         raise ValueError("an exact fanout.synth.completed failure event is required")
     p = failure.payload
+    timeout = p.get("reason") == "synth_timeout" and not p.get("failure_class")
     if (failure.origin != "kernel" or failure.actor != "zf-cli"
             or p.get("status") != "failed" or p.get("report")
-            or p.get("failure_class") != "worker_noop_or_terminal_missing"
+            or (not timeout and (p.get("failure_class") != "worker_noop_or_terminal_missing"
             or p.get("reason") not in {
                 "provider_turn_closed_without_synth_result_recovery_exhausted",
                 "reader_synth_session_replaced_after_dispatch_recovery_exhausted",
-            } or p.get("role_instance") != role.instance_id):
+            })) or p.get("role_instance") != role.instance_id):
         raise ValueError("only a kernel transport failure without a review result may resume")
     lost = by_id.get(failure.causation_id)
-    if (lost is None or lost.type != "fanout.child.dispatch_lost"
+    if not timeout and (lost is None or lost.type != "fanout.child.dispatch_lost"
             or lost.origin != "kernel" or lost.actor != "zf-cli"
             or lost.payload.get("child_id") != "synth"
             or lost.payload.get("semantic_attempt_consumed") is not False
@@ -55,11 +57,14 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
                    and aggregate_event.payload.get("recovery_kind") == "operator_synth_checkpoint"
                    and aggregate_event.payload.get("recovered_failure_event_id") == failure_id
                    and aggregate_event.causation_id == failure_id)
+    stale_reason = runtime._fanout_identity_stale_reason(fanout_id)[0]
+    # The timeout inspector below must prove this exact terminal causation.
+    timeout_block = timeout and stale_reason == "workflow_run_terminal:run.goal.blocked"
     if (manifest.get("topology") != "fanout_reader"
             or (manifest.get("synth") or {}).get("last_event_id") != failure_id
             or not (partial or (aggregate.get("status") == "failed"
                                 and aggregate.get("synth_event_id") == failure_id))
-            or runtime._fanout_identity_stale_reason(fanout_id)[0]):
+            or (stale_reason and not timeout_block)):
         raise ValueError("failed synth carrier is no longer current")
     operation = reduce_workflow_operations(events).get(d.get("operation_id"), {})
     pending_replay = operation.get("status") == "requested" and any(
@@ -74,12 +79,14 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
         and events.index(event) > events.index(failure)
         for event in events
     )
+    suspended_timeout = timeout and operation.get("status") == "suspended" and operation.get("reason") in {
+        "graceful_stop", "fast_stop"}
     if (operation.get("operation_type") != "fanout_synth"
-            or (operation.get("status") != "running" and not pending_replay)
+            or (operation.get("status") != "running" and not pending_replay and not suspended_timeout)
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         raise ValueError("operation is blocked, terminal, or already has an admitted result")
     run = build_run_admission_projection(events).runs.get(operation.get("workflow_run_id"))
-    if run is None or run.status != "running":
+    if not timeout and (run is None or run.status != "running"):
         raise ValueError("synth resume requires a running admitted Run")
     for key in ("request_hash", "workflow_run_id", "role_instance"):
         if not d.get(key) or d.get(key) != operation.get(key):
@@ -96,13 +103,23 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str) ->
     recovery = {"recovery_kind": "operator_synth_checkpoint",
                 "recovered_failure_event_id": failure_id,
                 "semantic_attempt_consumed": False}
+    if timeout:
+        from zf.runtime.synth_timeout_checkpoint import inspect_synth_timeout
+
+        recovery.update(inspect_synth_timeout(runtime, events=events, failure=failure,
+            dispatch=dispatch, operation=operation, run=run, approval_ref=approval_ref))
     if not partial:
-        runtime.event_writer.append(ZfEvent(
+        aggregate_event = runtime.event_writer.append(ZfEvent(
             type="fanout.aggregate.started", actor="zf-cli", origin="kernel",
             payload={"fanout_id": fanout_id, "trace_id": operation["workflow_run_id"],
                      "stage_id": d["stage_id"], **recovery},
             causation_id=failure_id, correlation_id=operation["workflow_run_id"],
         ))
+    if timeout:
+        from zf.runtime.synth_timeout_checkpoint import restore_timeout_run
+
+        restore_timeout_run(runtime, events=events, failure=failure, operation=operation,
+                            recovery=recovery, aggregate_event=aggregate_event)
     runtime.event_writer.append(ZfEvent(
         type="fanout.synth.dispatched", actor="zf-cli", origin="kernel",
         task_id=dispatch.task_id, payload={**d, **recovery, "retry_of_event_id": dispatch.id},

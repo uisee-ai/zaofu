@@ -204,6 +204,21 @@ assert(idlePolicy.canStartOrRestart, "idle thread with a requirement can start")
 assert(!idlePolicy.restart, "fresh idle discussion does not send restart intent");
 assert(idlePolicy.startLabel === "Start discussion", "idle thread uses start copy");
 
+const conversationDone = attention("done", { active_reply_count: 0, queued_reply_count: 0 });
+const changedModes = { current: "conversation", selected: "multi_lens" };
+const explicitMultiLens = channelDiscussionControlPolicy(conversationDone, "active", true, changedModes);
+assert(explicitMultiLens.canStartOrRestart, "idle conversation can explicitly enter multi-lens discussion");
+assert(explicitMultiLens.restart, "mode transition closes the old session through the controlled action");
+assert(!channelDiscussionControlPolicy(conversationDone, "active", true,
+  { current: "multi_lens", selected: "multi_lens" }).canStartOrRestart,
+"active multi-lens sessions cannot be restarted as a mode transition");
+for (const pending of [{ active_reply_count: 1 }, { queued_reply_count: 1 }]) {
+  assert(!channelDiscussionControlPolicy({ ...conversationDone, ...pending }, "active", true, changedModes).canStartOrRestart,
+    "mode transition waits for pending provider replies");
+}
+assert(!channelDiscussionControlPolicy(conversationDone, "active", false, changedModes).canStartOrRestart,
+  "mode transition needs a source requirement");
+
 console.log("channelDiscussionAttention.test.ts OK");
 
 assert(selectChannelDiscussionAttention(detail, "new-thread") === null, "new threads do not inherit another conversation status");

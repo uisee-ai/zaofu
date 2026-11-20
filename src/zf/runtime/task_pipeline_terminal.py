@@ -169,6 +169,9 @@ def reconcile_task_pipeline_freeze(
 ) -> list[WorkflowRuntimeDecision]:
     """Freeze the current Run frontier, including retained Task generations."""
 
+    from zf.runtime.task_pipeline_freeze_scope import reconcile_incomplete_freeze_scope
+
+    blocked_runs = reconcile_incomplete_freeze_scope(runtime, generation_contexts)
     runs: dict[str, dict[str, Mapping[str, Any]]] = {}
     for task_id, context in generation_contexts.items():
         run_id = str(context.get("workflow_run_id") or "")
@@ -179,12 +182,14 @@ def reconcile_task_pipeline_freeze(
     events = runtime.event_log.read_all()
     current_contexts = task_pipeline_generation_contexts(events)
     for run_id, task_contexts in sorted(runs.items()):
+        if run_id in blocked_runs:
+            continue
         current_run_contexts = {
             task_id: row for task_id, row in current_contexts.items()
             if str(row.get("workflow_run_id") or "") == run_id
         }
-        if {key: row.get("generation_id") for key, row in task_contexts.items()} != {
-            key: row.get("generation_id") for key, row in current_run_contexts.items()
+        if {key: (row.get("generation_id"), row.get("task_map_generation")) for key, row in task_contexts.items()} != {
+            key: (row.get("generation_id"), row.get("task_map_generation")) for key, row in current_run_contexts.items()
         }:
             continue
         context = latest_task_pipeline_generation_context(
@@ -312,61 +317,13 @@ def _freeze_generation(
         generation_id=generation_id,
     ):
         return False
-    integrated: list[tuple[ZfEvent, dict[str, Any], dict[str, Any]]] = []
-    completed_task_ids: list[str] = []
-    superseded: list[ZfEvent] = []
-    from zf.runtime.candidate_incremental import hydrate_task_integration_receipt
-    from zf.runtime.candidates import CandidateRebuilder
+    from zf.runtime.task_pipeline_freeze_receipts import collect_freeze_receipts
 
-    rebuilder = CandidateRebuilder(
-        state_dir=Path(runtime.state_dir),
-        project_root=Path(runtime.project_root),
-        config=runtime.config,
-        event_log=runtime.event_log,
-    )
-    for task_id in task_ids:
-        task_context = task_contexts[task_id]
-        task_generation = str(task_context.get("task_map_generation") or "")
-        task = runtime.task_store.get(task_id)
-        if task is None:
-            return False
-        if str(task.status) == "cancelled":
-            supersession = _authorized_supersession_event(
-                events,
-                task_id=task_id,
-                context=task_context,
-            )
-            if supersession is None:
-                return False
-            superseded.append(supersession)
-            continue
-        if str(task.status) != "done":
-            return False
-        event = _latest_integration_event(
-            events,
-            task_id=task_id,
-            context=task_context,
-        )
-        if event is None:
-            return False
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        descriptor = payload.get("receipt_ref")
-        if not isinstance(descriptor, Mapping):
-            return False
-        try:
-            receipt = hydrate_task_integration_receipt(
-                rebuilder,
-                descriptor,
-                task_id=task_id,
-                workflow_run_id=workflow_run_id,
-                task_map_generation=task_generation,
-            )
-        except Exception:
-            return False
-        integrated.append((event, receipt, dict(descriptor)))
-        completed_task_ids.append(task_id)
-    if not integrated:
+    collected = collect_freeze_receipts(runtime, events=events, workflow_run_id=workflow_run_id,
+                                       task_ids=task_ids, task_contexts=task_contexts)
+    if collected is None:
         return False
+    integrated, completed_task_ids, superseded = collected
     if _generation_has_active_work(
         runtime, context, task_ids, task_contexts=task_contexts,
     ):

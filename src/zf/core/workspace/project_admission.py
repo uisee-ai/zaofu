@@ -156,13 +156,19 @@ def inspect_project_admission(
     )
     if state_dir_non_empty:
         if missing_truth_files:
-            _stop(
-                diagnostics,
-                "state_dir_partial",
-                "non-empty state_dir is missing canonical truth files: "
-                + ", ".join(missing_truth_files),
-                missing_truth_files=missing_truth_files,
-            )
+            from zf.core.config.project_context import ProjectContext
+            from zf.integrations.controller.project_admission import pending_metadata_only
+
+            pending = config_loadable and pending_metadata_only(ProjectContext(
+                resolved_root, config_path, config, resolved_state_dir))
+            if not pending:
+                _stop(
+                    diagnostics,
+                    "state_dir_partial",
+                    "non-empty state_dir is missing canonical truth files: "
+                    + ", ".join(missing_truth_files),
+                    missing_truth_files=missing_truth_files,
+                )
         elif not config_loadable:
             _stop(
                 diagnostics,

@@ -58,6 +58,34 @@ def test_foreign_origin_is_not_imported(tmp_path):
         critical_context_sources(runtime.state_dir, events, "R")
 
 
+def test_discovery_requires_precise_flow_but_keeps_full_config_retrievable(tmp_path):
+    runtime = _runtime(tmp_path)
+    seed(runtime)
+    payload = {"workflow_run_id": "R", "flow_kind": "prd", "role_instance": "reader",
+               "stage_id": "prd-discovery", "canonical_success_event": "workflow.child.completed"}
+    prepare_call_operation(runtime, payload=payload, operation_type="fanout_reader_child",
+        operation_key="discovery", stage_id="prd-discovery", task_id="T", dispatch_id="discovery")
+    manifest = hydrate_sidecar_ref(runtime.state_dir, payload["attempt_source_manifest"]).payload
+    sources = {s['source_id'] for s in manifest['sources']}
+    reads = {r['source_id'] for r in payload['required_reads']}
+    assert 'approved-config-full' in sources
+    assert 'approved-config-full' not in reads
+    assert {'critical-approved-flow', 'critical-user-and-config'} <= reads
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+    full = next(s for s in manifest['sources'] if s['source_id'] == 'approved-config-full')
+    result = read_attempt_artifact(runtime.state_dir, manifest=manifest,
+        source_id=full['source_id'], artifact_id=full['artifact_id'], json_path='$')
+    assert 'approved-model' in json.dumps(result, ensure_ascii=False)
+
+
+def test_legacy_discovery_without_exact_flow_keeps_full_config_required():
+    from zf.runtime.artifact_read_policy import workflow_reader_required_source_paths
+    required, _ = workflow_reader_required_source_paths({'stage_id': 'discovery',
+        'sources': [{'source_id': 'approved-config-full'}, {'source_id': 'critical-user-and-config'}]},
+        output_profile_id='workflow-read')
+    assert required['approved-config-full'] == ('$',)
+
+
 def test_recovery_briefing_restores_only_current_live_inputs(tmp_path):
     from zf.runtime.recovery import build_recovery_briefing
 

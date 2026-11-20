@@ -44,7 +44,7 @@ def prepare_candidate_verification_authority(
     """
 
     events = runtime.event_log.read_all()
-    candidate = _frozen_candidate_for_payload(
+    candidate = frozen_candidate_for_payload(
         events,
         workflow_run_id,
         payload=payload,
@@ -101,9 +101,16 @@ def prepare_candidate_verification_authority(
             "frozen candidate lacks an exact freeze receipt"
         )
 
+    from zf.runtime.candidate_continuation import authorized_manifest, source_evidence_run
+
+    evidence_run_id = source_evidence_run(runtime, candidate)
+    inherited_proofs = {}
+    if body.get("candidate_continuation_ref"):
+        receipt = authorized_manifest(runtime, body["candidate_continuation_ref"], workflow_run_id)
+        inherited_proofs = {p["task_id"]: p for p in receipt["manifest"]["task_proofs"]}
     task_commits = candidate_task_source_commits(
         events,
-        workflow_run_id=workflow_run_id,
+        workflow_run_id=evidence_run_id,
         candidate_head_commit=candidate_head,
     )
     missing_commits = sorted(set(completed_task_ids) - set(task_commits))
@@ -113,20 +120,25 @@ def prepare_candidate_verification_authority(
             + ", ".join(missing_commits)
         )
 
+    missing_verify: set[str] = set()
     child_authorities: list[dict[str, Any]] = []
     child_snapshots: list[dict[str, Any]] = []
     for child_task_id in completed_task_ids:
         verification = _latest_task_verification(
             events,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=evidence_run_id,
             task_id=child_task_id,
             task_map_generation=generation,
             target_commit=task_commits[child_task_id],
         )
         if verification is None:
-            raise CandidateVerificationAuthorityError(
-                f"candidate task {child_task_id!r} lacks current admitted Verify evidence"
-            )
+            missing_verify.add(child_task_id)
+            continue
+        if inherited_proofs:
+            current_task = runtime.task_store.get(child_task_id)
+            if (verification.id != inherited_proofs[child_task_id]["verification_event_id"]
+                    or current_task is None or current_task.status != "done"):
+                raise CandidateVerificationAuthorityError("continued Task authority changed: " + child_task_id)
         child_payload = dict(verification.payload)
         contract_descriptor = _descriptor(
             child_payload,
@@ -139,7 +151,7 @@ def prepare_candidate_verification_authority(
             digest_key="target_snapshot_digest",
         )
         expected_contract = {
-            "workflow_run_id": workflow_run_id,
+            "workflow_run_id": evidence_run_id,
             "task_id": child_task_id,
             "task_map_generation": generation,
         }
@@ -221,6 +233,19 @@ def prepare_candidate_verification_authority(
             },
         })
         child_snapshots.append(contract_snapshot)
+
+    if missing_verify:
+        from zf.runtime.candidate_replacement_authority import verified_predecessors
+
+        replaced = verified_predecessors(
+            Path(runtime.state_dir), candidate, events[: events.index(candidate)], child_authorities
+        )
+        unresolved = sorted(missing_verify - replaced)
+        if unresolved:
+            raise CandidateVerificationAuthorityError(
+                f"candidate task {unresolved[0]!r} lacks current admitted Verify evidence"
+            )
+        completed_task_ids = sorted(row["task_id"] for row in child_authorities)
 
     authority_seed = {
         "workflow_run_id": workflow_run_id,
@@ -329,7 +354,7 @@ def _latest_frozen_candidate(
     return None
 
 
-def _frozen_candidate_for_payload(
+def frozen_candidate_for_payload(
     events: list[ZfEvent],
     workflow_run_id: str,
     *,
@@ -474,6 +499,9 @@ def _aggregate_contract_snapshot(
                 raise CandidateVerificationAuthorityError(
                     "candidate verification command digest collision"
                 )
+            tier = str(item.get("tier") or "integration")
+            if existing is not None and existing["tier"] != tier:
+                raise CandidateVerificationAuthorityError("same candidate command has conflicting verification tiers")
             command_ids[str(item.get("command_id") or "")] = aggregate_id
             row = commands_by_digest.setdefault(digest, {
                 "command_id": aggregate_id,
@@ -481,7 +509,8 @@ def _aggregate_contract_snapshot(
                 "command_digest": digest,
                 "acceptance_ids": [],
                 "owner": "candidate_verify",
-                "tier": "integration",
+                "tier": tier,
+                "producer_paths": [],
                 "deterministic": bool(item.get("deterministic", True)),
                 "reusable": False,
                 "timeout_seconds": int(item.get("timeout_seconds") or 0),
@@ -490,6 +519,8 @@ def _aggregate_contract_snapshot(
                 int(row.get("timeout_seconds") or 0),
                 int(item.get("timeout_seconds") or 0),
             )
+            row["producer_paths"] = _unique([*row["producer_paths"], *item.get("producer_paths", [])])
+            row["deterministic"] = row["deterministic"] and bool(item.get("deterministic", True))
             row["acceptance_ids"] = _unique([
                 *row.get("acceptance_ids", []),
                 *[
@@ -525,7 +556,8 @@ def _aggregate_contract_snapshot(
                 "text": f"[{child_task_id}] {statement}",
                 "mandatory": bool(item.get("mandatory", True)),
                 "verification_owner": "candidate_verify",
-                "verification_tier": "integration",
+                "verification_tier": str(item.get("verification_tier") or "integration"),
+                "producer_paths": list(item.get("producer_paths") or []),
                 "verification_command_ids": mapped_commands,
                 "source_task_id": child_task_id,
                 "source_acceptance_id": child_acceptance_id,
@@ -561,7 +593,7 @@ def _aggregate_contract_snapshot(
         "acceptance_criteria": criteria,
         "verification_command": str(commands[0]["command"] if commands else ""),
         "verification_commands": commands,
-        "verification_tiers": ["integration"],
+        "verification_tiers": _unique([str(row["tier"]) for row in commands]),
         "verification_owner": "candidate_verify",
         "verification_tier": "integration",
         "required_source_outputs": _unique(required_source_outputs),
@@ -636,5 +668,6 @@ def _unique(values: list[str]) -> list[str]:
 
 __all__ = [
     "CandidateVerificationAuthorityError",
+    "frozen_candidate_for_payload",
     "prepare_candidate_verification_authority",
 ]

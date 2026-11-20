@@ -73,12 +73,11 @@ def test_host_recovers_unique_runtime_and_respects_pause(resident_enabled):
 
     try:
         run(cli + ["start", "--no-watch", "--skip-workflow-inspect"])
-        command = ["systemd-run", "--user", "--unit", unit, "--property", "Type=simple",
-            "--property", "Restart=on-failure", "--property", "RestartSec=1s", "--property", "KillMode=process",
-            "--property", f"WorkingDirectory={root}", "--property", f"ExecCondition={sys.executable} -m zf.cli.main recover host-check --state-dir {state}"]
-        for key in ("PATH", "PYTHONPATH", "ZF_PROJECT_ROOT", "ZF_STATE_DIR", "TMUX_TMPDIR"):
-            command += ["--setenv", f"{key}={env[key]}"]
-        run(command + cli + ["start", "--control-plane-only", "--skip-workflow-inspect"])
+        from zf.runtime.host_supervision import install_user_unit, render_user_unit
+        body = render_user_unit(project_root=root, state_dir=state, python=Path(sys.executable),
+                                source_root=ROOT, unit_name=unit, environment=env)
+        unit_path = install_user_unit(unit, body)
+        run(["systemctl", "--user", "start", unit])
         _until(lambda: len(loops()) == 1)
         first = pid()
         assert first > 1
@@ -123,8 +122,12 @@ def test_host_recovers_unique_runtime_and_respects_pause(resident_enabled):
             except OSError:
                 pass
         run(["tmux", "kill-session", "-t", session], check=False)
+        run(["systemctl", "--user", "disable", unit], check=False)
+        if 'unit_path' in locals() and unit_path.exists() and unit_path.read_text() == body:
+            unit_path.unlink()
+            run(["systemctl", "--user", "daemon-reload"], check=False)
         run(["systemctl", "--user", "reset-failed", unit], check=False)
-        evidence = Path("/tmp/zf-200-verification-20261106")
+        evidence = Path(os.environ.get("ZF_HOST_EVIDENCE_DIR", str(root.parent / (root.name + "-evidence"))))
         evidence.mkdir(exist_ok=True)
         receipt = "sidecar-host-supervision.json" if resident_enabled else "host-supervision.json"
         sidecar_events = [json.loads(e.to_json()) for e in EventLog(state / "events.jsonl").read_all()

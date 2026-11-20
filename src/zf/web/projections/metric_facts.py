@@ -18,11 +18,12 @@ from zf.web.projections.event_index_cursor import active_identity, can_resume
 from zf.web.projections.read_model import _connect, db_path
 from zf.web.projections.sqlite_reader import connect_readonly
 
-VERSION = "metric-facts.v2"
+VERSION = "metric-facts.v4"
 PULSE_KEYS = {"signal", "status", "to", "task_id", "role", "instance_id", "state",
               "current_task_id", "assignee", "assigned_to", "tier", "route", "rework_kind", "backend",
               "run_id", "workflow_run_id", "trace_id", "stage_id", "child_id",
-              "role_instance", "route_id", "pattern_id"}
+              "role_instance", "route_id", "pattern_id", "runtime_load_ref",
+              "worker_load_ref", "dispatch_id", "attempt_id", "active_attempt_id", "operation_id", "manifest_digest", "actor"}
 
 
 @contextmanager
@@ -122,6 +123,7 @@ def refresh_events(state_dir: Path, config=None) -> dict:
                     consume(state, event, task)
                 payload = event.payload if isinstance(event.payload, dict) else {}
                 small = {key: payload[key] for key in PULSE_KEYS if key in payload}
+                small["_event_origin"] = event.origin
                 trace_key = event_trace_id(event)
                 if trace_key:
                     if trace_key not in trace_changes and resume:
@@ -174,9 +176,14 @@ def events(state_dir: Path, *, days: int | None = None, full: bool = False,
     with connect_readonly(db_path(state_dir)) as conn:
         rows = conn.execute("SELECT * FROM metric_event" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY seq", args).fetchall()
     if not full:
+        def projected_payload(row):
+            payload = json.loads(row["payload"])
+            origin = payload.pop("_event_origin", "")
+            return {"payload": payload, "origin": origin}
+
         return [(r["seq"], ZfEvent(id=r["event_id"], ts=r["ts"], type=r["type"], actor=r["actor"],
                                   task_id=r["task_id"], correlation_id=r["correlation_id"],
-                                  causation_id=r["causation_id"], payload=json.loads(r["payload"]))) for r in rows]
+                                  causation_id=r["causation_id"], **projected_payload(r))) for r in rows]
     return hydrate_rows(state_dir, rows, config=config)
 
 

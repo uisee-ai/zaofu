@@ -523,6 +523,8 @@ def reconcile_task_pipeline_runtime(
         events = runtime.event_log.read_all()
         all_operations = [row for row in reduce_workflow_operations(events).values()
                           if operation_matches_generation(row, contexts)]
+        from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+        all_operations = mark_restart_compatibility_probes(all_operations, events)
         state_dir = getattr(runtime, "state_dir", None)
         if state_dir is not None:
             all_operations = normalize_task_pipeline_operation_semantics(
@@ -541,6 +543,8 @@ def reconcile_task_pipeline_runtime(
         events = runtime.event_log.read_all()
         all_operations = [row for row in reduce_workflow_operations(events).values()
                           if operation_matches_generation(row, contexts)]
+        from zf.runtime.task_pipeline_read_replay import mark_restart_compatibility_probes
+        all_operations = mark_restart_compatibility_probes(all_operations, events)
         state_dir = getattr(runtime, "state_dir", None)
         if state_dir is not None:
             all_operations = normalize_task_pipeline_operation_semantics(
@@ -658,6 +662,16 @@ def reconcile_task_pipeline_runtime(
                     )
                     continue
                 except Exception as exc:
+                    from zf.runtime.provider_dispatch_wait import external_gate_reason
+                    gate_reason = external_gate_reason(exc)
+                    if gate_reason:
+                        emit_task_pipeline_waiting_once(
+                            runtime, task_id=task_id, stage=stage,
+                            operation_generation=int(assignment.get("operation_generation") or 1),
+                            context=group_contexts[task_id], reason=gate_reason,
+                            detail="provider input not sent",
+                        )
+                        continue
                     record_failure = getattr(
                         runtime,
                         "_record_dispatch_failure",
@@ -848,6 +862,18 @@ def _activate_task_stage_binding(
                 "physical slot still owns an active WorkflowOperation",
             )
         runtime.transport.terminate(role.instance_id)
+        try:
+            still_alive = runtime.transport.is_alive(role.instance_id)
+        except Exception as exc:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit cannot be confirmed; retain the current binding",
+            ) from exc
+        if still_alive:
+            raise TaskPipelineWaiting(
+                "waiting_for_worker_exit",
+                "old worker exit is pending; do not activate another writer",
+            )
         now = _now_iso()
         registry.update_instance_meta(
             role.instance_id,
@@ -862,6 +888,13 @@ def _activate_task_stage_binding(
             reason="Task Pipeline slot rebound to another Task-stage session",
             force=True,
         )
+
+    if not alive or binding_switch:
+        from zf.runtime.task_workspace_handoff import ensure_stage_workspace_idle
+
+        prior_path = current_path or str(role_meta.get("active_task_workspace") or "")
+        ensure_stage_workspace_idle(runtime, registry, role, task, workflow_run_id,
+                                    task_map_generation, project_path, prior_path)
 
     binding = registry.bind_task_stage_session(
         workflow_run_id=workflow_run_id,
@@ -878,6 +911,7 @@ def _activate_task_stage_binding(
         binding_key=str(binding.get("binding_key") or ""),
         role_instance=role.instance_id,
     )
+    registry.update_instance_meta(role.instance_id, active_task_workspace=str(project_path))
     runtime._ensure_role_active(
         role,
         task_id=str(task.id),

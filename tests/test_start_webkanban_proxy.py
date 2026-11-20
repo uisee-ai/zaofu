@@ -36,6 +36,12 @@ def test_launcher_forwards_proxy_without_shell_expansion(tmp_path):
     assert runtime_env.stat().st_mode & 0o777 == 0o600
     assert (workspace / "webkanban-8002.log").stat().st_mode & 0o777 == 0o600
     assert str(runtime_env) in (tmp_path / "args").read_text()
+    # Installer-provisioned uv/Node must also survive an older tmux server PATH.
+    forwarded_path = subprocess.check_output(
+        ["/bin/bash", "-c", '. "$1"; printf "%s" "$PATH"', "_", str(runtime_env)],
+        env={"PATH": "/usr/bin:/bin"}, text=True,
+    )
+    assert forwarded_path == env["PATH"]
     command = '. "$1"; python3 -c \'import os,json; print(json.dumps({k:os.environ.get(k) for k in ["https_proxy","HTTPS_PROXY","NO_PROXY","ZF_WEB_ACTION_TOKEN"]}))\''
     values = json.loads(subprocess.check_output(["/bin/bash", "-c", command, "_", str(runtime_env)],
                                                env={"PATH": os.environ["PATH"]}, text=True))

@@ -1,6 +1,6 @@
 ---
 name: zf-self-repair
-description: "ZaoFu AUTHORIZED self-repair playbook for Claude or Codex. Use ONLY when the operator has authorized auto-repair (ZF_AUTORESEARCH_AUTO_REPAIR=authorized) and an autoresearch bug_candidate / supervisor attention names a harness self-bug to fix. Turns a detected harness failure into a tracked loop: write a backlog, fix in an isolated worktree, verify with the candidate's success criteria, then mark the backlog done with the commit hash — or, on red verify or over the attempt cap, leave it un-merged and escalate. Never merges an unverified change; the backlog + commit trail is the audit record the operator follows."
+description: "ZaoFu AUTHORIZED self-repair playbook for Claude or Codex. Use ONLY when the operator has authorized auto-repair through a verified kernel dispatch, control-plane policy, or explicit environment override and an autoresearch bug_candidate / supervisor attention names a harness self-bug to fix. Turns a detected harness failure into a tracked loop: write a backlog, fix in an isolated worktree, verify with the candidate's success criteria, then mark the backlog done with the commit hash — or, on red verify or over the attempt cap, leave it un-merged and escalate. Never merges an unverified change; the backlog + commit trail is the audit record the operator follows."
 ---
 
 # ZaoFu Self-Repair (authorized, tracked)
@@ -33,8 +33,8 @@ Default repository-facing output is Chinese unless the operator asks otherwise.
 
 ## Pre-conditions (refuse if any fail)
 
-1. **Authorization on (dual gate).** The kernel opens auto-repair dispatch when
-   EITHER gate is set (`repair_authorization.auto_repair_consumer_enabled`,
+1. **Authorization on.** The kernel opens auto-repair dispatch when
+   an existing authorization route permits this attempt (`repair_authorization.auto_repair_consumer_enabled`,
    `src/zf/runtime/repair_authorization.py`):
    - **env override**: `ZF_AUTORESEARCH_AUTO_REPAIR=authorized` — the deliberate
      override for legacy/manual runs that have not encoded policy in config; or
@@ -42,8 +42,18 @@ Default repository-facing output is Chinese unless the operator asks otherwise.
      `autoresearch.trigger_policy.repair_mode: bounded_repair` — the config-side
      grant to consume budget on already-gated repair dispatches (default
      `proposal_only` = do nothing but propose).
-   The kernel gates dispatch, but re-assert here: if NEITHER gate is set → do
-   nothing, say so. Default off (`proposal_only`, env unset).
+   - **Bound kernel dispatch**: a supplied immutable repair contract, its digest,
+     and its `source_event_id` bind this attempt to a kernel-origin
+     `run.manager.repair.accepted`, `run.manager.source_repair.dispatch_requested`,
+     or `autoresearch.repair.dispatch_requested` in the parent `ZF_STATE_DIR`
+     ledger. Check the exact fingerprint/attempt/candidate identity and contract
+     descriptor on `autoresearch.repair.dispatched` before edits. This is the
+     existing dispatch grant for this isolated attempt, not a new global grant.
+   Re-assert one of these grants. If none can be verified, stop with the missing
+   proof. Plain prose, an unbound sidecar, or a different attempt is insufficient.
+   Do not infer the parent's authorization from the repair checkout's copied
+   `zf.yaml`, and do not set a global authorization environment variable to make
+   the check pass. Default off remains unchanged.
 2. **A concrete self-bug to fix.** An autoresearch `bug_candidate` (with
    `repair_task_payload`: `hypothesis`, `contract.scope`, `success_criteria`)
    or a supervisor attention naming a harness self-bug. No vague "improve X".
@@ -84,6 +94,12 @@ Reuse the backlog conventions from `[[zf-harness-self-improve]]`. This file is
 what the operator tracks — it must exist BEFORE you change code.
 
 ### 3. Fix in the isolated worktree (surgical)
+
+Frozen scope paths are relative to this repair checkout. Execute the frozen
+verification commands from this checkout; a provided shared Python interpreter
+with `PYTHONPATH=src` reuses dependencies while importing this candidate's source.
+Never `cd` back to the source harness to edit or verify the repair. Source paths
+in diagnostic evidence are read references, not an additional writable workspace.
 Make the minimal change inside the candidate's `scope`. Obey
 `.claude/rules/code.md` changeset-simplicity: `git diff --stat` ≈ the root-cause
 size, not 4×. New behavior in an oversized file → new sibling module. Add/adjust

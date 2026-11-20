@@ -1,0 +1,3 @@
+{
+  "dependency-cycle": "R4（合成评测澄清）：采用 Node.js 内置测试器。规划命令已选定：T-CORE 负责生产并由 verify-core 在本片运行 node --test tests/core.test.mjs；T-ENTRY 负责生产并由 verify-entry 在装配阶段运行 node --test tests/product.test.mjs。这些是本批各任务要生产的验证入口，不表示文件已存在或已验证；当前均 NOT_RUN。将本澄清与 R1–R3 同时作为候选合同依据。"
+}

@@ -48,6 +48,10 @@ def derive_impl_rework_requests(
     requests.update(oa_impl_rework_requests(
         events=event_rows, operations=operations, contexts=generation_contexts,
     ))
+    from zf.runtime.task_pipeline_integration_rework_approved import integration_impl_rework_requests
+    requests.update(integration_impl_rework_requests(
+        events=event_rows, operations=operations, contexts=generation_contexts,
+    ))
     for event in event_rows:
         if event.type != "task.ref.rejected" or not event.task_id:
             continue
@@ -143,7 +147,11 @@ def reconcile_task_ref_repair_replays(
     if attempted is None:
         attempted = set()
         runtime._task_ref_repair_replay_attempts = attempted
-    emitted: list[ZfEvent] = []
+    from zf.runtime.task_pipeline_blocked_result import replay_blocked_impl_results
+
+    emitted = replay_blocked_impl_results(
+        runtime, events=event_rows, generation_contexts=generation_contexts,
+    )
     for source_id, repair in latest_repair_by_source.items():
         if repair.id in attempted:
             continue

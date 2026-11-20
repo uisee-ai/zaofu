@@ -28,6 +28,10 @@ class TaskWorkspaceError(RuntimeError):
     """A task workspace request is unsafe or no longer current."""
 
 
+class TaskWorkspaceBusyError(TaskWorkspaceError):
+    """Declared setup is waiting for live environment consumers to exit."""
+
+
 @dataclass(frozen=True)
 class TaskWorkspacePlan:
     workflow_run_id: str
@@ -193,24 +197,52 @@ class TaskWorkspaceManager:
                     str(project_path),
                     plan.base_commit,
                 )
-        provision_worktree_env(
-            project_path,
-            self.project_root,
-            self.config.runtime.workdirs.provision_paths,
-            bootstrap_uv_dev=True,
-        )
+        try:
+            provision_worktree_env(
+                project_path,
+                self.project_root,
+                self.config.runtime.workdirs.provision_paths,
+                bootstrap_uv_dev=True,
+            )
+        except TimeoutError as exc:
+            raise TaskWorkspaceBusyError(str(exc)) from exc
         setup = self.config.project.setup_script
         if setup:
-            result = run_project_setup(project_path, setup, marker_dir=workdir)
+            result = run_project_setup(project_path, setup, marker_dir=workdir,
+                setup_inputs=getattr(self.config.project, "setup_inputs", []),
+                setup_scope=self.config.project.setup_scope,
+                required_paths=self.config.runtime.workdirs.required_paths)
             if not result.ok:
-                raise TaskWorkspaceError(
+                error_type = TaskWorkspaceBusyError if result.waiting_for_resources else TaskWorkspaceError
+                raise error_type(
                     f"task workspace setup failed for {plan.task_id} "
                     f"(exit {result.exit_code}): {result.detail}"
                 )
+        from zf.runtime.required_environment import require_workspace_environment
+
+        require_workspace_environment(project_path, self.config.runtime.workdirs.required_paths,
+            qualified_setup=bool(setup), bootstrap_uv_dev=True)
         self._write_metadata(plan, git_worktree_created=True)
         return plan
 
     def cleanup(
+        self, plan: TaskWorkspacePlan, *, task_terminal: bool, integrated_or_archived: bool,
+        active_attempts: int, active_sessions: int,
+    ) -> TaskWorkspaceRemovalResult:
+        from zf.runtime.environment_usage import environment_mutation
+
+        args = dict(task_terminal=task_terminal, integrated_or_archived=integrated_or_archived,
+                    active_attempts=active_attempts, active_sessions=active_sessions)
+        if not Path(plan.project_path).exists():
+            return self._cleanup_unoccupied(plan, **args)
+        try:
+            with environment_mutation(Path(plan.project_path)):
+                return self._cleanup_unoccupied(plan, **args)
+        except (TimeoutError, OSError) as exc:
+            return TaskWorkspaceRemovalResult(status="blocked", project_path=plan.project_path,
+                reason=f"environment in use or lock unavailable: {exc}")
+
+    def _cleanup_unoccupied(
         self,
         plan: TaskWorkspacePlan,
         *,
@@ -251,12 +283,19 @@ class TaskWorkspaceManager:
                 project_path=str(project_path),
                 reason="task workspace has uncommitted changes",
             )
+        from zf.runtime.workspace_retention import workspace_retention_reason
+
+        retained = workspace_retention_reason(project_path,
+            provision_paths=self.config.runtime.workdirs.provision_paths, bookkeeping_dir=workdir)
+        if retained:
+            return TaskWorkspaceRemovalResult(
+                status="blocked", project_path=str(project_path), reason=retained,
+            )
         try:
             self._git(
                 self.project_root,
                 "worktree",
                 "remove",
-                "--force",
                 str(project_path),
             )
             shutil.rmtree(workdir, ignore_errors=True)
@@ -410,6 +449,7 @@ def _component(value: str, *, limit: int = 64) -> str:
 __all__ = [
     "TASK_WORKSPACE_SCHEMA_VERSION",
     "TaskWorkspaceError",
+    "TaskWorkspaceBusyError",
     "TaskWorkspaceManager",
     "TaskWorkspacePlan",
     "TaskWorkspaceRemovalResult",

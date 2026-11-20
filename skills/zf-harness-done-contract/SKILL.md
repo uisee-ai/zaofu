@@ -35,6 +35,10 @@ event or editing truth files.
 
 Before submitting the completion claim:
 
+Read the complete evidence lookup method below, including after compaction.
+Do not stop at the first 100 lines or treat a shortened command preview as the
+complete execution history. Existing event evidence needs no new product file.
+
 1. Compare the assigned scope with the actual diff and produced artifacts.
    核对当前 contract snapshot 的 `evidence_contract`、声明的输出和测试义务，
    逐项绑定本阶段交付的文件/ref；只有合同允许时才用其他持久化证据等价替代，
@@ -55,6 +59,22 @@ Before submitting the completion claim:
    the previous attempt. A no-code correction needs equally concrete evidence.
 7. Submit through the exact completion command/output profile from the
    briefing, once.
+
+## 提交工具与预校验边界
+
+结果 scratch 位于工作目录外时，只使用原生 Edit/Write 或 apply_patch 修改当前
+briefing 明确授权的精确路径。如果 Provider 只通过 exec_command/Bash 暴露 apply_patch，
+已有守卫也支持单独的 `apply_patch <<'PATCH'`：引号 heredoc 仅包含当前 scratch 的
+Update File patch，以独立 `PATCH` 行结束；禁止前后附加命令、替换、输出重定向、
+创建/删除/移动文件。该适配不绕过 Provider 权限；不可用或被拒绝时仍走协助通道。
+Python 或其他 shell 动态写入不享有这个路径例外。
+被守卫拒绝时先改用授权工具，不放宽守卫、不改 canonical state、不重复动态写法。
+工作目录内的审计或读取临时文件另行保存，提交前保全证据并确认工作区 clean。
+
+仅在当前 briefing/profile 提供并支持 `zf result validate` 时执行预校验；它不是
+所有角色通用的提交前条件。如果明确返回 `plan_candidate_validation_unavailable`，
+记录其未执行事实，按 briefing 使用正式 `result submit` 的准入校验，不宣称预校验
+通过，也不重复调用不支持的入口。实际 schema/证据错误必须修复，不能用此例外绕过。
 
 ### 按冻结阶段责任交接
 
@@ -100,6 +120,16 @@ copy large logs into the event payload; persist them and cite their refs.
 
 ## 查找已持久化的命令证据
 
+恢复尝试先使用 briefing 的 `artifact handoff-evidence --operation <当前 id>`。
+索引中的 `command_preview` 只有前160字符，`command_truncated=true` 表示必须按该
+`--event <id>` 回读完整 command/output；旧索引没有此字段也不证明预览完整。
+复合命令前部可能是 apply_patch，后部才有测试，不能仅搜索预览中的 npm/test 关键词
+就断言 RED 丢失。核对候选事件的完整正文、执行顺序、源码和断言；混合输出未能证明
+各条命令的退出码时明确缺口，不从最后一个命令成功推断之前全成功。
+沿 `previous_operation` 和 `--source-operation` 查询已绑定的更早尝试，不猜测其他 Run。
+分页保持相同 digest；CLI 返回的 `ref` 是可引用的持久工件，未读完不能用摘要替代正文。
+
+当前尝试尚未进入前任交接索引时，使用以下 hook 入口，而不是等待下一次返工。
 使用当前 briefing 中的 CLI 和 state dir 查询实际 Provider 的 hook：
 
 ```text
@@ -134,6 +164,17 @@ Do not submit a success claim when:
 Report the real blocker through the briefing's failure/suspension channel.
 Workers do not mark tasks, candidates, or goals done themselves.
 
+If the assigned worktree has a legitimate delta but the sandbox denies Git
+publication, preserve it and submit the current blocked result with
+`failure_class: host_publication_required`, exact `changed_files`,
+`target_commit` and the failed command evidence. Do not call it a product
+failure, request a new Plan, change sandbox permissions or alter Git metadata
+through an alternate path. Only the configured finite host-publication policy
+may authorize the effect; otherwise request owner guidance. The resulting
+commit receipt is not an Impl pass: the successor must inspect the exact commit,
+read its own required inputs/handoff and produce its required checks before
+independent Verify.
+
 ## Related Methods
 
 - `zf-yoke-dev-worker-role-context` - active Impl/Fix role boundary.
@@ -159,6 +200,44 @@ Workers do not mark tasks, candidates, or goals done themselves.
 
 需要发布非终态进展时，按需读取共享 `zf-harness-evidence-collection` 技能的
 [WRC 正文与附件方法](../zf-harness-evidence-collection/references/work-record.md)。
-Impl 与 Verify 使用同一四字段正文和相对附件路径约定，不直接 publish 原生日志。
+Impl 与 Verify 使用同一必需字段正文和相对附件路径约定，不直接 publish 原生日志。
 现有 result scratch/证据 refs 继续按原合同交付；WRC 不新增写权限、必交产物或
 完成门禁，也不代替当前必读、独立验收和正式结果准入。
+
+### 失败路径、SOP 与决定的交接
+
+有可复用的失败经验、操作步骤或关键决定时，在工作区内保存短 Markdown 文件，并通过
+现有 `evidence_files` 固定其正文与摘要，不增加另一份任务状态。逐项写明来源事件/ref 或
+固定提交、适用输入/源码版本、成立条件、失效条件、被替代的结论及仍待验证的部分。
+语义适用性由接手者核对；不能把经验记录包装成新授权或独立验收。
+
+接手 operation 使用当前凭据执行
+`zf artifact work-record show --operation <当前 id> --predecessor`，读取本次交接固定的前任
+记录；按其中的 `evidence_refs` 索引加 `--evidence <n>` 回读原文。沿用 digest 与分页参数，
+不改用前任凭据，不通过猜测 state dir 文件路径扩大读取范围。缺失/损坏记录应报告具体
+缺口，不能自行补造历史。该入口仅提供当前交接的直接前任，不是全局历史搜索。
+
+读完后在当前记录的 completed_actions 中写核查结果，pending 保留未决/失效问题，
+next_step 指明下一动作；必要时通过新 evidence_files 保留带来源的后续决定。不能仅因
+前任说“已完成”就跳过当前 required reads、handoff 接收回执或结果准入。
+
+### 受控宿主协助后的交接
+
+沙箱禁止监听、Docker 或 Git 索引写入时，保留代码与失败，通过当前 blocked 通道报告；
+不改权限、不取 action token。操作员可以审阅 `zf recover host-assist` 的精确清单，
+通过 token-gated `task-host-assist` 为已结束的阻塞尝试执行提交或合同命令。
+
+blocked 结果也必须填写真实事实：`target_commit` 取当前已观察 HEAD，`changed_files`
+列出实际本任务变更路径，`evidence_refs` 引用具体失败输出。不可只改 verdict/summary
+而留下 `<HEAD commit>`、示例证据或默认通过的自检行。无法观察的事实留空并解释；
+未执行的自检删除示例行或明确标记未通过，不伪造收据。Git 提交受阻时，当前 HEAD
+仍是提交前基线，不能声称未提交修改已被该 commit 包含。恢复机制只依据签名清单及
+精确预授权发布；它不会从描述猜测可提交路径，也不以发布成功代替后续独立 Verify。
+
+恢复 briefing 明确引用宿主回执时，先读取账本中对应 `runtime.action.attempt.completed`
+及其 receipt_ref/output_ref，校验摘要、Run/Task/合同/命令及目标提交、source_stable和退出码；
+身份或源码已变则不复用。回执仅证明命令事实，不是产品通过。允许引用已授权、同版且
+可复用的宿主执行事实完成自检材料，明确 execution_origin=operator_authorized_host，
+不可写成新 Worker 亲自执行，也不可把原回执的 operation/attempt 填入本次结果身份。
+已有精确源码提交且不需改代码时，不为绕开权限制造空提交或改测试；仍完整核对本任务
+AC和当前结果合同。独立 Verify 不被该自检回执替代；失败或缺证据时继续报告真实阻塞。

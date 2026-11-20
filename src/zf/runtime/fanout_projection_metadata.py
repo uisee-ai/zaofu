@@ -6,6 +6,10 @@ from zf.runtime.task_contract_snapshot import TASK_CONTRACT_AUTHORITY_FIELDS
 
 
 def apply_child_metadata(child: dict, payload: dict) -> None:
+    if child.get("status") in {"dispatched", "completed", "failed"}:
+        # Result classification belongs to this attempt, never its predecessor.
+        for key in ("control_result_schema", "semantic_verdict", "failure_kind", "failure_class"):
+            child.pop(key, None)
     for key in (
         *TASK_CONTRACT_AUTHORITY_FIELDS,
         "task_id", "scope", "workdir", "source_branch", "source_commit",
@@ -23,6 +27,7 @@ def apply_child_metadata(child: dict, payload: dict) -> None:
         "result_protocol_mode", "attempt_source_manifest_ref",
         "attempt_source_manifest_digest", "input_consumption_policy_digest",
         "admitted_call_result_digest", "semantic_verdict",
+        "control_result_schema", "failure_kind", "failure_class",
     ):
         value = _payload_str(payload, key)
         if value:

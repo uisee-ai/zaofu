@@ -72,18 +72,26 @@ class WorkdirManager:
         """执行 project.scripts.setup(若声明)。失败 fail-closed:
         worktree 不可运行时派活只会烧 token,宁可铸造失败走既有补救。"""
         setup = self.config.project.setup_script
-        if not setup:
-            return
         result = run_project_setup(
             project_path,
             setup,
             marker_dir=self.root / role.instance_id,
+            setup_inputs=getattr(self.config.project, "setup_inputs", []),
+            required_paths=self.config.runtime.workdirs.required_paths,
+            setup_scope=self.config.project.setup_scope,
         )
         if not result.ok:
+            from zf.runtime.environment_usage import EnvironmentInUse
+            if result.waiting_for_resources:
+                raise EnvironmentInUse(result.detail)
             raise RuntimeError(
                 f"workdir setup failed for {role.instance_id}"
                 f" (exit {result.exit_code}): {result.detail}"
             )
+        from zf.runtime.required_environment import require_workspace_environment
+
+        require_workspace_environment(project_path, self.config.runtime.workdirs.required_paths,
+            qualified_setup=bool(setup), bootstrap_uv_dev=True)
 
     def plan(self, role: RoleConfig) -> WorkdirPlan:
         workdir = self.root / role.instance_id
@@ -459,6 +467,9 @@ class WorkdirManager:
         pinned = self._git(
             self.project_root, "rev-parse", f"{checkout_ref}^{{commit}}",
         ).strip()
+        from zf.runtime.environment_usage import assert_workspace_idle
+        if Path(plan.project_path).exists():
+            assert_workspace_idle(Path(plan.project_path))
         self.prepare(role)
         project_path = Path(plan.project_path)
         self._git(project_path, "reset", "--hard", "HEAD")
@@ -1158,6 +1169,20 @@ class WorkdirManager:
         return actions
 
     def remove(self, role: RoleConfig) -> "WorkdirRemovalResult":
+        """Remove a retired workspace, or return blocked while it is in use."""
+        from zf.runtime.environment_usage import environment_mutation
+
+        plan = self.plan(role)
+        if not plan.enabled or plan.mode != "worktree" or not Path(plan.project_path).exists():
+            return self._remove_unoccupied(role)
+        try:
+            with environment_mutation(Path(plan.project_path)):
+                return self._remove_unoccupied(role)
+        except (TimeoutError, OSError) as exc:
+            return WorkdirRemovalResult(status="blocked", workdir=plan.workdir,
+                project_path=plan.project_path, reason=f"environment in use or lock unavailable: {exc}")
+
+    def _remove_unoccupied(self, role: RoleConfig) -> "WorkdirRemovalResult":
         """Tear down a previously prepared worktree for a retired worker.
 
         Returns a structured result describing what happened so callers can
@@ -1221,9 +1246,16 @@ class WorkdirManager:
                 reason="workdir has uncommitted changes",
             )
 
+        from zf.runtime.workspace_retention import workspace_retention_reason
+
+        retained = workspace_retention_reason(project_path,
+            provision_paths=self.config.runtime.workdirs.provision_paths, bookkeeping_dir=workdir)
+        if retained:
+            return WorkdirRemovalResult(status="dirty", workdir=str(workdir),
+                project_path=str(project_path), reason=retained)
         try:
             subprocess.run(
-                ["git", "worktree", "remove", "--force", str(project_path)],
+                ["git", "worktree", "remove", str(project_path)],
                 cwd=self.project_root,
                 check=True,
                 text=True,

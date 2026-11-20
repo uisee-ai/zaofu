@@ -46,6 +46,14 @@ def apply_plan_synth_owner_checkpoint(
     if not blocking_items:
         return PlanSynthOwnerDisposition(False, body)
 
+    if not body.get("previous_plan_candidate_refs"):
+        from zf.runtime.artifact_context_events import artifact_context_events
+        from zf.runtime.plan_synth_recovery_refs import bound_critic_candidate_refs
+
+        body["previous_plan_candidate_refs"] = bound_critic_candidate_refs(
+            runtime.state_dir, artifact_context_events(runtime.event_log), body,
+        )
+
     fanout_id = str(body.get("fanout_id") or manifest.get("fanout_id") or "")
     workflow_run_id = str(
         body.get("workflow_run_id")

@@ -8,6 +8,7 @@ def input_size(manifest: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -
     sources = {(str(s.get('source_id') or ''), str(s.get('artifact_id') or ''), str(s.get('sha256') or '')): s
                for s in manifest.get('sources', []) if isinstance(s, Mapping)}
     distinct: dict[str, int] = {}
+    pages: dict[str, int] = {}
     unknown = 0
     for row in rows:
         key = (str(row.get('source_id') or ''), str(row.get('artifact_id') or ''), str(row.get('artifact_sha256') or ''))
@@ -23,7 +24,13 @@ def input_size(manifest: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -
             unknown += 1
             continue
         distinct[digest] = size
+        chars = selections[0].get('selected_chars')
+        # Legacy snapshots may lack character counts. UTF-8 needs at most
+        # four bytes per code point; use a genuine lower bound in that case.
+        chars = chars if type(chars) is int and 0 <= chars <= size else (size + 3) // 4
+        pages[digest] = (chars + 8191) // 8192
     return {'required_rows': len(rows), 'distinct_selected_bytes': sum(distinct.values()),
+            'minimum_page_count': sum(pages.values()),
             'unknown_rows': unknown}
 
 
@@ -51,4 +58,8 @@ def review_diagnostics(manifest: Mapping[str, Any], *, before: list[dict[str, An
         mode, reason = 'full', 'impact_scope_ineligible_or_explicit_reads'
     return {'schema_version': 'plan-review-input-diagnostics.v1', 'strategy': 'cross_version_evidence',
             'mode': mode, 'reason': reason,
+            'eligibility': 'verified' if mode == 'incremental' else
+                ('unproven' if 'plan-rework-package' in ids else 'no_approved_baseline'),
+            'historical_facts': 'rejected_review_bound' if 'plan-rejected-review' in ids else 'none',
+            'inherited_approval': False,
             'before': input_size(manifest, before), 'after': input_size(manifest, after)}

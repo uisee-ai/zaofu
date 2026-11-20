@@ -8,6 +8,7 @@ import signal
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -36,6 +37,8 @@ _PROVIDER_UPDATE_ENV_KEYS = (
     "ENABLE_TOOL_SEARCH",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
+    "ZF_CPA_CODEX_URL",
+    "ZF_CPA_CLAUDE_URL",
     "OPENAI_ORG_ID",
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -61,6 +64,14 @@ def tmux_env(base: "dict[str, str] | None" = None) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
     for var in _NESTED_TMUX_VARS:
         env.pop(var, None)
+    private_root = env.get("TMUX_TMPDIR")
+    if private_root is not None and (
+        not private_root or not Path(private_root).is_dir()
+        or not os.access(private_root, os.W_OK | os.X_OK)
+    ):
+        # tmux silently falls back to /tmp when this directory is missing.
+        # A requested isolation boundary must fail before any server command.
+        raise TmuxError("TMUX_TMPDIR must name an existing writable directory")
     return env
 
 
@@ -220,8 +231,8 @@ class TmuxSession:
         """Best-effort controlled shutdown for a role slot.
 
         The normal respawn/cancel path should give the foreground worker a
-        chance to exit before the pane is destroyed. We signal the tmux pane's
-        process group first, escalate to KILL after the grace window, and then
+        chance to exit before the pane is destroyed. We signal the proven
+        foreground group and pane group, escalate after the grace window, then
         issue the existing hard tmux teardown to keep layout bookkeeping
         consistent even if the process already exited.
         """
@@ -234,27 +245,43 @@ class TmuxSession:
                 f"{target.address()!r} does not prove role ownership"
             )
         pane_pid = self._pane_pid_for_target(target)
+        from zf.runtime.tmux_foreground import foreground_process, same_process_group
+
+        foreground = None if self.dry_run else foreground_process(pane_pid)
+
+        def foreground_alive() -> bool:
+            return foreground is not None and same_process_group(foreground)
+
+        foreground_term = foreground_alive() and self._send_signal(
+            foreground.pid, signal.SIGTERM, process_group=True,
+        )
         term_sent = self._signal_pane_process_group(pane_pid, "TERM")
         alive_after_term = not self._wait_until_target_gone(
             target,
             timeout_seconds=grace_seconds,
             poll_interval=poll_interval,
         )
+        alive_after_term = alive_after_term or foreground_alive()
         kill_sent = False
         alive_after_kill = alive_after_term
         if alive_after_term:
+            foreground_kill = foreground_alive() and self._send_signal(
+                foreground.pid, signal.SIGKILL, process_group=True,
+            )
             kill_sent = self._signal_pane_process_group(pane_pid, "KILL")
+            kill_sent = kill_sent or foreground_kill
             alive_after_kill = not self._wait_until_target_gone(
                 target,
                 timeout_seconds=min(max(poll_interval, 0.0), 0.5),
                 poll_interval=poll_interval,
             )
+            alive_after_kill = alive_after_kill or foreground_alive()
 
         self._hard_kill_target(target, instance_id=name)
         return TmuxTerminationResult(
             target=target.address(),
             pane_pid=pane_pid,
-            term_sent=term_sent,
+            term_sent=term_sent or foreground_term,
             kill_sent=kill_sent,
             hard_killed=True,
             alive_after_term=alive_after_term,
@@ -494,6 +521,13 @@ class TmuxSession:
         probe["processes"] = descendants
         return probe
 
+    def pane_foreground_command(self, window: str) -> str:
+        """Fallback for hosts whose tmux command format still names the shell."""
+        from zf.runtime.tmux_foreground import foreground_process
+
+        process = foreground_process(self.pane_pid(window))
+        return process.name if process is not None else ""
+
     def pane_current_path(self, window: str) -> str:
         if self.dry_run:
             return ""
@@ -509,7 +543,15 @@ class TmuxSession:
         )
         if result.returncode != 0:
             return ""
-        return result.stdout.strip()
+        path = result.stdout.strip()
+        if path:
+            return path
+        # gVisor may leave this tmux format empty despite a valid /proc cwd.
+        # Resolve only the owned pane, then recheck that binding after the read.
+        from zf.runtime.tmux_foreground import process_cwd
+        pid = self.pane_pid(window)
+        path = process_cwd(pid)
+        return path if pid and pid == self.pane_pid(window) else ''
 
     def wait_for_prompt(
         self,

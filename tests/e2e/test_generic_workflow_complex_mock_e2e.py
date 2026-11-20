@@ -70,6 +70,7 @@ def run_generic_workflow_complex_scenario(
     *,
     provider_verifier: ProviderVerifier | None = None,
     provider_backend: str = "mock",
+    expected_verdict: str = "passed",
     report_transform: Callable[[int, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     objective: str = (
         "Research the delivery question and provide a verified report."
@@ -582,7 +583,7 @@ def run_generic_workflow_complex_scenario(
                 kind="research/evidence",
             )
             for index, evidence in enumerate(evidence_v2, start=1)
-        ],
+        ] + [_source(scope_v2, source_id="scope", artifact_id="scope.json", kind="research/scope")],
     )
     synth_operation = operation_service.ensure_operation(
         workflow_run_id=REQUEST_ID,
@@ -632,7 +633,7 @@ def run_generic_workflow_complex_scenario(
             "schema_version": "research-report.v1",
             "title": "Synthetic fixture: delivery records for batch B-42",
             "question": "Do independently produced warehouse and carrier records agree on the delivery count?",
-            "conclusion": "Yes: the warehouse dispatched 42 parcels and the carrier recorded 42 deliveries for batch B-42.",
+            "conclusion": "No: the warehouse confirms 42 dispatches and the carrier confirms 42 deliveries for batch B-42. The counts are numerically equal, but only the carrier measures delivery; these sources do not independently corroborate 42 deliveries.",
             "findings": [
                 f"Warehouse dispatch ledger warehouse-dispatch-2026-01: 42 parcels; evidence {evidence_v2[0]['ref']}",
                 f"Carrier delivery ledger carrier-delivery-2026-01: 42 deliveries; evidence {evidence_v2[1]['ref']}",
@@ -649,6 +650,7 @@ def run_generic_workflow_complex_scenario(
         role="synthesizer",
         output=report_v2,
         ledger=synth_v2_reads["ledger"],
+        evidence_refs=[scope_v2["ref"], *(item["ref"] for item in evidence_v2)],
     )
     synth_completed_v2 = synth_result_v2["event"]
 
@@ -684,7 +686,7 @@ def run_generic_workflow_complex_scenario(
             source_id="synthesize",
             artifact_id="report.json",
             kind="report/markdown",
-        ), *[
+        ), _source(scope_v2, source_id="scope", artifact_id="scope.json", kind="research/scope"), *[
             _source(evidence, source_id=f"evidence-{index}", artifact_id=f"evidence-{index}.json", kind="research/evidence")
             for index, evidence in enumerate(evidence_v2, start=1)
         ]],
@@ -738,6 +740,7 @@ def run_generic_workflow_complex_scenario(
             {
                 "requirement": requirement_v2,
                 "report": report_v2,
+                "scope": scope_v2,
                 "evidence_1": evidence_v2[0],
                 "evidence_2": evidence_v2[1],
                 "goal_claim_set": {
@@ -752,18 +755,21 @@ def run_generic_workflow_complex_scenario(
         if provider_verifier is not None
         else expected_delivery_v2
     )
+    assert delivery_v2["verdict"] == expected_verdict, delivery_v2
     if provider_verifier is None:
         assert delivery_v2 == expected_delivery_v2
     else:
         assert str(delivery_v2.get("summary") or "").strip()
+        judgment_fields = {"summary", "verdict", "recommended_action", "open_gap_refs",
+                           "goal_coverage", "verification_evidence_refs"}
         assert {
             key: value
             for key, value in delivery_v2.items()
-            if key != "summary"
+            if key not in judgment_fields
         } == {
             key: value
             for key, value in expected_delivery_v2.items()
-            if key != "summary"
+            if key not in judgment_fields
         }
     if provider_verifier is not None:
         _consume_prepared_reads(
@@ -781,7 +787,12 @@ def run_generic_workflow_complex_scenario(
         prepared_reads=verify_v2_reads,
         event_id="evt-v2-verify-passed",
     )
-    assert admitted_v2.admitted is True
+    assert admitted_v2.admitted is True, admitted_v2.issues
+    if delivery_v2["verdict"] != "passed":
+        from tests.e2e.generic_workflow_rejection_support import record_rejected_delivery
+
+        return record_rejected_delivery(writer, invoke_v2, delivery_v2, admitted_v2,
+                                        semantic_replans=semantic_replans, protocol_repairs=protocol_repairs)
     verify_operation = next(
         operation
         for operation in (

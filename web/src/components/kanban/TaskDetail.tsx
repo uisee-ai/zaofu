@@ -7,6 +7,7 @@ import { Hash, Wrench } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import type { DetailTab, ProjectionKind } from "../../app/sharedTypes";
 import { EventTable, ExecutionRoutePanel, KeyValuePanel, PreBlock, TablePage, asRecord, asRecordArray, asStringArray, csvList, formatAge, numberValue, recordValue, stringify, textValue } from "../../app/shared";
+import { HandoffBindingDetails } from "./HandoffBindingDetails";
 import { TaskInputPanel } from "./TaskInputPanel";
 import { previewProfileForRef } from "../agent-session/previewRegistry";
 
@@ -299,6 +300,7 @@ export function TaskDetail({
             onOpenOrchestrator={onOpenOrchestrator}
             onOpenProjection={onOpenProjection}
             task={task}
+            setTab={setTab}
           />
         ) : null}
         {tab === "Activity" ? (
@@ -331,6 +333,7 @@ function TaskSummaryPanel({
   onOpenOrchestrator,
   onOpenProjection,
   task,
+  setTab,
 }: {
   actionReady: boolean;
   actionResult: ActionResponse | null;
@@ -340,6 +343,7 @@ function TaskSummaryPanel({
   onOpenOrchestrator: () => void;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   task: Task;
+  setTab: (tab: DetailTab) => void;
 }) {
   return (
     <div className="task-summary-view" data-testid="task-summary-view">
@@ -347,7 +351,7 @@ function TaskSummaryPanel({
         <dt>Title</dt>
         <dd>{task.title || "-"}</dd>
         <dt>Phase</dt>
-        <dd>{task.phase ?? "-"}</dd>
+        <dd>{detail?.handoff_summary?.pipeline ? detail.handoff_summary.current_stage : task.phase ?? "-"}</dd>
         <dt>Assignee</dt>
         <dd>{task.assigned_to || "-"}</dd>
         <dt>Trace</dt>
@@ -362,6 +366,7 @@ function TaskSummaryPanel({
         <dd>{task.blocked_by?.length ? task.blocked_by.join(", ") : "-"}</dd>
       </dl>
       <HandoffSummaryPanel detail={detail} />
+      <HandoffBindingDetails summary={detail?.handoff_summary} setTab={setTab} />
       <TaskEditPanel
         actionReady={actionReady}
         actionState={actionState}
@@ -427,7 +432,9 @@ function TaskActivityPanel({
 
 function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailModel | null; diff: TaskDiff | null; projectId?: string }) {
   const operation = asRecord(detail?.task_run_panel?.active_operation);
-  const attemptId = textValue(detail?.task?.active_dispatch_id) || textValue(operation.attempt_id);
+  const pipelineAttempt = textValue(asRecord(detail?.handoff_summary?.pipeline).attempt_id);
+  const attemptId = detail?.handoff_summary?.pipeline ? pipelineAttempt
+    : textValue(detail?.task?.active_dispatch_id) || textValue(operation.attempt_id);
   return (
     <div className="task-evidence-view" data-testid="task-evidence-view">
       <TaskInputPanel key={`${projectId}:${detail?.task?.id}:${attemptId}`} attemptId={attemptId} projectId={projectId} />
@@ -517,7 +524,8 @@ function TaskRunSummaryPanel({
   const traceId = detail?.links?.trace || detail?.trace_id || task.links?.trace || "";
   const routeStatus = textValue(route.status);
   const stageLabel = textValue(route.current_stage_label) || textValue(route.current_stage) || textValue(panel.current_stage) || "stage unknown";
-  const actorLabel = [
+  const pipelineOwner = detail?.handoff_summary?.pipeline ? asRecord(handoff.owner) : null;
+  const actorLabel = pipelineOwner ? textValue(pipelineOwner.instance_id) || "等待接手" : [
     textValue(active.role) || textValue(panel.role_instance) || task.assigned_to || "unassigned",
     textValue(active.instance_id),
   ].filter(Boolean).join(" / ");
@@ -574,7 +582,7 @@ function TaskRunSummaryPanel({
         </span>
         {missingCount ? <span className="badge badge-warn">{missingCount} missing</span> : null}
         {blockerCount ? <span className="badge badge-err">{blockerCount} blockers</span> : null}
-        {completedCount ? <span className="badge badge-ok">{completedCount} done</span> : null}
+        {completedCount ? <span className={`badge badge-${detail?.handoff_summary?.pipeline ? "info" : "ok"}`}>{completedCount} {detail?.handoff_summary?.pipeline ? "admitted" : "done"}</span> : null}
         {changedCount ? <span className="badge badge-muted task-run-files-badge">{changedCount} files</span> : null}
       </div>
       {latestMessage ? <p className="task-run-latest">{latestMessage}</p> : null}
@@ -592,6 +600,14 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
   const nextAction = textValue(summary.next_required_action);
   const nextEvent = textValue(summary.next_required_event);
   const changedFiles = asStringArray(summary.changed_files).slice(0, 4);
+  const receipt = asRecord(summary.receipt);
+  const receiptStatus = textValue(receipt.status);
+  const receiptLabel: Record<string, string> = {
+    unavailable: "尚无交接材料",
+    awaiting_receipt: "材料已保存，等待接收确认",
+    accepted: "接手者已确认接收（不代表业务完成）",
+    incomplete: "交接证据不完整，需要修复",
+  };
 
   return (
     <section className="subsection handoff-summary-panel">
@@ -606,6 +622,12 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
         <dd>{textValue(owner.role) || "-"} {textValue(owner.instance_id) ? <span className="mono">{textValue(owner.instance_id)}</span> : null}</dd>
         <dt>stage</dt>
         <dd>{textValue(summary.current_stage) || "-"}</dd>
+        <dt>交接接收</dt>
+        <dd data-testid="task-handoff-receipt">{receiptLabel[receiptStatus] || "接收状态未知"}</dd>
+        {receipt.delivery_status ? <>
+          <dt>交接派发</dt>
+          <dd>{receipt.delivery_status === "dispatched" ? "已派发到目标执行" : "尚未派发到目标执行"}</dd>
+        </> : null}
         <dt>next_event</dt>
         <dd className="mono">{nextEvent || "-"}</dd>
         <dt>next_action</dt>
@@ -615,7 +637,7 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
         <div className="compact-list">
           {completed.map((item, index) => (
             <span className="handoff-line" key={`done-${index}`}>
-              <span className="badge badge-ok">done</span>
+              <span className={`badge badge-${item.kind === "admitted_result" ? "info" : "ok"}`}>{item.kind === "admitted_result" ? "admitted" : "done"}</span>
               <span>{textValue(item.summary || item.kind || item.type)}</span>
             </span>
           ))}

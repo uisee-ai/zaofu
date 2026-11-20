@@ -30,7 +30,11 @@ provenance。Claude Code 菜单由 mixed Project 真实派生，但本视频未�
 
 ## 1. 安装依赖
 
-先完成 [Quickstart](01-quickstart.md) 的 ZaoFu、Web 与 Provider CLI 安装。额外安装 Herdr：
+根目录 `./install.sh` 已集成 Herdr：缺失时安装固定版本 0.9.5 并核对 SHA256，已有版本则
+复用 ZaoFu adapter 检查兼容性。`--skip-deps` 也会检查能力，缺失/不兼容会阻止安装报告成功。
+详细行为见[安装说明](getting-started/install.md)。脚本不自动登录 Provider 或修改其 hooks。
+
+若采用 [Quickstart](01-quickstart.md) 的手动安装路径，额外安装 Herdr：
 
 ```bash
 curl -fsSL https://herdr.dev/install.sh | sh

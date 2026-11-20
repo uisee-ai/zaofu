@@ -21,6 +21,16 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
         events = read_runtime_events(runtime.event_log, runtime.state_dir)
     except Exception:
         return
+    if runtime._reconcile_partial_reader_timeouts(events):
+        return
+    from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
+
+    if reconcile_exhausted_reader_operations(runtime, events):
+        return
+    from zf.runtime.synth_pending_recovery import reconcile_failed_pending_synth
+
+    if reconcile_failed_pending_synth(runtime, events):
+        return
     event_token = event_log_snapshot_token(runtime.event_log)
     runtime._recover_durable_fanout_aggregate_results(events)
     if event_log_snapshot_token(runtime.event_log) != event_token:
@@ -449,6 +459,13 @@ class FanoutRecoveryRuntimeMixin:
                     continue
                 task = self.task_store.get(task_id)
                 if task is None or task.status in {"done", "cancelled", "blocked"}:
+                    continue
+                if not self._task_dispatch_id_is_active(task_id, run_id):
+                    if task.assigned_to == role_instance and task.active_dispatch_id == run_id:
+                        self._set_worker_state(
+                            role_instance, "idle", task_id=task_id, force=True,
+                            reason="writer fanout dispatch no longer active",
+                        )
                     continue
                 if (
                     task.assigned_to == role_instance

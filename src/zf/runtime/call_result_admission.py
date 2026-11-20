@@ -140,6 +140,8 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if provider_summary_ref is not None:
             payload["provider_operation_summary_ref"] = provider_summary_ref
         policy = self._input_policy(payload, input_policy)
+        from zf.runtime.task_input_failure import incomplete_task_input_failure
+
         reader_failed = adapted.payload.get("execution_status") == "failed" and (
             (adapted.schema_version == "workflow-read-result.v1"
              and adapted.payload.get("verdict") == "abstained")
@@ -147,6 +149,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 and adapted.payload.get("failure_class") == "reader_execution_failure"
                 and adapted.payload.get("verdict") == "rejected")
         )
+        reader_failed = reader_failed or incomplete_task_input_failure(adapted.schema_version, adapted.payload)
         ledger_descriptor: dict[str, Any] = {}
         read_issues: list[dict[str, str]] = []
         if policy:
@@ -200,6 +203,13 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             execution_status="failed" if reader_failed else "",
         )
         issues = [dict(item) for item in adapted.issues]
+        from zf.runtime.task_input_failure import recovery_input_issues
+
+        if policy and ledger_descriptor:
+            issues.extend(recovery_input_issues(
+                self.state_dir, policy=policy, schema=adapted.schema_version,
+                result=adapted.payload, ledger_descriptor=ledger_descriptor,
+            ))
         issues.extend(provider_summary_issues)
         issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit))
         if require_semantic_submit and not semantic_submit:
@@ -221,6 +231,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             allow_incomplete_reads=reader_failed,
         ))
         issues.extend(self._control_result_identity_issues(envelope, adapted))
+        if not reader_failed and envelope["execution"]["status"] == "completed":
+            from zf.runtime.task_handoff_receipt import handoff_admission_issues
+
+            issues.extend(handoff_admission_issues(
+                self.state_dir, self.event_log.read_all(), dict(operation or {}),
+            ))
         currentness_issues = self._operation_result_currentness_issues(
             envelope,
             operation or {},
@@ -526,10 +542,12 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             )
         admitted = self.event_writer.append(ZfEvent(
             type="workflow.call.result.admitted",
+            origin="kernel",
             actor="zf-cli",
             task_id=event.task_id,
             payload={
                 **operation_identity,
+                **{key: envelope["identity"].get(key, "") for key in ("attempt_id", "dispatch_id")},
                 "schema_version": "call-result-admission.v1",
                 "admission_status": "admitted",
                 "mode": mode,

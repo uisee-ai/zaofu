@@ -38,6 +38,7 @@ def _running_recovered_synth(tmp_path, *, kind="synth"):
     dispatch = ZfEvent(
         type=dispatch.type,
         actor="zf-cli",
+        origin="kernel",
         correlation_id=dispatch.correlation_id,
         payload=dict(identity),
     )

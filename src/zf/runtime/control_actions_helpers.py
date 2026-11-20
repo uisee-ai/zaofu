@@ -512,6 +512,18 @@ def validate_shared_action_payload(
     if action == "project-git-baseline":
         if not isinstance(payload.get("manifest"), dict):
             return "reviewed baseline manifest is required"
+    if action == "task-host-assist":
+        if not isinstance(payload.get("manifest"), dict):
+            return "reviewed task host manifest is required"
+        if not _required_text(payload, "approval_ref") or not _required_text(payload, "reviewed_digest"):
+            return "approval_ref and reviewed_digest are required"
+    if action == "candidate-continue":
+        if not _required_text(payload, "source_run_id") or not _required_text(payload, "candidate_event_id"):
+            return "source_run_id and candidate_event_id are required"
+        if payload.get("dry_run") is not True and (
+            not _required_text(payload, "approval_ref") or not _required_text(payload, "reviewed_digest")
+        ):
+            return "approval_ref and reviewed_digest are required"
     if action == "workflow-request":
         if not (
             _required_text(payload, "objective")

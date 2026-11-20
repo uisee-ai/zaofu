@@ -15,28 +15,19 @@ def attach_execution_review(
 ) -> None:
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
-    body = dict(review)
-    usage = body.get("usage_observations")
-    if isinstance(usage, Mapping) and usage.get("schema_version") == "execution-usage-facts.v1":
+    from zf.runtime.plan_execution_delivery import execution_review_delivery
+
+    body, details = execution_review_delivery(review)
+    for item in details:
         detail = write_immutable_json_sidecar(
-            state_dir, dict(usage), root="plan-execution-usage",
-            kind="plan_execution_usage", schema_version="execution-usage-facts.v1",
-            created_by="plan-preflight", source_event_id=source_event_id,
+            state_dir, item["body"], root=item["root"], kind=item["kind"],
+            schema_version=item["schema_version"], created_by="plan-preflight",
+            source_event_id=source_event_id,
         )
         payload.setdefault("input_refs", []).append({
-            **detail, "source_id": "plan-execution-usage",
-            "artifact_id": "plan-execution-usage.json", "allowed_paths": ["$"],
+            **detail, "source_id": item["source_id"],
+            "artifact_id": item["source_id"] + ".json", "allowed_paths": ["$"],
         })
-        groups = usage.get("groups")
-        body["usage_observations"] = {
-            **{key: value for key, value in usage.items() if key != "groups"},
-            "group_count": len(groups) if isinstance(groups, list) else 0,
-            "total_tokens": sum(int(group.get("total_tokens") or 0)
-                                for group in groups if isinstance(group, Mapping))
-                            if isinstance(groups, list) else 0,
-            "detail_source_id": "plan-execution-usage",
-            "detail_ref": detail["ref"], "detail_sha256": detail["sha256"],
-        }
     descriptor = write_immutable_json_sidecar(
         state_dir, body, root="plan-execution-reviews",
         kind="plan_execution_review", schema_version="plan-execution-review.v1",
@@ -81,8 +72,10 @@ def planning_execution_context(config: Any, *, flow_kind: str = "") -> list[str]
     policy = execution_policy(config)
     metadata = flow_metadata_for(config, flow_kind)
     policy.update({
+        "plan_review": metadata.get("plan_review", {}),
         "plan_approval_required": bool(config.workflow.plan_approval_enabled),
         "task_pipeline": metadata.get("task_pipeline", {}),
+        "rolling_smoke_policy": _rolling_smoke_policy(),
         "flow_kind": flow_kind,
         "authorizes_execution": False,
     })
@@ -130,6 +123,7 @@ def review_execution(
     return {
         "schema_version": "plan-execution-review.v1",
         "scope": "mechanical_facts_for_semantic_review",
+        "plan_review": metadata.get("plan_review", {}),
         "usage_observations": dict(usage_facts or {"available": False}),
         "input_binding": {
             "task_map_digest": _digest(task_map),
@@ -150,6 +144,7 @@ def review_execution(
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
+            "rolling_smoke_policy": _rolling_smoke_policy(),
             "task_requirements": [_task_requirements(task) for task in tasks],
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
@@ -196,6 +191,11 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
     owners = ("impl_self_check", "task_verify", "candidate_verify")
     return {
         "task_id": task_id,
+        "rolling_smoke_command_ids": [
+            str(command.get("id") or "")
+            for command in _rows(_object(task.get("validation")).get("commands"))
+            if isinstance(command, Mapping) and command.get("rolling_smoke") is True
+        ],
         "commands": [
             {
                 "command_id": str(command.get("id") or ""),
@@ -226,6 +226,17 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
             for criterion in _rows(task.get("acceptance_criteria"))
             if isinstance(criterion, Mapping)
         ],
+    }
+
+
+def _rolling_smoke_policy() -> dict[str, Any]:
+    """Facts of candidate_incremental._run_rolling_smoke, not build inference."""
+    return {
+        "selector": "rolling_smoke == true",
+        "order": "command_registry_order",
+        "execution_workspace": "candidate_worktree",
+        "implicit_unselected_commands": False,
+        "writer_commands_replayed": False,
     }
 
 
@@ -304,6 +315,7 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
     return {
+        "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
         "execution": execution_policy(config),
         "candidate_quality_source": str(
@@ -325,3 +337,23 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
             },
         },
     }
+
+
+def plan_review_briefing(config: Any, *, flow_kind: str = "") -> list[str]:
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    policy = flow_metadata_for(config, flow_kind).get("plan_review") or {}
+    if not policy:
+        return []
+    return [
+        "Configured independent Plan review: " + json.dumps(policy, ensure_ascii=False),
+        "Review selection is from the approved configuration, not the author's self-assessment. "
+        "For targeted mode, check the named questions and affected dependencies/shared rules; "
+        "state actual reviewed and unreviewed scope in summary with current artifact refs/digests "
+        "and opening/scenario excerpts. Expand review if evidence reveals a wider conflict. "
+        "Consume the pinned required reads, then retrieve supplementary port contents needed to answer "
+        "each focus and its affected dependencies. Record actual evidence and unreviewed scope. "
+        "First targeted review needs no historical approval; historical incremental reuse still needs "
+        "its bound evidence. Targeted focus is not proof of whole-document approval. "
+        "Do not rewrite the Planner's artifacts.",
+    ]

@@ -28,6 +28,7 @@ def dispatch_task_pipeline_stage(
 ) -> WorkflowRuntimeDecision | None:
     from zf.runtime.task_pipeline_runtime import (
         TaskPipelineRuntimeError,
+        TaskPipelineWaiting,
         _activate_task_stage_binding,
         _effective_pipeline_role,
         _now_iso,
@@ -57,8 +58,6 @@ def dispatch_task_pipeline_stage(
         str(assignment.get("role_instance") or "")
     )
     if role is None:
-        from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
-
         raise TaskPipelineWaiting(
             "waiting_for_capability",
             "selected Task Pipeline role is not present in runtime topology",
@@ -82,7 +81,7 @@ def dispatch_task_pipeline_stage(
         )
 
     workspace_generation = 1
-    from zf.runtime.task_workspaces import TaskWorkspaceManager
+    from zf.runtime.task_workspaces import TaskWorkspaceBusyError, TaskWorkspaceManager
 
     workspace_manager = TaskWorkspaceManager(
         state_dir=Path(runtime.state_dir),
@@ -115,14 +114,17 @@ def dispatch_task_pipeline_stage(
             project_root=Path(runtime.project_root),
         )
     )
-    workspace = workspace_manager.prepare(
-        role=role,
-        workflow_run_id=workflow_run_id,
-        task_id=task_id,
-        task_map_generation=task_map_generation,
-        workspace_generation=workspace_generation,
-        base_ref=workspace_base,
-    )
+    try:
+        workspace = workspace_manager.prepare(
+            role=role,
+            workflow_run_id=workflow_run_id,
+            task_id=task_id,
+            task_map_generation=task_map_generation,
+            workspace_generation=workspace_generation,
+            base_ref=workspace_base,
+        )
+    except TaskWorkspaceBusyError as exc:
+        raise TaskPipelineWaiting("waiting_for_environment", str(exc)) from exc
     if not workspace.enabled or workspace.mode != "worktree":
         raise TaskPipelineRuntimeError(
             "blocking Task Pipeline requires runtime.workdirs worktree mode"
@@ -256,6 +258,12 @@ def dispatch_task_pipeline_stage(
         "frontier_owner": normal_frontier_owner(runtime.config),
         "flow_kind": str(generation_context.get("flow_kind") or ""),
         "trace_id": workflow_run_id,
+        # Result protocol selection is scoped by Flow kind in composite
+        # configs.  Carry the admitted kind into the stage operation so the
+        # implementation/verify briefing receives the configured semantic
+        # submit contract instead of falling back to the legacy ``off`` mode.
+        "flow_kind": str(generation_context.get("flow_kind") or "").strip(),
+        "request_kind": str(generation_context.get("request_kind") or "").strip(),
         "task_id": task_id,
         "stage_id": stage,
         "task_pipeline_stage": stage,
@@ -360,6 +368,14 @@ def dispatch_task_pipeline_stage(
     )
 
     current_pipeline_capsule_task(runtime, task_id=task_id, snapshot=contract_snapshot)
+    from zf.runtime.task_handoff import attach_task_handoff
+
+    try:
+        attach_task_handoff(runtime, operation_payload, contract_snapshot)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
+
+        raise TaskPipelineWaiting("waiting_for_handoff", str(exc)) from exc
     prepared = prepare_call_operation(
         runtime,
         payload=operation_payload,

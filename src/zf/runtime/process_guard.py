@@ -136,6 +136,14 @@ def _pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    # kill(pid, 0) also succeeds for an exited, unreaped child. Such a process
+    # cannot own a watcher; retaining its pid fence prevents controlled restart.
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        if state in {"Z", "X"}:
+            return False
+    except (OSError, IndexError):
+        pass  # Non-Linux or inaccessible procfs: retain the conservative probe.
     return True
 
 

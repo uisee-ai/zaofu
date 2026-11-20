@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { MarkdownText } from "../agent-session/MarkdownText";
+import { DocumentMarkdown } from "../agent-session/DocumentMarkdown";
 import { previewQuote } from "./workflowReviewModel";
 import { planReviewBlocks, selectedPlanBlocks, type PlanQuote } from "./planReviewDocument";
 import { planMarkdownPages } from "../delivery-trace/planMarkdownPages";
 
-export default function PlanReviewDocument({ body, disabled, onSelect, agentControls }: {
+export default function PlanReviewDocument({ body, disabled, onSelect, agentControls, documentControls }: {
   body: string; disabled: boolean;
   onSelect: (quote: PlanQuote | null, rect?: DOMRect) => void;
   agentControls: ReactNode;
+  documentControls?: ReactNode;
 }) {
   const [raw, setRaw] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -44,6 +45,7 @@ export default function PlanReviewDocument({ body, disabled, onSelect, agentCont
   }, [body, raw, disabled]);
   return <>
     <nav className="plan-source-toolbar" aria-label="Plan document view">
+      {documentControls}
       <button type="button" title="格式化阅读" aria-pressed={!raw} onClick={() => { setRaw(false); onSelect(null); }}>Preview</button>
       <button type="button" title="Markdown 源码" aria-pressed={raw} onClick={() => { setRaw(true); onSelect(null); }}>Raw</button>
       {agentControls}
@@ -55,7 +57,7 @@ export default function PlanReviewDocument({ body, disabled, onSelect, agentCont
           <div data-plan-block data-source-start={block.start} data-source-end={block.end}>
             {block.pages.map((page, index) => page.plain
               ? <pre key={index} className="plan-document-source">{page.source}</pre>
-              : <MarkdownText key={index} content={page.markdown} />)}
+              : <DocumentMarkdown key={index} content={page.markdown} />)}
           </div>
         </section>)}
     </div>

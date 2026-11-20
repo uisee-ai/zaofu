@@ -29,6 +29,25 @@ def _service(tmp_path: Path) -> tuple[TaskStore, EventLog, TaskContractAuthority
     )
 
 
+def test_first_revision_preserves_old_and_new_contract_after_restart(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    store, log, service = _service(tmp_path)
+    old = TaskContract(behavior="original scope", acceptance_criteria=["original AC"])
+    store.add(Task(id="HISTORY", contract=old))
+    previous = store.get("HISTORY")
+    mutation = service.replace(previous,
+        contract=TaskContract(behavior="new scope", acceptance_criteria=["new AC"]),
+        source="approved_revision")
+    event = next(e for e in EventLog(log.path).read_all() if e.type == "task.contract.revision.applied")
+    receipt = hydrate_sidecar_ref(log.path.parent, event.payload["mutation_ref"]).payload
+    assert receipt["previous_contract"] == asdict(previous.contract)
+    assert receipt["previous_execution_binding"] == asdict(previous.execution_binding)
+    assert receipt["contract"]["acceptance_criteria"] == ["new AC"]
+    assert receipt["authority_revision"] == mutation.authority_revision
+    assert TaskStore(store.path).get("HISTORY").contract.acceptance_criteria == ["new AC"]
+
+
 def test_contract_authority_cas_rejects_second_stale_writer(tmp_path: Path) -> None:
     store, log, service = _service(tmp_path)
     store.add(Task(
