@@ -39,6 +39,65 @@ def retry(values):
     return current, binding, manifest
 
 
+def fail_current(values, current):
+    state, log, runtime, _, token, record, _ = values
+    dispatch = [e for e in log.read_all() if e.type == 'fanout.child.dispatched'][-1]
+    failed = runtime.event_writer.emit('fanout.child.failed', payload={
+        **dispatch.payload, 'reason': 'mock repeated interruption',
+    })
+    workflow_operation_service(runtime).fail(operation_id=current['operation_id'],
+        request_hash=current['request_hash'], workflow_run_id=current['workflow_run_id'],
+        reason='mock repeated interruption', causation_id=failed.id)
+    return state, log, runtime, current, token, record, dispatch
+
+
+def test_reader_repeated_interruption_preserves_last_checkpoint_without_growing_body(tmp_path):
+    values = checkpoint_and_fail(tmp_path)
+    sizes = []
+    for _ in range(3):
+        current, binding, manifest = retry(values)
+        ref, body = predecessor_work_record(values[0], manifest, binding)
+        assert ref == values[5]['work_record_ref']
+        assert body['binding']['operation_id'] != current['operation_id']
+        handoff = next(s for s in manifest['sources'] if s['source_id'] == 'reader-handoff')
+        sizes.append((values[0] / handoff['ref']).stat().st_size)
+        values = fail_current(values, current)
+    assert max(sizes) - min(sizes) < 100
+
+
+@pytest.mark.parametrize('corrupt', ['handoff', 'record'])
+def test_reader_inherited_checkpoint_corruption_blocks_retry(tmp_path, corrupt):
+    values = checkpoint_and_fail(tmp_path)
+    current, _, manifest = retry(values)
+    values = fail_current(values, current)
+    ref = (next(s for s in manifest['sources'] if s['source_id'] == 'reader-handoff')
+           if corrupt == 'handoff' else values[5]['work_record_ref'])
+    (values[0] / ref['ref']).write_text('{}')
+    result = values[2]._rerun_fanout_child(values[6].payload['fanout_id'], values[6].payload['child_id'])
+    assert result.action == 'rerun_fanout_child_failed'
+    assert len([e for e in values[1].read_all() if e.type == 'fanout.child.dispatched']) == 2
+
+
+@pytest.mark.parametrize('corrupt_new', [False, True])
+def test_new_reader_checkpoint_supersedes_inherited_history_without_fallback(tmp_path, corrupt_new):
+    values = checkpoint_and_fail(tmp_path)
+    current, _, _ = retry(values)
+    published = publish_work_record(state_dir=values[0], event_log=values[1],
+        operation_id=current['operation_id'], role='verify', credential=values[4],
+        request_id='new-checkpoint', record_body={'completed_actions': ['REQ-2 checked'],
+            'pending': [], 'next_step': 'Finish report', 'evidence_files': [], 'report_draft': 'New report'})
+    values = fail_current(values, current)
+    if corrupt_new:
+        (values[0] / published['work_record_ref']['ref']).write_text('{}')
+        result = values[2]._rerun_fanout_child(values[6].payload['fanout_id'], values[6].payload['child_id'])
+        assert result.action == 'rerun_fanout_child_failed'
+    else:
+        _, binding, manifest = retry(values)
+        ref, body = predecessor_work_record(values[0], manifest, binding)
+        assert ref == published['work_record_ref']
+        assert body['report_draft'] == 'New report'
+
+
 def test_fresh_reader_retry_reads_pinned_checkpoint_without_accepting_it(tmp_path):
     values = checkpoint_and_fail(tmp_path)
     state, log, runtime, old, token, record, _ = values
@@ -92,9 +151,13 @@ def test_successor_cli_paginates_history_but_cannot_use_predecessor_authority(tm
 
 
 @pytest.mark.parametrize('field', ['fanout_id', 'child_id', 'role_instance', 'target_commit'])
-def test_retry_cannot_attach_other_predecessor_scope(tmp_path, field):
+@pytest.mark.parametrize('inherited', [False, True])
+def test_retry_cannot_attach_other_predecessor_scope(tmp_path, field, inherited):
     from zf.runtime.reader_handoff import attach_reader_handoff
     values = checkpoint_and_fail(tmp_path)
+    if inherited:
+        current, _, _ = retry(values)
+        values = fail_current(values, current)
     state, log, runtime, old, _, _, dispatch = values
     payload = {**dispatch.payload['payload'], 'operation_id': 'new-op',
                'parent_operation_id': old['operation_id'], 'retry_of_operation_id': old['operation_id'],

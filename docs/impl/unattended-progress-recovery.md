@@ -1,5 +1,50 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-20 多跳接力与重新入队效果补齐
+
+接续 b4f63e6e，任务 `2026-11-20-0808-unattended-lineage-and-effect.md`。
+本批通过实际 runtime/受控动作入口先复现，再修改；没有启动真实 Provider、
+8×8 或宿主服务。覆盖范围是以下三个可独立核验的缺口。
+
+- **多次中断保留 Reader 历史入口。** A 发布记录，B 继承后未发布即退出，
+  C 从 B 的不可变 request 所绑定 manifest 继续继承 A 的记录。每次只读取一份
+  固定 handoff 与 work-record，不递归展开祖先链；新目标得到重新绑定的正文。
+  新发布记录优先，损坏最新记录不会回退；manifest 摘要、记录摘要、Task/Run、
+  角色、child 和冻结目标仍须匹配。历史事实不获得提交权或替代独立验收。
+- **重新入队不再提前关闭案例。** `task-requeue` 的受控回执进入 verifying，
+  仅接受回执之后同 Task/Run 的 kernel 准入通过结果或任务完成证据。
+  新动作固定具体 `task.requeued` 回执 ID；有效结果早于 effect.pending 仍能重放
+  收敛。独立 Task 只接受不属于其他 Run 的进展。错误 Task/Run、失败 verdict、
+  缺 operation 的结果、worker 自报均不能完成效果。人工批准路径保留升级记录中的
+  Run、case、代际和合同绑定，避免重新构造动作时变成无 Run 的独立 Task。
+  批准消息夹带的其他 Task/checkpoint 标识也不能改写原升级记录的恢复对象。
+  其他动作族仍需专用合同。
+- **已知 Provider 不可用时暂停 RM 诊断派发。** mock 暴露账本已有额度耗尽，
+  RM 仍向不可用的 resident 发送诊断。现在投影保留原待办和 external_wait，
+  发送前再次读取账本；不会将该等待转为同一 Provider 的反复诊断调用。
+  仅核对 kernel 事实的 backend/instance，以及记录中的 account/model 范围；
+  不推断多个角色共用账号。额度等待没有猜测到期时间；匹配的健康事实仅解除
+  Provider 限制，原有暂停、取消和动作授权仍有效，不代表任务完成。
+  直接建议、人工批准及自动 tick 对发送前发现的外部等待均保留原请求；
+  等待不记为执行失败，也不追加已消费/批准已执行的终态回执。
+
+直接回归：`test_reader_checkpoint_handoff.py`、`test_task_requeue_effect.py`、
+`test_provider_wait.py`、`test_shared_provider_wait.py`，以及已有 worker 恢复、
+Reader 外部等待和 resident 诊断消费者测试。共同故障 mock 对四个实例注入
+同一后端不可用事实，核验 RM tick 继续、RM 语义诊断等待、无 AR fallback、
+不受信任的健康声明不能放行、暂停期间不派发、解除后只发送一次。
+它不等于四个真实 Provider 进程或 OA/AR 全部消费路径的共因故障资格。
+审批链追加回归先复现 3 项失败：批准丢失 Run/case、建议在等待时被消费、
+人工批准在等待时被消费。修复后专项及 resident 调用方共 40 项通过。
+追加批准身份防错后，最终相对 dev 的 1029 文件影响闭包得到
+**12594 passed / 18 skipped**，sentinel **53 passed**，mock flow **10 passed**；
+收据 `/tmp/zf-unattended-lineage-closeout-verification.json` 为 passed。
+真实 Provider 层 not_run，结果不与先前轮次相加。
+
+仍需另行推进：其他恢复动作族的完整效果合同、在途诊断的长期外部等待/重发
+矩阵、OA/AR 全部入口的 Provider 降级、真实额度探测与授权恢复、真实宿主接管。
+原综合任务继续 active；本节不扩大为全 Spec 或无人真实 8×8 通过声明。
+
 ## 2026-11-20 跨 operation 接力与恢复效果续批
 
 本节接续 46ad74ee，任务为
@@ -13,7 +58,7 @@
    当前凭据通过 recover 返回的 predecessor 命令分页读取；旧 operation 凭据、
    错误范围或损坏记录不能使用。重放复用当前请求已经冻结的输入。
    继承完成条款、未决项和报告草稿，但不继承执行权、必读完成证明或通过结论。
-   当前支持同角色同 child 的直接前驱；跨角色转交和任意祖先链未开放。
+   此批支持直接前驱；后续多跳补齐见上节。跨角色转交和任意祖先检索未开放。
 2. **运行中额度等待。** 修正 insufficient_quota、usage_limit_reached 等错误
    被归为普通未提交终态重试的问题；它们现归 quota_exhausted 外部等待。
    共享 Reader 即使引用已完成的锚点 Task，也保存带 Run/operation/attempt/

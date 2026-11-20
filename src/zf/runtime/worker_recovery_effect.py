@@ -13,17 +13,22 @@ def worker_recovery_effect_contract(action: dict) -> dict:
     return result
 
 
-def worker_recovery_progress_matches(event: ZfEvent, payload: dict) -> bool:
+def worker_recovery_progress_matches(event: ZfEvent, payload: dict, *, require_run: bool = True) -> bool:
     """Only kernel-admitted original work can complete the second effect step."""
     body = event.payload
     from zf.runtime.recovery_step import effect_bindings_match
     if not effect_bindings_match(event, payload):
         return False
-    if (event.origin != 'kernel' or not payload.get('task_id') or not payload.get('workflow_run_id')
+    expected_run = payload.get('workflow_run_id') or ''
+    actual_run = body.get('workflow_run_id', body.get('run_id')) or ''
+    if not require_run:
+        actual_run = actual_run or event.correlation_id or ''
+    if (event.origin != 'kernel' or not payload.get('task_id')
+            or require_run and not expected_run
             or (event.task_id or body.get('task_id')) != payload['task_id']
             or body.get('task_id') and body['task_id'] != payload['task_id']
-            or body.get('workflow_run_id', body.get('run_id')) != payload['workflow_run_id']
-            or event.correlation_id and event.correlation_id != payload['workflow_run_id']):
+            or actual_run != expected_run
+            or event.correlation_id and event.correlation_id != expected_run):
         return False
     if any(payload.get(key) and body.get(key) != payload[key]
            for key in ('task_map_generation', 'contract_revision', 'target_commit')):

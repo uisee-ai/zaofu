@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from zf.runtime.artifact_input_index import load_attempt_source_manifest
-from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
-from zf.runtime.task_handoff import SCHEMA, validate_handoff_body
+from zf.runtime.task_handoff import SCHEMA, predecessor_work_record, validate_handoff_body
 from zf.runtime.workflow_operation import TERMINAL_OPERATION_STATUSES, reduce_workflow_operations
 
 SOURCE_ID = 'reader-handoff'
@@ -18,13 +18,21 @@ def attach_reader_handoff(runtime, payload: dict) -> None:
     events = runtime.event_log.read_all()
     records = [e for e in events if e.type == 'worker.work_record.published' and e.origin == 'kernel'
                and e.payload.get('operation_id') == predecessor]
-    if not records:
+    operations = reduce_workflow_operations(events)
+    source = operations.get(predecessor, {})
+    request = (hydrate_sidecar_ref(runtime.state_dir, source['request_ref']).payload['request']
+               if source.get('request_ref') else {})
+    manifest = {}
+    if not records and request.get('source_manifest_digest'):
+        manifest = load_attempt_source_manifest(runtime.state_dir, source['active_attempt_id'])
+        if request['source_manifest_digest'] != canonical_json_sha256(manifest):
+            raise ValueError('Reader handoff predecessor manifest changed')
+    inherited = [s for s in manifest.get('sources', []) if s.get('source_id') == SOURCE_ID]
+    if not records and not inherited:
         # Optional historical input must not change preparation/admission of
         # legacy calls that never published a checkpoint.
         payload['input_refs'] = [s for s in payload.get('input_refs', []) if s.get('source_id') != SOURCE_ID]
         return
-    operations = reduce_workflow_operations(events)
-    source = operations.get(predecessor, {})
     if (source.get('operation_type') != 'fanout_reader_child'
             or source.get('status') not in TERMINAL_OPERATION_STATUSES
             or source.get('workflow_run_id') != payload['workflow_run_id']
@@ -32,13 +40,12 @@ def attach_reader_handoff(runtime, payload: dict) -> None:
             or source.get('role_instance') != payload.get('role_instance')
             or predecessor != payload.get('parent_operation_id')):
         raise ValueError('Reader handoff predecessor is not settled in the same scope')
-    request = hydrate_sidecar_ref(runtime.state_dir, source['request_ref']).payload['request']
     for key in ('fanout_id', 'child_id', 'target_ref', 'target_commit',
                 'contract_snapshot_digest', 'target_snapshot_digest'):
         if str(request.get(key) or '') != str(payload.get(key) or ''):
             raise ValueError('Reader handoff predecessor scope changed: ' + key)
     target = {key: str(payload.get(key) or '') for key in ('workflow_run_id', 'task_id', 'operation_id')}
-    # Remove inherited grandparent input; a replay reuses the already frozen body.
+    # Retarget historical facts; never copy a predecessor's read/submit authority.
     payload['input_refs'] = [s for s in payload.get('input_refs', []) if s.get('source_id') != SOURCE_ID]
     current = operations.get(target['operation_id'])
     descriptor = None
@@ -49,6 +56,18 @@ def attach_reader_handoff(runtime, payload: dict) -> None:
             descriptor = refs[0]
             validate_handoff_body(hydrate_sidecar_ref(runtime.state_dir, descriptor).payload, target)
     else:
+        if not records:
+            _, record = predecessor_work_record(runtime.state_dir, manifest, source)
+            inherited_body = hydrate_sidecar_ref(runtime.state_dir, inherited[0]).payload
+            # One pinned body and one record, regardless of the number of retries.
+            # A newer publication (even corrupt) always wins over inherited history.
+            if inherited_body.get('work_record') != record:
+                raise ValueError('Reader handoff inherited record changed')
+            body = {**inherited_body, 'target': target}
+            validate_handoff_body(body, target)
+            descriptor = write_immutable_json_sidecar(runtime.state_dir, body,
+                root='task-handoffs/bodies', kind='task_handoff', schema_version=SCHEMA,
+                created_by='kernel', source_event_id=source.get('last_event_id', ''))
         if records:
             event = records[-1]
             ref = event.payload['work_record_ref']

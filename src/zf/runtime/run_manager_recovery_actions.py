@@ -45,10 +45,14 @@ def recovery_preflight(action: str, payload: dict[str, Any]) -> dict[str, Any]:
 def recovery_action_contract(action: dict[str, Any]) -> dict[str, Any]:
     """Receipt, dispatch and semantic completion remain distinct observations."""
     name = action.get("action")
+    if name == "task-requeue":
+        return {
+            "expected_downstream_events": ["task.requeued"],
+            "effect_expected_events": ["workflow.call.result.admitted", "task.done", "task.done.accepted"],
+        }
     if name != "child-rebuild":
         from zf.runtime.stage_replan_generation import STAGE_REPLAN_GENERATION_EXPECTED_EVENTS
         expected = {
-            "task-requeue": ["task.requeued"],
             "stage-retrigger": [],
             "stage-replan-new-generation": sorted(STAGE_REPLAN_GENERATION_EXPECTED_EVENTS),
             "rescan-grant": ["run.goal.rescan.granted"],
