@@ -73,3 +73,14 @@ failed child、当前派发和当前事件的正文。成功或新派发不能�
 `tests/test_reader_infrastructure_recovery_routing.py`、
 `tests/test_fanout_current_failure_findings.py`。真实后续阶段须单独记录，不能从这些
 测试推断16项完成或8+8并发通过。
+
+## 2026-11-20：同问题的新失败被旧诊断去重吞掉
+
+解除重复人工门后，只读复验发现最新 `prd.scan.failed` actionable、尚无后续成功，
+但其 checkpoint 只由问题 fingerprint 计算；旧诊断的已派发回执导致新失败永远 seen。
+再加上从旧到新的 fingerprint 去重，部分恢复后的新输入没有获得诊断机会。
+
+对带 fanout_id 且明确 infra 的发生，将 checkpoint 绑定实际事件 ID，保留稳定问题
+fingerprint，并选择同问题的最新失败。相同事件重放仍抑制，历史不改写，仍必须经过
+RM裁决及受控准入才能重试。`tests/test_reader_recovery_diagnosis_occurrence.py`
+经实际RM投影验证这一选择及幂等；普通语义失败、权限和预算策略不在此修复范围。

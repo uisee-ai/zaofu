@@ -9902,8 +9902,15 @@ def _pending_semantic_event_actions(
         elif _event_superseded_by_later_progress(events, event):
             continue
         fingerprint = str(action.get("fingerprint") or "")
-        if fingerprint in seen:
+        reader_infra_occurrence = bool(
+            event_payload.get("fanout_id") and event_payload.get("failure_kind") == "infra"
+        )
+        if fingerprint in seen and not reader_infra_occurrence:
             continue
+        if reader_infra_occurrence:
+            # A later aggregate describes the remaining failed children after
+            # recovery. An earlier diagnosis cannot consume this new input.
+            out = [item for item in out if item.get("fingerprint") != fingerprint]
         seen.add(fingerprint)
         if _action_seen(events, action):
             continue
@@ -10049,8 +10056,11 @@ def _semantic_event_diagnostic_action(
         or payload.get("blocker_fingerprint")
         or f"semantic:{event.type}:{_semantic_event_scope(event, payload)}"
     )
+    checkpoint_binding = fingerprint
+    if payload.get("fanout_id") and payload.get("failure_kind") == "infra":
+        checkpoint_binding += f":{event.id}"
     checkpoint_id = "semantic-diagnosis-" + hashlib.sha1(
-        fingerprint.encode("utf-8")
+        checkpoint_binding.encode("utf-8")
     ).hexdigest()[:12]
     reason = str(
         payload.get("reason")
