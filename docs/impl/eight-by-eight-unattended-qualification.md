@@ -216,6 +216,8 @@ mixed：6路环境弃权、1路依赖阻塞、1路语义拒绝。宿主成功不
 操作员重启准入、混合失败不重复请求infra恢复，以及OA接收同组新宿主事实。
 实际恢复后的OA决定、最终Candidate/Judge/Goal/交付须另行验证。原始无人监工窗口
 失败不因后续修复被改写。任务记录：
-[tasks/active/2026-11-20-2013-candidate-semantic-handoff.md](../../tasks/active/2026-11-20-2013-candidate-semantic-handoff.md)。
+[tasks/done/2026-11-20-2013-candidate-semantic-handoff.md](../../tasks/done/2026-11-20-2013-candidate-semantic-handoff.md)。
 
 本补修相对aa4a9611的自动影响闭包6072 passed/8 skipped；sentinel53 passed，flow mock10 passed；聚焦108 passed与闭包有重叠，不合并计数。未运行全pytest或coverage。真实账本只读回放确认8路结果与19条宿主收据绑定同一冻结候选，实际OA接续尚待部署验证。
+
+真实接续已验证：69b2a6e1载入后，OA输入包含8路结果、19条回执及浏览器媒体索引；其return_to_plan决定于20:38:45由Kernel接纳应用，自动启动限定原16任务范围的Planner恢复。保留原失败和冻结候选，未直接重开Task或授予产品通过。最终Candidate/Judge/Goal/交付仍待后续原生结果，初始无人监工失败不变。
