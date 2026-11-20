@@ -190,7 +190,7 @@ independent Verify.
 定位声明的 REQ/AC，关系命中不能替代正文消费和结果证据。
 
 `artifact recover` 的 `authorizes_execution=false` 表示报告本身不授予执行权限，
-不是对当前合法派发的否决；`current_memory=unknown` 和 `reconstruction_required`
+不是对当前合法派发的否决；`current_memory=unknown` 和 `required_scope_count`
 范围总数不会因读取变为已知或零。不要等这些字段变化或检查点自动出现。先核验当前
 身份/租约/版本及真实暂停要求，再补足缺失必读和遗忘正文，按当前角色推进检查；
 来源不可读或需要重绑定仍走受控恢复。历史收据不能证明当前理解。

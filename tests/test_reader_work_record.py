@@ -178,7 +178,7 @@ def test_checkpoint_survives_controller_restart_without_new_turn(tmp_path):
     assert task_attempt_store(restarted).current_rows() == before
     assert reduce_workflow_operations(log.read_all())[op["operation_id"]]["status"] == "running"
     briefing = runtime.transport.sent[0][1].read_text()
-    assert "Optional semantic checkpoint: `artifact recover`" in briefing
+    assert "Semantic progress checkpoint: `artifact recover`" in briefing
 
 
 def candidate_reader(tmp_path):

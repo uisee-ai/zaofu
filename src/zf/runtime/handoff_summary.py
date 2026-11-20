@@ -150,7 +150,7 @@ def project_handoff_summary(
         "pipeline": pipeline,
         "input_recovery": {key: value for key, value in recovery_inputs.items()
                            if key in {"status", "identity", "required_visible", "historical_missing",
-                                      "reconstruction_required", "current_memory", "next_action", "checkpoint"}},
+                                      "required_scope_count", "current_memory", "next_action", "checkpoint"}},
         "work_record": recovery_inputs.get("work_record", {"status": "unavailable", "authorizes_execution": False}),
         "schema_version": "handoff-summary.v1",
         "generated_at": now.isoformat(),

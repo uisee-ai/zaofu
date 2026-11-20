@@ -59,7 +59,7 @@ def test_reused_candidate_input_recovery_is_current(recovery):
     report = build_input_recovery(state_dir=r.runtime.state_dir, manifest=manifest,
         identity={"actor": "verify-lane-0", "role": "verify-lane-0", "purpose": "candidate-verify"},
         events=r.runtime.event_log.read_all(), required=payload["required_reads"], reads=[])
-    assert report["status"] == "bound" and report["next_action"] == "reconstruct_required_inputs"
+    assert report["status"] == "bound" and report["next_action"] == "read_missing_required_inputs"
     assert report["authorizes_execution"] is False
 
 

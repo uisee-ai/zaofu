@@ -70,7 +70,7 @@ def test_history_never_proves_current_memory_or_another_roles_consumption(tmp_pa
     own = build_input_recovery(state_dir=tmp_path, manifest=manifest, identity=IDENTITY,
         events=[], required=rows, reads=receipts)
     assert own['historical_missing'] == 0
-    assert own['reconstruction_required'] == 2 and own['current_memory'] == 'unknown'
+    assert own['required_scope_count'] == 2 and own['current_memory'] == 'unknown'
     other = build_input_recovery(state_dir=tmp_path, manifest=manifest,
         identity={**IDENTITY, 'actor': 'verify-1', 'role': 'verify'}, events=[], required=rows, reads=receipts)
     assert other['historical_missing'] == 2

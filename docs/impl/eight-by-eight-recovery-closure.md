@@ -140,3 +140,9 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 本次合并交付已实施的修复，不把上述待验收项标成完成。任务保持active；原始事件、浏览器截图/WebM/trace和监工记录保留于实验worktree的 `reports/eight-by-eight-real-resumed-20261118/`，运行状态和私有凭据不进入Git。后续实际验证独立于源码合并继续评估。
 
 合并前最终影响闭包：`python scripts/dev-verify.py run --base dev --workers 4 --keep-going` → 9832 passed / 16 skipped / 1 failed，耗时352.24秒；唯一失败为 `test_workflow_synthesis.py::test_consumer_lock_contention_defers_without_reporting_failure`。在干净的dev基线 `dda38a25` 独立执行同一用例，同样抛出WorkflowSynthesisConsumerBusy，确认本批未引入该失败；未修改该源码/测试或隐藏退出码。自动流程继续完成premerge sentinel 53 passed及flow-smoke 10 passed。此为影响闭包，不是全量pytest或真实产品验收；三套分发skill的metadata与源码一致性也已核对。
+
+## Reader上下文重建与阶段工作记录
+
+实际窗口发现必读齐全仍固定推荐reconstruct_required_inputs，压缩后反复全读。恢复投影用required_scope_count表示输入规模；historical_missing为0时交给Agent识别具体上下文缺口并继续，不再给出默认required批读命令。缺读、权限和输入版本门禁保留；历史不证明当前模型理解。Verifier在阅读完成和验收组完成时按既有WRC入口保存语义进度，恢复先读记录、按索引补正文，不用摘要替代首次必读或验收。
+
+原WRC在同operation受控重派后可读：当前请求、manifest、角色、fanout、候选及有效lease仍须验证；旧记录必须有原生发布/派发/attempt证据，新的启动须绑定发布之后的kernel redrive准入。只允许传输dispatch/canonical attempt/lease变化，原记录不改写、不授予执行或通过。参见[上下文进度恢复任务](../../tasks/active/2026-11-20-2303-reader-context-progress-recovery.md)。

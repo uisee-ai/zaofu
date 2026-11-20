@@ -541,7 +541,9 @@ def prepare_profiled_stage_result(
     ]
     if (child_payload.get("task_id")
             and (child_payload.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child"):
-        lines.append("- Optional semantic checkpoint: `artifact recover`.")
+        lines.append("- Semantic progress checkpoint: `artifact recover` exposes the authorized "
+                     "work-record publish/read entry. Follow the role skill at completed reading/check "
+                     "boundaries; do not wait for interruption. This does not submit a verdict.")
     if profile_id in {"task-verify", "candidate-verify"}:
         from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
         lines.append(verifier_failure_schema_guidance(
