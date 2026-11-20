@@ -20,6 +20,7 @@ from tests.test_candidate_verification_authority import _runtime, _seed_frozen_c
 @pytest.fixture
 def recovery(tmp_path, monkeypatch):
     runtime = _runtime(tmp_path)
+    runtime.config.runtime = SimpleNamespace(git=SimpleNamespace(task_ref_prefix="task"))
     seeded = _seed_frozen_candidate(runtime)
     run = seeded["run_id"]
     state = runtime.state_dir
@@ -57,7 +58,11 @@ def recovery(tmp_path, monkeypatch):
         "semantic_submit_admission_event_id": admission.id, "call_result_envelope_ref": envelope}, task.id)
     receipt = sidecar({"schema_version": "task-integration-receipt.v1", "task_id": task.id,
         "workflow_run_id": run, "task_map_generation": "generation-1", "status": "integrated",
-        "new_candidate_head": "c" * 40, "task_commit": "b" * 40, "contract_revision": contract["contract_revision"]})
+        "new_candidate_head": "c" * 40, "task_ref": "task/TASK-1", "task_commit": "b" * 40,
+        "contract_revision": contract["contract_revision"]})
+    (state / "refs").mkdir(exist_ok=True)
+    (state / "refs/task-index.json").write_text(json.dumps({"TASK-1": {
+        "task_ref": "task/TASK-1", "source_commit": "b" * 40}}))
     done = emit("task.done", {"task_map_generation": "generation-1", "candidate_head": "c" * 40,
                               "integration_receipt_ref": receipt}, task.id)
     old_gen = emit("task.pipeline.generation.admitted", {"schema_version": "task-pipeline-generation.v1",
@@ -88,11 +93,11 @@ def recovery(tmp_path, monkeypatch):
     runtime.task_store.reopen(new)
     service = ControlledActionService(state, runtime.event_writer, config=runtime.config, project_root=runtime.project_root)
     # Isolated unit tier: Git resolution is a host boundary; evidence/admission/CAS are real.
-    from zf.runtime import candidate_continuation
-    monkeypatch.setattr(candidate_continuation, "_git_commit", lambda *_: "c" * 40)
     try:
         from zf.runtime import plan_completion_reuse
         monkeypatch.setattr(plan_completion_reuse, "_git_commit", lambda *_: "c" * 40)
+        from zf.runtime import plan_completion_refs
+        monkeypatch.setattr(plan_completion_refs, "_git_commit", lambda *_: "b" * 40)
     except ImportError:
         pass  # The same behavioral regression also runs against the old deployment.
     return SimpleNamespace(runtime=runtime, service=service, source=source, candidate=candidate,
@@ -138,7 +143,7 @@ def test_reviewed_recovery_keeps_original_verify_and_freezes_new_plan(recovery):
     assert not action(r, reviewed_digest=digest, approval_ref="owner", reuse_rationale="same")["ok"]
 
 
-@pytest.mark.parametrize("fault", ["digest", "approval", "rationale", "live_task", "acceptance", "rejected_plan", "native_result", "moved_target"])
+@pytest.mark.parametrize("fault", ["digest", "approval", "rationale", "live_task", "acceptance", "rejected_plan", "native_result", "moved_target", "task_ref"])
 def test_reuse_fail_closed_before_task_mutation(recovery, monkeypatch, fault):
     r = recovery
     args = dict(reviewed_digest=reviewed(r), approval_ref="owner", reuse_rationale="same semantics")
@@ -156,6 +161,9 @@ def test_reuse_fail_closed_before_task_mutation(recovery, monkeypatch, fault):
     elif fault == "moved_target":
         from zf.runtime import plan_completion_reuse
         monkeypatch.setattr(plan_completion_reuse, "_git_commit", lambda *_: "d" * 40)
+    elif fault == "task_ref":
+        (r.runtime.state_dir / "refs/task-index.json").write_text(json.dumps({"TASK-1": {
+            "task_ref": "task/TASK-1", "source_commit": "d" * 40}}))
     result = action(r, **args)
     assert not result["ok"], result
     assert r.runtime.task_store.get("TASK-1").status != "done"
@@ -207,6 +215,18 @@ def test_later_admitted_generation_supersedes_reuse_context(recovery):
     r.emit("task.pipeline.generation.admitted", {**r.new_gen.payload, "generation_id": "third",
                                                  "task_map_generation": "generation-3"})
     assert task_pipeline_generation_contexts(r.runtime.event_log.read_all())["TASK-1"]["generation_id"] == "third"
+
+
+def test_already_applied_reuse_can_finish_ref_repair_without_another_trigger(recovery):
+    r = recovery
+    args = dict(reviewed_digest=reviewed(r), approval_ref="owner", reuse_rationale="reviewed")
+    first = action(r, **args)
+    assert first["ok"], first
+    assert reviewed(r) == args["reviewed_digest"]
+    result = action(r, **args, repair_task_refs=True)
+    assert result["ok"], result
+    assert result["retriggered_event_id"] == first["retriggered_event_id"]
+    assert len([e for e in r.runtime.event_log.read_all() if e.type == "task_map.ready"]) == 2
 
 
 @pytest.mark.parametrize("fault", ["running", "restarted", "dirty", "stopped"])

@@ -71,6 +71,10 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 运行时通过 TaskStore CAS 恢复原完成时间，保留旧 Task generation、native 回执和原 Candidate 基线；已停止的新 attempt 通过操作服务取消并结清，Task-stage 会话归档释放。`task.status_changed` 引用不可变复用证明，不制造新的 worker passed 或 task.done。Candidate 在新 Plan 下重新冻结，独立审核输入核验旧证明与当前合同的显式映射，合同/目标/证明再次变化时拒绝。Candidate、Judge、Goal 与交付结果均不继承。
 
+真实续测还确认 verify_only 重派会重绑定 TaskRef，只有 Task 状态恢复不足以重新冻结。预览同时检查 TaskRef/index；只允许同 Run/代际对精确 Candidate 的只读重绑定，经原 TaskRefManager 的 Git CAS 恢复原已集成目标。未知变化或 writer ref 不回退。已经执行的完成复用可用 `repair_task_refs=true` 加新的精确审核摘要完成此步骤，不重复发出 driving event；原 native 集成回执继续按真实 TaskRef 校验，不放宽 receipt hydration。
+
+操作顺序：完整 `zf stop` 关闭 transport 后，先 `zf start --no-watch --skip-workflow-inspect` 建立传输会话，再启动使用 `--control-plane-only` 的宿主监督 unit；只有 transport 保留的控制器重载才可直接启动该 unit。准备和受控恢复动作完成后再开启只读观察窗口。
+
 入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。相关任务见 [Plan 完成复用修复](../../tasks/active/2026-11-20-2120-plan-completion-reuse.md)。
 
 16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。

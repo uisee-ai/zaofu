@@ -17,3 +17,7 @@
 实现已接入 `stage-retrigger`、Task Pipeline frontier、Candidate 冻结及独立验证权威。原部署 `69b2a6e1` 的同一行为回归失败（旧入口忽略 dry-run 复用参数并发出普通重触发），新实现通过。
 
 验证：定向 76 passed；相对已验证 `f5113bd0` 的自动影响闭包 5611 passed / 9 skipped（257.93s），sentinel 53 passed，flow-smoke 10 passed。未运行全量 pytest、coverage；真实复用/后续 Candidate 待部署观察。原部署与修复分支分别运行回归，保留真实 RED 日志；错误工作树的 import guard 拒绝不记为产品 RED。
+
+真实续测：`118f038a fix: reuse reviewed task completions after plan recovery` 已恢复 16 项完成、取消 12 个中断 operation，没有新增 task.done。随后 freezer 拒绝 8 项只读 audit 原回执：被重派的 verify_only 入口已把 TaskRef 指向新 Candidate head，原 integrated receipt 指向旧精确源提交。补修将 TaskRef/index 纳入预览，只有同 Run、同 generation admitted、同 frozen head 的 read_only/write_free 重绑定可经 TaskRefManager Git CAS 恢复；未知改动、writer、更换 head/index 均拒绝。已完成的复用动作使用明确 repair_task_refs 入口修复，不创建第二次重触发。增加原生集成回执因只读重派失效、恢复后重新有效的回归。
+
+补修验证：部署基线 `118f038a` 的 TaskRef/index 不一致回归真实 RED；新实现定向 94 passed。自动影响闭包 4105 passed / 3 skipped（189.54s，含恢复、Candidate 与多 lane deterministic mock E2E）；独立 sentinel 53 passed / manual docs currentness ok。未运行全量 pytest、coverage。真实 TaskRef 恢复及原生 Candidate 续跑待部署。

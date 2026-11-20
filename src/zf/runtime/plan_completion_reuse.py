@@ -99,11 +99,16 @@ def preview(service: Any, source: ZfEvent) -> dict:
             raise ValueError("completion reuse cannot change acceptance/execution contract: " + task_id)
         _native_proof(service.state_dir, events, done, verify)
         _settled_redispatches(root, events, source, task_id, head)
+        from zf.runtime.plan_completion_refs import validate_reference
+
+        ref_proof = validate_reference(service, current,
+            _json(service.state_dir, done.payload["integration_receipt_ref"]), context, head)
         refs = current.contract.evidence_contract.get("source_refs", {})
         if refs.get("task_map_generation") != context["task_map_generation"] or refs.get("plan_artifact_package_digest") != package_ref["sha256"]:
             raise ValueError("completion reuse Task is not bound to the current Plan: " + task_id)
         old_tasks[task_id] = old
         rows.append({"task_id": task_id, "completion_event_id": done.id,
+                     "task_ref_proof": ref_proof,
                      "verification_event_id": verify.id, "integration_receipt_ref": done.payload["integration_receipt_ref"],
                      "prior_identity": current_task_contract_identity(old),
                      "current_identity": current_task_contract_identity(current),
@@ -207,6 +212,9 @@ def apply(service: Any, source: ZfEvent, payload: dict, requested: ZfEvent) -> d
             raise ValueError("completion reuse Task no longer inactive")
         if current_task_contract_identity(task) != row["current_identity"]:
             raise ValueError("Task changed during completion reuse: " + task.id)
+        from zf.runtime.plan_completion_refs import restore_reference
+
+        restore_reference(service, row, manifest, descriptor, requested)
         if task.status == "done":
             if task.completed_at != row["completed_at"]:
                 raise ValueError("Task completion changed during reuse: " + task.id)

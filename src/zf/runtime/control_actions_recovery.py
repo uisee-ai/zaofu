@@ -291,6 +291,21 @@ class RecoveryActionsMixin:
         for event in events:
             body = event.payload if isinstance(event.payload, dict) else {}
             if str(body.get("redrive_of") or "") == source_event_id:
+                if payload.get("reuse_completed_plan") and body.get("completion_reuse_ref"):
+                    if payload.get("dry_run"):
+                        break
+                    if payload.get("repair_task_refs"):
+                        from zf.core.state.locks import locked_path
+                        from zf.runtime.plan_completion_reuse import apply
+
+                        try:
+                            with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                                apply(self, source, payload, requested)
+                        except (ValueError, OSError) as exc:
+                            return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+                        return self._recovery_ok(requested, event, action, requested_action, {
+                            "retriggered_event_id": event.id, "source_event_id": source.id,
+                            "reason": "repaired completed reuse TaskRefs without another trigger"})
                 return self._recovery_failed(
                     requested, action, requested_action,
                     f"already retriggered by {event.id}", 409,
