@@ -1,6 +1,8 @@
 # 8×8 真实验证：接通旧升级记录的受控关闭入口
 
-> 状态: active
+> 状态: done
+
+实现：`87456cd1 fix: expose guarded legacy escalation dismissal through Web`。
 
 来源：本轮用户已授权修复实际阻塞并从断点继续。宿主沙箱修复后，原始 Run
 `workflow-055abbd5196f67c6` 仍有 `evt-529fed0673db` 升级记录阻塞恢复。
