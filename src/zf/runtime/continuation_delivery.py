@@ -48,7 +48,12 @@ def reconcile_continuation_deliveries(runtime: Any) -> int:
             row = task_attempt_store(runtime).get(payload.get("attempt_id", "")) or {}
             task = runtime.task_store.get(prepared.task_id or "")
             operation = operations.get(payload.get("operation_id"), {})
-            if (operation.get("status") != "running"
+            if claim.payload.get("recovery_action") == "result_protocol_correction":
+                from zf.runtime.call_result_repair_delivery import repair_receipt_is_current
+
+                if not repair_receipt_is_current(runtime, prepared, claim, events):
+                    continue
+            elif (operation.get("status") != "running"
                     or operation.get("active_attempt_id") != payload.get("attempt_id")
                     or row.get("status") != "sent" or task is None or task.status != "in_progress"
                     or task.assigned_to != prepared.actor or task.active_dispatch_id != payload.get("dispatch_id")
@@ -74,7 +79,8 @@ def reconcile_continuation_deliveries(runtime: Any) -> int:
                     payload={"claim_id": claim_id, "receipt_event_id": receipt.id,
                         "attempt_id": payload["attempt_id"], "dispatch_id": payload["dispatch_id"],
                         "operation_id": payload["operation_id"], "workflow_run_id": row.get("run_id", ""),
-                        "recovery_action": "completion_nudge_requested", "delivery_status": "observed",
+                        "recovery_action": claim.payload.get("recovery_action", "completion_nudge_requested"),
+                        "delivery_status": "observed",
                         "business_completed": False, "next_action": "observe_bound_progress"}))
                 resolved.add(claim_id)
                 count += 1

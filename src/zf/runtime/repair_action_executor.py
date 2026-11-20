@@ -329,6 +329,15 @@ class RepairActionExecutor:
     ) -> None:
         action_id = str(record.get("id") or "")
         task_id = str(record.get("task_id") or event.task_id or "")
+        if event.payload.get("target_operation_id"):
+            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
+            error = reader_rebuild_error(self.task_store.path.parent, self.event_log.read_all(), event.payload)
+            if error:
+                self._reject(event, action_id=action_id, kind="rerun_fanout_child",
+                             task_id=task_id, reason=error,
+                             extra_payload={"fanout_id": event.payload.get("fanout_id"),
+                                            "fanout_child_id": event.payload.get("fanout_child_id")})
+                return
         fanout_id = str(record.get("fanout_id") or "")
         child_id = str(record.get("fanout_child_id") or "")
         if not fanout_id:

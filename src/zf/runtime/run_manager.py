@@ -8,6 +8,12 @@ write kernel-managed stores directly.
 
 from __future__ import annotations
 
+from zf.runtime.run_manager_recovery_actions import (
+    RESIDENT_RECOVERY_ACTIONS, RECOVERY_FIELDS,
+    normalize_recovery_recommendation, recovery_action_contract,
+)
+from zf.runtime.reader_rebuild_admission import reader_rebuild_effect_matches
+
 import hashlib
 import json
 import subprocess
@@ -4775,6 +4781,7 @@ def _consume_agent_recommendations(
         payload = event.payload if isinstance(event.payload, dict) else {}
         from zf.runtime.recovery_step import bind_recommendation_to_request
         try:
+            payload = normalize_recovery_recommendation(payload)
             payload = bind_recommendation_to_request(events, event, payload)
             if (_recommendation_route(payload) == "controlled_action"
                     and _controlled_action_name_from_recommendation(payload) == TRIAGE_REQUEST_ACTION):
@@ -5145,7 +5152,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         "human-decision-dismiss",
         "ship-retry",
     }
-    if requested_name in supported:
+    if requested_name in supported | RESIDENT_RECOVERY_ACTIONS:
         return requested_name
     safe_action = str(payload.get("safe_resume_action") or "").strip()
     if safe_action in _SAFE_TASK_ACTIONS:
@@ -5168,6 +5175,7 @@ def _action_from_agent_recommendation(
     event: ZfEvent,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    payload = normalize_recovery_recommendation(payload)
     checkpoint_id = str(
         payload.get("checkpoint_id")
         or payload.get("source_action_checkpoint_id")
@@ -5246,6 +5254,11 @@ def _action_from_agent_recommendation(
     if expected_downstream:
         action["expected_downstream_events"] = expected_downstream
     if route == "controlled_action":
+        if action_name in RESIDENT_RECOVERY_ACTIONS:
+            for key in RECOVERY_FIELDS:
+                if key in payload:
+                    action[key] = payload[key]
+            action.update(recovery_action_contract(action))
         if action_name in {"workflow-task-resume", "workflow-batch-resume"}:
             action.update(router_classify_recovery_context(action))
         elif action_name == "diagnose-attention":
@@ -5972,7 +5985,7 @@ def _execute_controlled_run_action(
             action=action,
             causation_id=causation_id,
         )
-    if action_name == "fanout-aggregate-rebuild":
+    if action_name == "fanout-aggregate-rebuild" or action_name in RESIDENT_RECOVERY_ACTIONS:
         return _execute_operator_controlled_action(
             state_dir=state_dir,
             writer=writer,
@@ -6655,6 +6668,8 @@ def _execute_operator_controlled_action(
             ],
         ],
     }
+    if action_name == "stage-retrigger" and ok and result.get("event_type"):
+        action = {**action, "expected_downstream_events": [result["event_type"]]}
     outcome = writer.emit(
         event_type,
         actor="run-manager",
@@ -7901,6 +7916,8 @@ def _settle_pending_action_effects(
                     for candidate in events[index + 1:]
                     if candidate.type in expected | failures
                     and _effect_event_matches_scope(candidate, payload)
+                    and (payload.get("action") != "child-rebuild"
+                         or reader_rebuild_effect_matches(candidate, payload, events))
                     and (not late_triage or triage_completion_matches(candidate, payload))
                 ),
                 None,
@@ -11425,6 +11442,8 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 
 def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
     return {
+        "fanout_child_id": str(action.get("fanout_child_id") or ""),
+        "escalation_event_id": str(action.get("escalation_event_id") or ""),
         **{key: str(action.get(key) or "") for key in (
             "shared_repair_association_id", "resource_id", "resource_version", "repair_step_id",
         )},
@@ -11595,6 +11614,8 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
 
 
 def _operator_controlled_action_payload(action: dict[str, Any]) -> dict[str, Any]:
+    if action.get("action") in RESIDENT_RECOVERY_ACTIONS:
+        return {key: action[key] for key in RECOVERY_FIELDS if key in action}
     if str(action.get("action") or "") == "fanout-aggregate-rebuild":
         return {
             "source": "run-manager",

@@ -1145,7 +1145,7 @@ def test_call_result_correction_waits_for_source_turn_stop(
         outcome=outcome,
     ) is True
     assert sent[0][0] == "verify-1"
-    assert sent[0][1].name == "verify-1-T1-result-correction-1.md"
+    assert sent[0][1].name.startswith("verify-1-T1-result-correction-1-")
     briefing = sent[0][1].read_text(encoding="utf-8")
     assert "outputs.audit_report" in briefing
     assert "zf result submit --operation op-1" in briefing

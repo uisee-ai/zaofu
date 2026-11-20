@@ -1,5 +1,72 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-20 ZF-SPEC-004 已确认缺口补齐
+
+本批从 dev d442a9bd 建独立 worktree，针对 r2 复盘中三个可复现缺陷实施；
+不是重新合并 AR 实验，也不将本地 Spec 强制纳入 Git。实施任务记录：
+`2026-11-20-0531-unattended-spec-gaps.md`。
+
+### 变更与验证边界
+
+1. Reader 纠错回执：既有 `continuation_delivery` 周期入口复用纠错身份验证，
+   分别核对业务 operation/语义 attempt 与传输 TaskAttempt/lease。
+   共享候选锚点不存在普通 Task 不再导致合法接收证据被丢弃。
+   精确 native prompt 摘要或 stream 身份回执只关闭 unknown delivery；
+   不重复发付费 turn、不更换 attempt、不生成业务 passed。
+   纠错文件名绑定 operation/纠错摘要，防止不同纠错请求重用同路径导致原生
+   prompt 摘要相同。接收观察持久化后，原请求补记 delivery receipt；暂停时仅
+   观察，恢复后补账。过期租约、被替换身份、其他 actor/提示词及 worker 自报
+   不能解除等待。
+2. RM 精确恢复：resident 的 `action_payload` 经白名单展开及冲突校验，接入
+   现有 ControlledActionService。精确 `child-rebuild` 必须绑定 Run、fanout、
+   child、operation、语义 attempt 和当前失败事件；入口及异步执行前均复核。
+   与普通 Task 恢复分开校验共享 Reader 身份，仍沿既有
+   `repair.action.requested → rerun_fanout_child` 执行，不重做健康兄弟。
+   同一失败的恢复意图有稳定幂等键，核心候选冻结、暂停、取消、发送准入保持。
+   请求回执与恢复效果分开：新 attempt 的实际 Reader 终态才能关闭效果等待，
+   旧 attempt、其他 child 或单纯重新派发不能冒领成功。
+   更大范围的 task-requeue、stage-retrigger、stage-replan-new-generation、
+   rescan-grant 接入已有 owner 审批路线，resident 简报说明此限制。
+3. 监督告警：完成缺 gate 按 Task/Run 和已有代际身份匹配；证据必须先于完成，
+   同任务重新派发/返工/合同更新后旧 gate 不再兜底。合法 Task Pipeline 完成
+   支持 kernel 集成事件、精确引用及摘要绑定的集成回执。
+   这是只读监督信号，未新增语义验收规则或改变核心结果准入。
+
+直接回归入口为 `tests/test_reader_repair_receipts.py`、
+`tests/test_run_manager_reader_rebuild.py`、
+`tests/test_completion_gate_scope.py`。它们覆盖真实 runtime 调用和 mock
+transport；不是真实 Provider、Docker 浏览器或整轮无人资格证据。
+验证范围由 `scripts/dev-verify.py plan/run --base dev` 给出，另含已有
+premerge sentinel 与 flow smoke。最终计数见归档任务。
+
+### 与完整 Spec 的剩余边界对账
+
+以下按功能列出下一阶段责任，不用三项局部修复推算整个 Spec 的完成百分比。
+历史已经落地的实现保留；“仍待核验”不等于源码不存在。
+
+| Spec 功能 | 本批结果及剩余责任 |
+| --- | --- |
+| UE-01 无人范围/就绪 | 未改变权限；实际消费者、动作、宿主及加载版本的统一就绪展示仍待联验 |
+| UE-02 持久责任 | Reader 修复意图和效果可重放；消费者退出/漏唤醒各窗口的完整责任矩阵仍待故障验收 |
+| UE-03 控制面外部恢复 | 既有宿主退出恢复未改；主循环停滞、watchdog 同时失效及目标部署资格未由本批证明 |
+| UE-04 身份与未知效果 | 补纠错发送返回丢失的精确回执对账；跨部署累计停止条件及其他副作用类型仍需联验 |
+| UE-05 恢复闭环 | 补 RM 精确 Reader 动作及效果核对；其他动作族须分别验证原工作接续和案例关闭 |
+| UE-06 局部恢复 | 失败 Reader 定位补齐；超大剩余任务的语义重划、独立评审和条款保留仍待增强 |
+| UE-07 语义进度 | 本批未增加已评估条款/证据/报告草稿/未决项的共享 Reader 工作检查点 |
+| UE-08 输入证据 | 既有按需输入不变；最终全局审阅的职责分片和输入收敛还需真实成本证据 |
+| UE-09 外部等待 | 未发送恢复已具备基础；账户/Provider 额度探测到自动续派及有效进展的全链仍待实现/验证 |
+| UE-10 有界诊断 | 已识别 Reader 故障可达精确动作；诊断 Provider 共因故障和降级策略仍需故障资格 |
+| UE-11 受控自修复 | 本批由获准开发会话修复；未知源码缺陷的自主诊断、补丁和独立验收未因此获证 |
+| UE-12 部署接续 | 无实际部署；兼容升级、加载回执和无效补丁再次出现的闭环仍需专门验证 |
+| UE-13 并发 | 未改变调度容量；历史 8×8 证据保留，不记为本版本新的无人通过 |
+| UE-14 隔离/复用 | 新 worktree 与临时 mock 状态隔离；其他资源故障域和跨实验影响还需独立核验 |
+| UE-15 真实观察 | 补跨任务 gate 告警误抑制；全旅程指标、时线和未知/过期展示尚需综合验收 |
+| UE-16 独立资格 | 本批只做源码/mock；产品、容量、自恢复、自修复、零介入分别报告，Q01–Q23 未整体通过 |
+
+后续优先补 Reader 语义检查点及外部等待的恢复闭环，再针对已确认部署执行控制器
+退出/停滞、诊断退出和复合故障验收。源码自修复部署需按具体运行授权限定范围。
+沿有效成果接续验收，不能把旧 K7 的人工维护历史改成新版本零介入证明。
+
 ## 2026-11-19 冻结候选的验收接续
 
 K5 已完成16项 Task，但最终 Reader/Goal 未完成，且诊断收尾已取消 Run。

@@ -1,0 +1,63 @@
+"""Resident recommendations for existing deterministic recovery verbs."""
+from typing import Any
+
+RESIDENT_RECOVERY_ACTIONS = frozenset({
+    "task-requeue", "child-rebuild", "stage-retrigger",
+    "stage-replan-new-generation", "rescan-grant",
+})
+RECOVERY_FIELDS = (
+    "task_id", "fanout_id", "fanout_child_id", "workflow_run_id",
+    "target_operation_id", "active_attempt_id", "source_event_id",
+    "reason", "approval_ref", "escalation_event_id",
+)
+
+
+def normalize_recovery_recommendation(payload: dict[str, Any]) -> dict[str, Any]:
+    name = payload.get("controlled_action") or payload.get("action")
+    if isinstance(name, dict):
+        name = name.get("action") or name.get("kind")
+    if not isinstance(name, str) or name not in RESIDENT_RECOVERY_ACTIONS:
+        return payload
+    nested = payload.get("action_payload", {})
+    if not isinstance(nested, dict):
+        raise ValueError("recovery action_payload must be an object")
+    result = dict(payload)
+    for key in RECOVERY_FIELDS:
+        if key not in nested:
+            continue
+        if key in result and result[key] != nested[key]:
+            raise ValueError(f"recovery action identity conflict: {key}")
+        result[key] = nested[key]
+    return result
+
+
+def recovery_preflight(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    required = ("checkpoint_id",)
+    if action == "child-rebuild":
+        required += ("fanout_id", "fanout_child_id", "workflow_run_id",
+                     "target_operation_id", "active_attempt_id", "source_event_id")
+    return {"schema_version": "run-manager.action-preflight.v1",
+            "status": "passed" if all(payload.get(k) for k in required) else "blocked",
+            "failures": [f"missing_{k}" for k in required if not payload.get(k)],
+            "warnings": []}
+
+
+def recovery_action_contract(action: dict[str, Any]) -> dict[str, Any]:
+    """Receipt, dispatch and semantic completion remain distinct observations."""
+    name = action.get("action")
+    if name != "child-rebuild":
+        from zf.runtime.stage_replan_generation import STAGE_REPLAN_GENERATION_EXPECTED_EVENTS
+        expected = {
+            "task-requeue": ["task.requeued"],
+            "stage-retrigger": [],
+            "stage-replan-new-generation": sorted(STAGE_REPLAN_GENERATION_EXPECTED_EVENTS),
+            "rescan-grant": ["run.goal.rescan.granted"],
+        }.get(name, [])
+        return {"expected_downstream_events": expected}
+    return {
+        "expected_downstream_events": ["repair.action.requested"],
+        "effect_expected_events": ["fanout.child.completed"],
+        "effect_failure_events": ["fanout.child.failed", "repair.action.rejected"],
+        "effect_bindings": {"fanout_id": action.get("fanout_id")},
+        "continuation_expected_events": ["fanout.child.dispatched"],
+    }
