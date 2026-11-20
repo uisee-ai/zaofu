@@ -143,6 +143,11 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ## Reader上下文重建与阶段工作记录
 
+新Candidate replan从上一触发器恢复基础输入时，旧OA决定、delta及指令只作为历史观察，
+当前请求显式携带的决定仍走原有身份校验。显式授权的新非OA stage代次同样隔离旧权限；
+普通重试和合法OA请求不降级、不换基线。旧引用仍可按摘要读取，原始事件保留。
+参见[前轮权限范围修复](../../tasks/active/2026-11-20-2325-replan-authority-context-scope.md)。
+
 Candidate失败涉及已完成Task时，路径归属只能定位前驱，不能代替继任任务的输入消费审核。
 若自动拼装的gap缺少前驱所要求的plan_input_selection，Run Manager在生成动作时即转入
 既有semantic replan，交Agent审阅当前合同、失败证据及替代范围；不复制旧selection、不增加

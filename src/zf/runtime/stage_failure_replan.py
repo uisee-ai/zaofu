@@ -793,6 +793,14 @@ def plan_reader_stage_replan(
             value = failure_payload.get(key) or source_identity_payload.get(key)
             if value not in (None, ""):
                 origin_payload[key] = value
+    if (authorized_generation and authorization_event_id and authorization_ref
+            and origin_payload.get("replan_classification")
+            and origin_payload["replan_classification"] != "oa_semantic_return_to_plan"):
+        # An explicitly authorized new non-OA request does not reuse the
+        # previous request's decision. Ordinary and OA retries retain it.
+        from zf.runtime.replan_resynth import retain_prior_replan_context
+
+        retain_prior_replan_context(origin_payload)
     _bind_current_plan_package_identity(
         origin_payload,
         events=events,
