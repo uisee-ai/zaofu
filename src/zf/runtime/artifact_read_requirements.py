@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Iterable, Mapping
 from pathlib import Path
@@ -183,7 +184,7 @@ def build_canonical_required_reads(
                 "artifact_id": str(source.get("artifact_id") or ""),
                 "artifact_sha256": str(source.get("sha256") or ""),
                 "json_path": json_path,
-                "min_returned_bytes": 1,
+                "min_returned_bytes": _selected_minimum_bytes(source, json_path),
                 "max_items": 0,
                 "max_chars": 0,
                 "allow_truncated": False,
@@ -233,6 +234,26 @@ def build_canonical_required_reads(
     # Only new declarations change order; pinned attempts/cursors keep theirs.
     # The default page must expose the recovery input before bulk product data.
     return sorted(deduped, key=lambda row: row['source_id'] != 'critical-reader-repair-context')
+
+
+def _selected_minimum_bytes(source: Mapping[str, Any], json_path: str) -> int:
+    """A pinned empty value still requires a complete, identity-bound receipt."""
+    selections = [row for row in source.get("read_selections", [])
+                  if isinstance(row, Mapping) and row.get("json_path") == json_path]
+    if len(selections) != 1:
+        return 1
+    selected = selections[0]
+    empty = (
+        selected.get("schema_version") == "artifact-selected-text.v1"
+        and selected.get("selection_fidelity") == "lossless-text.v1"
+        and bool(source.get("sha256"))
+        and selected.get("source_sha256") == source["sha256"]
+        and all(type(selected.get(key)) is int and selected[key] == 0
+                for key in ("selected_bytes", "selected_chars"))
+        and selected.get("selected_sha256") == hashlib.sha256(b"").hexdigest()
+        and selected.get("chunks") == []
+    )
+    return 0 if empty else 1
 
 
 def _sources(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:

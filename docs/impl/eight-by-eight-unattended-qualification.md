@@ -116,3 +116,13 @@ workflow_run_id/fanout_id/child_id/run_id完整身份排除已完成或失败的
 不调整预算、阈值或冷却；未知身份保留旧保守行为。
 `tests/test_cost_blackout_reader_terminal.py`通过真实tick入口验证这些边界；
 原告警时刻的账本只读重放不再触发告警，不改写原事件或伪造关闭结果。
+
+## 2026-11-20：空值已完整交付却无法满足必读策略
+
+Planner返工的`$.backlog_ref`是冻结空字符串，完整受控空页已进入账本并被
+Provider观察，但自动生成策略仍要求至少1字节，导致反复补读无法完成准入。
+新派发只在精确source/path的已冻结无损选择证明内容为空时，自动声明最小0字节。
+该字段仍是必读：缺收据、错身份、错摘要和截断均不能满足。未知或非空选择仍为1；
+显式最小字节约束和旧attempt不可变策略保持原值，修复后需受控新尝试，不能改旧账本。
+`tests/test_empty_required_read_dispatch.py`经过真实`prepare_call_operation`、
+重规划工件分区、策略冻结和页读取入口验证，保留默认值及身份反例。
