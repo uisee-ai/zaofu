@@ -1,6 +1,8 @@
 # 8×8 恢复：保留 RM 诊断所有权，只汇总当前失败
 
-> 状态: active
+> 状态: done
+
+实现：`e064e4cd fix: preserve reader recovery ownership and current failure evidence`。
 
 来源：用户授权恢复并执行8×8验证，遇到实际问题修复后继续。真实 Run
 `workflow-055abbd5196f67c6` 的 product-scan 在15:25 UTC恢复成功后，剩余 tech-scan
@@ -29,4 +31,7 @@
 聚焦回归106 passed。`dev-verify.py plan/run --base dev` 的影响闭包7,551 passed、
 7 skipped；Web typecheck/unit通过，sentinel 53 passed，flow smoke 10 passed。
 这不是全量或真实业务通过；真实账本只读重放已确认只有tech-scan进入当前findings。
-修复部署与剩余Reader的新派发仍待核实。
+修复部署后RM受控重试技术Reader：evt-cce4d0b49708（15:57:18 UTC）；
+15:59:56 evt-a4699c013be6完成，evt-c30b81674dc7扫描成功。
+产品扫描既有成功与所有失败历史保留。后续新诊断被case_resolved抑制属于独立
+修复项，不能用本次RM会话成功宣称整个无人恢复机制已通过。
