@@ -533,3 +533,18 @@ dependency_blocked 结果，执行失败仅用于真实执行故障，不通过�
 或有具体阻塞；之后完成独立评估和受控提交。权限、预算、证据及未知工具效果
 门禁保留，不靠修改 required reads 或将部分进度当作通过解决。该提示的效果需
 真实 provider 继续观察，mock 仅证明实际派发携带提示且既有状态约束保持。
+
+### 原生工具事实与前序 attempt（2026-11-20）
+
+`hook-recv` 的 PostToolUse 不设置 `origin=kernel`，不能用该条件筛除原生事实。
+continuation 复用 `task_execution_evidence.capture_execution_evidence`：核对内核
+派发因果链、Run/Task/operation/attempt/角色/工作目录及结束边界，校验原始输出
+侧车摘要并脱敏；不将截断预览冒充完整输出。
+
+最终 Impl 可显式引用同一 Task、同代际中前序已准入 attempt 的工具记录。前序
+结果可以是 blocked：结果被准入不等于产品通过，也不应因此丢弃其中真实发生的
+测试事实。索引保留原 admission、verdict、提交、operation、attempt 和 origin，
+标记为历史观察而非当前候选通过证明。未准入、错身份、晚于边界及损坏输出仍
+保留 unavailable；当前通过状态仍只取已通过且与 Task Verify 提交一致的 Impl。
+前序结算后发生的受控宿主机验证沿同一捕获器的完整 lease/request/代际/批准及
+回执校验读取；rework 控制事件显式说明不是执行输出，不能补成测试证明。

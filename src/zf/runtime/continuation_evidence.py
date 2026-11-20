@@ -44,13 +44,12 @@ def continuation_input_refs(state_dir: Path, events: list, workflow_run_id: str)
         add(proof['control_result_ref'], 'continuation-verify-control-' + task)
         add(proof['envelope_ref'], 'continuation-verify-envelope-' + task)
 
-    implementations = []
+    admitted_impl = []
     for e in source_events:
         p = e.payload
         if (e.type != 'workflow.call.result.admitted' or e.origin != 'kernel'
                 or p.get('workflow_run_id') != source_run
                 or p.get('control_result_schema') != 'implementation-result.v1'
-                or p.get('semantic_verdict') != 'passed'
                 or str(p.get('task_id') or e.task_id or '') not in tasks):
             continue
         task = str(p.get('task_id') or e.task_id)
@@ -60,27 +59,63 @@ def continuation_input_refs(state_dir: Path, events: list, workflow_run_id: str)
         result = hydrate_sidecar_ref(state_dir, ref).payload
         if result.get('workflow_run_id') != source_run or result.get('task_id') != task:
             raise ValueError('historical implementation identity mismatch')
+        admitted_impl.append((e, task, ref, result))
+
+    implementations = []
+    captured_attempts = {}
+    for e, task, ref, result in admitted_impl:
+        if e.payload.get('semantic_verdict') != 'passed':
+            continue
         if result.get('target_commit') != tasks[task]['target_commit']:
             continue
         add(ref, 'continuation-impl-' + e.id)
         # Only referenced tool facts from the admitted implementation are exposed.
         # Missing or foreign references stay missing; no guessed replacement.
+        from zf.runtime.task_execution_evidence import capture_execution_evidence
         check = result.get('self_check') or {}
         evidence = []
         for raw in check.get('evidence_refs', []):
             if not isinstance(raw, str) or not raw.startswith('event:'):
                 continue
             fact = by_id.get(raw.removeprefix('event:'))
-            if (fact is None or positions[fact.id] > positions[e.id] or fact.origin != 'kernel'
-                    or fact.actor != result.get('role_instance')):
-                evidence.append({'event_ref': raw, 'status': 'unavailable'})
+            prior = None
+            entry = None
+            if fact and positions[fact.id] < positions[e.id]:
+                for admission, prior_task, _, body in admitted_impl:
+                    if prior_task != task or positions[admission.id] > positions[e.id]:
+                        continue
+                    if admission.id not in captured_attempts:
+                        dispatch = next((d for d in source_events[:positions[admission.id]]
+                            if d.origin == 'kernel' and d.type == 'task.pipeline.stage.dispatched'
+                            and d.payload.get('task_map_generation') == manifest['task_map_generation']
+                            and all(body.get(k) and body[k] == d.payload.get(k) for k in
+                                ('workflow_run_id', 'task_id', 'operation_id', 'attempt_id', 'role_instance'))), None)
+                        entries = {}
+                        if dispatch:
+                            captured = hydrate_sidecar_ref(state_dir, capture_execution_evidence(
+                                state_dir, {**dispatch.payload, 'active_attempt_id': body['attempt_id'],
+                                    'last_event_id': admission.id}, source_events,
+                            )).payload
+                            entries = {row['event_id']: row for row in captured['entries']}
+                        captured_attempts[admission.id] = entries
+                    entry = captured_attempts[admission.id].get(fact.id)
+                    if entry:
+                        prior = admission, body
+                        break
+            if entry is None:
+                evidence.append({'event_ref': raw, 'status': 'unavailable',
+                    'event_type': fact.type if fact else None,
+                    'reason': 'not_a_bound_execution_observation' if fact else 'event_missing'})
                 continue
             evidence.append({'event_ref': raw, 'event_type': fact.type,
                 'timestamp': fact.ts, 'actor': fact.actor, 'origin': fact.origin,
-                'payload': {k: fact.payload[k] for k in (
-                    'cwd', 'session_id', 'turn_id', 'tool_name', 'tool_input', 'tool_response',
-                    'workflow_run_id', 'task_id', 'operation_id', 'attempt_id',
-                ) if k in fact.payload}})
+                'source_admission_event_id': prior[0].id,
+                'source_semantic_verdict': prior[0].payload.get('semantic_verdict'),
+                'source_target_commit': prior[1].get('target_commit'),
+                'source_control_result_ref': prior[0].payload['control_result_ref'],
+                'scope': 'historical_task_observation_not_current_candidate_verdict',
+                'causation_id': fact.causation_id, 'observation_ref': entry['ref'],
+                'observation': hydrate_sidecar_ref(state_dir, entry['ref']).payload})
         tool_ref = snapshot({'schema_version': 'continuation-evidence.v1',
             'source_run_id': source_run, 'task_id': task, 'admission_event_id': e.id,
             'control_result_ref': ref, 'target_commit': result.get('target_commit'),
@@ -100,15 +135,16 @@ def continuation_input_refs(state_dir: Path, events: list, workflow_run_id: str)
                 'task_pipeline_stage', 'role_instance', 'workdir', 'provider_session_id') if k in p}
             binding.update(event_id=e.id, timestamp=e.ts)
             bindings.append(binding)
-        if e.origin != 'kernel' or e.type not in {
+        if e.type not in {
                 'codex.hook.user_prompt_submit', 'codex.hook.stop', 'codex.hook.session_end'}:
             continue
-        matches = [b for b in bindings if b.get('role_instance') == e.actor
+        matches = [b for b in bindings if b['event_id'] == e.causation_id
+                   and e.correlation_id == source_run and b.get('role_instance') == e.actor
                    and b.get('workdir') and b['workdir'] == p.get('cwd')]
         if not matches:
             continue
         observations.append({'event_id': e.id, 'timestamp': e.ts,
-            'event_type': e.type, 'actor': e.actor,
+            'event_type': e.type, 'actor': e.actor, 'origin': e.origin,
             'dispatch_event_id': matches[-1]['event_id'],
             'payload': {k: p[k] for k in ('cwd', 'session_id', 'turn_id', 'hook_event') if k in p}})
     activity = snapshot({'schema_version': 'continuation-evidence.v1', 'source_run_id': source_run,

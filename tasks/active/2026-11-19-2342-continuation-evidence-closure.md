@@ -45,3 +45,16 @@ C03 断点预检确认只触发flow.discovery.requested，Run/候选/代际不�
 提示增量：基于已验证3021c89e重新规划18个影响测试文件，无缺失映射；420 passed。
 另有针对性37 passed、premerge 53 passed、mock flow 10 passed（计数重叠不相加）。
 未改变Worker的当前输入或结果门禁；仅后续自然续读派发采用新提示。
+
+现场进一步发现本批27条工具记录均被错误筛为unavailable：PostToolUse本来没有
+kernel origin；且19条TDD记录属于前序已准入但blocked的attempt。复用既有工具
+事实捕获器，沿明确引用及原派发因果链接回前序观察，保留blocked语义和原身份；
+补充原始输出侧车校验、错Run/角色/目录/attempt、未准入及损坏输出反例。
+00:51:51控制器进入本session维护，Reader继续完成原102项输入；原manifest不改写。
+此维护计为第19批人工介入。新源码和后续实际阶段仍待加载验证。
+
+现场复核最终为21条原生工具观察、5条受控宿主验证事实可读；另1条rework控制
+事件明确不是执行输出，不虚构缺失的测试证据。针对性39 passed；最终影响闭包
+1453 passed，premerge53及mock flow10 passed。原failed预检和中间8/27、21/27
+记录均保留在reports。Discovery已读完102/102，提交因缺product_acceptance_report
+进入结果repair_pending（operation投影仍running），该后续问题继续处理，任务不归档。
