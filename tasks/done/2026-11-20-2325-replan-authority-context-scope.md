@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 新 replan 不继承上一轮 OA 执行权限
 
@@ -14,3 +14,5 @@
 最终广闭包4640 passed/7 skipped/1 failed，唯一失败为WRC简报提示文字断言；压缩提示时恢复原有Semantic progress checkpoint入口措辞，保留短提示及原12 KiB阈值。只重跑受该单行变更影响的Reader、结果卡、Thin Judge和恢复测试，不将有失败的广闭包称为全绿。sentinel53 passed、flow-smoke10 passed。真实账本预演证明当前Plan87e7全部基线port及历史OA观察可读取，当前权限不含旧决定；旧OA事件保留。
 
 最后单行提示修正后的受影响复验132 passed（含两个Thin Judge原失败用例、WRC实际重启、当前OA权限否定、stage输入与提交入口），无已知未解决测试失败。未重跑整套4641项；完整日志保留于隔离报告目录。待真实部署签收。
+
+实现提交：`559fecdf fix: scope replan authority to the current request`。真实签收：559fecdf部署后，stage-replan-new-generation原生动作evt-6b7923886633，Planner operation started evt-4562e4ae49e4，child dispatch evt-9055f2f77441；agent.usage确认gpt-6-luna并已发生实际读取。当前任务图16个业务Task通过TaskStore.get（含归档）仍done，没有新业务Task派发。报告replan-authority-scope-native-proof.json保留精确绑定。本项只签收恢复路由及权限修复，最终产品验收和完整无人资格仍未完成。

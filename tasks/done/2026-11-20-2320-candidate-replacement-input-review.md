@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Candidate 替代任务缺少输入消费审核时转交语义规划
 
@@ -10,3 +10,5 @@
 - 回归及真实接续 -> verify: 影响闭包、sentinel、恢复mock通过；受控部署后记录实际后继派发。最终产品和无人资格独立判定。
 
 复现：原HEAD新增调用入口回归1 failed。修复后定向174 passed；最终影响闭包1652 passed/7 skipped、sentinel53 passed、flow-smoke10 passed。原准入selection否定测试保留，显式gap不再被自动拼装覆盖。真实账本只读预演将evt-1adc0a84bf49路由为candidate_replan，保留87e7代次及09094c2d候选，无自动gap。待部署后核实实际派发。
+
+实现提交：`4bb9c466 fix: route replacement input review to semantic planning`。真实签收：559fecdf部署后，stage-replan-new-generation原生动作evt-6b7923886633，Planner operation started evt-4562e4ae49e4，child dispatch evt-9055f2f77441；agent.usage确认gpt-6-luna并已发生实际读取。当前任务图16个业务Task通过TaskStore.get（含归档）仍done，没有新业务Task派发。报告replan-authority-scope-native-proof.json保留精确绑定。本项只签收恢复路由及权限修复，最终产品验收和完整无人资格仍未完成。
