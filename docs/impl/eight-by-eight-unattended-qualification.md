@@ -84,3 +84,15 @@ failed child、当前派发和当前事件的正文。成功或新派发不能�
 fingerprint，并选择同问题的最新失败。相同事件重放仍抑制，历史不改写，仍必须经过
 RM裁决及受控准入才能重试。`tests/test_reader_recovery_diagnosis_occurrence.py`
 经实际RM投影验证这一选择及幂等；普通语义失败、权限和预算策略不在此修复范围。
+
+## 2026-11-20：单 child 成功不能消费较新的扫描失败
+
+完整投影复验进一步发现：新 checkpoint 已产生，但旧恢复 case 因第一个 child
+成功而 resolved，仍把新诊断过滤掉。真实剩余 tech-scan 由重启后的 RM 会话主动
+恢复，并于15:59完成；这不证明该自动诊断队列正确，也不能算零干预通过。
+
+现在只有前一 child-rebuild 的内核 effect 成功、同 Run/同 fanout、较新的内核
+infra 失败输入，才能重新获得诊断准入。case identity 与历史保持；活动 effect、
+人工等待、旧事件重放、异作用域及直接变更动作均不获豁免。队列选择与执行前
+使用相同校验。新输入的业务含义与恢复方案仍由 RM 判断，内核不代替裁决。
+`tests/test_reader_resolved_case_diagnosis.py` 覆盖完整 RM 投影与准入反例。

@@ -8,7 +8,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.recovery_step import IDENTITY_FIELDS, admitted_recovery_continuation
+from zf.runtime.recovery_step import (
+    IDENTITY_FIELDS, admitted_recovery_continuation, has_new_reader_diagnosis_input,
+)
 
 
 RECOVERY_CASE_SCHEMA_VERSION = "recovery-case.v1"
@@ -132,6 +134,8 @@ def converge_recovery_actions(
         case_id = action["recovery_case_id"]
         state = by_id.get(case_id, {})
         status = str(state.get("status") or "open")
+        if has_new_reader_diagnosis_input(event_list, action, state):
+            status = "open"
         failure_count = int(state.get("consecutive_failures") or 0)
         reason = ""
         if case_id in seen:
@@ -188,6 +192,8 @@ def recovery_action_admission(
         {},
     )
     status = str(state.get("status") or "open")
+    if has_new_reader_diagnosis_input(events, bound, state):
+        status = "open"
     failures = int(state.get("consecutive_failures") or 0)
     reason = ""
     if status in _ACTIVE_STATUSES and not admitted_recovery_continuation(events, action, state):
