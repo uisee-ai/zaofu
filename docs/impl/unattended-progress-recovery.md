@@ -1,5 +1,223 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-20 多跳接力与重新入队效果补齐
+
+接续 b4f63e6e，任务 `2026-11-20-0808-unattended-lineage-and-effect.md`。
+本批通过实际 runtime/受控动作入口先复现，再修改；没有启动真实 Provider、
+8×8 或宿主服务。覆盖范围是以下三个可独立核验的缺口。
+
+- **多次中断保留 Reader 历史入口。** A 发布记录，B 继承后未发布即退出，
+  C 从 B 的不可变 request 所绑定 manifest 继续继承 A 的记录。每次只读取一份
+  固定 handoff 与 work-record，不递归展开祖先链；新目标得到重新绑定的正文。
+  新发布记录优先，损坏最新记录不会回退；manifest 摘要、记录摘要、Task/Run、
+  角色、child 和冻结目标仍须匹配。历史事实不获得提交权或替代独立验收。
+- **重新入队不再提前关闭案例。** `task-requeue` 的受控回执进入 verifying，
+  仅接受回执之后同 Task/Run 的 kernel 准入通过结果或任务完成证据。
+  新动作固定具体 `task.requeued` 回执 ID；有效结果早于 effect.pending 仍能重放
+  收敛。独立 Task 只接受不属于其他 Run 的进展。错误 Task/Run、失败 verdict、
+  缺 operation 的结果、worker 自报均不能完成效果。人工批准路径保留升级记录中的
+  Run、case、代际和合同绑定，避免重新构造动作时变成无 Run 的独立 Task。
+  批准消息夹带的其他 Task/checkpoint 标识也不能改写原升级记录的恢复对象。
+  其他动作族仍需专用合同。
+- **已知 Provider 不可用时暂停 RM 诊断派发。** mock 暴露账本已有额度耗尽，
+  RM 仍向不可用的 resident 发送诊断。现在投影保留原待办和 external_wait，
+  发送前再次读取账本；不会将该等待转为同一 Provider 的反复诊断调用。
+  仅核对 kernel 事实的 backend/instance，以及记录中的 account/model 范围；
+  不推断多个角色共用账号。额度等待没有猜测到期时间；匹配的健康事实仅解除
+  Provider 限制，原有暂停、取消和动作授权仍有效，不代表任务完成。
+  直接建议、人工批准及自动 tick 对发送前发现的外部等待均保留原请求；
+  等待不记为执行失败，也不追加已消费/批准已执行的终态回执。
+
+直接回归：`test_reader_checkpoint_handoff.py`、`test_task_requeue_effect.py`、
+`test_provider_wait.py`、`test_shared_provider_wait.py`，以及已有 worker 恢复、
+Reader 外部等待和 resident 诊断消费者测试。共同故障 mock 对四个实例注入
+同一后端不可用事实，核验 RM tick 继续、RM 语义诊断等待、无 AR fallback、
+不受信任的健康声明不能放行、暂停期间不派发、解除后只发送一次。
+它不等于四个真实 Provider 进程或 OA/AR 全部消费路径的共因故障资格。
+审批链追加回归先复现 3 项失败：批准丢失 Run/case、建议在等待时被消费、
+人工批准在等待时被消费。修复后专项及 resident 调用方共 40 项通过。
+追加批准身份防错后，最终相对 dev 的 1029 文件影响闭包得到
+**12594 passed / 18 skipped**，sentinel **53 passed**，mock flow **10 passed**；
+收据 `/tmp/zf-unattended-lineage-closeout-verification.json` 为 passed。
+真实 Provider 层 not_run，结果不与先前轮次相加。
+
+仍需另行推进：其他恢复动作族的完整效果合同、在途诊断的长期外部等待/重发
+矩阵、OA/AR 全部入口的 Provider 降级、真实额度探测与授权恢复、真实宿主接管。
+原综合任务继续 active；本节不扩大为全 Spec 或无人真实 8×8 通过声明。
+
+## 2026-11-20 跨 operation 接力与恢复效果续批
+
+本节接续 46ad74ee，任务为
+`tasks/active/2026-11-20-0717-unattended-recovery-continuation.md`。
+下列源码与确定性 mock 可验证项已实施；实际额度接口、宿主部署和新版真实
+8×8 没有启用，不能以本节替代 UE-16 无人资格。
+
+1. **Reader 前驱历史。** 在受控 fresh retry 冻结请求/manifest 前，验证相同
+   Run、Task、fanout/child、角色和冻结目标，沿用 `task-handoff.v1` 正文及
+   work-record 摘要引用，作为 `reader-handoff` 输入。它不占用 Task 接收回执。
+   当前凭据通过 recover 返回的 predecessor 命令分页读取；旧 operation 凭据、
+   错误范围或损坏记录不能使用。重放复用当前请求已经冻结的输入。
+   继承完成条款、未决项和报告草稿，但不继承执行权、必读完成证明或通过结论。
+   此批支持直接前驱；后续多跳补齐见上节。跨角色转交和任意祖先检索未开放。
+2. **运行中额度等待。** 修正 insufficient_quota、usage_limit_reached 等错误
+   被归为普通未提交终态重试的问题；它们现归 quota_exhausted 外部等待。
+   共享 Reader 即使引用已完成的锚点 Task，也保存带 Run/operation/attempt/
+   request 摘要的等待事实。Provider health 展示 exhausted、需要操作人处理，
+   不会被后续 cooldown 投影覆盖。记录明确 probe_status=not_configured；
+   冷却到期、普通成功文本及进程在线均不证明额度恢复。
+3. **外部主循环 watchdog。** 新增唯一配置
+   `runtime.host_watchdog_seconds`，默认 0 关闭；启用需显式设置至少 15 秒
+   （主循环 tick 5 秒，静默轮询最长约 10 秒，部署还需按实际周期留余量）。
+   `recover host-unit` 生成 Type=notify、NotifyAccess=main、WatchdogSec 和
+   WatchdogSignal=SIGKILL；保留 KillMode=process、重启次数限制及 host-check。
+   只有当前 PID/guard epoch 的主循环完成 kernel 与 tick services 后才通知；
+   无独立 Python 心跳线程掩盖主循环或内部 watchdog 卡死。宿主单元负责终止旧
+   主进程后重启，原暂停/停止/终态 eligibility 仍约束重启。
+   协议依据 [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+   与 [sd_notify](https://www.freedesktop.org/software/systemd/man/latest/sd_notify.html)。
+   本轮只测通知协议、生成内容和实际 start 调用，未安装/启动 unit，真实停滞接管
+   和宿主共同故障仍未获证；也没有给 provider 长任务添加执行超时。
+4. **恢复效果和累计停止。** 对绑定 Task+Run 的新 worker 恢复请求，respawn
+   完成后继续等待该工作、同代际的 kernel 准入通过/完成证据；其他 Run、Task、
+   代际和 abstained 报告不能关闭案例。失败回执立即结束效果等待。
+   无进展匹配不再命中 Task ID 后提前返回，并补 child 范围；新 attempt/部署
+   不清零已持久化的重试次数，别的 Run 或 sibling 的进展不解除停止条件。
+   没有完整工作绑定的历史/空闲 worker 恢复仍沿旧的进程恢复合同，不冒称它们
+   已证明原业务恢复。其他动作族仍需分别核验，不推广本批局部证明。
+
+直接测试：`test_reader_checkpoint_handoff.py`、`test_provider_quota_wait.py`、
+`test_host_watchdog.py`、`test_recovery_progress_scope.py`、
+`test_worker_recovery_progress_effect.py`。初始 RED 已分别复现缺失接力、
+损坏记录忽略、额度误分类、跨 Run/sibling 误匹配及仅重启便结案。
+最终影响闭包及收尾结果见任务记录。
+
+首轮影响闭包得到 12562 passed、18 skipped、3 failed：两项由新增接力检查
+误拦没有工作检查点的纯重试准备引起，已恢复可选历史输入的边界；另一项飞书确认
+测试在 dev 基线也复现 readiness_unassessed。仅补测试夹具的已评估状态，并增加
+未评估时拒绝的对照，未修改确认准入规则、未调用真实飞书服务。
+
+**仍未完成：** 账户/模型级有界主动额度探测与自动恢复，需先确认接口、费用预算、
+凭据作用域和可自动恢复的错误类别；未配置时保持显式外部等待。外部 watchdog
+还需选定部署节点/单元后的真实冻结验收。跨角色接力、超大剩余责任的语义重划、
+自主补丁部署全链、统一就绪界面及新版真实无人验收仍按 Spec 留在待办。
+这批不将上述范围归档成 done。
+
+## 2026-11-20 Reader 语义接力与暂停边界续批
+
+本批沿上一分支继续实现 UE-07/09。初始回归分别复现了共享 Reader 工作记录被
+Task assignee 检查拒绝，以及外部额度等待解除后 taskless Reader 绕过暂停补发。
+本批不运行新版真实 Provider 或 8×8，未部署服务或恢复历史 Run。
+任务记录：`2026-11-20-0603-reader-semantic-continuity.md`。
+
+- 沿用 `worker-work-record.v1` 和原 publish/show/recover 入口，不引入 Task
+  状态。增加互斥 `--stdin`，Reader 不必创建新文件或改写预填结果草稿。
+  原四字段保留，可选 report_draft 保存未完成报告；整个 JSON 最多 16 KiB、
+  草稿最多 8192 字符。敏感内容、超限及同 request-id 改内容拒绝。
+- 共享候选 Reader 使用当前 running operation、不可变 request/manifest 摘要、
+  当前 fanout/child 和独立传输 TaskAttempt/有效 lease 鉴权，不占用或修改
+  已完成的锚点 Task。Reader evidence_files 必须为空；正文只引用已有获准证据，
+  不因 state dir 内存在文件而获得任意读取权。普通 Task 记录的工作区约束保持。
+  本入口要求已绑定的传输 TaskAttempt；没有该绑定的 taskless call 不开放发布。
+- 初始简报只给短入口；`artifact recover` 按需返回发布命令与机械限制，
+  续跑提示和验证 skill 说明条款、证据、未决项、草稿及下一步如何核对。
+  已发布记录的恢复 projection 只给摘要与固定 ref，正文摘要分页
+  回读；凭据轮换/控制器重建可恢复同一 operation 的记录。损坏最新记录不
+  静默回退旧记录；过期租约、旧 dispatch、其他角色、终态和换代拒绝。
+  记录仍是未验证历史，不代替必读、正式提交或模型当前理解，不增加续跑预算。
+  对尚未绑定 Plan package 的旧候选也复用 candidate currentness 校验，不能因
+  缺 package 跳过冻结候选、合同或 target 的新旧检查。
+- 发送原语的 Run 检查不再以 Task ID 是否存在为前提，并核对项目级暂停。
+  发送前额度等待解除后，控制器从账本恢复原 operation；暂停必须等显式 resume，
+  取消不恢复。没有把 readiness、重新派发或工作记录写入记作产品完成。
+  暂停等待沿既有 deferral 去重窗口，避免每个周期追加相同 child 等待事件。
+
+入口回归为 `tests/test_reader_work_record.py` 与
+`tests/test_external_wait_continuity.py`；还覆盖已有 Task 工作记录、输入恢复、
+Reader 续跑、结果纠错、Run 准入及调度调用闭包。冻结候选 mock 证明记录后正式
+失败报告仍可准入，故障报告与产品通过保持区分；不能据此宣称产品真实验收成功。
+首次影响闭包发现两项 Judge 简报超限（其余 7196 passed、10 skipped）；
+已将长用法改为按需读取，保留原 12 KiB 硬上限，两项完整 mock 已重新通过。
+
+### 尚需推进的精确范围
+
+| 范围 | 本批后剩余内容与推进条件 |
+| --- | --- |
+| UE-07 | 同 operation 会话接力已补；新 operation/更换责任人的语义记录继承还需受控 lineage 和独立适用性核验，不能自动放宽跨角色读取。长任务语义不收敛的判断仍属 agent，记录数量不当作进展。 |
+| UE-09 | 发送前 readiness 等待的自动接续与暂停边界已验证；运行中额度耗尽的账户/模型级主动探测、探测预算和恢复效果闭环仍未实现完成。Spec §9 尚未确定探测接口与效果范围，不自行触发付费探测、换账户或解除登录/信任等待。 |
+| UE-06/08 | 超大剩余责任的语义重划、独立评审及全局条款对账仍需沿既有 planner/critic 方法推进；按需分页不等于职责拆分已完成。 |
+| UE-03/10/12 | 现有宿主重启、诊断和源码修复模块仍需分别核验活锁、共同故障、兼容加载和无效补丁再现；本批未安装或重启宿主单元。 |
+| UE-11/16 | 自主补丁的可修改/推广范围与独立验收需具体授权；新版真实 8×8 按本次用户要求不执行，零监工资格保持未通过/未验证。 |
+
+上述部分不以本批归档冒称整个 Spec 完成。上一批对账表中的“本批”仍指
+3d71bd97 的三项修复；本节记录后续增量，具体测试层级见本批任务。
+
+## 2026-11-20 ZF-SPEC-004 已确认缺口补齐
+
+本批从 dev d442a9bd 建独立 worktree，针对 r2 复盘中三个可复现缺陷实施；
+不是重新合并 AR 实验，也不将本地 Spec 强制纳入 Git。实施任务记录：
+`2026-11-20-0531-unattended-spec-gaps.md`。
+
+### 变更与验证边界
+
+1. Reader 纠错回执：既有 `continuation_delivery` 周期入口复用纠错身份验证，
+   分别核对业务 operation/语义 attempt 与传输 TaskAttempt/lease。
+   共享候选锚点不存在普通 Task 不再导致合法接收证据被丢弃。
+   精确 native prompt 摘要或 stream 身份回执只关闭 unknown delivery；
+   不重复发付费 turn、不更换 attempt、不生成业务 passed。
+   纠错文件名绑定 operation/纠错摘要，防止不同纠错请求重用同路径导致原生
+   prompt 摘要相同。接收观察持久化后，原请求补记 delivery receipt；暂停时仅
+   观察，恢复后补账。过期租约、被替换身份、其他 actor/提示词及 worker 自报
+   不能解除等待。
+2. RM 精确恢复：resident 的 `action_payload` 经白名单展开及冲突校验，接入
+   现有 ControlledActionService。精确 `child-rebuild` 必须绑定 Run、fanout、
+   child、operation、语义 attempt 和当前失败事件；入口及异步执行前均复核。
+   与普通 Task 恢复分开校验共享 Reader 身份，仍沿既有
+   `repair.action.requested → rerun_fanout_child` 执行，不重做健康兄弟。
+   同一失败的恢复意图有稳定幂等键，核心候选冻结、暂停、取消、发送准入保持。
+   请求回执与恢复效果分开：新 attempt 的实际 Reader 终态才能关闭效果等待，
+   旧 attempt、其他 child 或单纯重新派发不能冒领成功。
+   更大范围的 task-requeue、stage-retrigger、stage-replan-new-generation、
+   rescan-grant 接入已有 owner 审批路线，resident 简报说明此限制。
+3. 监督告警：完成缺 gate 按 Task/Run 和已有代际身份匹配；证据必须先于完成，
+   同任务重新派发/返工/合同更新后旧 gate 不再兜底。合法 Task Pipeline 完成
+   支持 kernel 集成事件、精确引用及摘要绑定的集成回执。
+   这是只读监督信号，未新增语义验收规则或改变核心结果准入。
+
+直接回归入口为 `tests/test_reader_repair_receipts.py`、
+`tests/test_run_manager_reader_rebuild.py`、
+`tests/test_completion_gate_scope.py`。它们覆盖真实 runtime 调用和 mock
+transport；不是真实 Provider、Docker 浏览器或整轮无人资格证据。
+验证范围由 `scripts/dev-verify.py plan/run --base dev` 给出，另含已有
+premerge sentinel 与 flow smoke。最终计数见归档任务。
+
+### 与完整 Spec 的剩余边界对账
+
+以下按功能列出下一阶段责任，不用三项局部修复推算整个 Spec 的完成百分比。
+历史已经落地的实现保留；“仍待核验”不等于源码不存在。
+
+| Spec 功能 | 本批结果及剩余责任 |
+| --- | --- |
+| UE-01 无人范围/就绪 | 未改变权限；实际消费者、动作、宿主及加载版本的统一就绪展示仍待联验 |
+| UE-02 持久责任 | Reader 修复意图和效果可重放；消费者退出/漏唤醒各窗口的完整责任矩阵仍待故障验收 |
+| UE-03 控制面外部恢复 | 既有宿主退出恢复未改；主循环停滞、watchdog 同时失效及目标部署资格未由本批证明 |
+| UE-04 身份与未知效果 | 补纠错发送返回丢失的精确回执对账；跨部署累计停止条件及其他副作用类型仍需联验 |
+| UE-05 恢复闭环 | 补 RM 精确 Reader 动作及效果核对；其他动作族须分别验证原工作接续和案例关闭 |
+| UE-06 局部恢复 | 失败 Reader 定位补齐；超大剩余任务的语义重划、独立评审和条款保留仍待增强 |
+| UE-07 语义进度 | 本批未增加已评估条款/证据/报告草稿/未决项的共享 Reader 工作检查点 |
+| UE-08 输入证据 | 既有按需输入不变；最终全局审阅的职责分片和输入收敛还需真实成本证据 |
+| UE-09 外部等待 | 未发送恢复已具备基础；账户/Provider 额度探测到自动续派及有效进展的全链仍待实现/验证 |
+| UE-10 有界诊断 | 已识别 Reader 故障可达精确动作；诊断 Provider 共因故障和降级策略仍需故障资格 |
+| UE-11 受控自修复 | 本批由获准开发会话修复；未知源码缺陷的自主诊断、补丁和独立验收未因此获证 |
+| UE-12 部署接续 | 无实际部署；兼容升级、加载回执和无效补丁再次出现的闭环仍需专门验证 |
+| UE-13 并发 | 未改变调度容量；历史 8×8 证据保留，不记为本版本新的无人通过 |
+| UE-14 隔离/复用 | 新 worktree 与临时 mock 状态隔离；其他资源故障域和跨实验影响还需独立核验 |
+| UE-15 真实观察 | 补跨任务 gate 告警误抑制；全旅程指标、时线和未知/过期展示尚需综合验收 |
+| UE-16 独立资格 | 本批只做源码/mock；产品、容量、自恢复、自修复、零介入分别报告，Q01–Q23 未整体通过 |
+
+后续优先补 Reader 语义检查点及外部等待的恢复闭环，再针对已确认部署执行控制器
+退出/停滞、诊断退出和复合故障验收。源码自修复部署需按具体运行授权限定范围。
+沿有效成果接续验收，不能把旧 K7 的人工维护历史改成新版本零介入证明。
+
 ## 2026-11-19 冻结候选的验收接续
 
 K5 已完成16项 Task，但最终 Reader/Goal 未完成，且诊断收尾已取消 Run。

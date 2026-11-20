@@ -39,7 +39,8 @@ def unit_run(args):
         ctx = resolve_project_context(explicit_state_dir=args.state_dir, load_config_with_explicit=True)
         body = render_user_unit(project_root=ctx.project_root, state_dir=ctx.state_dir,
             python=Path(sys.executable), source_root=Path(__file__).resolve().parents[3],
-            environment=dict(os.environ), unit_name=args.name)
+            environment=dict(os.environ), unit_name=args.name,
+            watchdog_seconds=ctx.config.runtime.host_watchdog_seconds)
         if not args.install:
             print(body, end='')
         else:

@@ -51,10 +51,12 @@ def prepare_repair_continuation(runtime: Any, context: Any, outcome: Any, prompt
 
 
 def validate_repair_continuation(runtime: Any, role: str, context: DispatchContext,
-                                 events: list[ZfEvent], claim: ZfEvent) -> None:
+                                 events: list[ZfEvent], claim: ZfEvent, *,
+                                 receipt_only: bool = False) -> None:
     if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
         raise RuntimeError("result correction requires a trustworthy ledger")
-    operation = reduce_workflow_operations(events).get(context.operation_id, {})
+    operations = reduce_workflow_operations(events)
+    operation = operations.get(context.operation_id, {})
     packet = hydrate_sidecar_ref(runtime.state_dir, claim.payload["correction_ref"]).payload
     expected = {"operation_id": context.operation_id, "workflow_run_id": context.run_id,
                 "dispatch_id": context.dispatch_id, "request_hash": operation.get("request_hash"),
@@ -87,8 +89,34 @@ def validate_repair_continuation(runtime: Any, role: str, context: DispatchConte
         if (task is None or task.status != "in_progress" or task.assigned_to != role
                 or task.active_dispatch_id != context.dispatch_id):
             raise RuntimeError("result correction task owner is stale")
-    if not runtime.transport.is_alive(role):
+    else:
+        from zf.runtime.fanout_identity import fanout_current_status
+        request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
+        fanout_id = request.get("fanout_id")
+        if (fanout_id and not fanout_current_status(events, fanout_id).current) or any(
+            other.get("status") == "running" and other.get("role_instance") == role
+            and other.get("operation_id") != context.operation_id for other in operations.values()
+        ):
+            raise RuntimeError("result correction Reader owner is stale")
+    if not receipt_only and not runtime.transport.is_alive(role):
         raise RuntimeError("result correction requires the existing live worker")
+
+
+def repair_receipt_is_current(runtime: Any, prepared: ZfEvent, claim: ZfEvent,
+                              events: list[ZfEvent]) -> bool:
+    """Validate both Reader identities; observing a receipt grants no dispatch."""
+    payload = prepared.payload
+    keys = ("run_id", "task_id", "instance_id", "operation_id", "attempt_id",
+            "dispatch_id", "lease_id")
+    if any(not payload.get(k) or payload[k] != claim.payload.get(k) for k in keys):
+        return False
+    context = DispatchContext(**{k: payload[k] for k in keys})
+    try:
+        validate_repair_continuation(runtime, prepared.actor, context, events, claim,
+                                     receipt_only=True)
+    except (RuntimeError, ValueError, KeyError, OSError):
+        return False
+    return True
 
 
 def record_unsent_repair(runtime: Any, context: Any, reason: str) -> None:

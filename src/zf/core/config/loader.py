@@ -3628,6 +3628,15 @@ def _build_runtime(
         return RuntimeConfig()
     if not isinstance(data, dict):
         raise ConfigError("runtime must be a mapping")
+    from math import isfinite
+    try:
+        watchdog_raw = data.get("host_watchdog_seconds", 0)
+        host_watchdog_seconds = float(watchdog_raw)
+        if (isinstance(watchdog_raw, bool) or not isfinite(host_watchdog_seconds)
+                or host_watchdog_seconds != 0 and host_watchdog_seconds < 15):
+            raise ValueError("invalid watchdog interval")
+    except (ValueError, TypeError) as exc:
+        raise ConfigError("runtime.host_watchdog_seconds must be 0 (disabled) or >= 15 seconds") from exc
     workdirs_raw = data.get("workdirs") or {}
     git_raw = data.get("git") or {}
     skills_raw = data.get("skills") or {}
@@ -4200,6 +4209,7 @@ def _build_runtime(
             f"must be one of {_VALID_SHIP_TASK_STRATEGIES}"
         )
     return RuntimeConfig(
+        host_watchdog_seconds=host_watchdog_seconds,
         workdirs=WorkdirConfig(
             enabled=bool(workdirs_raw.get("enabled", False)),
             root=str(workdirs_raw.get("root", ".zf/workdirs")),

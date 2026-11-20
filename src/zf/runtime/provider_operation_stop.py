@@ -67,6 +67,20 @@ def emit_provider_stop_recovery(
             "operation_id": str(payload.get("operation_id") or ""),
             "cooldown_until": cooldown_until,
         }
+        if reason in {"quota_exhausted", "rate_limited"}:
+            operation = load_workflow_operation(runtime.event_log, recovery_payload["operation_id"]) or {}
+            recovery_payload["external_wait"] = {
+                "kind": reason, "source_event_id": event.id,
+                "workflow_run_id": operation.get("workflow_run_id") or event.correlation_id or "",
+                "operation_id": operation.get("operation_id", ""),
+                "active_attempt_id": operation.get("active_attempt_id", ""),
+                "request_hash": operation.get("request_hash", ""),
+                "backend": recovery_payload["backend"],
+                "model": str(getattr(role, "model", "") or ""),
+                "account_scope": "unconfirmed", "probe_status": "not_configured",
+                "resume_condition": "authorized_availability_evidence_and_controlled_recovery",
+                "authorizes_execution": False,
+            }
         runtime.event_writer.append(ZfEvent(
             type="provider.stop.recovery",
             actor="zf-cli",
@@ -76,7 +90,8 @@ def emit_provider_stop_recovery(
             correlation_id=event.correlation_id,
         ))
         status = (
-            "blocked" if action == "suspend"
+            "exhausted" if reason == "quota_exhausted"
+            else "blocked" if action == "suspend"
             else "cooldown" if action == "cooldown"
             else "degraded"
         )
@@ -87,7 +102,7 @@ def emit_provider_stop_recovery(
             payload={
                 **recovery_payload,
                 "status": status,
-                "requires_operator": action == "suspend",
+                "requires_operator": action == "suspend" or reason == "quota_exhausted",
             },
             causation_id=event.id,
             correlation_id=event.correlation_id,
@@ -165,7 +180,7 @@ def recover_provider_stopped_operation(
         # durable operation; otherwise workflow resume sees a phantom running
         # operation forever. Task-bound operations continue through the
         # existing task recovery branches below.
-        if task is not None:
+        if task is not None and outcome.operation_type != "fanout_reader_child":
             return None
         emit_provider_stop_recovery(
             runtime,

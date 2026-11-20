@@ -1590,6 +1590,7 @@ class RuntimeWebTerminalConfig:
 
 @dataclass
 class RuntimeConfig:
+    host_watchdog_seconds: float = 0.0  # opt-in external main-loop watchdog
     host_verification: HostVerificationConfig = field(default_factory=HostVerificationConfig)
     task_publication: TaskPublicationConfig = field(default_factory=TaskPublicationConfig)
     workdirs: WorkdirConfig = field(default_factory=WorkdirConfig)

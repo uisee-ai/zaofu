@@ -17,7 +17,11 @@ def _quote(value: str, *, command: bool = False) -> str:
 
 
 def render_user_unit(*, project_root: Path, state_dir: Path, python: Path,
-                     source_root: Path, unit_name: str = '', environment: dict[str, str] | None = None) -> str:
+                     source_root: Path, unit_name: str = '', environment: dict[str, str] | None = None,
+                     watchdog_seconds: float = 0) -> str:
+    from math import isfinite
+    if (not isfinite(watchdog_seconds) or watchdog_seconds != 0 and watchdog_seconds < 15):
+        raise ValueError('watchdog_seconds must be 0 or >= 15')
     root, state = project_root.resolve(), state_dir.resolve()
     executable = _quote(str(python.absolute()), command=True)
     cli = f'{executable} -m zf.cli.main'
@@ -38,6 +42,10 @@ def render_user_unit(*, project_root: Path, state_dir: Path, python: Path,
              f'WorkingDirectory={_quote(str(root))[1:-1]}', 'Restart=on-failure', 'RestartSec=5s',
              'KillMode=process', 'TimeoutStopSec=30s']
     lines += ['Environment=' + _quote(k + '=' + v) for k, v in env.items()]
+    if watchdog_seconds:
+        lines[lines.index('Type=simple')] = 'Type=notify'
+        lines += ['NotifyAccess=main', f'WatchdogSec={watchdog_seconds:g}s',
+                  'WatchdogSignal=SIGKILL']
     lines += [f'ExecCondition={cli} recover host-check --state-dir {_quote(str(state), command=True)}',
               f'ExecStart={cli} start --control-plane-only --skip-workflow-inspect',
               '', '[Install]', 'WantedBy=default.target', '']

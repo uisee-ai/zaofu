@@ -17,6 +17,7 @@ KNOWN_STOP_REASONS = frozenset({
     "pending_todos",
     "context_limit",
     "rate_limited",
+    "quota_exhausted",
     "auth_error",
     "tool_permission_blocked",
     "hook_review_required",
@@ -59,6 +60,10 @@ def classify_provider_stop(payload: dict[str, Any] | None = None, *, status: str
         if value is not None
     ).lower()
 
+    if any(marker in text for marker in (
+        'insufficient_quota', 'usage_limit_reached', 'hit your usage limit', 'quota exhausted',
+    )):
+        return "quota_exhausted"
     if "rate" in text and "limit" in text:
         return "rate_limited"
     if re.search(r"\b(?:auth|authentication|authorization|unauthorized|forbidden)(?:\b|_)", text):
@@ -93,7 +98,7 @@ def provider_stop_action(reason: str) -> str:
         "provider_policy_rejected",
     }:
         return "suspend"
-    if reason == "rate_limited":
+    if reason in {"rate_limited", "quota_exhausted"}:
         return "cooldown"
     if reason == "context_limit":
         return "recycle"

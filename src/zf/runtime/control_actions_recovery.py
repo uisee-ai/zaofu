@@ -164,6 +164,25 @@ class RecoveryActionsMixin:
     def _child_rebuild_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if any(payload.get(k) for k in ("fanout_id", "fanout_child_id", "target_operation_id")):
+            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
+            error = reader_rebuild_error(self.state_dir, self.writer.event_log.read_all(), payload)
+            if error:
+                return self._recovery_failed(requested, action, requested_action, error, 409)
+            action_id = f"child-rebuild-{requested.id}"
+            emitted = self.writer.append(ZfEvent(
+                type="repair.action.requested", actor=self.actor, origin="kernel",
+                correlation_id=payload["workflow_run_id"], causation_id=requested.id,
+                payload={**{k: payload[k] for k in (
+                    "fanout_id", "fanout_child_id", "workflow_run_id",
+                    "target_operation_id", "active_attempt_id", "source_event_id")},
+                    "action_id": action_id, "kind": "rerun_fanout_child",
+                    "recovery_action": action,
+                    "idempotency_key": f"reader-rebuild:{payload['target_operation_id']}:{payload['source_event_id']}",
+                    "reason": str(payload.get("reason") or "retry the exact failed Reader")},
+            ))
+            return self._recovery_ok(requested, emitted, action, requested_action,
+                {"fanout_id": payload["fanout_id"], "repair_action_id": action_id})
         task_id = str(payload.get("task_id") or "").strip()
         if not task_id:
             return self._recovery_failed(

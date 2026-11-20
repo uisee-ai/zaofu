@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.cli import feishu as feishu_cli
@@ -526,7 +527,8 @@ def test_callback_gateway_routes_progress_command_and_classifies_it_signed(
     assert FINALIZE_COMMAND in feishu_cli.SIGNED_ACTION_COMMANDS
 
 
-def test_confirm_click_is_wired_to_real_controlled_action(tmp_path: Path):
+@pytest.mark.parametrize("readiness_verdict", ["ready", "unassessed"])
+def test_confirm_click_is_wired_to_real_controlled_action(tmp_path: Path, readiness_verdict: str):
     state_dir = tmp_path / ".zf"
     digest = "c" * 64
     _append(
@@ -553,6 +555,7 @@ def test_confirm_click_is_wired_to_real_controlled_action(tmp_path: Path):
                     "prd_revision": 1,
                     "required_signers": [],
                     "owner_actor_ref": OWNER,
+                    "readiness_verdict": readiness_verdict,
                 },
             ),
         ],
@@ -567,6 +570,11 @@ def test_confirm_click_is_wired_to_real_controlled_action(tmp_path: Path):
         chat_id=CHAT_ID,
     )
 
+    if readiness_verdict == "unassessed":
+        assert result["ok"] is False
+        assert result["action_result"]["status"] == "readiness_unassessed"
+        assert not any(e.type == "channel.consensus.signed" for e in EventLog(state_dir / "events.jsonl").read_all())
+        return
     assert result["ok"] is True
     assert result["status"] == "confirmed"
     events = EventLog(state_dir / "events.jsonl").read_all()
