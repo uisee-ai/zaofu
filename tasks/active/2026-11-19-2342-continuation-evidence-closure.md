@@ -36,3 +36,12 @@ observing。为该正例显式启用resident，保留关闭优先规则；相关
 
 C03 断点预检确认只触发flow.discovery.requested，Run/候选/代际不变；真实
 加载及Judge/Goal/交付仍待验证，因此本任务保持active。
+
+3021c89e 已提交并实际加载；同一候选的 Discovery 已恢复。Reader 两轮只读
+部分材料后提前退出，Run Manager 两次自行接回，未新增人工派发；新增提示补丁
+明确同轮读取到完成或具体阻塞，实际派发回归先 RED，再修复。该补丁的 provider
+效果和最终 Judge/Goal 仍待观察。历史人工恢复计数 17，不声明无人资格通过。
+
+提示增量：基于已验证3021c89e重新规划18个影响测试文件，无缺失映射；420 passed。
+另有针对性37 passed、premerge 53 passed、mock flow 10 passed（计数重叠不相加）。
+未改变Worker的当前输入或结果门禁；仅后续自然续读派发采用新提示。

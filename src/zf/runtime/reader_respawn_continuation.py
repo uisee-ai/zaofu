@@ -58,6 +58,12 @@ def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> 
         "frozen inputs. Re-read any source you cannot still use; historical "
         "delivery alone does not prove current context after compaction. "
         "Reconcile unfinished tool calls and external effects before retrying."
+        " Continue consuming remaining pages in this turn until all required inputs "
+        "are covered or a concrete blocker prevents progress. Do not stop merely "
+        "after an arbitrary number of pages or to report partial progress. Once "
+        "inputs are covered, complete the independent evaluation and validated "
+        "result submission under the original briefing. Preserve permission, "
+        "budget and evidence gates; input coverage is not an acceptance verdict."
     )
     if backend == "codex" and attempt_id:
         attempt = shlex.quote(attempt_id)

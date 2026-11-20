@@ -524,3 +524,12 @@ dependency_blocked 结果，执行失败仅用于真实执行故障，不通过�
 回归：`tests/test_continuation_evidence_handoff.py` 覆盖真实派发消费者、Goal
 消费、损坏/缺授权及历史工具身份；`tests/test_recovery_evidence_context.py`
 覆盖实际常驻诊断入口和受控 scope review。真实状态与介入次数另记 reports。
+
+### Reader 自动续读的停止条件（2026-11-20）
+
+真实 Discovery 在 102 项必读尚未完成时连续结束两轮，再由 Run Manager 接回。
+已有续读提示提供同 session 游标恢复和证据边界，但未明确排除任意页数后的提前
+交接。补充实际 Reader continuation 派发提示：同轮持续读取，直到输入覆盖完成
+或有具体阻塞；之后完成独立评估和受控提交。权限、预算、证据及未知工具效果
+门禁保留，不靠修改 required reads 或将部分进度当作通过解决。该提示的效果需
+真实 provider 继续观察，mock 仅证明实际派发携带提示且既有状态约束保持。

@@ -41,6 +41,12 @@ def test_reader_continues_multiple_new_pages_then_admits_result(tmp_path):
         assert current["active_attempt_id"] == original["active_attempt_id"]
         assert current["request_hash"] == original["request_hash"]
     assert len(transport.sent) == 5
+    # Exercise the actual resend path: a valid continuation carries both the
+    # work-until-blocked instruction and the original evidence boundary.
+    prompt = transport.sent[-1][2]
+    assert "until all required inputs are covered or a concrete blocker" in prompt
+    assert "Do not stop merely after an arbitrary number of pages" in prompt
+    assert "historical delivery alone does not prove current context" in prompt
     assert not [e for e in log.read_all() if e.type == "fanout.child.dispatch_lost"]
     manifest = hydrate_sidecar_ref(state, child["payload"]["attempt_source_manifest"]).payload
     read_attempt_artifact(state, manifest=manifest, source_id="context",
