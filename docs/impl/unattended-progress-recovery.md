@@ -1,5 +1,62 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-20 跨 operation 接力与恢复效果续批
+
+本节接续 46ad74ee，任务为
+`tasks/active/2026-11-20-0717-unattended-recovery-continuation.md`。
+下列源码与确定性 mock 可验证项已实施；实际额度接口、宿主部署和新版真实
+8×8 没有启用，不能以本节替代 UE-16 无人资格。
+
+1. **Reader 前驱历史。** 在受控 fresh retry 冻结请求/manifest 前，验证相同
+   Run、Task、fanout/child、角色和冻结目标，沿用 `task-handoff.v1` 正文及
+   work-record 摘要引用，作为 `reader-handoff` 输入。它不占用 Task 接收回执。
+   当前凭据通过 recover 返回的 predecessor 命令分页读取；旧 operation 凭据、
+   错误范围或损坏记录不能使用。重放复用当前请求已经冻结的输入。
+   继承完成条款、未决项和报告草稿，但不继承执行权、必读完成证明或通过结论。
+   当前支持同角色同 child 的直接前驱；跨角色转交和任意祖先链未开放。
+2. **运行中额度等待。** 修正 insufficient_quota、usage_limit_reached 等错误
+   被归为普通未提交终态重试的问题；它们现归 quota_exhausted 外部等待。
+   共享 Reader 即使引用已完成的锚点 Task，也保存带 Run/operation/attempt/
+   request 摘要的等待事实。Provider health 展示 exhausted、需要操作人处理，
+   不会被后续 cooldown 投影覆盖。记录明确 probe_status=not_configured；
+   冷却到期、普通成功文本及进程在线均不证明额度恢复。
+3. **外部主循环 watchdog。** 新增唯一配置
+   `runtime.host_watchdog_seconds`，默认 0 关闭；启用需显式设置至少 15 秒
+   （主循环 tick 5 秒，静默轮询最长约 10 秒，部署还需按实际周期留余量）。
+   `recover host-unit` 生成 Type=notify、NotifyAccess=main、WatchdogSec 和
+   WatchdogSignal=SIGKILL；保留 KillMode=process、重启次数限制及 host-check。
+   只有当前 PID/guard epoch 的主循环完成 kernel 与 tick services 后才通知；
+   无独立 Python 心跳线程掩盖主循环或内部 watchdog 卡死。宿主单元负责终止旧
+   主进程后重启，原暂停/停止/终态 eligibility 仍约束重启。
+   协议依据 [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+   与 [sd_notify](https://www.freedesktop.org/software/systemd/man/latest/sd_notify.html)。
+   本轮只测通知协议、生成内容和实际 start 调用，未安装/启动 unit，真实停滞接管
+   和宿主共同故障仍未获证；也没有给 provider 长任务添加执行超时。
+4. **恢复效果和累计停止。** 对绑定 Task+Run 的新 worker 恢复请求，respawn
+   完成后继续等待该工作、同代际的 kernel 准入通过/完成证据；其他 Run、Task、
+   代际和 abstained 报告不能关闭案例。失败回执立即结束效果等待。
+   无进展匹配不再命中 Task ID 后提前返回，并补 child 范围；新 attempt/部署
+   不清零已持久化的重试次数，别的 Run 或 sibling 的进展不解除停止条件。
+   没有完整工作绑定的历史/空闲 worker 恢复仍沿旧的进程恢复合同，不冒称它们
+   已证明原业务恢复。其他动作族仍需分别核验，不推广本批局部证明。
+
+直接测试：`test_reader_checkpoint_handoff.py`、`test_provider_quota_wait.py`、
+`test_host_watchdog.py`、`test_recovery_progress_scope.py`、
+`test_worker_recovery_progress_effect.py`。初始 RED 已分别复现缺失接力、
+损坏记录忽略、额度误分类、跨 Run/sibling 误匹配及仅重启便结案。
+最终影响闭包及收尾结果见任务记录。
+
+首轮影响闭包得到 12562 passed、18 skipped、3 failed：两项由新增接力检查
+误拦没有工作检查点的纯重试准备引起，已恢复可选历史输入的边界；另一项飞书确认
+测试在 dev 基线也复现 readiness_unassessed。仅补测试夹具的已评估状态，并增加
+未评估时拒绝的对照，未修改确认准入规则、未调用真实飞书服务。
+
+**仍未完成：** 账户/模型级有界主动额度探测与自动恢复，需先确认接口、费用预算、
+凭据作用域和可自动恢复的错误类别；未配置时保持显式外部等待。外部 watchdog
+还需选定部署节点/单元后的真实冻结验收。跨角色接力、超大剩余责任的语义重划、
+自主补丁部署全链、统一就绪界面及新版真实无人验收仍按 Spec 留在待办。
+这批不将上述范围归档成 done。
+
 ## 2026-11-20 Reader 语义接力与暂停边界续批
 
 本批沿上一分支继续实现 UE-07/09。初始回归分别复现了共享 Reader 工作记录被

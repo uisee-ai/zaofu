@@ -6852,11 +6852,11 @@ def _execute_worker_lifecycle_recover(
             "reason": "worker respawn requested",
         },
     )
+    from zf.runtime.worker_recovery_effect import worker_recovery_effect_contract
     _post_verify_action(
         writer,
         {**action, "effect_request_event_id": requested.id,
-         "effect_expected_events": ["worker.respawn.completed"],
-         "effect_failure_events": ["worker.respawn.failed"]},
+         **worker_recovery_effect_contract(action)},
         {"ok": True, "status": "applied", "emitted_event_ids": [requested.id]},
         causation_id=outcome.id,
     )
@@ -7923,6 +7923,10 @@ def _settle_pending_action_effects(
                 None,
             )
         )
+        if payload.get("action") == "worker-lifecycle-recover" and required_sequence:
+            from zf.runtime.worker_recovery_effect import observe_worker_recovery_effect
+            observed = observe_worker_recovery_effect(
+                events[index + 1:], payload, _effect_event_matches_scope)
         if correctable_timeout and (
             observed is None or observed.type not in expected
             or (late_triage and not triage_completion_matches(observed, payload))
@@ -12233,6 +12237,7 @@ def _run_action_scope(action: dict[str, Any]) -> tuple[tuple[str, str], ...]:
         "pdd_id",
         "feature_id",
         "fanout_id",
+        "child_id",
         "trace_id",
     ):
         value = str(action.get(key) or "").strip()
@@ -12246,13 +12251,22 @@ def _event_matches_run_action_scope(
     scope: tuple[tuple[str, str], ...],
 ) -> bool:
     payload = event.payload if isinstance(event.payload, dict) else {}
+    matched = False
     for key, expected in scope:
         actual = str(payload.get(key) or "")
         if key == "task_id":
             actual = str(event.task_id or actual)
+            if payload.get(key) and str(payload[key]) != expected:
+                return False
+        elif key == "workflow_run_id":
+            actual = actual or str(payload.get("run_id") or event.correlation_id or "")
+        if key in {"task_id", "workflow_run_id", "child_id"} and not actual:
+            return False
         if actual:
-            return actual == expected
-    return False
+            if actual != expected:
+                return False
+            matched = True
+    return matched
 
 
 def _emit_no_progress_run_terminal(

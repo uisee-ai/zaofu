@@ -320,6 +320,11 @@ def prepare_call_operation(
         attach_unchanged_review(runtime, payload=payload, stage=stage_id, trigger_id=causation_id,
                                 operation_id=operation_id)
 
+    if operation_type == "fanout_reader_child":
+        from zf.runtime.reader_handoff import attach_reader_handoff
+
+        attach_reader_handoff(runtime, payload)
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,

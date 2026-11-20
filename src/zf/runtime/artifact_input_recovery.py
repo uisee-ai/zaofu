@@ -66,6 +66,18 @@ def build_input_recovery(
         entry = reader_checkpoint_entry(state_dir, events, manifest, identity.get("actor", ""))
         if entry:
             result["work_record_publish"] = entry
+            from zf.runtime.task_handoff import predecessor_work_record
+            try:
+                binding = {key: str(manifest.get(key) or "") for key in ("workflow_run_id", "task_id")}
+                from zf.runtime.workflow_operation import reduce_workflow_operations
+                operation = next(op for op in reduce_workflow_operations(events).values()
+                    if op.get("active_attempt_id") == manifest["attempt_id"] and op.get("role_instance") == identity.get("actor"))
+                binding["operation_id"] = operation["operation_id"]
+                predecessor_work_record(state_dir, manifest, binding)
+                result["commands"]["predecessor_work_record_read"] = (
+                    f"{prefix} work-record show --operation {shlex.quote(binding['operation_id'])} --predecessor")
+            except (OSError, ValueError, KeyError, StopIteration):
+                pass
     if result["work_record"].get("status") == "bound":
         op = shlex.quote(str(result["work_record"]["operation_id"]))
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"

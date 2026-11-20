@@ -185,7 +185,11 @@ def _contract_change(runtime, task_id, events, expected_revision=None):
 
 def predecessor_work_record(state_dir: Path, manifest: dict, binding: dict) -> tuple[dict, dict]:
     """Read only the predecessor pinned for an already authorized current caller."""
-    sources = [s for s in manifest.get("sources", []) if s.get("source_id") == SOURCE_ID]
+    source_id = SOURCE_ID
+    if (manifest.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child":
+        from zf.runtime.reader_handoff import SOURCE_ID as reader_source_id
+        source_id = reader_source_id
+    sources = [s for s in manifest.get("sources", []) if s.get("source_id") == source_id]
     if len(sources) != 1 or not sources[0].get("sha256"):
         raise ValueError("current operation has no pinned predecessor handoff")
     body = hydrate_sidecar_ref(state_dir, sources[0]).payload

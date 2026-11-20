@@ -1434,6 +1434,7 @@ def run(args: argparse.Namespace) -> int:
 
         _tick_service_state = TickServiceState()
         _tick_service_intervals = TickServiceIntervals()
+        from zf.runtime.host_watchdog import notify_host_watchdog
 
         def _on_tick() -> None:
             # A fully silent worker produces no events, so an event-only
@@ -1446,9 +1447,13 @@ def run(args: argparse.Namespace) -> int:
             # alive while no work was happening. Surface failures as
             # `orchestrator.tick.failed` events so operators can see them
             # in events.jsonl and the web dashboard.
+            tick_completed = False
             try:
-                watcher_guard.heartbeat()
+                if not watcher_guard.heartbeat():
+                    watcher.stop()
+                    return
                 _run_orchestrator_idle_tick(orchestrator)
+                tick_completed = True
             except Exception as exc:
                 try:
                     _append_event(event_log, ZfEvent(
@@ -1471,6 +1476,8 @@ def run(args: argparse.Namespace) -> int:
                 now=now,
                 intervals=_tick_service_intervals,
             )
+            if tick_completed:
+                notify_host_watchdog(watcher_guard)
 
         watcher = EventWatcher(
             state_dir / "events.jsonl",
@@ -1516,6 +1523,7 @@ def run(args: argparse.Namespace) -> int:
             from zf.runtime.workflow_runtime_start import mark_runtime_ready
 
             mark_runtime_ready(state_dir)
+            notify_host_watchdog(watcher_guard, ready=True)
             try:
                 watcher.run(poll_interval=1.0, tick_interval=5.0)
             except KeyboardInterrupt:
