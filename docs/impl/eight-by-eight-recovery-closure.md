@@ -75,7 +75,7 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 操作顺序：完整 `zf stop` 关闭 transport 后，先 `zf start --no-watch --skip-workflow-inspect` 建立传输会话，再启动使用 `--control-plane-only` 的宿主监督 unit；只有 transport 保留的控制器重载才可直接启动该 unit。准备和受控恢复动作完成后再开启只读观察窗口。
 
-入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。相关任务见 [Plan 完成复用修复](../../tasks/active/2026-11-20-2120-plan-completion-reuse.md)。
+入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。真实8×8续测已由新Plan原生冻结原候选，8个最终Reader实际running，16项业务Task未再次派发；这仅证明本恢复入口生效，最终Candidate/Judge/Goal/交付仍独立待验。相关任务见 [Plan 完成复用修复](../../tasks/done/2026-11-20-2120-plan-completion-reuse.md)。
 
 16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。
 
