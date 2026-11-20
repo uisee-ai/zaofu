@@ -16,6 +16,14 @@ uv run zf doctor provider --backend codex --json
 - 在隔离临时目录内运行当前 Codex 自身的 `sandbox --permission-profile :workspace` 命令。
 - 启动探测不调用模型、不验证账号或业务；未知 CLI 接口/超时/权限失败返回非零，不把 `unshare -n` 结果当 Codex 资格。
 
+`zf start` 对配置中显式使用 `codex` 与 `provider_session.sandbox: workspace-write`
+的角色复用这一探针，每次真实启动只探测一次。失败时在启动
+transport/Provider 前返回非零，并通过 EventWriter 保存 `env.preflight.failed`
+（`check=codex_sandbox`、受影响角色、命令、退出码与诊断）。
+`--skip-workflow-inspect`、`--no-watch` 和控制面重启不能跳过此检查；`--dry-run`
+不启动宿主探针。未显式要求受限 Codex 的配置保持原策略，不因预检改变权限。
+此检查只证明共同沙箱机制可以启动，不证明各工作区的文件、网络、Docker 或提交能力。
+
 ### 1.1 对实际任务工作区检查能力
 
 沙箱启动成功不代表可以监听端口、访问 Docker 或提交 worktree。需要这些能力时，

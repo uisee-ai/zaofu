@@ -4,6 +4,20 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
+from zf.core.config.schema import ZfConfig
+
+
+def probe_configured_codex_sandbox(config: ZfConfig, root: Path) -> dict | None:
+    """Check the shared sandbox substrate only for explicitly restricted roles."""
+    roles = [
+        role.instance_id for role in config.roles
+        if role.backend == "codex" and role.provider_session is not None
+        and role.provider_session.sandbox == "workspace-write"
+    ]
+    if not roles:
+        return None
+    return {"roles": roles, "probe": probe_codex_sandbox(root)}
+
 
 def probe_codex_sandbox(root: Path, *, codex: str = "codex") -> dict:
     """Probe the installed interface; never infer capability from unshare or bypass."""
