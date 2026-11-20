@@ -180,3 +180,9 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 修复在stage-replan投影和执行共用入口识别显式`redrive_of/rework_of`来源链：必须能找到原失败的可信fanout、同Run/同stage/任务代际的继任trigger及其更晚的Kernel fanout接纳事实。未接纳、自报、异来源、异Run/stage和循环/乱序引用不屏蔽旧失败。旧失败与发现继续保留，但其恢复已由新代际负责；这不表示业务通过，继任者自己的失败仍需独立恢复。
 
 验证：1红7绿的实际ControlledActionService→恢复checkpoint回归转绿，54聚焦、4161影响闭包（7 skipped）、53哨兵与10流程通过。真实事件前缀21149条：旧代码planned=true，修复后planned=false/owned_by_admitted_reader_retrigger。未写运行态或改历史结果。部署前精确kernel provider_stop_confirmed+cancelled operation以及宿主进程/tmux不存在共同证明8个Reader已停止；保留未收到stop hook的旧记录，不伪造Provider收尾。
+
+## 2026-11-20：已确认取消停止仍阻塞新派发
+
+第二次接续的8路审核均在`provider_turn_active`等待。取消路径已确认transport退出并写入`provider_stop_confirmed`，但活动投影没有消费该停止路径，新的launch又被旧turn阻挡。现按可信kernel取消、相同role/dispatch/operation/request/attempt和取消事件配对`cancelling`与确认`idle`，只清除开始停止时捕获的旧turn集合。期间新turn继续活动，未确认、身份错误、缺开始或非kernel证据均不清除。实现复用现有正式回执，不补造Provider hook或业务完成事件。
+
+验证：使用与实际Orchestrator一致的kernel EventWriter重新对基线复现失败；69聚焦、3267影响闭包、53哨兵和10流程通过。真实账本只读重放由8个活动角色变为0；未知/不匹配回执和停止期间的新turn反例保持。未补写hook或修改历史状态。
