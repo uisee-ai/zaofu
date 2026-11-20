@@ -89,6 +89,7 @@ def evaluate_plan_candidate_preflight(
         state_dir=state_dir,
         project_root=project_root,
         errors=errors,
+        ports_materialized=ports_materialized,
     )
     task_map, producer = _task_map_candidate(
         candidates,

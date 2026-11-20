@@ -28,6 +28,7 @@ def test_explicit_port_obeys_package_ref_contract(tmp_path, fault):
     result = evaluate_plan_candidate_preflight(
         state_dir=state, project_root=tmp_path,
         reports=[{'report': {'plan_ports': [port]}}], manifest={}, metadata={},
+        ports_materialized=True,
     )
     errors = [e for e in result['errors'] if e['field'] == 'report[0].plan_ports[0]']
     assert errors and errors[0]['code'] == 'plan_port_unreadable'

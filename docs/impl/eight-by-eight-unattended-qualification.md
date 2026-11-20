@@ -96,3 +96,13 @@ infra 失败输入，才能重新获得诊断准入。case identity 与历史保
 人工等待、旧事件重放、异作用域及直接变更动作均不获豁免。队列选择与执行前
 使用相同校验。新输入的业务含义与恢复方案仍由 RM 判断，内核不代替裁决。
 `tests/test_reader_resolved_case_diagnosis.py` 覆盖完整 RM 投影与准入反例。
+
+## 2026-11-20：作者 ref/sha256 工件在提交预检中不可读
+
+真实Planner已写出11项有摘要的工件，但result validate仍只按state_dir sidecar读取，
+在Kernel正常搬移发生前拒绝。既有ports_materialized标记现在传入正文读取：作者
+预检允许当前project_root内的文件；已经搬移的包继续严格要求sidecar。已有运行态
+绑定不能由作者同名文件替代；路径逃逸、符号链接逃逸、摘要错误及缺失继续拒绝。
+预检不搬移文件、不写事件；实际交付仍走原受控提交与工件搬移。
+`tests/test_author_plan_port_preflight.py`覆盖实际Service validate/submit→Kernel搬移→
+下游全文/摘要保留及边界反例。该修复不放过Planner另有的schema错误或语义缺口。
