@@ -137,4 +137,4 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 
 修复仅认可可信运行时代码内置、默认位置、无符号链接、字节完全相同的pre-commit；未知hook、修改体与core.hooksPath仍拒绝。宿主manifest冻结hook摘要与模式，执行前复验；Git仍实际执行hook，不删除或绕过原守卫，不替Worker宣告实现通过。
 
-验证：92项聚焦、9390项影响闭包（7 skipped）、Web typecheck/unit、53哨兵和10流程测试通过。真实发布恢复尚待部署验证。普通retry在缺宿主发布收据时保守拒绝（CLI统一提示budget exhausted）；恢复需有效发布收据或当前失败对应的显式单代授权，不能据worker失败标签免费无限重试。
+验证：92项聚焦、9390项影响闭包（7 skipped）、Web typecheck/unit、53哨兵和10流程测试通过。真实修复`85fc8614`已加载：8/8任务自动发布、8/8原生后续retry，保留原工作区/session，首项已进入独立Verify。产品最终交付继续验证。普通retry在缺宿主发布收据时保守拒绝（CLI统一提示budget exhausted）；恢复需有效发布收据或当前失败对应的显式单代授权，不能据worker失败标签免费无限重试。
