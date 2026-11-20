@@ -33,7 +33,7 @@ def recovery(tmp_path, monkeypatch):
         return write_immutable_json_sidecar(state, body, root="reuse-test", kind="test",
             schema_version=body.get("schema_version", "test.v1"), created_by="test")
 
-    task = Task(id="TASK-1", title="child", contract=TaskContract(evidence_contract={
+    task = Task(id="TASK-1", title="child", contract_authority_revision="old-authority", contract=TaskContract(evidence_contract={
         "workflow_run_id": run, "source_refs": {"task_map_generation": "generation-1"}}))
     runtime.task_store.add(task)
     runtime.task_store.update(task.id, status="done", completed_at="2026-11-20T00:00:00+00:00")

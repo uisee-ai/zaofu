@@ -1,5 +1,6 @@
 """Shared read-only frozen-candidate currentness for inputs and result admission."""
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 from zf.core.events.model import ZfEvent
@@ -217,13 +218,23 @@ def candidate_currentness_issues(
                 "candidate contract completed_task_ids do not match current freeze",
             ))
     task_store = TaskStore(state_dir / "kanban.json")
+    reused = {}
+    if any(child.get("completion_reuse_ref") for child in contract_snapshot.get("child_authorities") or []
+           if isinstance(child, Mapping)):
+        from zf.runtime.plan_completion_reuse import current_proofs
+
+        try:
+            reused = current_proofs(SimpleNamespace(state_dir=state_dir, task_store=task_store),
+                                    list(events), current_candidate)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return [_currentness_issue("control_result.contract_snapshot_ref", "stale_task_authority", str(exc))]
     for child in contract_snapshot.get("child_authorities") or []:
         if not isinstance(child, Mapping):
             continue
         authority_revision = str(
             child.get("contract_authority_revision") or ""
         )
-        if not authority_revision:
+        if not authority_revision and not child.get("completion_reuse_ref"):
             continue
         child_task_id = str(child.get("task_id") or "")
         current_task = task_store.get(child_task_id)
@@ -243,6 +254,16 @@ def candidate_currentness_issues(
                 str(exc),
             ))
             continue
+        if child.get("completion_reuse_ref"):
+            proof = reused.get(child_task_id)
+            if (not proof or proof["completion_reuse_ref"] != child["completion_reuse_ref"]
+                    or proof["verification_event_id"] != child.get("verification_event_id")):
+                issues.append(_currentness_issue("control_result.contract_snapshot_ref", "stale_task_authority",
+                    f"candidate child {child_task_id!r} lacks its exact reviewed completion proof"))
+                continue
+            # current_proofs checks the current complete contract and identity;
+            # the retained native Verify still carries its reviewed old identity.
+            current_identity = proof["prior_identity"]
         for field, expected in current_identity.items():
             actual = str(child.get(field) or "")
             if str(expected) != actual:
