@@ -138,3 +138,9 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 修复仅认可可信运行时代码内置、默认位置、无符号链接、字节完全相同的pre-commit；未知hook、修改体与core.hooksPath仍拒绝。宿主manifest冻结hook摘要与模式，执行前复验；Git仍实际执行hook，不删除或绕过原守卫，不替Worker宣告实现通过。
 
 验证：92项聚焦、9390项影响闭包（7 skipped）、Web typecheck/unit、53哨兵和10流程测试通过。真实修复`85fc8614`已加载：8/8任务自动发布、8/8原生后续retry，保留原工作区/session，首项已进入独立Verify。产品最终交付继续验证。普通retry在缺宿主发布收据时保守拒绝（CLI统一提示budget exhausted）；恢复需有效发布收据或当前失败对应的显式单代授权，不能据worker失败标签免费无限重试。
+
+## 2026-11-20：只读Python筛选误判为写入
+
+接续期间Run Manager只读查询events.jsonl，Python比较运算符`>=`被shell词法分析当作重定向，PreToolUse拒绝了没有写目标的查询。Agent自行改用其他只读查询，业务未停。修复在独立worktree验证，不热更新当前验收窗口。
+
+守卫只对一个带引用heredoc、可证明无文件写入的有限Python AST子集免除shell重定向误判：允许JSON/Path读取、局部赋值、循环筛选与stdout输出。未知程序、动态调用、危险import、可调用名称重绑定、属性赋值、写模式open、shell尾随命令均保留原拒绝判断；不执行待检查代码，不扩大文件访问范围。真实Hook入口覆盖dev和Run Manager。
