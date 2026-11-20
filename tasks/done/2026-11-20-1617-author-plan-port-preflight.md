@@ -1,6 +1,8 @@
 # Plan 作者工件与运行态工件的预检边界
 
-> 状态: active
+> 状态: done
+
+实现提交：be8bf1b9 fix: validate author plan ports before runtime relocation
 
 来源：8×8真实验证中，Planner通过result validate得到11项plan_port_unreadable。
 已生成且有摘要的作者工作区工件，被按state_dir中的已搬移sidecar解析；
@@ -20,3 +22,7 @@ Web typecheck/unit通过，53 sentinel、10 flow smoke通过。
 修复与原合同，未代写或代提交结果。Plan后资格窗口尚未开始。
 参见[实施记录](../../docs/impl/eight-by-eight-unattended-qualification.md)，
 日志`reports/eight-qualification-20261120T122929Z/author-port-preflight-*`。
+
+实际验证：16:26:44原Planner通过ref/sha256提交，evt-6a6751622f52准入；
+16:26:51独立Critic开始，16:33对语义问题拒绝并正常自动返工。
+提交读取缺陷已解除，不将语义拒绝当成本项失败或业务已通过。
