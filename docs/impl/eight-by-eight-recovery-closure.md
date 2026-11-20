@@ -143,6 +143,12 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ## Reader上下文重建与阶段工作记录
 
+Candidate失败涉及已完成Task时，路径归属只能定位前驱，不能代替继任任务的输入消费审核。
+若自动拼装的gap缺少前驱所要求的plan_input_selection，Run Manager在生成动作时即转入
+既有semantic replan，交Agent审阅当前合同、失败证据及替代范围；不复制旧selection、不增加
+attempt上限、不重开已完成Task。最终amend的消费合同门禁继续保留。
+参见[替代输入审核修复](../../tasks/active/2026-11-20-2320-candidate-replacement-input-review.md)。
+
 实际窗口发现必读齐全仍固定推荐reconstruct_required_inputs，压缩后反复全读。恢复投影用required_scope_count表示输入规模；historical_missing为0时交给Agent识别具体上下文缺口并继续，不再给出默认required批读命令。缺读、权限和输入版本门禁保留；历史不证明当前模型理解。Verifier在阅读完成和验收组完成时按既有WRC入口保存语义进度，恢复先读记录、按索引补正文，不用摘要替代首次必读或验收。
 
 原WRC在同operation受控重派后可读：当前请求、manifest、角色、fanout、候选及有效lease仍须验证；旧记录必须有原生发布/派发/attempt证据，新的启动须绑定发布之后的kernel redrive准入。只允许传输dispatch/canonical attempt/lease变化，原记录不改写、不授予执行或通过。参见[上下文进度恢复任务](../../tasks/active/2026-11-20-2303-reader-context-progress-recovery.md)。

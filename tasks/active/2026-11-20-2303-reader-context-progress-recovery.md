@@ -12,3 +12,5 @@
 复现：补修前恢复指引及原WRC经过受控传输重派后不可读，两项有效RED。实现后定向90 passed；初次自动闭包1186 passed/1 skipped，1项前驱WRC恢复JSON大小检查失败，已压缩重复说明并通过包含该用例的90项复验，最终闭包进行中。临时测试最初与已有同名文件冲突，已恢复原测试全文，新用例独立为test_reader_context_progress_checkpoint.py，未删除既有覆盖。
 
 最终验证：定向90 passed；dev-verify --base 23a0ba67 --workers 4自动闭包1187 passed/1 skipped（含恢复、重计划、过期合同handoff mock E2E）；sentinel53 passed。真实账本只读回放：18项必读齐全、historical_missing=0、建议assess_context_gaps_then_continue且无默认全量required命令；仍保持current_memory=unknown。待部署后真实签收方法与接续效果。
+
+窗口6真实部署a333f8fc后，单路恢复获准但派发遇TaskAttempt 3/3，实际Worker未启动，故尚不能签收真实模型阶段WRC方法。保留该上限及原始结果；后续候选失败接续见2320替代输入审核任务，不将控制动作获准等同执行完成。
