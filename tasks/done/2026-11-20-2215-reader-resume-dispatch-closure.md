@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # Reader 断点准入、实际派发与已准入执行失败的恢复闭环
 
@@ -13,3 +13,7 @@
 基线RED：已部署c2d1c0ea的完整周期恢复2 failed（实际启动因果链不同、旧重试次数拒绝），正式失败结果重建1 failed。初次测试漏掉周期tick、旧verify fixture无完整目标身份，修正后才作为有效RED；不将测试准备问题当产品故障。补修不降低读取/结果currentness门禁，也不修改终态Run。
 
 验证：定向222 passed；`scripts/dev-verify.py run --base c2d1c0ea --workers 4 --keep-going` 1785 passed（包含恢复/复杂Workflow mock E2E）；premerge sentinel 53 passed；`tests/test_flow_smoke_e2e.py` 3 passed。真实Provider恢复仍待部署后签收；以上不是全量pytest或无人值守通过。
+
+实现提交：`78bf66e8 fix: carry admitted reader recovery through dispatch`。
+
+真实8×8：22:31:11 UTC当前8/8 Reader已running且input_lifecycle=current；6项operation/request/attempt/lease保持、started绑定同一已准入决定；2项生成新operation且旧失败记录未变；没有新增dispatch_lost或业务Task派发。证据reports/eight-qualification-20261120T122929Z/reader-checkpoint-dispatch-repair-proof.json。原无人窗口未通过，最终Candidate/Judge/Goal/交付继续观察，不能据此判产品完成。

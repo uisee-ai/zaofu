@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 已审核完成复用的 Reader 输入与结果准入闭环
 
@@ -14,3 +14,7 @@
 复现：真实c300528d对象48条stale_task_authority；最终有效mock在原currentness代码上2 failed/9 passed（输入及正式提交均因旧身份失败）。修复代码对同8个真实Reader只读核验全部无currentness错误，未写运行状态。初版测试夹具缺少完整Plan admission、freeze及submit credential，修正后才记正式RED；夹具启动失败不算产品复现。定向73 passed，闭包及真实续验待完成。
 
 验证：初轮定向73 passed；补齐共享校验直接调用方后175 passed（13.67s）。dev-verify自动层167 passed/7 skipped，sentinel53 passed，flow-smoke10 passed。没有全量pytest/coverage。真实失败对象8/8只读currentness预览通过；部署后继续验证，任务保持active。
+
+实现提交：`c2d1c0ea fix: validate retained task proof throughout candidate review`。
+
+真实8×8：原48条子任务旧身份错误已消除；原生lane3输入current、lane5正式执行失败结果evt-f7e327217752获准。后续78bf66e8修复独立的恢复派发因果问题后，22:31:11 UTC当前8/8 Reader输入current。此处只签收输入与结果消费端闭环，最终产品验收仍pending。

@@ -77,9 +77,9 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。真实8×8续测已由新Plan原生冻结原候选，8个最终Reader实际running，16项业务Task未再次派发；这仅证明本恢复入口生效，最终Candidate/Judge/Goal/交付仍独立待验。
 
-后续真实Reader输入与结果准入仍报48条子任务旧身份冲突。共享 `candidate_currentness_issues` 现在重验同一不可变完成复用证明：当前Task完整合同/身份/完成态必须与审核一致，子项的复用ref和原Verify事件必须精确匹配，再以已审核原身份核对子项；不把旧任务伪装为新执行。未复用子项仍走原校验，目标/Plan/快照/current candidate门禁全部保留。`artifact index/recover` 和正式结果提交共用该入口，避免冻结接受而读取或提交拒绝。补修见 [Reader currentness闭环](../../tasks/active/2026-11-20-2205-plan-reuse-reader-currentness.md)。
+后续真实Reader输入与结果准入仍报48条子任务旧身份冲突。共享 `candidate_currentness_issues` 现在重验同一不可变完成复用证明：当前Task完整合同/身份/完成态必须与审核一致，子项的复用ref和原Verify事件必须精确匹配，再以已审核原身份核对子项；不把旧任务伪装为新执行。未复用子项仍走原校验，目标/Plan/快照/current candidate门禁全部保留。`artifact index/recover` 和正式结果提交共用该入口，避免冻结接受而读取或提交拒绝。补修见 [Reader currentness闭环](../../tasks/done/2026-11-20-2205-plan-reuse-reader-currentness.md)。
 
-受控checkpoint准入还必须被实际Reader派发消费。周期恢复优先核对kernel redrive、原workflow.resume.planned、不可变request及当前fanout/child，实际started使用同一个已准入决定；已授权停止恢复不计为新的传输故障，不重置普通故障预算。只有同operation原请求的这一次准入能触发，不凭restart文本或次数推断授权。已正式准入的failed/abstained Reader可经child-rebuild生成新operation，需核验原control-result摘要和身份；原settled事实保留，业务passed/rejected不适用。见 [Reader断点派发闭环](../../tasks/active/2026-11-20-2215-reader-resume-dispatch-closure.md)。相关任务见 [Plan 完成复用修复](../../tasks/done/2026-11-20-2120-plan-completion-reuse.md)。
+受控checkpoint准入还必须被实际Reader派发消费。周期恢复优先核对kernel redrive、原workflow.resume.planned、不可变request及当前fanout/child，实际started使用同一个已准入决定；已授权停止恢复不计为新的传输故障，不重置普通故障预算。只有同operation原请求的这一次准入能触发，不凭restart文本或次数推断授权。已正式准入的failed/abstained Reader可经child-rebuild生成新operation，需核验原control-result摘要和身份；原settled事实保留，业务passed/rejected不适用。见 [Reader断点派发闭环](../../tasks/done/2026-11-20-2215-reader-resume-dispatch-closure.md)。相关任务见 [Plan 完成复用修复](../../tasks/done/2026-11-20-2120-plan-completion-reuse.md)。
 
 16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。
 
