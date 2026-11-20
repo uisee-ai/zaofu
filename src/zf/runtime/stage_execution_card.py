@@ -539,6 +539,9 @@ def prepare_profiled_stage_result(
         "- Submit authorization is transport-owned; do not print or inspect it.",
         "",
     ]
+    if (child_payload.get("task_id")
+            and (child_payload.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child"):
+        lines.append("- Optional semantic checkpoint: `artifact recover`.")
     if profile_id in {"task-verify", "candidate-verify"}:
         from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
         lines.append(verifier_failure_schema_guidance(

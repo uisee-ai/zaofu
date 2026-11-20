@@ -183,9 +183,13 @@ independent Verify.
 
 长任务在完成一组证据、出现未决事项或准备换会话时，可用当前 operation 的
 `zf artifact work-record publish --operation <id> --file <workdir 内 JSON> --request-id <唯一 ID>`
-发布非终态记录。JSON 严格包含 completed_actions、pending、next_step、evidence_files；
+发布非终态记录。JSON 必须包含 completed_actions、pending、next_step、evidence_files；
 前三者为动作列表、未决列表、下一步字符串，证据为工作区内相对路径列表。
 不写凭据；测试日志不能包装成独立 Verify 结论。
+可选 report_draft 保存至多 8192 字符的未完成报告，整体仍受 16 KiB 上限约束。
+也可用互斥的 `--stdin` 传入同一 JSON，不新增工作区文件。共享候选 Reader 优先
+使用此入口，evidence_files 必须为空，正文引用既有获准证据；它校验自身 call、
+传输 attempt/lease、fanout 和输入绑定，不要求独占锚点 Task。不覆盖正式结果草稿。
 
 发布前核对当前 `src/zf/runtime/work_record.py::publish_work_record` 与 `_read_scoped`
 的机械限制：record JSON 至多 16 KiB，三个列表各至多 16 条，每条为非空字符串且

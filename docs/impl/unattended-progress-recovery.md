@@ -1,5 +1,54 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-20 Reader 语义接力与暂停边界续批
+
+本批沿上一分支继续实现 UE-07/09。初始回归分别复现了共享 Reader 工作记录被
+Task assignee 检查拒绝，以及外部额度等待解除后 taskless Reader 绕过暂停补发。
+本批不运行新版真实 Provider 或 8×8，未部署服务或恢复历史 Run。
+任务记录：`2026-11-20-0603-reader-semantic-continuity.md`。
+
+- 沿用 `worker-work-record.v1` 和原 publish/show/recover 入口，不引入 Task
+  状态。增加互斥 `--stdin`，Reader 不必创建新文件或改写预填结果草稿。
+  原四字段保留，可选 report_draft 保存未完成报告；整个 JSON 最多 16 KiB、
+  草稿最多 8192 字符。敏感内容、超限及同 request-id 改内容拒绝。
+- 共享候选 Reader 使用当前 running operation、不可变 request/manifest 摘要、
+  当前 fanout/child 和独立传输 TaskAttempt/有效 lease 鉴权，不占用或修改
+  已完成的锚点 Task。Reader evidence_files 必须为空；正文只引用已有获准证据，
+  不因 state dir 内存在文件而获得任意读取权。普通 Task 记录的工作区约束保持。
+  本入口要求已绑定的传输 TaskAttempt；没有该绑定的 taskless call 不开放发布。
+- 初始简报只给短入口；`artifact recover` 按需返回发布命令与机械限制，
+  续跑提示和验证 skill 说明条款、证据、未决项、草稿及下一步如何核对。
+  已发布记录的恢复 projection 只给摘要与固定 ref，正文摘要分页
+  回读；凭据轮换/控制器重建可恢复同一 operation 的记录。损坏最新记录不
+  静默回退旧记录；过期租约、旧 dispatch、其他角色、终态和换代拒绝。
+  记录仍是未验证历史，不代替必读、正式提交或模型当前理解，不增加续跑预算。
+  对尚未绑定 Plan package 的旧候选也复用 candidate currentness 校验，不能因
+  缺 package 跳过冻结候选、合同或 target 的新旧检查。
+- 发送原语的 Run 检查不再以 Task ID 是否存在为前提，并核对项目级暂停。
+  发送前额度等待解除后，控制器从账本恢复原 operation；暂停必须等显式 resume，
+  取消不恢复。没有把 readiness、重新派发或工作记录写入记作产品完成。
+  暂停等待沿既有 deferral 去重窗口，避免每个周期追加相同 child 等待事件。
+
+入口回归为 `tests/test_reader_work_record.py` 与
+`tests/test_external_wait_continuity.py`；还覆盖已有 Task 工作记录、输入恢复、
+Reader 续跑、结果纠错、Run 准入及调度调用闭包。冻结候选 mock 证明记录后正式
+失败报告仍可准入，故障报告与产品通过保持区分；不能据此宣称产品真实验收成功。
+首次影响闭包发现两项 Judge 简报超限（其余 7196 passed、10 skipped）；
+已将长用法改为按需读取，保留原 12 KiB 硬上限，两项完整 mock 已重新通过。
+
+### 尚需推进的精确范围
+
+| 范围 | 本批后剩余内容与推进条件 |
+| --- | --- |
+| UE-07 | 同 operation 会话接力已补；新 operation/更换责任人的语义记录继承还需受控 lineage 和独立适用性核验，不能自动放宽跨角色读取。长任务语义不收敛的判断仍属 agent，记录数量不当作进展。 |
+| UE-09 | 发送前 readiness 等待的自动接续与暂停边界已验证；运行中额度耗尽的账户/模型级主动探测、探测预算和恢复效果闭环仍未实现完成。Spec §9 尚未确定探测接口与效果范围，不自行触发付费探测、换账户或解除登录/信任等待。 |
+| UE-06/08 | 超大剩余责任的语义重划、独立评审及全局条款对账仍需沿既有 planner/critic 方法推进；按需分页不等于职责拆分已完成。 |
+| UE-03/10/12 | 现有宿主重启、诊断和源码修复模块仍需分别核验活锁、共同故障、兼容加载和无效补丁再现；本批未安装或重启宿主单元。 |
+| UE-11/16 | 自主补丁的可修改/推广范围与独立验收需具体授权；新版真实 8×8 按本次用户要求不执行，零监工资格保持未通过/未验证。 |
+
+上述部分不以本批归档冒称整个 Spec 完成。上一批对账表中的“本批”仍指
+3d71bd97 的三项修复；本节记录后续增量，具体测试层级见本批任务。
+
 ## 2026-11-20 ZF-SPEC-004 已确认缺口补齐
 
 本批从 dev d442a9bd 建独立 worktree，针对 r2 复盘中三个可复现缺陷实施；

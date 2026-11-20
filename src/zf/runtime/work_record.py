@@ -22,6 +22,9 @@ SCHEMA = 'worker-work-record.v1'
 
 def authorize_work_record(service: SemanticResultSubmitService, operation_id: str, role: str, credential: str):
     operation, request = service.authorize_running_operation(operation_id, role_instance=role, credential=credential)
+    if operation.get('operation_type') == 'fanout_reader_child':
+        from zf.runtime.reader_work_record import reader_work_record_binding
+        return reader_work_record_binding(service.state_dir, service.event_log.read_all(), operation, role)
     task = TaskStore(service.state_dir / 'kanban.json').get(str(operation.get('task_id') or ''))
     if task is None or task.assigned_to != role or task.status != 'in_progress':
         raise ValueError('work record requires the current active Task assignee')
@@ -134,15 +137,33 @@ def _read_scoped(workdir: Path, file: Path, limit: int) -> bytes:
 
 
 def publish_work_record(*, state_dir: Path, event_log, operation_id: str, role: str, credential: str,
-                        record_file: Path, request_id: str) -> dict[str, Any]:
+                        request_id: str, record_file: Path | None = None,
+                        record_body: dict[str, Any] | None = None) -> dict[str, Any]:
     if not request_id or len(request_id) > 128:
         raise ValueError('work record requires a bounded idempotency request id')
     service = SemanticResultSubmitService(state_dir=state_dir, event_log=event_log, event_writer=EventWriter(event_log))
     with locked_path(state_dir / 'work-records' / hashlib.sha256(operation_id.encode()).hexdigest()):
         binding, manifest, workdir = authorize_work_record(service, operation_id, role, credential)
-        body = json.loads(_read_scoped(workdir, record_file, 16384))
-        if not isinstance(body, dict) or set(body) != {'completed_actions','pending','next_step','evidence_files'}:
+        reader = binding.get('record_scope') == 'reader_result_scratch'
+        if (record_file is None) == (record_body is None):
+            raise ValueError('work record requires exactly one file or JSON body')
+        if record_file is not None:
+            if reader and record_file.absolute() != workdir / binding['result_scratch_ref']:
+                raise ValueError('Reader work record must use its signed result scratch')
+            body = json.loads(_read_scoped(workdir, record_file, 16384))
+        else:
+            from zf.core.security.redaction import redact_text
+            raw = json.dumps(record_body, ensure_ascii=False)
+            if len(raw.encode('utf-8')) > 16384 or redact_text(raw) != raw:
+                raise ValueError('work record body exceeds byte budget or contains sensitive material')
+            body = json.loads(raw)
+        if (not isinstance(body, dict) or set(body) - {'report_draft'} !=
+                {'completed_actions','pending','next_step','evidence_files'}):
             raise ValueError('work record requires completed_actions, pending, next_step and evidence_files')
+        if 'report_draft' in body and (not isinstance(body['report_draft'], str) or len(body['report_draft']) > 8192):
+            raise ValueError('invalid work record report_draft')
+        if reader and body['evidence_files']:
+            raise ValueError('Reader checkpoint evidence must be cited in its draft; file capture is not authorized')
         for key in ('completed_actions','pending','evidence_files'):
             if (not isinstance(body[key], list) or len(body[key]) > 16
                     or any(not isinstance(v, str) or not v.strip() or len(v) > 1024 for v in body[key])):
@@ -182,6 +203,8 @@ def publish_work_record(*, state_dir: Path, event_log, operation_id: str, role: 
             'payload_digest': payload_digest, 'completed_actions': body['completed_actions'], 'pending': body['pending'],
             'next_step': body['next_step'], 'evidence_refs': evidence,
             'claims_status': 'worker_report_unverified', 'authorizes_execution': False}
+        if 'report_draft' in body:
+            record['report_draft'] = body['report_draft']
         descriptor = write_immutable_json_sidecar(state_dir, record, root='work-records', kind='worker_work_record',
             schema_version=SCHEMA, created_by=role)
         current, _, _ = authorize_work_record(service, operation_id, role, credential)
@@ -194,6 +217,9 @@ def publish_work_record(*, state_dir: Path, event_log, operation_id: str, role: 
 
 
 def current_work_record(state_dir: Path, events: list, manifest: dict, actor: str) -> dict:
+    if (manifest.get('handoff_authority_contract') or {}).get('operation_type') == 'fanout_reader_child':
+        from zf.runtime.reader_work_record import current_reader_work_record
+        return current_reader_work_record(state_dir, events, manifest, actor)
     unavailable = {'status':'unavailable', 'authorizes_execution':False}
     task = TaskStore(state_dir / 'kanban.json').get(manifest.get('task_id',''))
     facts = recovery_attempt_facts(state_dir, task, run_id=manifest.get('workflow_run_id',''))

@@ -63,3 +63,21 @@ Runtime validates schema, identity, evidence presence, result admission,
 attempt/cap, affinity, stale/replay, and terminal state. This checklist decides
 whether the selected checks and evidence meaningfully prove the project
 contract.
+
+## Reader 语义进度与接力
+
+材料已读、条款已评估、报告已编写、结果已准入是四件不同的事。
+在真正需要中断或交接时，用 briefing 的 `artifact work-record publish --stdin`
+保存当前 operation 的记录，不改结果草稿或扩大只读权限：
+
+- completed_actions：已评估的稳定条款 ID、结论、实际证据引用及适用输入。
+- pending：未评估条款、矛盾证据、未决决定与外部等待，不写笼统“继续”。
+- next_step：接手后第一个可执行动作。
+- evidence_files：Reader 固定为空；证据按已有获准 ref 引用，不任意读取文件。
+- 可选 report_draft：当前报告正文；草稿不能冒充独立通过。
+
+沿 briefing 的大小上限和同 ID 幂等约束。不能为塞进检查点删掉验收义务；
+大材料保持原不可变引用。新会话先 recover，再按 work_record_read 及摘要分页
+回读记录，独立判断来源、版本和适用性；损坏/失效记录明确报告，不退回旧记录
+假装当前。记录不证明模型记忆、不免除必读、不重置重试预算或授权额外 turn。
+完成当前剩余评估后用原正式结果命令提交；检查点不能成为循环汇报进度的出口。

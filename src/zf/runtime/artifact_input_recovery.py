@@ -61,6 +61,11 @@ def build_input_recovery(
     }
     from zf.runtime.work_record import current_work_record
     result["work_record"] = current_work_record(state_dir, events, manifest, identity.get("actor", ""))
+    if (manifest.get("handoff_authority_contract") or {}).get("operation_type") == "fanout_reader_child":
+        from zf.runtime.reader_work_record import reader_checkpoint_entry
+        entry = reader_checkpoint_entry(state_dir, events, manifest, identity.get("actor", ""))
+        if entry:
+            result["work_record_publish"] = entry
     if result["work_record"].get("status") == "bound":
         op = shlex.quote(str(result["work_record"]["operation_id"]))
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"

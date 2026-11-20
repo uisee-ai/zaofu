@@ -615,6 +615,11 @@ class FanoutCoordinationMixin(
             )
             return True
         except RunDispatchBlocked as exc:
+            if self._fanout_dispatch_deferred_recently(
+                fanout_id=context.fanout_id, child_id=child.child_id,
+                role_instance=role.instance_id, reason=exc.reason,
+            ):
+                return True
             self.event_writer.append(build_child_dispatch_outcome_event(
                 context,
                 child=child,

@@ -20,7 +20,9 @@ def register(sub):
         child.add_argument('--operation', required=True)
         child.add_argument('--state-dir', default=None)
         if mode == 'publish':
-            child.add_argument('--file', required=True)
+            source = child.add_mutually_exclusive_group(required=True)
+            source.add_argument('--file')
+            source.add_argument('--stdin', action='store_true', help='Read bounded checkpoint JSON without a workspace write')
             child.add_argument('--request-id', required=True)
         else:
             child.add_argument('--predecessor', action='store_true', help='Read the predecessor record pinned in this operation handoff')
@@ -36,8 +38,15 @@ def run(args):
         log = event_log_from_project(ctx.state_dir, config=ctx.config)
         role, credential = credential_from_environment()
         if args.work_record_command == 'publish':
+            body = None
+            if args.stdin:
+                raw = sys.stdin.read(16385)
+                if len(raw.encode('utf-8')) > 16384:
+                    raise ValueError('work record payload exceeds byte budget')
+                body = json.loads(raw)
             result = publish_work_record(state_dir=ctx.state_dir, event_log=log, operation_id=args.operation,
-                role=role, credential=credential, record_file=Path(args.file), request_id=args.request_id)
+                role=role, credential=credential, record_file=Path(args.file) if args.file else None,
+                record_body=body, request_id=args.request_id)
         else:
             service = SemanticResultSubmitService(state_dir=ctx.state_dir, event_log=log, event_writer=EventWriter(log))
             binding, manifest, _ = authorize_work_record(service, args.operation, role, credential)

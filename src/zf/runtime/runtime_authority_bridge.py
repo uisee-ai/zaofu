@@ -40,10 +40,10 @@ class RuntimeAuthorityMixin:
         role_name: str,
         context: DispatchContext | None,
     ) -> None:
-        if context is None or not context.task_id:
+        if context is None:
             return
         try:
-            task = self.task_store.get(context.task_id)
+            task = self.task_store.get(context.task_id) if context.task_id else None
         except Exception:
             task = None
         from zf.runtime.run_admission import (
@@ -53,7 +53,9 @@ class RuntimeAuthorityMixin:
         )
 
         run_id = str(context.run_id or "")
-        blocker = run_dispatch_block_reason(self, task=task, run_id=run_id)
+        from zf.runtime.pause_lifecycle import is_dispatch_paused
+        blocker = ("dispatch_paused" if is_dispatch_paused(self.state_dir)
+                   else run_dispatch_block_reason(self, task=task, run_id=run_id))
         if not blocker:
             return
         record_run_dispatch_blocked(
