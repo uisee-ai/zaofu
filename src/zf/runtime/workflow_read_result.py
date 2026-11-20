@@ -12,6 +12,10 @@ WORKFLOW_READ_PROFILE_ID = "workflow-read"
 WORKFLOW_READ_PROFILE_REVISION = "1"
 
 _TOP_LEVEL_HANDOFF_FIELDS = (
+    "candidate_kind",
+    "owner_decision_items",
+    "plan_artifact_sha256",
+    "source_index_sha256",
     "artifact_refs",
     "evidence_refs",
     "plan_ports",

@@ -78,6 +78,8 @@ def validate_plan_candidate_semantic(
         ),
         review_input_limits=validation.get("review_input_limits"),
     )
+    if result.get("candidate_kind") == "owner_review":
+        return result  # A draft has no executable review package to estimate.
     from zf.runtime.plan_candidate_delivery_cost import candidate_delivery_cost
 
     result["input_cost"]["delivery_estimate"] = candidate_delivery_cost(

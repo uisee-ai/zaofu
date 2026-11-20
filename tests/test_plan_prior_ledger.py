@@ -48,3 +48,24 @@ def test_prior_ledger_fails_closed_on_tampering(tmp_path, problem):
     if problem == "length": descriptor["byte_count"] += 1
     with pytest.raises(ValueError):
         _read(tmp_path, descriptor)
+
+
+@pytest.mark.parametrize('problem', ['', 'legacy_pages', 'unbound_only', 'other_operation', 'other_run', 'mixed_session', 'unobserved', 'tampered'])
+def test_late_session_requires_unique_admitted_receipt_identity(tmp_path, problem):
+    from zf.runtime.plan_prior_ledger import prior_review_session
+    row = _row(operation_id='op', workflow_run_id='run')
+    if problem == 'other_operation': row['operation_id'] = 'other'
+    if problem == 'other_run': row['workflow_run_id'] = 'other'
+    if problem == 'unobserved': row['provider_delivery_status'] = 'unknown'
+    if problem == 'unbound_only': row.pop('operation_id')
+    rows = [row]
+    if problem == 'legacy_pages': rows.append({key: value for key, value in row.items() if key != 'operation_id'})
+    if problem == 'mixed_session': rows.append({**row, 'provider_session_id': 'other'})
+    path, descriptor = _ledger(tmp_path, b''.join((json.dumps(r)+'\n').encode() for r in rows))
+    if problem == 'tampered': path.write_bytes(path.read_bytes().replace(b'session', b'changed'))
+    def resolve():
+        return prior_review_session(tmp_path, descriptor, attempt_id='attempt', operation_id='op', run='run', actor='critic')
+    if problem not in {'', 'legacy_pages'}:
+        with pytest.raises(ValueError): resolve()
+    else:
+        assert resolve() == 'session'

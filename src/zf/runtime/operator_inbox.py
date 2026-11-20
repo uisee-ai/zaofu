@@ -11,21 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import ZfEvent
-from zf.runtime.channel_projection import admitted_channel_question_events
 from zf.runtime.operator_plan_preview import (
     PLAN_APPROVAL_REQUESTED,
     PLAN_APPROVED,
     PLAN_REJECTED,
     plan_preview_available,
-)
-from zf.runtime.operator_inbox_decisions import (
-    bind_channel_question_aliases,
-    channel_decision_item,
-    channel_question_key,
-    is_owner_question,
-    kanban_plan_request,
-    kanban_question_item,
-    kanban_question_item_id,
 )
 from zf.runtime.operator_inbox_read import inbox_item_version, put_inbox_item, record_inbox_read
 
@@ -42,45 +32,32 @@ INBOX_ITEM_READ = "inbox.item.read"
 INBOX_ALL_READ = "inbox.all.read"
 OWNER_VISIBLE_MESSAGE_REQUESTED = "owner.visible_message.requested"
 
-OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v2"
-_HIDDEN_VISIBLE_STATUSES: set[str] = set()
-_ACTION_REQUIRED_KINDS = {
-    "plan_approval",
-    "approval",
-    "human_decision",
-    "channel_decision",
-    "kanban_question",
-    "owner_attention",
-}
+OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v3"
+_ACTION_REQUIRED_KINDS = {"plan_approval", "approval"}
 
 
-def build_operator_inbox(
+def _project_operator_requests(
     state_dir: Path,
     events: Iterable[Any],
     *,
     project_root: Path | None = None,
-) -> dict[str, Any]:
-    """Build an operator inbox from event truth.
+) -> list[dict[str, Any]]:
+    """Project approval and recovery requests from event truth.
 
     The inbox intentionally exposes actions as names only. Executing those
     names remains the Web controlled-action path's responsibility.
     """
 
     events = list(events)
-    channel_events = [
+    typed_events = [
         ZfEvent.from_dict(event) if isinstance(event, dict) else event
         for event in events
     ]
-    channel_admissions = admitted_channel_question_events(channel_events)
     events_by_id = {
         _event_id(event): event for event in events if _event_id(event)
     }
     items: dict[str, dict[str, Any]] = {}
     attention_aliases: dict[str, str] = {}
-    channel_question_aliases: dict[str, str] = {}
-    plan_request_keys: dict[str, str] = {}
-    latest_plan_keys: dict[str, str] = {}
-    suppressed_acknowledged = 0
     read_versions: dict[str, set[str]] = {}
     for event in events:
         etype = _etype(event)
@@ -88,114 +65,13 @@ def build_operator_inbox(
         event_id = _event_id(event)
         ts = _event_ts(event)
 
-        if (etype in {"channel.question.opened", "channel.question.updated",
-                      "channel.question.resolved", "channel.question.merged"}
-            and event_id not in channel_admissions):
-            continue
-
         if etype in {INBOX_ITEM_READ, INBOX_ALL_READ}:
             record_inbox_read(etype, payload, items, read_versions)
             continue
 
-        if etype == "channel.question.opened":
-            if not is_owner_question(payload):
-                continue
-            item = channel_decision_item(event=event, payload=payload)
-            key = str(item["id"])
-            put_inbox_item(items, key, item)
-            bind_channel_question_aliases(
-                channel_question_aliases,
-                payload,
-                key,
-            )
-            continue
+        from zf.runtime.operator_workflow_approvals import project_workflow_approval_event
 
-        if etype == "channel.question.updated":
-            key = channel_question_key(channel_question_aliases, payload)
-            existing = items.get(key)
-            if existing is not None:
-                previous_version = inbox_item_version(existing)
-                existing["title"] = str(
-                    payload.get("header") or existing.get("title") or ""
-                )
-                existing["summary"] = str(
-                    payload.get("question") or existing.get("summary") or ""
-                )
-                for source, target in (
-                    ("options", "decision_options"),
-                    ("allow_other", "allow_other"),
-                    ("recommended_answer", "recommended_answer"),
-                ):
-                    if source in payload:
-                        existing[target] = payload[source]
-                existing["latest_event_id"] = event_id
-                existing["last_seen_at"] = ts
-                if inbox_item_version(existing) != previous_version:
-                    existing["version_event_id"] = event_id
-            continue
-
-        if etype in {"channel.question.resolved", "channel.question.merged"}:
-            key = channel_question_key(channel_question_aliases, payload)
-            existing = items.get(key)
-            if existing is not None:
-                existing["status"] = (
-                    "merged" if etype.endswith(".merged") else "resolved"
-                )
-                existing["resolved_event_id"] = event_id
-                existing["resolved_ts"] = ts
-                existing["resolution"] = str(
-                    payload.get("resolution")
-                    or payload.get("into_question_id")
-                    or "resolved"
-                )
-            continue
-
-        if etype == "kanban.agent.plan.requested":
-            request = kanban_plan_request(payload)
-            if request.get("valid") is False:
-                continue
-            request_id = str(request.get("request_id") or event_id).strip()
-            if not request_id:
-                continue
-            revision = _int_or_none(request.get("revision")) or 1
-            key = kanban_question_item_id(request_id, revision)
-            prior_key = latest_plan_keys.get(request_id)
-            if prior_key and prior_key != key and prior_key in items:
-                prior = items[prior_key]
-                if prior.get("status") == "pending":
-                    prior["status"] = "superseded"
-                    prior["resolved_event_id"] = event_id
-                    prior["resolved_ts"] = ts
-                    prior["resolution"] = f"revision {revision} requested"
-            put_inbox_item(items, key, kanban_question_item(
-                event=event,
-                payload=payload,
-                request=request,
-                request_id=request_id,
-                revision=revision,
-            ))
-            latest_plan_keys[request_id] = key
-            plan_request_keys[event_id] = key
-            plan_request_keys[f"{request_id}:{revision}"] = key
-            continue
-
-        if etype == "kanban.agent.plan.answered":
-            request_event_id = str(
-                payload.get("request_event_id") or ""
-            ).strip()
-            request_id = str(payload.get("request_id") or "").strip()
-            revision = _int_or_none(payload.get("revision")) or 1
-            key = (
-                plan_request_keys.get(request_event_id)
-                or plan_request_keys.get(f"{request_id}:{revision}")
-                or ""
-            )
-            existing = items.get(key)
-            if existing is not None:
-                existing["status"] = "answered"
-                existing["resolved_event_id"] = event_id
-                existing["resolved_ts"] = ts
-                existing["resolution"] = str(payload.get("answer") or "answered")
+        if project_workflow_approval_event(state_dir, items, event):
             continue
 
         if etype == OWNER_VISIBLE_MESSAGE_REQUESTED:
@@ -315,7 +191,6 @@ def build_operator_inbox(
             key = _human_item_id(token)
             existing = items.get(key)
             if existing is None and etype == HUMAN_ESCALATION_ACKNOWLEDGED:
-                suppressed_acknowledged += 1
                 continue
             if existing is None:
                 existing = _human_decision_item(
@@ -346,13 +221,10 @@ def build_operator_inbox(
                     existing["resolved_ts"] = ts
                     existing["resolution"] = str(payload.get("reason") or terminal_status)
                 elif terminal_status == "acknowledged":
-                    suppressed_acknowledged += 1
-                continue
+                    continue
             if etype not in {"runtime.attention.needed", "runtime.attention.unacknowledged", "runtime.attention.escalated"}:
                 continue
-            # Runtime attention is an automation diagnostic, not an operator
-            # inbox item. It remains available in supervisor/dashboard
-            # projections and only enters this inbox after human.escalate.
+            # Runtime attention remains in supervisor/dashboard projections.
             continue
 
     if any(item.get("kind") == "human_decision" and item.get("status") == "pending" for item in items.values()):
@@ -360,9 +232,9 @@ def build_operator_inbox(
             RUN_COMPLETED, _PROGRESS_SUCCESS_EVENTS, _human_escalations_by_token, _pending_human_decisions,
         )
 
-        current_tokens = {row["decision_token"] for row in _pending_human_decisions(channel_events)}
-        known_tokens = _human_escalations_by_token(channel_events)
-        event_positions = {event.id: index for index, event in enumerate(channel_events)}
+        current_tokens = {row["decision_token"] for row in _pending_human_decisions(typed_events)}
+        known_tokens = _human_escalations_by_token(typed_events)
+        event_positions = {event.id: index for index, event in enumerate(typed_events)}
         for item in items.values():
             token = str(item.get("decision_token") or "")
             if (item.get("kind") == "human_decision" and item.get("status") == "pending"
@@ -376,7 +248,7 @@ def build_operator_inbox(
                     event.type in _PROGRESS_SUCCESS_EVENTS | {RUN_COMPLETED}
                     and run_id == str(_payload(event).get("run_id") or _payload(event).get("workflow_run_id")
                                       or event.correlation_id or "")
-                    for event in channel_events[source_index + 1:]
+                    for event in typed_events[source_index + 1:]
                 ))
                 if same_run_progress:
                     item["status"] = "superseded"
@@ -385,60 +257,58 @@ def build_operator_inbox(
                     item["verification_required"] = True
                     item["actions"] = []
 
-    ordered_all = sorted(
+    return sorted(
         (_decorate_item(item, read_versions=read_versions) for item in items.values()),
         key=lambda item: (item.get("status") != "pending", item.get("created_ts") or ""),
     )
-    hidden = [item for item in ordered_all if _hide_from_inbox(item)]
-    ordered = [item for item in ordered_all if not _hide_from_inbox(item)]
+
+
+def _is_review_request(item: dict[str, Any]) -> bool:
+    if item.get("kind") == "plan_approval":
+        return True
+    return item.get("kind") == "approval" and item.get("reviewable") is True
+
+
+def build_runtime_requests(
+    state_dir: Path, events: Iterable[Any], *, project_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Keep recovery and legacy requests discoverable at their operations source.
+
+    This does not resolve requests or grant authorization. Existing controlled
+    actions still validate current source contracts when the operator submits.
+    """
+    return [item for item in _project_operator_requests(state_dir, events, project_root=project_root)
+            if not _is_review_request(item)]
+
+
+def build_operator_inbox(
+    state_dir: Path, events: Iterable[Any], *, project_root: Path | None = None,
+) -> dict[str, Any]:
+    """Project human review/authorization only; source state is never mutated."""
+    ordered = [item for item in _project_operator_requests(state_dir, events, project_root=project_root)
+               if _is_review_request(item)]
     pending = [item for item in ordered if item.get("status") == "pending"]
-    views = _build_views(ordered)
-    action_required_pending = sum(
-        1 for item in ordered
-        if item.get("status") == "pending" and item.get("actionability") == "human_required"
-    )
-    noise_pending = sum(
-        1 for item in ordered
-        if item.get("status") == "pending" and item.get("actionability") == "automation_owned"
-    )
-    notification_pending = sum(
-        1 for item in ordered
-        if item.get("status") == "pending" and item.get("actionability") == "informational"
-    )
     return {
         "schema_version": OPERATOR_INBOX_SCHEMA_VERSION,
         "is_derived_projection": True,
         "summary": {
-            "total": len(ordered),
-            "pending": len(pending),
-            "action_required_pending": action_required_pending,
-            "noise_pending": noise_pending,
-            "notification_pending": notification_pending,
-            "plan_approvals": sum(1 for item in ordered if item.get("kind") == "plan_approval"),
-            "attention": sum(1 for item in ordered if item.get("kind") == "runtime_attention"),
-            "human_decisions": sum(1 for item in ordered if item.get("kind") == "human_decision"),
-            "decisions": sum(1 for item in ordered if item.get("kind") in {"channel_decision", "kanban_question"}),
-            "decisions_pending": sum(1 for item in pending if item.get("kind") in {"channel_decision", "kanban_question"}),
-            "channel_decisions": sum(1 for item in ordered if item.get("kind") == "channel_decision"),
-            "kanban_questions": sum(1 for item in ordered if item.get("kind") == "kanban_question"),
-            "run_deliveries": sum(1 for item in ordered if item.get("kind") == "run_delivery"),
-            "suppressed_acknowledged": suppressed_acknowledged + len(hidden),
-            "unread": sum(1 for item in pending if item.get("unread")),
+            "total": len(ordered), "pending": len(pending),
+            "action_required_pending": len(pending),
+            "plan_approvals": sum(item.get("kind") == "plan_approval" for item in ordered),
+            "approvals": sum(item.get("kind") == "approval" for item in ordered),
+            "unread": sum(bool(item.get("unread")) for item in pending),
+            # Retain zero-valued v2 counters for old clients, never old items.
+            **dict.fromkeys(("noise_pending", "notification_pending", "attention", "human_decisions",
+                            "decisions", "decisions_pending", "channel_decisions", "kanban_questions",
+                            "run_deliveries", "suppressed_acknowledged"), 0),
         },
-        "items": ordered,
-        "pending": pending,
-        "views": views,
+        "items": ordered, "pending": pending, "views": _build_views(ordered),
         "policy": {
-            "truth_source": "events.jsonl",
-            "mutation_path": "controlled-action",
-            "agent_can_propose_plan_approve": False,
-            "agent_can_propose_plan_reject": True,
+            "truth_source": "events.jsonl", "mutation_path": "controlled-action",
+            "agent_can_propose_plan_approve": False, "agent_can_propose_plan_reject": True,
+            "admitted_kinds": ["plan_approval", "approval"],
         },
     }
-
-
-def _hide_from_inbox(item: dict[str, Any]) -> bool:
-    return str(item.get("status") or "") in _HIDDEN_VISIBLE_STATUSES
 
 
 def _decorate_item(
@@ -465,6 +335,7 @@ def _decorate_item(
     )
 
     if status != "pending":
+        decorated["actions"] = []
         decorated["category"] = "resolved"
         decorated["actionability"] = "resolved"
         return decorated
@@ -669,6 +540,7 @@ def _generic_approval_item(
                 ("reject_action", "replan-reject", "Reject"),
             ) if payload.get(key) == action
         ]
+    item["reviewable"] = bool(item["actions"])
     if not item["actions"]:
         item.update({"verification_required": True, "deep_link": "?page=runtime", "deep_link_label": "Open runtime"})
     for key in (

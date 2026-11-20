@@ -98,7 +98,10 @@ def validate_prd_quality_contract(body: dict[str, Any], *, required_version: str
         if not isinstance(evidence_refs, list) or not any(
             isinstance(ref, str) and ref.strip() for ref in evidence_refs
         ):
-            return f"requirement_coverage {row.get('id') or '<unknown>'} requires direct evidence_refs"
+            return (
+                f"requirement_coverage {row.get('id') or '<unknown>'} requires direct evidence_refs "
+                'as a non-empty list[str], e.g. ["sources/requirement.md"], not ref/digest objects; use actual bound source refs'
+            )
         identifier = str(row.get("id") or "").upper()
         kind = str(row.get("kind") or "").lower()
         if identifier.startswith("RES-") or kind == "research":

@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from zf.web.agent_session_runtime import agent_session_process, agent_session_run_cancelled, run_key
+from zf.integrations.controller.execution import managed_turn
 
 
 class KimiHeadlessBackend:
@@ -25,6 +26,7 @@ class KimiHeadlessBackend:
         parts = shlex.split(self.command)
         return bool(parts and shutil.which(parts[0]))
 
+    @managed_turn
     def run_turn(
         self, *, prompt: str, cwd: Path, system_prompt: str, thread_id: str,
         provider_session_id: str, on_session_id: Any, on_message: Any,

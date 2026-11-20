@@ -64,3 +64,15 @@ def test_unrelated_pending_decision_is_preserved_without_expanding_affected_scop
     task_map, index, ledger, inventory, _ = inputs(3)
     ledger['entries'][2].update(disposition='pending_decision', reason='awaiting decision')
     assert declared_coverage_complete(task_map, index, ledger, inventory, affected={'T0'})
+
+
+def test_file_container_ref_is_not_proved_by_one_atomic_anchor():
+    task_map, index, ledger, inventory, _ = inputs(3)
+    task_map['tasks'][0]['source_refs'] = ['req.md']
+    index['tasks'][0]['source_refs'] = ['req.md']
+    assert not declared_coverage_complete(task_map, index, ledger, inventory, affected={'T0'})
+    # An explicit atomic ownership mapping restores eligibility without
+    # treating the other sections of the same file as already covered.
+    task_map['tasks'][0]['source_refs'] = ['req.md#T0']
+    index['tasks'][0]['source_refs'] = ['req.md#T0']
+    assert declared_coverage_complete(task_map, index, ledger, inventory, affected={'T0'})

@@ -1475,3 +1475,32 @@ def test_workflow_resume_does_not_broadcast_taskless_events_to_all_tasks() -> No
     assert _events_for_task(events, "cli-impl") == [explicit]
     assert _events_for_task(events, "scaffold") == []
     assert _events_for_task(events, "cli-tests") == [taskless_exact_payload]
+
+
+def test_candidate_retry_preserves_only_bound_kernel_freeze_origin():
+    config = _config()
+    stage = config.workflow.stages[0]
+    stage.trigger = "candidate.ready"
+    stage.attempt_domain = "verify"
+    source = ZfEvent(type=stage.trigger, origin="kernel", correlation_id="r", payload={
+        "schema_version": "candidate-freeze-receipt.v1", "freeze_id": "freeze",
+        "candidate_ref": "refs/heads/candidate/T", "candidate_head_commit": "a" * 40,
+        "plan_artifact_package_digest": "b" * 64, "task_map_generation": "g1",
+    })
+    failure = ZfEvent(type=stage.aggregate.failure_event, origin="kernel", correlation_id="r",
+                      payload={"candidate_event_id": source.id, "reason": "dependency blocked"})
+
+    def retry_origin():
+        trigger, note = plan_reader_stage_replan(config, [source, failure], failure)
+        assert trigger is not None, note
+        return trigger.origin
+
+    assert retry_origin() == "kernel"
+    source.origin = ""
+    assert retry_origin() == ""
+    source.origin = "kernel"
+    failure.origin = ""
+    assert retry_origin() == ""
+    failure.origin = "kernel"
+    failure.payload["candidate_event_id"] = "another-freeze"
+    assert retry_origin() == ""

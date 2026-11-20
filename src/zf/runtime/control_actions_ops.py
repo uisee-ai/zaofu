@@ -452,6 +452,9 @@ class OpsActionsMixin:
         payload: dict,
     ) -> dict:
         proposal_only = bool(payload.get("proposal_only") or payload.get("dry_run"))
+        if not proposal_only and action in {"runtime-resume", "runtime-restart"}:
+            from zf.integrations.controller.execution import check_project
+            check_project(self.project_root)
         requires_approval = action in {"runtime-stop", "runtime-restart"}
         approval_ref = _approval_ref(payload)
         if requires_approval and not proposal_only and not approval_ref:

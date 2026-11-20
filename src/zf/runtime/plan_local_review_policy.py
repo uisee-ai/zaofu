@@ -85,7 +85,15 @@ def _scope(
     if (not rework.get("rework_of") or any(rework.get(key) for key in (
             "requirement_amendment_ref", "human_resolution", "owner_decision_resolution", "operator_override"))):
         return required
-    requested = rework.get("task_ids")
+    scope_key = "changed_task_ids" if "changed_task_ids" in rework else "task_ids"
+    requested = rework.get(scope_key)
+    if scope_key == "changed_task_ids":
+        decisions = [event for event in events if event.id == rework.get("rework_of")
+                     and event.type == "plan.rejected" and event.actor == "operator"
+                     and event.payload.get("workflow_run_id") == run
+                     and event.payload.get(scope_key) == requested]
+        if len(decisions) != 1:
+            return required
     if (not isinstance(requested, list) or not requested or len(requested) != len(affected)
             or set(requested) != set(affected)):
         return required
@@ -137,7 +145,7 @@ def _scope(
             or triggers[0].payload.get("workflow_run_id") != run
             or triggers[0].payload.get("rework_of") != rework.get("rework_of")
             or triggers[0].payload.get("plan_artifact_package_digest") != package_source.get("sha256")
-            or triggers[0].payload.get("task_ids") != requested):
+            or triggers[0].payload.get(scope_key) != requested):
         return required
     bindings = contract.get("source_bindings")
     if not isinstance(bindings, list):
@@ -172,16 +180,11 @@ def _scope(
             return required
         candidate_ports[name] = item
     old_ports = {str(p["logical_name"]): p for p in [*package.get("produced", []), *package.get("inherited", [])]}
-    previous_bindings = previous.get("_critic_source_bindings") or []
-    if any(name != "goal_claim_set" and not any(
-        isinstance(item, Mapping) and item.get("sha256") == port.get("sha256")
-        and str(item.get("source_id") or "").startswith(("child-artifact-", "child-result-"))
-        and any(isinstance(source, Mapping) and all(source.get(k) == item.get(k)
-                    for k in ("source_id", "artifact_id", "ref", "sha256"))
-                for source in previous.get("sources", []))
-        and _has_full_read(prior_required, item)
-        and _has_observed_read(prior_observed, item)
-        for item in previous_bindings) for name, port in old_ports.items()):
+    from zf.runtime.plan_port_review_proof import port_has_prior_review
+
+    if any(name != "goal_claim_set" and not port_has_prior_review(
+        state_dir, port=port, package=package, previous=previous,
+    ) for name, port in old_ports.items()):
         return required
     selected = {str(p.get("logical_name") or ""): p for p in ports if isinstance(p, Mapping)}
     if len(selected) != len(ports) or not selected or "task_map" in selected:
@@ -344,6 +347,19 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
             or not body.get("plan_synth_contract_digest")
             or body.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
         raise ValueError("baseline has no approved exact Critic result")
+    return reviewed_critic_manifest(state_dir, events, run, synth, expected_verdict="passed")
+
+
+def reviewed_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: str,
+                             synth: ZfEvent, *, expected_verdict: str) -> dict[str, Any]:
+    """Validate review facts; only the passed-package wrapper grants baseline use."""
+    if expected_verdict not in {"passed", "rejected"}:
+        raise ValueError("unsupported historical review verdict")
+    body = synth.payload
+    if (synth.type != "fanout.synth.completed" or body.get("workflow_run_id") != run
+            or body.get("status") != "completed" or not body.get("plan_synth_contract_digest")
+            or body.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
+        raise ValueError("historical review candidate differs")
     admission = [e for e in events if e.type == "workflow.call.result.admitted"
                  and e.actor == "zf-cli"
                  and (e.origin == "kernel" or (not e.origin
@@ -371,22 +387,27 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
               and event.payload.get("active_attempt_id") == body.get("attempt_id")
               and event.payload.get("request_hash") == identity.get("request_hash")
               and event.payload.get("role_instance") == identity.get("producer_role")]
-    sessions = {str(event.payload.get("provider_session_id") or "") for event in starts}
-    if len(sessions) != 1 or not next(iter(sessions)):
-        raise ValueError("baseline Critic provider session is unproven")
-    session = next(iter(sessions))
-    envelope_session = (envelope.get("execution") or {}).get("provider_session_id")
-    if envelope_session and envelope_session != session:
-        raise ValueError("baseline Critic provider session differs")
+    if not starts:
+        raise ValueError("baseline Critic start identity is unproven")
     ledger_ref = admission[0].payload.get("read_ledger_ref")
     consumption = envelope.get("input_consumption") or {}
     if (not isinstance(ledger_ref, Mapping) or consumption.get("status") != "satisfied"
             or consumption.get("read_ledger_ref") != ledger_ref.get("ref")
             or consumption.get("read_ledger_digest") != ledger_ref.get("sha256")):
         raise ValueError("baseline Critic ledger binding differs")
-    from zf.runtime.plan_prior_ledger import prior_observed_rows
+    from zf.runtime.plan_prior_ledger import prior_observed_rows, prior_review_session
     from zf.runtime.artifact_output_delivery import observe_artifact_delivery
 
+    sessions = {str(event.payload.get("provider_session_id") or "") for event in starts} - {""}
+    if len(sessions) > 1:
+        raise ValueError("baseline Critic provider session is ambiguous")
+    session = next(iter(sessions)) if sessions else prior_review_session(
+        state_dir, ledger_ref, attempt_id=str(body.get("attempt_id") or ""),
+        operation_id=str(body.get("operation_id") or ""), run=run,
+        actor=str(identity.get("producer_role") or ""))
+    envelope_session = (envelope.get("execution") or {}).get("provider_session_id")
+    if envelope_session and envelope_session != session:
+        raise ValueError("baseline Critic provider session differs")
     recorded = prior_observed_rows(state_dir, ledger_ref, attempt_id=str(body.get("attempt_id") or ""),
                                    session_id=session, actor=str(identity.get("producer_role") or ""))
     checked = observe_artifact_delivery(state_dir, recorded)
@@ -401,7 +422,7 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
         raise ValueError("baseline Critic envelope does not match admitted result")
     control = hydrate_sidecar_ref(state_dir, control_ref).payload
     if (control.get("schema_version") != "plan-synthesis-result.v1"
-            or control.get("execution_status") != "completed" or control.get("verdict") != "passed"
+            or control.get("execution_status") != "completed" or control.get("verdict") != expected_verdict
             or control.get("plan_synth_contract_digest") != body.get("plan_synth_contract_digest")
             or control.get("reviewed_plan_candidate_digest") != body.get("plan_synth_contract_digest")):
         raise ValueError("baseline Critic semantic result was not approved")
@@ -475,8 +496,10 @@ def _previous_critic_manifest(state_dir: Path, events: Sequence[ZfEvent], run: s
     for binding in child_bindings:
         matching = [source for source in previous.get("sources", []) if isinstance(source, Mapping)
                     and all(source.get(key) == binding.get(key) for key in ("source_id", "artifact_id", "sha256"))]
-        if (len(matching) != 1 or not _has_full_read(policy["required_reads"], matching[0])
-                or not _has_observed_read(observed, matching[0])):
+        from zf.runtime.plan_input_read_selection import complete_partition_read
+
+        if (len(matching) != 1 or not complete_partition_read(
+                state_dir, matching[0], policy["required_reads"], observed)):
             raise ValueError("baseline producer result is not a required bound source")
         report = hydrate_sidecar_ref(state_dir, dict(matching[0])).payload
         if (not isinstance(report, Mapping) or report.get("child_id") != binding.get("child_id")

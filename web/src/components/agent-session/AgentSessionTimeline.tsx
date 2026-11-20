@@ -602,6 +602,11 @@ function RunBlock({
             </>
           ) : (
             <>
+              {channelChatMode && replyParts.length > 0 && (run.status === "failed" || run.status === "cancelled") && <aside className="agent-incomplete-notice" role="status">
+                <strong>生成中断 · 以下为未完成回复</strong>
+                <p>此回复不代表正式 PRD 或已接纳交付物。请以页面的正式产物状态为准。</p>
+                {detailParts.filter(part => part.kind === "error").map(part => <p key={part.id}>{part.summary || part.title}</p>)}
+              </aside>}
               {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
               {renderChatDetails(detailParts)}
             </>

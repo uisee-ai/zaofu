@@ -1,3 +1,4 @@
+import { configureDashboardSession, localWebActionToken, watchDashboardLogin } from "../api/dashboardLaunch.js";
 import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { useBoardBootstrap } from "./useBoardBootstrap";
@@ -208,6 +209,8 @@ import {
   type ProjectAdmissionDraft,
 } from "../components/workspace/ProjectAdmissionModal";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
+import { AccountControls } from "../components/workspace/AccountControls";
+
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
 import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
@@ -223,7 +226,7 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
 const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v", "request", "expected_run", "workflow_node"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   project: new Set(["agent", "agent_thread", "agent_request"]),
-  channels: new Set(["thread", "question"]),
+  channels: new Set(["thread", "question", "preview", "reader"]),
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
   settings: new Set(["settings"]),
@@ -271,6 +274,7 @@ interface NewChannelDraft {
   channelId: string;
 }
 
+const SettingsRoute = lazy(() => import("../components/settings/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const TerminalDrawer = lazy(() => import("../components/terminal/TerminalDrawer"));
 
 interface RuntimeActionState {
@@ -465,7 +469,7 @@ function normalizeWebActionToken(value: string): string {
 
 function storedWebActionToken(): string {
   if (typeof window === "undefined") return "";
-  return normalizeWebActionToken(window.localStorage.getItem("zf.webActionToken") ?? "");
+  return normalizeWebActionToken(localWebActionToken());
 }
 
 function isNoiseTask(task: Task): boolean {
@@ -670,9 +674,7 @@ export function App() {
   const [projectionDetail, setProjectionDetail] = useState<Record<string, unknown> | null>(null);
   const projectionNavigationRef = useRef("");
   const [actionResult, setActionResult] = useState<ActionResponse | null>(null);
-  const [webActionTokenPresent, setWebActionTokenPresent] = useState(() =>
-    Boolean(storedWebActionToken()),
-  );
+  const [webActionTokenPresent, setWebActionTokenPresent] = useState(false);
   const [webSessionStatus, setWebSessionStatus] = useState<NonNullable<RuntimeSummary["web_session"]> | null>(null);
   const { preferences, t } = useUiPreferences();
   const themeMode = preferences.theme;
@@ -694,7 +696,25 @@ export function App() {
   const [projectWizardError, setProjectWizardError] = useState("");
   const [projectSetupNotice, setProjectSetupNotice] = useState<{ projectId: string; message: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
+  const [welcomeAttempt, retryWelcome] = useState(0);
+  const [welcomeError, setWelcomeError] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionAttempt, retrySession] = useState(0);
   useEffect(() => {
+    let cancelled = false;
+    setSessionError(false);
+    getWebSession()
+      .then((session) => {
+        if (cancelled) return;
+        setWebSessionStatus(session);
+      })
+      .catch(() => { if (!cancelled) setSessionError(true); });
+    return () => { cancelled = true; };
+  }, [sessionAttempt]);
+  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  useEffect(() => {
+    if (!sessionMode || sessionMode === "read_only") return;
+    setWelcomeError(false);
     let cancelled = false;
     getOnboarding()
       .then((o) => {
@@ -703,18 +723,19 @@ export function App() {
           setShowWelcome(o.show_welcome);
         }
       })
-      .catch(() => { if (!cancelled) setShowWelcome(false); });
+      .catch(() => { if (!cancelled) setWelcomeError(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [sessionMode, welcomeAttempt]);
   useEffect(() => {
-    let cancelled = false;
-    getWebSession()
-      .then((session) => {
-        if (!cancelled) setWebSessionStatus(session);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
+    if (!sessionMode) return;
+    configureDashboardSession(window.localStorage, sessionMode);
+    setWebActionTokenPresent(Boolean(storedWebActionToken()));
+  }, [sessionMode]);
+  useEffect(() => {
+    if (webSessionStatus?.local_account || webSessionStatus?.controller_managed) {
+      return watchDashboardLogin(Boolean(webSessionStatus.controller_managed));
+    }
+  }, [webSessionStatus?.local_account, webSessionStatus?.controller_managed]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -1924,7 +1945,20 @@ export function App() {
     setProjectWizardOpen(true);
   }
 
+  function selectProjectForTool() {
+    if (!activeProjectId) {
+      openProjectWizard();
+      return false;
+    }
+    if (activeProject && !activeProjectReady) {
+      setPage("project");
+      return false;
+    }
+    return true;
+  }
+
   function openTaskAgent() {
+    if (!selectProjectForTool()) return;
     setAgentPanelHasOpened(true);
     setAgentPanelMode((mode) => (mode === "fullscreen" ? "fullscreen" : "docked"));
     setOrchestratorFocusSignal((value) => value + 1);
@@ -2076,7 +2110,8 @@ export function App() {
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
 
-  const agentPanelVisible = agentPanelMode !== "collapsed";
+  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
+  const agentPanelVisible = projectToolsAvailable && agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
     : "docked";
@@ -2106,10 +2141,25 @@ export function App() {
     />
   );
 
-  if (showWelcome) {
+  const cloudSession = sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed);
+  const localSettings = page === "settings" && Boolean(webSessionStatus?.local_account);
+  const accountControls = webSessionStatus?.local_account || cloudSession
+    ? <AccountControls username={webSessionStatus?.username} local={Boolean(webSessionStatus?.local_account)} />
+    : null;
+  if (sessionError && !sessionMode) return <main role="alert">登录状态加载失败。
+    <button type="button" onClick={() => retrySession(n => n + 1)}>重试</button></main>;
+  if (!localSettings && welcomeError) return <main role="alert">首次设置状态加载失败。
+    <button type="button" onClick={() => retryWelcome(n => n + 1)}>重试</button>{accountControls}</main>;
+  if (!localSettings && showWelcome === null && (sessionMode === "local_account" || sessionMode === "controller_session")) {
+    return <main role="status">正在读取工作台设置…</main>;
+  }
+  if (!localSettings && showWelcome && onboardingStatus && sessionMode && sessionMode !== "read_only") {
     return (
       <WelcomeWizard
+        initialStatus={onboardingStatus}
         accessReady={actionGate.actionReady}
+        sessionAuthorized={sessionMode === "controller_session" || sessionMode === "local_account"}
+        accountControls={accountControls}
         tokenPresent={webActionTokenPresent}
         onSaveToken={saveWebActionToken}
         onDone={() => {
@@ -2129,6 +2179,7 @@ export function App() {
           {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
+          {cloudSession && accountControls}
           <div className="topbar-search-control">
             <input
               className="search-input"
@@ -2172,12 +2223,11 @@ export function App() {
           <span className="topbar-tool-separator" aria-hidden="true" />
           <button
             className="topbar-tool-button topbar-terminal-button topbar-terminal-launch"
-            disabled={!activeProjectId}
             type="button"
             aria-label="Toggle Terminal"
             aria-pressed={terminalOpen}
             title={terminalOpen ? "Close terminal" : "Open terminal"}
-            onClick={() => setTerminalOpen((value) => !value)}
+            onClick={() => { if (selectProjectForTool()) setTerminalOpen(value => !value); }}
           >
             <Terminal size={16} strokeWidth={1.9} aria-hidden="true" />
           </button>
@@ -2191,8 +2241,9 @@ export function App() {
       </div> : null}
       <ReadProjectionNotice snapshot={snapshot} />
 
-      <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>
+      <main className={`workspace ${terminalOpen && projectToolsAvailable ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
+          accountControls={webSessionStatus?.local_account ? accountControls : null}
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
@@ -2213,7 +2264,12 @@ export function App() {
         />
 
         <section className="board-panel" data-page={page}>
-          {!activeProjectId ? (
+          {page === "settings" ? (
+            <Suspense fallback={<div role="status">{t("Settings")}</div>}>
+              <SettingsRoute snapshot={snapshot} localAccount={Boolean(webSessionStatus?.local_account)}
+                canChangePassword={Boolean(webSessionStatus?.actions_enabled)} />
+            </Suspense>
+          ) : !activeProjectId ? (
             <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
             <ProjectInitPanel
@@ -2232,7 +2288,7 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+            <PlanApprovalPanel readOnly={(snapshot?.runtime.web_session ?? webSessionStatus)?.mode === "read_only"} projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
               inboxCountEpoch.current += 1;
               setInboxPendingCount(inbox?.summary.unread ?? null);
             }} />
@@ -2397,7 +2453,7 @@ export function App() {
             </section>
           )}
         </section>
-        {terminalOpen && activeProjectId ? (
+        {terminalOpen && projectToolsAvailable && activeProjectId ? (
           <Suspense fallback={<div className="web-terminal-loading">Loading terminal UI…</div>}>
             <TerminalDrawer
               key={activeProjectId}
@@ -2408,7 +2464,7 @@ export function App() {
           </Suspense>
         ) : null}
       </main>
-      {agentPanelMode === "collapsed" ? (
+      {!agentPanelVisible ? (
         <button
           className="agent-fab"
           type="button"
@@ -2418,7 +2474,7 @@ export function App() {
           <MessageCircle size={20} strokeWidth={1.9} aria-hidden="true" />
         </button>
       ) : null}
-      {agentPanelHasOpened ? (
+      {agentPanelHasOpened && projectToolsAvailable ? (
         <div
           aria-hidden={agentPanelVisible ? undefined : true}
           className={`agent-page-shell ${renderedAgentPanelMode}`}

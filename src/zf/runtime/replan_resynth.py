@@ -35,6 +35,7 @@ _GOAL_CLAIM_SET_IDENTITY_KEYS = (
 )
 _REPLAN_SEMANTIC_PASSTHROUGH_KEYS = (
     "input_task_ids",
+    "candidate_event_id",
     "source_commit",
     "candidate_base_commit",
     "previous_plan_candidate_refs",
@@ -108,6 +109,8 @@ def build_replan_resynth_event(
         trace_id=str(getattr(plan, "trace_id", "") or ""),
     )
     payload = dict(base_payload)
+    # Edit scope is tied to one operator decision, never inherited by a retry.
+    payload.pop("changed_task_ids", None)
     # The previous trigger's reason describes its own stage, not this replan.
     # Current context is carried by rework_source, feedback and classification.
     payload.pop("reason", None)
@@ -116,6 +119,9 @@ def build_replan_resynth_event(
         str(getattr(plan, "source_event_id", "") or ""),
     )
     source_payload = _event_payload(source_event)
+    if source_payload.get("candidate_event_id") or getattr(plan, "candidate_event_id", ""):
+        for key in ("input_task_ids", "failed_task_ids", "task_ids", "downstream_task_ids", "resume_scope"):
+            payload.pop(key, None)
     feedback = list(getattr(plan, "feedback", ()) or ())
     source_type = str(
         getattr(source_event, "type", "")
@@ -173,6 +179,8 @@ def build_replan_resynth_event(
         payload.pop("input_task_ids", None)
         if scope := input_task_ids(source_payload):
             payload["input_task_ids"] = scope
+        if source_payload.get("changed_task_ids"):
+            payload["changed_task_ids"] = source_payload["changed_task_ids"]
     for key in _CANDIDATE_REWORK_IDENTITY_KEYS:
         value = getattr(plan, key, None)
         if value not in (None, "", [], {}):

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Code, Download } from "lucide-react";
-import { MarkdownText } from "../agent-session/MarkdownText";
+import { DocumentMarkdown } from "../agent-session/DocumentMarkdown";
 import { parsePlanMarkdown, planMarkdownPages } from "./planMarkdownPages";
+import { useDocumentSearch } from "./useDocumentSearch";
+import { documentReferences } from "../agent-session/documentReferences";
 import { planDocumentSections } from "./planDocumentSections";
 
-export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange }: { content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
+export default function PlanMarkdownDocument({ content, reviewContent = "", initialAnchor = "", onAnchorChange, statusLine }: { statusLine?: string; content: string; reviewContent?: string; initialAnchor?: string; onAnchorChange?: (anchor: string) => void }) {
   const tree = useMemo(() => parsePlanMarkdown(content), [content]);
   const pages = useMemo(() => planMarkdownPages(content, tree), [content, tree]);
+  const definitions = useMemo(() => documentReferences(pages.filter(page => !page.plain).map(page => page.markdown)), [pages]);
   const sections = useMemo(() => planDocumentSections(content, tree), [content, tree]);
   const [search, setSearch] = useState("");
   const [anchor, setAnchor] = useState(initialAnchor);
@@ -16,6 +19,7 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
   const scrollPane = useRef<HTMLDivElement>(null);
   const index = Math.min(selectedPage, pages.length - 1);
   const current = pages[index];
+  const matches = useDocumentSearch(scrollPane, search, `${content}:${continuous}:${showSource}:${index}`);
   useEffect(() => {
     scrollPane.current?.scrollTo({ top: 0 });
   }, [index, content, continuous]);
@@ -41,6 +45,7 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
   };
   return (
     <div className="plan-document">
+      <style>{matches.style}</style>
       <nav className="plan-document-toolbar" aria-label="计划阅读导航">
         <button
           type="button"
@@ -64,6 +69,24 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
             <button type="button" className="delivery-action-button" disabled={index === pages.length - 1} onClick={() => setPage(index + 1)}>下一页</button>
           </div>
         </>}
+        <details className="plan-document-tools"><summary>章节索引与搜索</summary>
+        <div className="plan-document-tools-panel">
+        <div className="plan-document-search" role="search" aria-label="搜索计划正文">
+          <label>搜索正文<input type="search" value={search} onChange={event => { setSearch(event.target.value); setContinuous(true); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); matches.move(event.shiftKey ? -1 : 1); } }} /></label>
+          {search && <><span aria-live="polite">{matches.count ? matches.active + 1 : 0} / {matches.count} 处匹配</span>
+            <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={() => matches.move(-1)}>上一处</button>
+            <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={() => matches.move(1)}>下一处</button>
+            <button type="button" className="delivery-action-button" disabled={!matches.count} onClick={matches.reveal}>定位匹配</button></>}
+        </div>
+        <div className="plan-document-outline">
+          {statusLine && <p className="plan-document-status">{statusLine}</p>}
+          <p>{sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).length} 个匹配章节</p>
+          <ol>
+            {reviewContent ? <li><button type="button" onClick={() => { setContinuous(true); scrollPane.current?.scrollTo({ top: 0 }); }}>人工审批摘要</button></li> : null}
+            {sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).map(section => <li key={section.key}><button type="button" onClick={() => jump(section.anchor)} style={{ paddingInlineStart: `${Math.max(0, section.level - 1) * 12}px` }}>{section.title}</button></li>)}
+          </ol>
+        </div>
+        </div></details>
         <div className="plan-document-actions">
           <button type="button" className="delivery-action-button" aria-label={showSource ? "格式化阅读" : "查看源码"} title={showSource ? "格式化阅读" : "查看源码"} aria-pressed={showSource} onClick={() => setShowSource(!showSource)}>
             {showSource ? <BookOpen size={14} aria-hidden="true" /> : <Code size={14} aria-hidden="true" />}
@@ -77,28 +100,19 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
           </button>}
         </div>
       </nav>
-      <details className="plan-document-outline">
-        <summary>章节索引</summary>
-        <label>搜索正文<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
-        <p>{sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).length} 个匹配章节</p>
-        <ol>
-          {reviewContent ? <li><button type="button" onClick={() => { setContinuous(true); scrollPane.current?.scrollTo({ top: 0 }); }}>人工审批摘要</button></li> : null}
-          {sections.filter(section => section.content.toLowerCase().includes(search.toLowerCase())).map(section => <li key={section.key}><button type="button" onClick={() => jump(section.anchor)}>{section.title}</button></li>)}
-        </ol>
-      </details>
       <div key={index} ref={scrollPane} className="plan-preview-markdown-pane" role="region" aria-label="计划正文" tabIndex={0}>
         {continuous
           ? showSource
             ? <pre className="plan-preview-markdown plan-document-source">{content}</pre>
             : <>
-              {reviewContent ? <details className="plan-review-card"><summary>人工审批摘要与工程审计</summary><MarkdownText className="plan-preview-markdown plan-review-dossier" content={reviewContent} /></details> : null}
-              <ContinuousPlanBody sections={sections} documentPages={pages} anchor={anchor} scrollPane={scrollPane} />
+              {reviewContent ? <details className="plan-review-card"><summary>人工审批摘要与工程审计</summary><DocumentMarkdown className="plan-preview-markdown plan-review-dossier" content={reviewContent} /></details> : null}
+              <ContinuousPlanBody sections={sections} documentPages={pages} anchor={anchor} scrollPane={scrollPane} definitions={definitions} searching={Boolean(search.trim())} />
             </>
           : <>
             {current.plain && !showSource && <p className="muted" role="status">当前段以原文显示；全文可下载。</p>}
             {showSource || current.plain
               ? <pre className="plan-preview-markdown plan-document-source">{current.source}</pre>
-              : <MarkdownText className="plan-preview-markdown" content={current.markdown} />}
+              : <DocumentMarkdown className="plan-preview-markdown" content={current.markdown} definitions={definitions} />}
           </>}
       </div>
     </div>
@@ -107,7 +121,8 @@ export default function PlanMarkdownDocument({ content, reviewContent = "", init
 
 // Keep the toolbar and first readable pages available while later Markdown is
 // rendered on demand. The full source and download remain independently usable.
-function ContinuousPlanBody({ sections, documentPages, anchor, scrollPane }: {
+function ContinuousPlanBody({ sections, documentPages, anchor, scrollPane, definitions, searching }: {
+  definitions: ReturnType<typeof documentReferences>; searching: boolean;
   sections: ReturnType<typeof planDocumentSections>; anchor: string;
   documentPages: ReturnType<typeof planMarkdownPages>;
   scrollPane: { current: HTMLDivElement | null };
@@ -120,7 +135,7 @@ function ContinuousPlanBody({ sections, documentPages, anchor, scrollPane }: {
   const sentinel = useRef<HTMLButtonElement>(null);
   useEffect(() => setVisible(4), [pages]);
   const target = anchor ? pages.findIndex(page => page.anchor === anchor) : -1;
-  const count = Math.max(visible, target + 1);
+  const count = searching ? pages.length : Math.max(visible, target + 1);
   useEffect(() => {
     if (target >= 0) {
       setVisible(value => Math.max(value, target + 1));
@@ -140,7 +155,7 @@ function ContinuousPlanBody({ sections, documentPages, anchor, scrollPane }: {
     {pages.slice(0, count).map(page => <section key={page.key} data-plan-anchor={page.anchor || undefined}>
       {page.plain
         ? <pre className="plan-preview-markdown plan-document-source">{page.source}</pre>
-        : <MarkdownText className="plan-preview-markdown" content={page.markdown} />}
+        : <DocumentMarkdown className="plan-preview-markdown" content={page.markdown} definitions={definitions} />}
     </section>)}
     {count < pages.length && <button ref={sentinel} type="button" className="delivery-action-button"
       onClick={() => setVisible(value => Math.min(value + 2, pages.length))}>

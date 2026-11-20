@@ -941,6 +941,7 @@ class LifecycleManagerMixin(
 
     def restart_role_instance(
         self, role: "RoleConfig", *, resume_failed_synth: str = "",
+        resume_failed_reader: str = "", recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Restart one role through the same recovery path as the watchdog.
 
@@ -966,6 +967,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=not force_fresh_session,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance(
@@ -976,6 +979,8 @@ class LifecycleManagerMixin(
         inject_idle_prompt: bool = True,
         force_fresh_session: bool = False,
         resume_failed_synth: str = "",
+        resume_failed_reader: str = "",
+        recovery_approval_ref: str = "",
     ) -> "WorkflowRuntimeDecision":
         """Serialize replacement of one provider session across processes.
 
@@ -993,6 +998,8 @@ class LifecycleManagerMixin(
             inject_idle_prompt=inject_idle_prompt,
             force_fresh_session=force_fresh_session,
             resume_failed_synth=resume_failed_synth,
+            resume_failed_reader=resume_failed_reader,
+            recovery_approval_ref=recovery_approval_ref,
         )
 
     def _respawn_instance_with_lease(
@@ -1931,12 +1938,9 @@ class LifecycleManagerMixin(
                 "The original request identity and required reads remain unchanged."
             )
             if role.role_kind == "reader":
-                from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+                from zf.runtime.reader_respawn_continuation import reader_recovery_guidance
 
-                prompt += reader_continuation_guidance(
-                    attempt_id=str(fanout_child.get("attempt_id") or ""),
-                    backend=role.backend, cli=zf_cli_cmd(),
-                )
+                prompt += reader_recovery_guidance(self, role, fanout_child)
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,

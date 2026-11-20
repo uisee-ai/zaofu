@@ -1269,7 +1269,10 @@ def _batch_checkpoint_from_event(
         completed_task_ids = _unique_strings([
             *_string_list(aggregate.completed_task_ids if aggregate else []),
             *_string_list(payload.get("completed_task_ids")),
-            *_string_list(payload.get("task_ids")),
+            *(
+                [] if source_event_type == "integration.failed"
+                else _string_list(payload.get("task_ids"))
+            ),
         ])
     failed_task_ids = (
         []

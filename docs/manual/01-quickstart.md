@@ -31,11 +31,18 @@
 
 ## 1. 安装 ZaoFu（必需）
 
+首次安装可在源码根目录运行 `./install.sh`，选择独立使用、接入 Controller，或前往云端门户。
+默认 standalone 不要求 Controller 账号。脚本安装用户级依赖、构建并启动 Dashboard；
+非交互使用 `./install.sh --mode standalone`。注册码、远程访问和重复安装说明见
+[安装与 Controller 选择](getting-started/install.md)。下面保留开发者手动安装路径。
+
 必需环境：
 
 - Python 3.11+、`uv`、Git、`tmux`；
 - 至少一个已安装并登录的 provider CLI：Codex 或 Claude Code；
 - 使用 Claude Code stream-json transport 时安装 `stream-json` extra。
+
+Kanban Agent 使用运行 ZaoFu 的主机上的 Codex CLI。若 ChatGPT 登录提示所选模型不受支持，在同一运行用户下检查 `codex --version` 和交互终端的 `/model`。较旧的客户端可能看不到账号已可用的模型。更新实际启动的 CLI 后，可在原会话重新发送。若配置了 `ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD`，检查该命令指向的客户端。可见模型以当前客户端与登录返回的目录为准。[Codex 模型说明](https://developers.openai.com/codex/models/)
 
 从 source checkout 安装并检查 CLI：
 
@@ -58,18 +65,18 @@ export ZAOFU_ROOT=/path/to/zaofu
   --workspace-only
 ```
 
-该 launcher 会构建 Web、复用或创建 Web action token、加载 Workspace provider
+该 launcher 会构建 Web、启用本地账号登录、加载 Workspace provider
 环境，并为可信本地 Codex headless 应用兼容的 sandbox 策略。浏览器访问
 `http://127.0.0.1:8001/`。只有在可信网络中才绑定 `0.0.0.0`。
 
 完成标志：Dashboard 打开并进入安装 Onboarding。安装步骤只需要按本教程执行，
 本页不要求先创建示例 Project。
 
-### Web Terminal（默认启用，可选安装）
+### Web Terminal（install.sh 集成安装）
 
-Dashboard host 默认启用 Web Terminal；这只开放受鉴权的 Terminal 能力，不会自动安装或
-启动 CLI。若要在 Dashboard 内实际运行 Claude Code/Codex TUI，还需安装 Herdr `>=0.8.0`；
-它是宿主二进制，不属于 `uv sync` 的 Python 依赖：
+Dashboard host 默认启用 Web Terminal；运行时不会自动安装或启动 CLI。根目录 `install.sh`
+已经集成 Herdr 下载、SHA256 和协议检查。若使用手动 `uv sync` 路径，仍需安装 Herdr
+`>=0.8.0`；它是宿主二进制，不属于 Python 依赖：
 
 ```bash
 curl -fsSL https://herdr.dev/install.sh | sh
@@ -95,15 +102,10 @@ orchestrator/roles backend：single Project 只显示一个 Provider，Mixed tea
 
 ## 2. Bootstrap（必需）
 
-首次进入按四步完成安装级设置：
-
-1. **Provider**：选择 Codex 或 Claude Code 作为 primary provider；两者都可用时可启用
-   Mixed team，由另一个 provider 承担独立 verify lane。
-2. **Environment**：检查宿主依赖和 provider 可用性。
-3. **Access**：为当前浏览器建立受控 action session。
-4. **Ready**：进入空 Workspace。
-
-![Bootstrap 四步动态演示](assets/quickstart-bootstrap.webp)
+首次进入本地工作台先用 `zaofu / zaofu` 登录。云端在空间获批后使用已有的 Keycloak 会话进入。
+选择 Provider、检查 Environment 后，在 Ready 页进入工作台，也可以直接跳过向导。
+已建立的登录会话用于保存进度和授权操作。使用旧 Token 的安装仍显示 Access 步骤。
+选择 Codex 或 Claude Code 作为主 Provider。两者都可用时可启用 Mixed team。
 
 Bootstrap 只写 Workspace/onboarding 设置，不调用 Project init。零 Project 的空
 Workspace 是正确结果。
@@ -196,7 +198,7 @@ route。
 失败时可重试；无法确认模型能力的 Provider 使用其既有配置。
 没有手动选择时，菜单展示 Codex 返回的项目配置或会话基线；无法确认的字段显示
 Default / Auto，不把模型目录的推荐值当成当前生效值。
-若菜单提示 Dashboard 认证被拒绝，选择重新输入 action token；若提示模型目录不可用，
+若登录会话已过期，重新登录。旧 Token 安装可在菜单重新输入凭据。若提示模型目录不可用，
 可重试目录加载。
 输入框左侧“＋”菜单汇集文件、上下文、工具与 Agent profile。菜单中的 ZaoFu 主机策略
 目录不代表 Provider 原生工具已被拦截或可用；实际权限和

@@ -66,7 +66,7 @@ def scoped_port_paths(
         new_rows = {row["task_id"]: row for row in new_port["tasks"]}
     except (KeyError, TypeError, ValueError):
         return None
-    if old_rows.keys() != new_rows.keys() or not old_rows.keys() <= old_tasks.keys():
+    if old_rows.keys() != new_rows.keys() or old_rows.keys() != old_tasks.keys():
         return None
     if any(old_rows[key] != new_rows[key] for key in old_rows.keys() - scope):
         return None

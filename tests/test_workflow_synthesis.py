@@ -810,9 +810,15 @@ def test_prepared_result_checkpoint_recovers_without_provider_recall(
     )["status"] == "settled"
 
 
+@pytest.mark.parametrize("suspended", [False, True])
+@pytest.mark.parametrize("request_filter", ["", "req-synth"])
 def test_stale_request_revision_supersedes_queued_operation(
     tmp_path: Path,
+    suspended: bool,
+    request_filter: str,
 ) -> None:
+    from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations as consume
+    from zf.runtime.workflow_config_handoff import handoff_blockers
     config, state_dir, writer, _projection = _context(tmp_path)
     queued = enqueue_workflow_synthesis(
         state_dir=state_dir,
@@ -823,16 +829,23 @@ def test_stale_request_revision_supersedes_queued_operation(
         actor="test",
         backend="mock",
     )
+    if suspended:
+        WorkflowOperationService(state_dir=state_dir, event_log=writer.event_log, event_writer=writer).interrupt(
+            operation_id=queued.operation_id, request_hash=queued.request_hash,
+            workflow_run_id="workflow-request:req-synth:r1", reason="fast_stop",
+        )
     request_path = workflow_request_path(state_dir, "req-synth")
     current = json.loads(request_path.read_text(encoding="utf-8"))
     current["revision"] = 2
     request_path.write_text(json.dumps(current), encoding="utf-8")
+    assert any(queued.operation_id in reason for reason in handoff_blockers(state_dir, writer.event_log.read_all()))
 
-    consumed = consume_workflow_synthesis_operations(
+    consumed = consume(
         state_dir=state_dir,
         project_root=tmp_path,
         config=config,
         writer=writer,
+        request_id=request_filter,
     )
 
     assert consumed == 1
@@ -842,6 +855,36 @@ def test_stale_request_revision_supersedes_queued_operation(
     )
     assert operation["status"] == "superseded"
     assert "revision superseded" in operation["reason"]
+    assert not any(queued.operation_id in reason for reason in handoff_blockers(state_dir, writer.event_log.read_all()))
+    before = len(writer.event_log.read_all())
+    assert consume(state_dir=state_dir, project_root=tmp_path, config=config,
+                   writer=writer, request_id=request_filter) == 0
+    assert len(writer.event_log.read_all()) == before
+
+
+def test_current_revision_suspended_synthesis_stays_paused(tmp_path: Path) -> None:
+    from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations as consume
+    config, state_dir, writer, _ = _context(tmp_path)
+    queued = enqueue_workflow_synthesis(
+        state_dir=state_dir, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", actor="test", backend="mock",
+    )
+    WorkflowOperationService(state_dir=state_dir, event_log=writer.event_log, event_writer=writer).interrupt(
+        operation_id=queued.operation_id, request_hash=queued.request_hash,
+        workflow_run_id="workflow-request:req-synth:r1", reason="fast_stop",
+    )
+
+    class NoDispatch:
+        def run_turn(self, **kwargs):
+            raise AssertionError("a paused current revision must not recall the provider")
+
+    before = len(writer.event_log.read_all())
+    assert consume(
+        state_dir=state_dir, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", agent=NoDispatch(),
+    ) == 0
+    assert len(writer.event_log.read_all()) == before
+    assert load_workflow_operation(writer.event_log, queued.operation_id)["status"] == "suspended"
 
 
 def test_unreadable_operation_request_fails_without_poisoning_consumer(

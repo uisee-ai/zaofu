@@ -122,7 +122,7 @@ def test_apply_batch_task_map_ready_injects_rework_feedback(tmp_path: Path) -> N
     ]
 
 
-def test_current_plan_package_filters_stale_planner_feedback() -> None:
+def test_plan_package_alone_does_not_discard_feedback() -> None:
     feedback = [
         "TASK-WP14-B / mandatory_goal_claim_contract_rewritten: stale",
         "TASK-WP14-C / runtime_failure: upstream dependency failed: TASK-WP14-B",
@@ -131,7 +131,7 @@ def test_current_plan_package_filters_stale_planner_feedback() -> None:
     assert _writer_resume_feedback(
         {"plan_artifact_package_ref": "artifacts/plan-packages/current.json"},
         feedback,
-    ) == ["TASK-WP14-B / implementation: fix frame governance"]
+    ) == feedback
 
 
 def test_apply_batch_task_map_ready_preserves_current_package_identity(

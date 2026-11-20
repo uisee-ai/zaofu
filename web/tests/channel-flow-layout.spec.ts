@@ -29,7 +29,7 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
     previewMode: "data", markdown: "# Canonical PRD\n\n## Acceptance\n\n| Criterion | Result |\n|---|---|\n| Full body | Required |\n\n**Last paragraph preserved.**",
     questionOk: true, allowInvitations: false, allowPlanning: false, allowMessages: false, planningOk: true, planningPayload: {} as Record<string, unknown>, runs: [] as Record<string, unknown>[],
     plans: [] as Record<string, unknown>[], deliveryError: false, fileCalls: 0, allowReports: false, allowSynthesis: false, allowConsensus: false, readiness: undefined as Record<string, unknown> | undefined,
-    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "",
+    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "", allowRecovery: false,
     evaluationRows: [] as Array<Record<string, unknown>>,
     sources: undefined as Record<string, unknown> | undefined, requirementCoverage: [] as Array<Record<string, unknown>> };
   page.on("pageerror", (error) => state.errors.push(error.message));
@@ -54,6 +54,9 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
         run.status = "cancelled";
         detail.seq += 1;
         await route.fulfill({ json: { ok: true, status: "interrupted", process_found: true, process_terminated: true } });
+      } else if (path.endsWith("/actions/channel-drain-replies") && state.allowRecovery) {
+        state.payloads.push(req.postDataJSON().payload);
+        await route.fulfill({ status: 409, json: { ok: false, reason: "原生 turn 没有确定的中止回执；禁止重复投递。" } });
       } else if (path.endsWith("/actions/channel-question-resolve")) {
         const payload = req.postDataJSON().payload;
         state.payloads.push(payload);
@@ -344,6 +347,7 @@ test("empty channel keeps the composer primary without a placeholder PRD card", 
   Object.assign(detail.discussion_attention.main, { state: "idle", attention_kind: "none", owner_question_count: 0, open_question_count: 0 });
   const state = await setup(page, request, detail);
   await expect(page.getByTestId("channel-prd-handoff")).toHaveCount(0);
+  await expect(page.getByTestId("channel-prd-preview-entry")).toBeInViewport();
   await expect(page.getByTestId("channel-flow-requirement")).toHaveAttribute("aria-current", "step");
   await expect(page.locator(".channel-composer")).toBeInViewport();
   expect(state.writes).toEqual([]);
@@ -731,7 +735,6 @@ test("preview failures and read-only sessions cannot Process; retry loads the fu
   await expect(page.getByTestId("channel-create-task-from-prd")).toBeEnabled();
   await page.route("**/api/web-session", (route) => route.fulfill({ json: { mode: "read_only", unlocked: false, actions_enabled: false } }));
   await page.reload();
-  await page.getByTestId("channel-flow-prd").click();
   await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
   await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
   await expect(preview).toContainText("session is read-only");
@@ -794,7 +797,8 @@ test("long PRD Markdown stays readable in split view and fullscreen with intact 
     await expect(preview.getByRole("button", { name: "Download PRD" })).toBeInViewport();
     await expect(preview.getByRole("navigation", { name: "PRD pages" })).toBeInViewport();
     expect(Math.round((await preview.boundingBox())!.width)).toBe(width);
-    await preview.getByRole("button", { name: "Process", exact: true }).focus();
+    await expect(preview.getByTestId("channel-create-task-from-prd")).not.toBeVisible();
+    await preview.getByRole("button", { name: "Previous", exact: true }).focus();
     await page.keyboard.press("Tab");
     // Native dialogs may visit browser chrome between the last and first control;
     // background page controls must remain inert throughout the modal session.
@@ -1156,7 +1160,7 @@ test("blocked PRD generation keeps its reason after reload without enabling Proc
   const state = await setup(page, request, detail);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (attempt) await page.reload();
-    await page.getByTestId("channel-flow-prd").click();
+    else await page.getByTestId("channel-flow-prd").click();
     await expect(page.getByTestId("channel-prd-generation-error")).toContainText("342979>120000");
     await expect(page.getByTestId("channel-prd-generation-error")).toContainText("重新打开原文件");
     await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
@@ -1221,4 +1225,162 @@ test("pipeline summary follows inspected stages while execution and approvals ke
   await expect(page.getByTestId("channel-inline-question")).toBeInViewport();
   expect(state.writes).toEqual([]);
   expect(state.errors).toEqual([]);
+});
+
+test("unknown delivery recovery binds the failed request and displays refused evidence", async ({ page, request }) => {
+  const detail = fixture();
+  Object.assign(detail, { reply_requests: [{ request_id: "reply-aborted", event_id: "evt-failure", run_generation: 3,
+    message_id: "m1", thread_id: "main", target_member_id: "product_pm", status: "failed",
+    failure_status: "delivery_unknown", retryable: false, failure_category: "provider", updated_at: ts }] });
+  Object.assign(detail.discussion_attention.main, { state: "blocked", execution_state: "blocked", failed_reply_count: 1 });
+  const state = await setup(page, request, detail);
+  state.allowRecovery = true;
+  await page.getByTestId("channel-header-failures").click();
+  const retry = page.getByRole("button", { name: "核验终止并重试原回复", exact: true });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(page.getByTestId("channel-control-error")).toContainText("禁止重复投递");
+  expect(state.payloads).toEqual([{ channel_id: channelId, reconcile_request_id: "reply-aborted",
+    failure_event_id: "evt-failure", run_generation: 3 }]);
+  await expect(retry).toBeEnabled();
+  expect(state.unexpected).toEqual([]);
+});
+
+for (const width of [1440, 375]) {
+  test(`PRD entry stays above long conversations in read-only sessions at ${width}px`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const detail = readyFixture();
+    detail.messages = Array.from({ length: 40 }, (_, index) => ({ ...detail.messages[0], message_id: `long-${index}`, text: `Message ${index}: ${"Discussion content. ".repeat(100)}` }));
+    const state = await setup(page, request, detail);
+    await page.route("**/api/web-session", route => route.fulfill({ json: { mode: "read_only", unlocked: false, actions_enabled: false } }));
+    await page.reload();
+    const entry = page.getByTestId("channel-prd-preview-entry");
+    await expect(entry).toBeInViewport();
+    await expect(entry).toBeEnabled();
+    await entry.click();
+    const preview = page.getByTestId("channel-prd-preview");
+    await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    expect((await preview.locator(".channel-document-body").boundingBox())!.height).toBeGreaterThan(650);
+    await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
+    expect(state.writes).toEqual([]);
+  });
+}
+
+test("PRD header entry creates a direct link, survives refresh and closes without reopening", async ({ page, request }) => {
+  const state = await setup(page, request, readyFixture());
+  const entry = page.locator(".channel-shell-header").getByRole("button", { name: "PRD 预览", exact: true });
+  await expect(entry).toBeInViewport();
+  await entry.click();
+  await expect(page).toHaveURL(/preview=prd/);
+  const linked = page.url();
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview).toHaveAttribute("aria-modal", "true");
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveAttribute("aria-modal", "false");
+  await entry.click();
+  await expect(preview).toHaveAttribute("aria-modal", "true");
+  await page.reload();
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  await preview.getByRole("button", { name: "Close drawer", exact: true }).click();
+  await expect(page).not.toHaveURL(/preview=prd/);
+  await page.reload();
+  await expect(preview).toHaveCount(0);
+  await page.goto(linked);
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+test("PRD direct link does not reuse another thread's document", async ({ page, request }) => {
+  const detail = readyFixture();
+  detail.messages.push({ ...detail.messages[0], message_id: "other-message", thread_id: "other", text: "Other thread" });
+  const state = await setup(page, request, detail);
+  const url = new URL(page.url());
+  url.searchParams.set("thread", "other"); url.searchParams.set("preview", "prd");
+  await page.goto(url.toString());
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("尚无完整 PRD");
+  await expect(preview.getByRole("heading", { name: "Canonical PRD" })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+for (const width of [1440, 390]) {
+  test(`PRD focus link uses document typography and restores split view at ${width}px`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const state = await setup(page, request, readyFixture());
+    state.markdown = "# 阅读样本\n\n## 目标\n\n第一段说明。\n\n- 第一项\n\n  列表中的独立段落。\n\n> 一条引用。\n\n| 字段 | 规则 |\n|---|---|\n| name | 必填 |\n\n```python\nprint('hello')\n```\n";
+    const url = new URL(page.url()); url.searchParams.set("preview", "prd"); url.searchParams.set("reader", "focus");
+    await page.goto(url.toString());
+    const preview = page.getByRole("dialog", { name: "PRD preview" });
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    const paragraph = preview.getByText("列表中的独立段落。", { exact: true });
+    await expect(paragraph).toHaveCSS("display", "block");
+    await expect(paragraph).toHaveCSS("font-size", "16px");
+    await expect(paragraph).toHaveCSS("line-height", "28px");
+    expect((await paragraph.boundingBox())!.width).toBeLessThanOrEqual(760);
+    await expect(preview.getByRole("button", { name: "Exit PRD fullscreen", exact: true })).toBeInViewport();
+    await expect(preview.getByRole("button", { name: "Download PRD" })).toBeInViewport();
+    await page.reload();
+    await expect(preview).toHaveAttribute("aria-modal", "true");
+    await page.keyboard.press("Escape");
+    await expect(page).not.toHaveURL(/reader=focus/);
+    await expect(preview).toHaveAttribute("aria-modal", "false");
+    await preview.getByRole("button", { name: "Source", exact: true }).click();
+    expect(await preview.getByTestId("channel-prd-source").textContent()).toBe(state.markdown);
+    expect(state.writes).toEqual([]);
+  });
+}
+
+
+test("PRD global references survive pagination and long inline code remains in its paragraph", async ({ page, request }) => {
+  const state = await setup(page, request, readyFixture());
+  const path = "docs/" + "long-path/".repeat(14) + "spec.md";
+  state.markdown = `# 引用测试\n\n打开 \`${path}\` 并继续。\n\n[验收规范][spec]\n\n###### 六级标题\n\n`
+    + "可读内容。 ".repeat(8200) + "\n\n## 第二页\n\n" + "第二页正文。 ".repeat(1000) + "\n\n[spec]: https://example.invalid/spec\n";
+  await page.getByTestId("channel-prd-preview-entry").click();
+  const preview = page.getByRole("dialog", { name: "PRD preview" });
+  await expect(preview.locator("p code")).toHaveText(path);
+  await expect(preview.locator("p .agent-code-block")).toHaveCount(0);
+  await expect(preview.getByRole("heading", { level: 6, name: "六级标题" })).toBeVisible();
+  await expect(preview.getByRole("link", { name: "验收规范" })).toHaveAttribute("href", "https://example.invalid/spec");
+  await expect(preview.getByRole("navigation", { name: "PRD pages" })).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+for (const width of [1440, 390]) test(`PRD ${width}px audit details preserve decisions, unknown states and full downloads`, async ({ page, request }) => {
+  await page.setViewportSize({ width, height: 844 });
+  const state = await setup(page, request, readyFixture());
+  state.markdown = '# 审计阅读\n\n## 目标\n失败保持原状态。\n\n## 需求追溯与决策记录\n\n### 来源覆盖\n来源明细仅按需展开。\n\n### 新增决定\n\n| 标识（id） | question | 状态（status） | 阻塞声明（blocking） | 负责人（owner） | 来源引用（source_refs） | custom_field |\n|---|---|---|---|---|---|---|\n| D-1 | 确认重试边界 | pending_validation | true | Owner | msg-source | 未知字段必须保留 |\n| D-2 | 保留异议 | future_state | false | 待指定 | msg-other | 保留完整说明 |\n\n## 假设、风险与分歧\n风险继续可见。\n\n## Provenance\n来源摘要不丢失。\n';
+  const url = new URL(page.url()); url.searchParams.set('preview', 'prd'); url.searchParams.set('reader', 'focus');
+  await page.goto(url.toString());
+  const preview = page.getByRole('dialog', { name: 'PRD preview' });
+  await expect(preview.getByText('失败保持原状态。', { exact: true })).toBeVisible();
+  await expect(preview.getByText('来源明细仅按需展开。', { exact: true })).not.toBeVisible();
+  await expect(preview.getByText('风险继续可见。', { exact: true })).toBeVisible();
+  const decision = preview.locator('.document-catalog-entry').first();
+  await expect(decision.locator('summary')).toContainText('确认重试边界');
+  await expect(decision.locator('summary')).toContainText('pending_validation');
+  await expect(decision.locator('summary')).toContainText('阻塞: true');
+  await expect(preview.locator('.document-catalog-entry').nth(1).locator('summary')).toContainText('future_state');
+  await decision.locator('summary').click();
+  await expect(decision.getByText('未知字段必须保留', { exact: true })).toBeVisible();
+  await preview.locator('summary').filter({ hasText: '来源覆盖明细' }).click();
+  await expect(preview.getByText('来源明细仅按需展开。', { exact: true })).toBeVisible();
+  await preview.locator('summary').filter({ hasText: '查看原始表格' }).click();
+  await expect(preview.locator('table')).toBeVisible();
+  expect(await preview.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  expect((await preview.locator('.channel-document-body').boundingBox())!.height).toBeGreaterThan(720);
+  await expect(preview.getByTestId('channel-create-task-from-prd')).not.toBeVisible();
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('unavailable')) } }));
+  await preview.getByRole('button', { name: 'Copy PRD' }).click();
+  await expect(preview.locator('.channel-document-body').getByRole('alert')).toContainText('Copy unavailable');
+  const download = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Download PRD' }).click();
+  const stream = await (await download).createReadStream(); const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks).toString()).toBe(state.markdown);
+  await page.keyboard.press('Escape');
+  await expect(preview.getByTestId('channel-create-task-from-prd')).toBeVisible();
+  expect(state.writes).toEqual([]);
 });

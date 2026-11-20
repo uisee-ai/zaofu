@@ -80,6 +80,8 @@ def create_test_app():
     from tests.plan_source_document_fixture import add_source_document_fixture
 
     add_source_document_fixture(state, writer)
+    from tests.plan_review_policy_fixture import add_plan_review_policy_fixtures
+    add_plan_review_policy_fixtures(state, writer)
     app = create_app(state, config=load_config(config_path), project_root=root)
     original_lifespan = app.router.lifespan_context
     receipt_path = os.environ.get("ZF_PREVIEW_FIXTURE_RECEIPT", "")

@@ -177,6 +177,8 @@ def test_synthesis_prompt_states_mechanical_json_types() -> None:
     assert "dissent MUST be a JSON array" in prompt
     assert "exact selected behavior" in prompt
     assert "never replace a chosen error/status rule" in prompt
+    assert "complete PRD only once" in prompt
+    assert "mechanical contract repair" in prompt
 
 
 def test_synthesis_normalizes_dissent_status_envelope(tmp_path: Path) -> None:

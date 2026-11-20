@@ -55,7 +55,10 @@ export default function PlanSourceDocument({ url, sha256, initialAnchor, onAncho
     selectedAnchor.current = initialAnchor;
     loadIndex(`anchor=${encodeURIComponent(initialAnchor)}`, true);
   }, [initialAnchor, loadIndex]);
-  useEffect(() => () => indexRequest.current?.abort(), []);
+  useEffect(() => () => {
+    indexRequest.current?.abort();
+    selectedAnchor.current = null; // StrictMode effect replay must restart an aborted index read.
+  }, []);
   useEffect(() => {
     if (section === undefined || page === undefined) return;
     const controller = new AbortController();

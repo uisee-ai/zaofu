@@ -72,6 +72,7 @@ def planning_execution_context(config: Any, *, flow_kind: str = "") -> list[str]
     policy = execution_policy(config)
     metadata = flow_metadata_for(config, flow_kind)
     policy.update({
+        "plan_review": metadata.get("plan_review", {}),
         "plan_approval_required": bool(config.workflow.plan_approval_enabled),
         "task_pipeline": metadata.get("task_pipeline", {}),
         "rolling_smoke_policy": _rolling_smoke_policy(),
@@ -122,6 +123,7 @@ def review_execution(
     return {
         "schema_version": "plan-execution-review.v1",
         "scope": "mechanical_facts_for_semantic_review",
+        "plan_review": metadata.get("plan_review", {}),
         "usage_observations": dict(usage_facts or {"available": False}),
         "input_binding": {
             "task_map_digest": _digest(task_map),
@@ -313,6 +315,7 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
     return {
+        "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
         "execution": execution_policy(config),
         "candidate_quality_source": str(
@@ -334,3 +337,23 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
             },
         },
     }
+
+
+def plan_review_briefing(config: Any, *, flow_kind: str = "") -> list[str]:
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    policy = flow_metadata_for(config, flow_kind).get("plan_review") or {}
+    if not policy:
+        return []
+    return [
+        "Configured independent Plan review: " + json.dumps(policy, ensure_ascii=False),
+        "Review selection is from the approved configuration, not the author's self-assessment. "
+        "For targeted mode, check the named questions and affected dependencies/shared rules; "
+        "state actual reviewed and unreviewed scope in summary with current artifact refs/digests "
+        "and opening/scenario excerpts. Expand review if evidence reveals a wider conflict. "
+        "Consume the pinned required reads, then retrieve supplementary port contents needed to answer "
+        "each focus and its affected dependencies. Record actual evidence and unreviewed scope. "
+        "First targeted review needs no historical approval; historical incremental reuse still needs "
+        "its bound evidence. Targeted focus is not proof of whole-document approval. "
+        "Do not rewrite the Planner's artifacts.",
+    ]

@@ -563,8 +563,7 @@ class FanoutBriefingMixin:
                 child_payload, project_root=self.project_root,
             )
             controlled_inputs = render_attempt_source_briefing(
-                child_payload,
-                state_dir=self.state_dir,
+                child_payload, state_dir=self.state_dir, role_name=role.name,
             ).strip()
             if controlled_inputs:
                 payload_section.extend([*controlled_inputs.splitlines(), ""])

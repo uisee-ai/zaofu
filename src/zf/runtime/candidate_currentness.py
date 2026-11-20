@@ -199,11 +199,23 @@ def candidate_currentness_issues(
         if str(item)
     )
     if expected_tasks and actual_tasks != expected_tasks:
-        issues.append(_currentness_issue(
-            "control_result.contract_snapshot_ref",
-            "stale_contract_snapshot",
-            "candidate contract completed_task_ids do not match current freeze",
-        ))
+        from zf.runtime.candidate_replacement_authority import verified_predecessors
+
+        events = list(events)
+        children = contract_snapshot.get("child_authorities") or []
+        try:
+            replaced = verified_predecessors(
+                state_dir, current_candidate, events[: events.index(current_candidate)], children,
+            )
+        except (KeyError, ValueError, TypeError, OSError) as exc:
+            return [_currentness_issue("control_result.contract_snapshot_ref", "stale_contract_snapshot", str(exc))]
+        if (sorted(child.get("task_id", "") for child in children) != actual_tasks
+                or sorted(set(expected_tasks) - replaced) != actual_tasks):
+            issues.append(_currentness_issue(
+                "control_result.contract_snapshot_ref",
+                "stale_contract_snapshot",
+                "candidate contract completed_task_ids do not match current freeze",
+            ))
     task_store = TaskStore(state_dir / "kanban.json")
     for child in contract_snapshot.get("child_authorities") or []:
         if not isinstance(child, Mapping):

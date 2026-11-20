@@ -108,12 +108,16 @@ def register_observability_routes(
         try:
             from zf.core.events.factory import event_log_from_project
             from zf.runtime.owner_delivery_health import owner_delivery_health
+            from zf.runtime.operator_inbox import build_runtime_requests
 
-            delivery = {"available": True, "routes": owner_delivery_health(
-                event_log_from_project(context.state_dir, config=context.config).read_all()
+            events = event_log_from_project(context.state_dir, config=context.config).read_all()
+            delivery = {"available": True, "routes": owner_delivery_health(events)}
+            source_requests = {"available": True, "items": build_runtime_requests(
+                context.state_dir, events, project_root=context.project_root,
             )}
         except Exception:
             delivery = {"available": False, "routes": []}
+            source_requests = {"available": False, "items": []}
         return JSONResponse({
             "schema_version": "operations-observability.v1",
             "project_id": project_id,
@@ -130,6 +134,7 @@ def register_observability_routes(
             ),
             "runtime_logs": summarize_runtime_logs(context.state_dir),
             "owner_delivery": delivery,
+            "source_requests": source_requests,
             "otlp_exporter": read_otlp_exporter_status(
                 context.state_dir,
                 config=exporter_config,

@@ -1,10 +1,10 @@
 """Bound execution-only OA decisions to existing configuration and Task contracts."""
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.core.task.schema import task_contract_identity_payload
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator_agent_policy import _effective_policy
 from zf.runtime.run_contract import stable_json_sha256
@@ -42,7 +42,7 @@ def bounded_actions(config: Any, flow_kind: str) -> list[str] | None:
 def task_execution_binding(task: Any) -> dict[str, Any]:
     """Heartbeat, cost and timestamps are deliberately outside the authority hash."""
     return {
-        "contract_digest": stable_json_sha256(asdict(task.contract)),
+        "contract_digest": stable_json_sha256(task_contract_identity_payload(task.contract)),
         "blocked_by": sorted(task.blocked_by),
         "status": task.status,
         "active_dispatch_id": task.active_dispatch_id or "",

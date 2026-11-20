@@ -14,6 +14,13 @@ load_on_demand: true
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
 
+Critic 先按本次批准的 `plan_review` 与[按需审查](references/review-scope.md)确定覆盖。
+下文是方法目录，targeted 按 focus 与发现的依赖选择适用部分，不等于所有附录全量加载。
+
+生成或审查任务切片时，读取[任务规格与一致性](references/task-spec-slices.md)。
+每片交接可观察行为、共享合同、失败不变项和独立验收责任；先审规格再审分配，
+并核对最终序列化正文、决定登记与矩阵，而非依赖作者的“已对齐”声明。
+
 先读取 `zf-requirement-reconciliation` 核对来源及未决问题。大需求、未来范围尚待
 细化或需要调整依赖图时，按[薄 Epic 与渐进细化](references/epic-refinement.md)
 保留全局义务并形成当前执行边界；不把 Epic 规划状态写成 Kernel Task 状态。
@@ -36,6 +43,7 @@ Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本
 区分新增 token、缓存、重试归属和未知费用，不从输入字节数推导模型成本。
 
 Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
+[最终包对账](references/final-package-review.md)，并按适用行为展开
 [执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、
 状态相关权限、本片/候选验证边界、完整修正事务与跨工件决定版本；结果记录到已有
 评审工件。方法加载或结构检查通过不代表这些语义检查已经通过。
@@ -44,6 +52,12 @@ Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执�
 记录新旧版本、受影响消费者、重审与复用依据；摘要写入现有 Plan 人读正文。
 交付可运行产品或部署环境时，按[可复现交付规划](references/delivery-validation.md)
 明确指南、环境与关键旅程的生产者、独立验证责任和执行时点。
+
+## 审查范围
+
+Planner/Critic 读取[按需审查与有界返修](references/review-scope.md)。下列语义方法按本次
+批准的评审范围执行；首次 targeted 与历史 incremental 分开，实际必读与扩读遵守
+当前派发策略。全量方法不能将定向评审重新扩大为全部附件必读，也不能缩窄本次 focus。
 
 ## 条款与验收责任
 
@@ -100,6 +114,10 @@ owner、tier 和实际阶段一致。只有 `node --test` 的 AC 绑定不能证
   不为开始工程盘点提前猜测所有产品决定，不把未启用条件写成产品已通过。
 
 ## 人工审阅与具体场景
+
+有交互、业务流程或架构设计需要时，按[设计调研与交接](references/design-research-handoff.md)
+检查调研适用性、设计输入、图示、公共规范、页面状态及同版设计验收。Planner 将未决项
+落实到受影响任务和责任，Critic 审查具体依据，不把局部未知升级为所有任务阻塞。
 
 生成或评审 PRD／技术设计时，先按[规格与设计就绪](references/spec-design-readiness.md)
 区分产品故事、设计合同、当前实施前沿和未来决定；Critic 分项记录证据与审查范围。
@@ -295,3 +313,26 @@ Kernel 报告未映射 claim 是诊断，不等于已验证覆盖；有映射也
 涉及全局计划数组、上下文恢复、角色更换或尾部集成任务时，读取
 [任务输入与接力核查](references/task-input-continuity.md)。语义责任由 Planner/Critic
 对账；运行时只校验固定输入、版本、身份和证据，不以正文缩小或任务数增加判定优化。
+## AC 归组与阶段责任复核
+
+来源 AC 数量不等于 Task AC 数量。检查归组后的 `source_refs` 和原子矩阵逐项覆盖全部来源，
+保留 mandatory/P1、失败状态与字节等定性约束；不能用凑上限或泛化“全部通过”掩盖丢项。
+每片的验收只使用本片及前置片已存在的入口，后续功能验收归后续 Task；最终集成单独分责。
+每片交付用法不自动要求每片修改同一 README。依据原文决定文档时点，继续保持全图文件独占；
+若明确的共享文件时点确实无法满足，才提出 Owner 决策。对 `candidate_kind: owner_review`
+草案独立判断是否存在真实冲突；无完整 Task Map 时不得 approve，不能把语义争议报为执行故障。
+
+## 先核验评审事实，再接受返工结论
+
+涉及命令语法、JSON 转义或 shell quoting 的阻塞意见，先定位当前 Critic 输入清单绑定的
+工件、摘要与字段，解析工件得到实际 command 值，再用对应解析器做无副作用的语法检查。
+工具响应/JSON 展示层的转义不等于命令中的实际字符。不能仅凭显示出的反斜杠推导 SyntaxError；
+不为检查语法而执行尚未获批准的产品命令。报告使用的实际值、检查方法和结果，并保留绑定证据。
+Planner 对收到的 finding 同样先复现：不成立的意见要给出反证和 verified-not-reproduced 结论，
+仍成立的意见正常修复。前后解码值没有变化时，不得声称“已修复命令”；Critic 不能以作者的
+修复声明替代独立核对，也不能因这是前轮结论而拒绝新的反证。
+
+对验收矩阵逐行核对证据生产者、写权限、引用入口和消费者。Impl 的自检文档不能同时充当
+独立 Verify 的报告；独立 Verify 不应为写证据修改正在验证的 commit。未来报告 ref 尚未派发时，
+记录受控输出合同、目标版本/身份/命令/逐项结论的绑定责任和 NOT_RUN，实际 ref 由后续授权
+派发与提交绑定；不要伪造现有收据，也不要把合理的未来绑定误判为当前缺失产品验收。

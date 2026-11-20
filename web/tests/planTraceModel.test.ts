@@ -26,3 +26,10 @@ const sections = planDocumentSections(document);
 equal(sections.map(s => s.title), ["产品", "库存"]);
 equal(sections[1].anchor, "stock"); equal(sections.map(s => s.content).join(""), document);
 console.log("planTraceModel.test.ts OK");
+// A bound task entry scopes lists and counters; unrelated tasks stay out.
+import { taskTraceRows } from '../src/components/delivery-trace/planTraceModel.js';
+equal(taskTraceRows(trace, 'T1').map(r => r.id), ['S1']);
+equal(taskTraceRows(trace, 'T-other'), []);
+equal(taskTraceRows(trace, ''), trace);
+// Changed evidence locations are reviewable even when requirements stay unchanged.
+equal(comparePlanTrace(trace, [{...trace[0], evidence:['new/evidence.json']}, ...trace.slice(1)]).map(r => r.id), ['S1']);

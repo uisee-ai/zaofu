@@ -1,0 +1,132 @@
+{
+  "provenance": "Selected unmodified decision_review items from channel-preview-lineage.json, Plan evt-c626a5a17ac7; no verdict is inferred.",
+  "items": [
+    {
+      "id": "DL-01",
+      "status": "decided_source",
+      "decision": "显式路径；Python 3.11；无参数不默认读 README。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "CLI-AC-SUCCESS",
+        "AC-06",
+        "AC-09"
+      ],
+      "blocking": false,
+      "owner": "owner",
+      "closure_evidence": "已确认 PRD/requirement revision 2；实现和版本验证仍 NOT_RUN。"
+    },
+    {
+      "id": "DL-02",
+      "status": "decided_source",
+      "decision": "成功原始字节、空 stderr、退出0；两类失败空 stdout、原始输入路径、独立原因、非零；不固定本地化整句或具体非零码。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "CLI-AC-SUCCESS",
+        "AC-04",
+        "AC-05"
+      ],
+      "blocking": false,
+      "owner": "owner",
+      "closure_evidence": "已确认 PRD R-02/R-03/R-11..14；未来验证独立断言。"
+    },
+    {
+      "id": "DL-03",
+      "status": "decided_source",
+      "decision": "只读；比较字节、条目、类型；缺失不创建；正常及受控失败清理临时资源；真实 README 不作破坏性负例；atime 不纳入。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "AC-04",
+        "AC-05",
+        "AC-07",
+        "AC-08"
+      ],
+      "blocking": false,
+      "owner": "owner",
+      "closure_evidence": "已确认 PRD；未来 Verify 实际观察快照与清理。"
+    },
+    {
+      "id": "DL-04",
+      "status": "decided_source",
+      "decision": "一个完整任务覆盖 readme.py、test_readme.py、README.md；仅标准库；中文简短完整，技术命令标识保留。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "CLI-AC-SUCCESS",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
+      "blocking": false,
+      "owner": "owner",
+      "closure_evidence": "已确认 PRD 交付范围和实施安排。"
+    },
+    {
+      "id": "DL-05",
+      "status": "pending_approval",
+      "decision": "owner 人工批准中文 Plan 后才创建/执行正式交付 Task；真实 Codex、隔离项目、受控 Git、独立 Verify。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "CLI-AC-SUCCESS",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
+      "blocking": true,
+      "owner": "owner",
+      "latest_use_point": "创建/派发 CLI-001 之前",
+      "closure_evidence": "未来 workflow 记录人工批准；当前未获批，不阻止生成本规划。"
+    },
+    {
+      "id": "PL-D01",
+      "status": "proposed_for_plan_approval",
+      "decision": "仅表示层把 AC-01/02/03 合并为 CLI-AC-SUCCESS 满足最多八条；十项原始合同、单任务归属、独立场景和强制性全部保留。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/artifacts/workflow/prepare-TASK-D212F5-b7f5d4c66be99c7f/channel-prd-source.md",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "CLI-AC-SUCCESS"
+      ],
+      "blocking": false,
+      "owner": "planner",
+      "closure_evidence": "source_index、coverage_ledger、test_matrix 和 goal_claims 保留每项原始编号；随完整 Plan 审阅。"
+    },
+    {
+      "id": "PL-D02",
+      "status": "proposed_for_plan_approval",
+      "decision": "注册命令明确使用 python3.11；来源 VC-01 保留 unittest 模块和参数；增加精确文件 VC-LOCAL 用于隔离分支及 rolling smoke。README 说明 python 必须为3.11。",
+      "source_ref": "/tmp/zf-preview-repeat-real-channel-20261111T023257/project/.ui-state/fanouts/fanout-prd-scan-evt-184522f6/children/tech-scan/report.json",
+      "affected_task_ids": [
+        "CLI-001"
+      ],
+      "affected_acceptance_ids": [
+        "AC-09"
+      ],
+      "blocking": false,
+      "owner": "planner",
+      "closure_evidence": "tech-scan：默认 python3.12.3、python3.11=3.11.14；正式运行重验 VC-03，当前 NOT_RUN。"
+    }
+  ]
+}

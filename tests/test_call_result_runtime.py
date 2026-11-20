@@ -45,6 +45,7 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
         event_log=log,
         event_writer=EventWriter(log),
         config=SimpleNamespace(
+            observability=SimpleNamespace(controller=SimpleNamespace(enabled=False)),
             workflow=SimpleNamespace(
                 flow_metadata={"result_protocol": {"mode": "blocking"}}
             )

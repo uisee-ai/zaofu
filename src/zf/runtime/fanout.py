@@ -434,6 +434,11 @@ class FanoutManifestProjector:
                     "status": "requested",
                 })
             elif event.type == "fanout.started":
+                if (payload.get("recovery_kind") == "operator_reader_checkpoint"
+                        and event.origin == "kernel" and event.actor == "zf-cli"):
+                    # A producer lost before any admitted output has no current
+                    # synth result. Historical failures remain in the event log.
+                    manifest.pop("synth", None)
                 manifest.update({
                     "trace_id": _payload_str(payload, "trace_id") or event.correlation_id or "",
                     "stage_id": _payload_str(payload, "stage_id"),

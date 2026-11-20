@@ -154,3 +154,12 @@ def test_gap_review_uses_kernel_digest_for_selected_dispatch_scope(tmp_path, mon
     assert "[X]" not in output
     assert "OLD-CLI" not in output
     assert ledger.read_bytes() == before
+
+
+def test_review_marks_unknown_topology_as_unknown(tmp_path):
+    from zf.cli.plan_approval import _checklist
+    path = tmp_path / "map.json"
+    path.write_text(json.dumps({"tasks": [{"task_id": "A", "verification": "check", "allowed_paths": ["a.py"]}]}))
+    warnings = _checklist(path)
+    assert any(line.startswith("[?] assembly") for line in warnings)
+    assert not any(line.startswith("[X] assembly") for line in warnings)

@@ -142,6 +142,8 @@ def build_orchestrator_agent_context(
             key: str(payload.get(key) or "")
             for key in (
                 "failure_fingerprint",
+                "candidate_failure_id",
+                "candidate_operation_id",
                 "target_task_id",
                 "target_stage_id",
                 "target_attempt_id",

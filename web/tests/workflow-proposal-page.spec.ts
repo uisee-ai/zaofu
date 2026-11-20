@@ -107,6 +107,37 @@ test("Raw labels legacy compiled snapshots and unavailable run evidence", async 
   await expect(raw.locator("pre")).toHaveCount(0);
 });
 
+for (const status of ["preparation_failed", "preparation_blocked"]) {
+test(`${status} is visible before opening Raw and exposes the bound retry`, async ({ page, request }) => {
+  const original = await (await request.get(`/api/projects/default/workflow-requests/${requestId}`)).json();
+  // Explicit display/action fixture; it does not change a canonical operation.
+  await page.route(`**/api/projects/*/workflow-requests/${requestId}`, route => route.fulfill({ json: {
+    ...original, result: { ...original.result, status },
+    artifacts: { ...original.artifacts, effective_config: {} },
+  } }));
+  let retryPayload: Record<string, unknown> | undefined;
+  await page.route("**/api/projects/*/workflow-submit", route => {
+    retryPayload = route.request().postDataJSON();
+    return route.fulfill({ json: { ok: true, status: "synthesis_queued" } });
+  });
+  await page.goto(`/?page=workflows&project=default&request=${requestId}`);
+  const failure = page.getByTestId("workflow-preparation-failure");
+  await expect(failure).toBeInViewport();
+  await expect(page.getByRole("complementary", { name: "Raw YAML", exact: true })).toHaveCount(0);
+  await failure.getByRole("button", { name: "Review preparation", exact: true }).click();
+  await page.getByRole("button", { name: "Recheck & retry preparation", exact: true }).click();
+  await expect.poll(() => retryPayload).toMatchObject({
+    request_id: requestId, retry_failed: true, apply: false,
+    expected_revision: original.requirement.revision,
+    expected_requirement_digest: original.result.requirement_spec_digest,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Close workflow panel", exact: true }).click();
+  await expect(failure).toBeInViewport();
+  await expectNoViewportOverflow(page);
+});
+}
+
 test("reviews, approves, and follows a proposal without layout collisions", async ({ page, request }) => {
   let terminalProjection: Record<string, unknown> | null = null;
   let terminalProjectionHits = 0;

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "save-failure",
+    "title": "简单旅程与失败恢复",
+    "requirement": "R1：保存成功后才发布新状态；保存失败保留旧状态和用户输入并返回错误。R2：实现接口 export async function save(current, draft, write)，write 接收 draft；成功返回 {state:draft,input:\"\",error:null}，失败返回 {state:current,input:draft,error:\"save_failed\"}；不得修改 current/draft。R3：失败后允许同一输入重试，不增加后端或账号。",
+    "implementation": true
+  },
+  {
+    "id": "permissions",
+    "title": "权限与多主体状态",
+    "requirement": "R1：只有文档所有者可改标题，非所有者必须在业务入口被拒；隐藏 UI 按钮不算权限检查。R2：export function update(doc, actorId, changes)，doc 有 ownerId/title；非所有者返回 {ok:false,reason:\"forbidden\",doc}；所有者返回 {ok:true,doc:{...doc,title:changes.title}}。R3：拒绝不得改原对象；changes.ownerId 必须忽略，不允许通过更新转移所有权。",
+    "implementation": true
+  },
+  {
+    "id": "shared-scenario",
+    "title": "跨任务集成",
+    "requirement": "R1：任务限定为 T-F 功能模块和 T-A 正式入口装配，T-A 依赖 T-F。共享规则 SR1：写入失败保持旧状态和输入；具名场景 S-save。R2：T-F 的 AC-F/C-F 在功能入口验证；T-A 的 AC-A/C-A 在正式入口独立验证。各命令分别由 verify-feature/verify-assembly 负责，层级分别 unit/e2e，尚未执行。R3：共享规则只维护一份；两个 Task 必须明确本片责任及引用，不能把全部场景/决定复制两遍。",
+    "implementation": false
+  },
+  {
+    "id": "migration",
+    "title": "既有行为修订",
+    "requirement": "R1：已有 v1 数据 {id,title} 改为 v2 {id,title,read:false}；保留 id/title，已有 v2 的 read:true 不得被重置。R2：本次新增版本迁移，不移除原来的加载失败写保护与重试行为；未知版本拒绝自动写入，原字节保持。R3：Shared Spec SR-load 消费者 T-LOAD/T-MIGRATE/T-ENTRY；修订必须列出新旧行为、保留义务、这些消费者及需重审的旧验证证据；不宣称旧测试仍然有效。",
+    "implementation": false
+  },
+  {
+    "id": "future-decision",
+    "title": "未来决定不阻塞当前",
+    "requirement": "R1：本期仅本地单用户清单，无账号/同步/后端。R2：D-sync 为未来是否同步的决定，owner Product owner，最迟下一版本立项前确认，本期不阻塞；不能自行选择同步方案。R3：本期新增/刷新行为可实现，保存失败保持原值；所有验证尚未执行。完整决定登记和 Task Spec 对 D-sync 状态/阻塞范围必须一致。",
+    "implementation": false
+  },
+  {
+    "id": "dependency-cycle",
+    "title": "循环和未来验证依赖",
+    "requirement": "R1：提议 T-CORE 先实现业务模块、T-ENTRY 装配，ENTRY 依赖 CORE。现有草案错误地要求 CORE 完成前必须运行由 ENTRY 产生的全产品命令。R2：修复方案保持核心业务与真实入口验收全部义务，CORE 用本片模块测试独立验证，产品命令留给 ENTRY 集成阶段；不得删除最终验收或伪造通过。R3：指出原循环并给出可执行顺序、每片生产者/验证者、命令及证据状态。",
+    "implementation": false
+  }
+]

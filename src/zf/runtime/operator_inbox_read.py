@@ -13,6 +13,7 @@ _VERSION_FIELDS = (
     "revision", "question_count", "refs", "proposal_ref", "eval_ref",
     "candidate_task_map_ref", "actions", "verification_required", "decision_options",
     "decision_questions", "allow_other", "recommended_answer",
+    "workflow_proposal_ref", "proposal_digest",
 )
 
 

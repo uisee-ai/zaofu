@@ -1,0 +1,38 @@
+[
+  {
+    "id": "both-missing",
+    "requirement": "R-VERIFY：T-READ 与 T-SIZE 每片独立 task_verify 都必须在项目根执行精确命令 python -m unittest -v，实际发现本片测试且非零测试全部通过后才能接受本片完成。T-SIZE 依赖 T-READ。最终 candidate_verify 在全部任务完成后仍运行根命令覆盖两个入口。显式模块命令可以补充，不能替代每片根发现。",
+    "candidate": "{\"tasks\": [{\"task_id\": \"T-READ\", \"task_verify_commands\": [\"python -m unittest -v tests.test_read_file\"], \"blocked_by\": [], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}, {\"task_id\": \"T-SIZE\", \"task_verify_commands\": [\"python -m unittest -v tests.test_file_size\"], \"blocked_by\": [\"T-READ\"], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}], \"candidate_verify\": {\"runs_after\": \"both tasks completed\", \"commands\": [\"python -m unittest -v\"]}}",
+    "expected_task_ids": [
+      "T-READ",
+      "T-SIZE"
+    ],
+    "expected": "finding"
+  },
+  {
+    "id": "read-fixed",
+    "requirement": "R-VERIFY：T-READ 与 T-SIZE 每片独立 task_verify 都必须在项目根执行精确命令 python -m unittest -v，实际发现本片测试且非零测试全部通过后才能接受本片完成。T-SIZE 依赖 T-READ。最终 candidate_verify 在全部任务完成后仍运行根命令覆盖两个入口。显式模块命令可以补充，不能替代每片根发现。",
+    "candidate": "{\"tasks\": [{\"task_id\": \"T-READ\", \"task_verify_commands\": [\"python -m unittest -v\"], \"blocked_by\": [], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}, {\"task_id\": \"T-SIZE\", \"task_verify_commands\": [\"python -m unittest -v tests.test_file_size\"], \"blocked_by\": [\"T-READ\"], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}], \"candidate_verify\": {\"runs_after\": \"both tasks completed\", \"commands\": [\"python -m unittest -v\"]}}",
+    "expected_task_ids": [
+      "T-SIZE"
+    ],
+    "expected": "finding"
+  },
+  {
+    "id": "both-fixed",
+    "requirement": "R-VERIFY：T-READ 与 T-SIZE 每片独立 task_verify 都必须在项目根执行精确命令 python -m unittest -v，实际发现本片测试且非零测试全部通过后才能接受本片完成。T-SIZE 依赖 T-READ。最终 candidate_verify 在全部任务完成后仍运行根命令覆盖两个入口。显式模块命令可以补充，不能替代每片根发现。",
+    "candidate": "{\"tasks\": [{\"task_id\": \"T-READ\", \"task_verify_commands\": [\"python -m unittest -v\"], \"blocked_by\": [], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}, {\"task_id\": \"T-SIZE\", \"task_verify_commands\": [\"python -m unittest -v\"], \"blocked_by\": [\"T-READ\"], \"completion\": \"独立 task_verify 必须从项目根执行本片所列命令，确认实际发现本片具名测试且测试数非零、全部通过才接受完成；缺失本片测试或零测试即失败。\"}], \"candidate_verify\": {\"runs_after\": \"both tasks completed\", \"commands\": [\"python -m unittest -v\"]}}",
+    "expected_task_ids": [],
+    "expected": "pass"
+  },
+  {
+    "id": "zero-tests-allowed",
+    "requirement": "R-VERIFY：T-READ 与 T-SIZE 每片独立 task_verify 都必须在项目根执行精确命令 python -m unittest -v，实际发现本片测试且非零测试全部通过后才能接受本片完成。T-SIZE 依赖 T-READ。最终 candidate_verify 在全部任务完成后仍运行根命令覆盖两个入口。显式模块命令可以补充，不能替代每片根发现。",
+    "candidate": "{\"tasks\": [{\"task_id\": \"T-READ\", \"task_verify_commands\": [\"python -m unittest -v\"], \"blocked_by\": [], \"completion\": \"独立 task_verify 命令通过后完成\"}, {\"task_id\": \"T-SIZE\", \"task_verify_commands\": [\"python -m unittest -v\"], \"blocked_by\": [\"T-READ\"], \"completion\": \"独立 task_verify 命令通过后完成\"}], \"candidate_verify\": {\"runs_after\": \"both tasks completed\", \"commands\": [\"python -m unittest -v\"]}}",
+    "expected_task_ids": [
+      "T-READ",
+      "T-SIZE"
+    ],
+    "expected": "finding"
+  }
+]

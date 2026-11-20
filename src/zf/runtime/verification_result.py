@@ -104,6 +104,46 @@ def normalize_verification_result(
     return result
 
 
+def normalize_candidate_blocker(result: dict[str, Any]) -> None:
+    """Bind candidate Plan-port handoffs to explicit blocked acceptance rows."""
+    if result.get("output_profile_id") != "candidate-verify":
+        return
+    blocked = result.get("execution_status") == "completed" and result.get("verdict") == "blocked"
+    if blocked:
+        result.setdefault("failure_class", _default_failure_class(result))
+    if result.get("failure_class") == "dependency_blocked" and not blocked:
+        raise VerificationResultError("candidate dependency_blocked requires a completed blocked verdict")
+    candidate_plan_ports(result)
+
+
+def candidate_plan_ports(result: Mapping[str, Any], *, require_named_port: bool = False) -> set[str]:
+    """Only an explicit blocked item tied to a blocked criterion can name a Plan port."""
+    if result.get("output_profile_id") != "candidate-verify":
+        return set()
+    blocked_ids = {str(row.get("acceptance_id") or "") for row in _list(result.get("requirement_results"))
+                   if isinstance(row, Mapping) and row.get("status") == "blocked"}
+    ports = set()
+    for item in _list(result.get("rework_items")):
+        if not isinstance(item, Mapping):
+            continue
+        for scope in _string_list(item.get("allowed_scope")):
+            kind, separator, name = scope.partition(":")
+            if kind != "plan_ports" or (not separator and not require_named_port):
+                continue
+            port = name.strip()
+            if not port:
+                raise VerificationResultError(
+                    "allowed_scope must name a port from the bound Plan package, "
+                    "for example plan_ports:task_map; use the actual implicated port"
+                )
+            if (result.get("execution_status") != "completed" or result.get("verdict") != "blocked"
+                    or result.get("failure_class") != "dependency_blocked" or item.get("status") != "blocked"
+                    or not item.get("acceptance_id") or str(item["acceptance_id"]) not in blocked_ids):
+                raise VerificationResultError("Plan-port recovery requires a blocked item and matching blocked AC")
+            ports.add(port)
+    return ports
+
+
 def validate_verification_result(
     result: Mapping[str, Any],
     *,

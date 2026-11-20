@@ -47,6 +47,10 @@ Local adaptation of yoke critic role context for ZaoFu.
 
 ## Plan Critic Gate (Skill-Owned)
 
+先读取本次批准的 `plan_review` 与 `zf-plan-execution-readiness/references/review-scope.md`。
+以下维度按声明的 targeted/full 范围适用，不能用角色通用清单将定向审查扩大为全文审批。
+只展开与 focus、共享约束和真实反证有关的方法引用；当前上下文仍有同版内容时不重复加载。
+
 加载 `zf-plan-execution-readiness`，逐条核对混合 AC 的验证责任、过大工作包、
 阶段集成和不合理依赖。把具体来源及判定写进 verdict；不能只按任务名豁免前置 AC。
 同时执行该方法的来源分类、跨域反例和最早反馈审查。返工 verdict 区分“已列修复关闭”
@@ -138,6 +142,14 @@ Approve 时返回当前 plan/task-map refs、revision、摘要和 residual risks
 返回非空 `fix_items[]`，每项包含 `task_id` 或 `acceptance_id`、`observed_gap`、
 `required_change`、`done_when` 和 evidence refs。不要修改 task map；同一 Planner
 根据这些项修订。
+
+纯聚合 Plan Critic 也必须显式返回顶层 `plan_content_profile`；这是本次语义审查的结论，
+不属于应留空的 task map、plan ports 等结构化计划正文。对照确切 authority 核对 PRD
+目标/范围、SDD 入口/合同/失败语义、TDD 预期结果/验证责任/证据路径以及 Decision
+Register 和逐条来源覆盖。仅在这些正文及覆盖均完整时返回 `derived_plan_full`，并在
+findings/evidence refs 绑定本版审查依据；有缺口返回 `derived_plan`，有意缩写返回
+`summary_only`，必要时给出具体返工项。不可照抄 Planner 标签、凭标题推断完整性，
+也不可把 Plan 完整性等同于尚未执行的产品验收通过。
 
 结构化 `findings[].severity` 只能使用 `info|low|medium|high|critical`。Residual
 risk 使用 `info` 或 `low` 并在 message 中说明；不得把 `residual-risk` 当成枚举值。

@@ -25,7 +25,7 @@ def _report(port):
 
 
 @pytest.mark.parametrize('absolute', [True, False])
-def test_unmaterialized_requirement_stops_before_actual_critic_dispatch(tmp_path, absolute):
+def test_requirement_is_pinned_before_actual_critic_dispatch(tmp_path, absolute):
     harness = _PlanSynthHarness(tmp_path, [])
     path = harness.state_dir / 'workflow-requests/run-path/requirements/revision-0002.json'
     path.parent.mkdir(parents=True)
@@ -35,12 +35,16 @@ def test_unmaterialized_requirement_stops_before_actual_critic_dispatch(tmp_path
     harness.reports = [_report({'logical_name': 'requirement_spec', 'ref': ref,
                                'sha256': hashlib.sha256(raw).hexdigest()})]
     _dispatch(harness)
-    assert not harness.critic_dispatch_attempted
-    assert harness.finalized.payload['failure_class'] == 'plan_candidate_preflight'
-    assert harness.finalized.payload['attempt_domain'] == 'protocol_repair'
-    findings = harness.finalized.payload['report']['findings']
-    issue = next(f for f in findings if f.get('code') == 'plan_port_not_materialized')
-    assert 'requirement_spec' in issue['message'] and ref in issue['message']
+    assert harness.critic_dispatch_attempted
+    # The upstream relocation now pins digest-bound input refs as Package
+    # sidecars. Prove exact bytes and binding instead of requiring rejection.
+    from zf.runtime.sidecar_refs import sidecar_path
+    reports = list(harness.state_dir.glob('artifacts/fanouts/fanout-path/prepared-child-reports/planner/*.json'))
+    assert len(reports) == 1
+    port = json.loads(reports[0].read_text())['plan_ports'][0]
+    assert port['ref'] != ref
+    assert port['sha256'] == hashlib.sha256(raw).hexdigest()
+    assert sidecar_path(harness.state_dir, port['ref']).read_bytes() == raw
     assert path.read_bytes() == raw
 
 

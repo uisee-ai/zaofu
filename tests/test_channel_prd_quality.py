@@ -196,3 +196,41 @@ def test_evaluator_preflight_uses_the_same_quality_contract(tmp_path, defect):
     host = SimpleNamespace(state_dir=state, event_log=log, event_writer=writer)
     with pytest.raises(ValueError, match="quality contract"):
         _request_item(host, request)
+
+
+def test_object_evidence_repair_explains_required_string_shape(tmp_path, monkeypatch):
+    """A real synthesis repeated object refs twice when told only refs were missing."""
+    import json
+    from types import SimpleNamespace
+    from zf.core.events import EventLog, EventWriter
+    from zf.runtime.channel_projection import project_channel
+    from zf.runtime.channel_reply_contract import emit_structured_reply_events
+    from zf.runtime import channel_synthesis_reactor
+
+    writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+    writer.emit("channel.created", payload={"channel_id": "ch-shape"})
+    writer.emit("channel.synthesis.requested", payload={
+        "channel_id": "ch-shape", "thread_id": "main", "request_id": "synth-shape",
+        "prd_quality_contract": "channel-prd-quality.v1"})
+    body = _quality_body()
+    body.pop("source_attestation")
+    for field in ("consumed_contribution_refs", "canonical_cross_review_refs", "supporting_contribution_refs"):
+        body[field] = []
+    body["requirement_coverage"][0]["evidence_refs"] = [{"ref": "sources/requirement.md", "digest": "a" * 64}]
+    emit_structured_reply_events(
+        state_dir=tmp_path, writer=writer, channel=project_channel(tmp_path, "ch-shape"),
+        request={"thread_id": "main", "target_member_id": "synth"},
+        message={"refs": {"synthesis_request_id": "synth-shape"}},
+        reply=json.dumps({"channel_synthesis": body}), reply_event_id="invalid-shape", actor="synth", source="test")
+    events = writer.event_log.read_all()
+    assert not any(e.type == "channel.synthesis.proposed" for e in events)
+    repair = next(e for e in events if e.type == "channel.synthesis.repair.requested")
+    assert "list[str]" in repair.payload["contract_error"]
+    assert "not ref/digest objects" in repair.payload["contract_error"]
+    routed = []
+    monkeypatch.setattr(channel_synthesis_reactor, "_route_runtime_message", lambda host, event, message: routed.append(message))
+    channel_synthesis_reactor.react_channel_synthesis_repair_requested(
+        SimpleNamespace(state_dir=tmp_path, event_log=writer.event_log, event_writer=writer), repair)
+    assert routed and '"sources/requirement.md"' in routed[0].payload["text"]
+    body["requirement_coverage"][0]["evidence_refs"] = ["sources/requirement.md"]
+    assert validate_prd_quality_contract(body) == ""

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-for (const action of ["replan-approve", "replan-reject"]) {
+for (const action of ["replan-reject"]) {
   test(`owner deep link waits for approval identity and sends ${action}`, async ({ page, request }) => {
     const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
     let resolvedPreviews = 0;
@@ -41,22 +41,19 @@ for (const action of ["replan-approve", "replan-reject"]) {
     });
     await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
     const dialog = page.getByRole("dialog", { name: "Plan preview" });
-    const approve = dialog.getByRole("button", { name: "Approve decisions", exact: true });
-    const reject = dialog.getByRole("button", { name: "Reject", exact: true });
-    await expect(approve).toBeVisible();
-    await dialog.getByPlaceholder("reject reason", { exact: true }).fill("revise scope");
-    await expect(approve).toBeDisabled();
-    await expect(reject).toBeDisabled();
+    const answer = dialog.getByRole("button", { name: "提交答复并重新规划", exact: true });
+    await expect(dialog.getByText("候选计划待澄清，尚未通过 Critic", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Approve decisions", exact: true })).toHaveCount(0);
+    await dialog.getByRole("textbox", { name: "Owner 答复内容", exact: true }).fill("GIT-01: no Git writes only during Plan preview");
+    await expect(answer).toBeDisabled();
     releaseInbox();
-    const button = action === "replan-approve" ? approve : reject;
-    await expect(button).toBeEnabled();
-    await button.click();
+    await expect(answer).toBeEnabled();
+    await answer.click();
     await expect.poll(() => actions.length).toBe(1);
     expect(actions[0].name).toBe(action);
-    expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
+    expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json", reason: "GIT-01: no Git writes only during Plan preview" });
     await expect.poll(() => resolvedPreviews, { timeout: 5000 }).toBeGreaterThanOrEqual(1);
-    await expect(approve).toBeDisabled();
-    await expect(reject).toBeDisabled();
+    await expect(answer).toBeDisabled();
     await page.unrouteAll({ behavior: "wait" });
   });
 }
@@ -73,6 +70,7 @@ test("complete Plan, bound matrix and summary remain distinct without writes", a
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
   await expect(dialog.getByText("完整 Plan", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   const tail = dialog.getByText("END-OF-FULL-PLAN", { exact: true });
   await tail.scrollIntoViewIfNeeded();
   await expect(tail).toBeVisible();
@@ -124,7 +122,8 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await (await lateResponse).finished();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
-  await expect(dialog.locator(".plan-preview-toolbar").getByText("evt-preview-digest", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "工程上下文", exact: true }).click();
+  await expect(dialog.locator(".plan-preview-context").getByText("evt-preview-digest", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
 });
 
@@ -181,10 +180,13 @@ test(`a delayed post-approval refresh cannot ${openAnother ? "replace another Pl
 test("large Plan pagination preserves every character through the final page", async ({ page, request }) => {
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-long/preview`)).json();
+  const loaded = page.waitForResponse(response => response.url().endsWith("/plans/evt-preview-long/preview") && response.ok());
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
+  await (await loaded).finished();
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   const pagination = dialog.getByRole("navigation", { name: "计划阅读导航" });
-  await expect(pagination).toBeVisible();
+  await expect(pagination).toBeVisible({ timeout: 10000 });
   await pagination.getByTitle("切换到章节分页").click();
   await pagination.getByRole("button", { name: "查看源码" }).click();
   const next = pagination.getByRole("button", { name: "下一页" });
@@ -220,6 +222,7 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
   const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await dialog.getByRole("button", { name: "完整原文", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "格式化长计划", exact: true })).toBeVisible();
   await expect(dialog.locator(".plan-preview-markdown-pane > section table").first()).toBeVisible();
   await dialog.getByTitle("切换到章节分页").click();
@@ -304,7 +307,7 @@ test("slow full review does not block the approval toolbar or module view", asyn
   await page.route("**/plans/evt-preview-review/preview", async route => {
     wholeReads += 1; started(); await delay; await route.continue();
   });
-  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review`);
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-review#plan=evt-preview-review&view=overview`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await expect(dialog.getByRole("heading", { name: "产品目标" })).toBeVisible();
   expect(wholeReads).toBe(0);

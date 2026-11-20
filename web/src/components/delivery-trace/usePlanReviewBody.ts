@@ -8,8 +8,11 @@ export function usePlanReviewBody(envelope: PlanPreview | null, projectId: strin
     envelope.resolved_event_id, envelope.status, envelope.artifacts]) : "";
   const [result, setResult] = useState<{ key: string; body?: PlanPreview; error?: string }>({ key: "" });
   const loaded = result.key === key ? result : null;
+  const [requestedKey, setRequestedKey] = useState("");
+  useEffect(() => { if (requested && key) setRequestedKey(key); }, [requested, key]);
+  const reading = requestedKey === key && Boolean(key);
   useEffect(() => {
-    if (!envelope || envelope.content_state !== "deferred" || !requested || loaded?.body) return;
+    if (!envelope || envelope.content_state !== "deferred" || !reading || loaded?.body) return;
     const controller = new AbortController();
     setResult({ key });
     void getPlanPreview(envelope.plan_id, projectId, false, controller.signal).then(body => {
@@ -24,10 +27,11 @@ export function usePlanReviewBody(envelope: PlanPreview | null, projectId: strin
       if (!controller.signal.aborted) setResult({ key, error: error instanceof Error ? error.message : String(error) });
     });
     return () => controller.abort();
-    // A result does not start a new fetch; only the selected identity/view does.
+    // Once requested, finish this identity even when the view changes. A new
+    // identity or unmount still cancels it; cached results do not restart reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, requested]);
+  }, [key, reading]);
   return { preview: loaded?.body ? { ...envelope!, ...loaded.body, content_state: undefined } : envelope,
-    loading: Boolean(envelope?.content_state === "deferred" && requested && !loaded?.body && !loaded?.error),
+    loading: Boolean(envelope?.content_state === "deferred" && reading && !loaded?.body && !loaded?.error),
     error: loaded?.error || "" };
 }

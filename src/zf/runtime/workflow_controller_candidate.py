@@ -30,7 +30,7 @@ def materialize_controller_candidate(
             base_path=base_path, short_spec=short_spec, requirement=requirement or {},
         )
         return _write_candidate(base_path, request_id, documents)
-    if "plan_critic_enabled" in parameters and "lanes" not in parameters:
+    if ("plan_critic_enabled" in parameters or "plan_review" in parameters) and "lanes" not in parameters:
         raise ValueError("plan_critic_enabled requires explicit existing lanes")
     if family not in {"IssueFlow", "PrdFlow", "RefactorFlow"} or "lanes" not in parameters:
         return base_path
@@ -52,6 +52,24 @@ def materialize_controller_candidate(
     critic_changed = critic_enabled is not None and spec.get(critic_key, True) != critic_enabled
     if critic_changed:
         spec[critic_key] = critic_enabled
+    if "plan_review" in parameters:
+        from zf.core.config.plan_review import resolve_plan_review
+        if family != "PrdFlow":
+            raise ValueError("plan_review requires PrdFlow")
+        policy = resolve_plan_review(parameters)
+        existing = [key for key in ("planReview", "plan_review") if key in spec]
+        if len(existing) > 1:
+            raise ValueError("controller Flow has ambiguous plan review aliases")
+        review_key = existing[0] if existing else "planReview"
+        critic_changed = critic_changed or spec.get(review_key) != policy
+        spec[review_key] = policy
+        # The explicit policy replaces the legacy switch in this candidate only.
+        for old in critic_keys:
+            spec.pop(old, None)
+    elif "plan_critic_enabled" in parameters:
+        # A legacy toggle must not silently override an existing scoped policy.
+        if "planReview" in spec or "plan_review" in spec:
+            raise ValueError("existing planReview requires an explicit plan_review revision")
     pipeline = parameters.get("task_pipeline")
     if pipeline is not None:
         from zf.runtime.workflow_task_pipeline_inputs import validate_prd_task_pipeline

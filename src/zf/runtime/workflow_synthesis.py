@@ -781,6 +781,14 @@ def _admit_result(
         raise WorkflowSynthesisError(
             "short FlowSpec lanes must be an integer between 1 and 64"
         )
+    if "plan_review" in parameters:
+        from zf.core.config.plan_review import resolve_plan_review
+        if flow_family != "PrdFlow":
+            raise WorkflowSynthesisError("plan_review requires PrdFlow")
+        try:
+            resolve_plan_review(parameters)
+        except ValueError as exc:
+            raise WorkflowSynthesisError(str(exc)) from exc
     pipeline = parameters.get("task_pipeline")
     critic_enabled = parameters.get("plan_critic_enabled")
     if "plan_critic_enabled" in parameters and (flow_family != "PrdFlow" or type(critic_enabled) is not bool):
