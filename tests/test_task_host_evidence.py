@@ -10,9 +10,9 @@ from zf.runtime.task_execution_evidence import capture_execution_evidence
 from zf.runtime.task_host_manifest import digest
 
 
-def host_probe(state, source, output_text='assertion RED: TODO\nAPI_KEY=private-value'):
+def host_probe(state, source, output_text='assertion RED: TODO\nAPI_KEY=private-value', *, task_map_generation='map-1'):
     source.update(lease_id='lease-old', dispatch_id='dispatch-old', request_hash='request-old',
-                  task_map_generation='map-1', operation_generation=1)
+                  task_map_generation=task_map_generation, operation_generation=1)
     keys = ('workflow_run_id', 'task_id', 'operation_id', 'active_attempt_id',
             'lease_id', 'dispatch_id', 'request_hash', 'task_map_generation', 'operation_generation')
     identity = {k: source[k] for k in keys}

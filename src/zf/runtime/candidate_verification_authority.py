@@ -101,9 +101,16 @@ def prepare_candidate_verification_authority(
             "frozen candidate lacks an exact freeze receipt"
         )
 
+    from zf.runtime.candidate_continuation import authorized_manifest, source_evidence_run
+
+    evidence_run_id = source_evidence_run(runtime, candidate)
+    inherited_proofs = {}
+    if body.get("candidate_continuation_ref"):
+        receipt = authorized_manifest(runtime, body["candidate_continuation_ref"], workflow_run_id)
+        inherited_proofs = {p["task_id"]: p for p in receipt["manifest"]["task_proofs"]}
     task_commits = candidate_task_source_commits(
         events,
-        workflow_run_id=workflow_run_id,
+        workflow_run_id=evidence_run_id,
         candidate_head_commit=candidate_head,
     )
     missing_commits = sorted(set(completed_task_ids) - set(task_commits))
@@ -118,7 +125,7 @@ def prepare_candidate_verification_authority(
     for child_task_id in completed_task_ids:
         verification = _latest_task_verification(
             events,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=evidence_run_id,
             task_id=child_task_id,
             task_map_generation=generation,
             target_commit=task_commits[child_task_id],
@@ -127,6 +134,11 @@ def prepare_candidate_verification_authority(
             raise CandidateVerificationAuthorityError(
                 f"candidate task {child_task_id!r} lacks current admitted Verify evidence"
             )
+        if inherited_proofs:
+            current_task = runtime.task_store.get(child_task_id)
+            if (verification.id != inherited_proofs[child_task_id]["verification_event_id"]
+                    or current_task is None or current_task.status != "done"):
+                raise CandidateVerificationAuthorityError("continued Task authority changed: " + child_task_id)
         child_payload = dict(verification.payload)
         contract_descriptor = _descriptor(
             child_payload,
@@ -139,7 +151,7 @@ def prepare_candidate_verification_authority(
             digest_key="target_snapshot_digest",
         )
         expected_contract = {
-            "workflow_run_id": workflow_run_id,
+            "workflow_run_id": evidence_run_id,
             "task_id": child_task_id,
             "task_map_generation": generation,
         }

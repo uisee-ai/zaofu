@@ -225,6 +225,10 @@ class DurableCallWorkflowMixin:
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = event.task_id or str(payload.get("task_id") or "")
         pattern_id = str(payload.get("pattern_id") or payload.get("stage_id") or "")
+        if payload.get("candidate_continuation_ref"):
+            from zf.runtime.candidate_continuation_runtime import admit_continuation
+
+            return admit_continuation(self, event)
         if str(payload.get("request_kind") or "") == "research":
             from zf.runtime.research_generation import (
                 research_generation_binding_error,

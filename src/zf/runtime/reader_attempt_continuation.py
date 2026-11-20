@@ -96,6 +96,14 @@ def deliver_reader_continuation(runtime: Any, dispatch: ZfEvent, claim: ZfEvent)
     prompt += reader_continuation_guidance(
         attempt_id=claim.payload["attempt_id"], backend=role.backend, cli=zf_cli_cmd(),
     )
+    if claim.payload.get("continuation_phase") == "result_completion":
+        prompt += (
+            " This is the single bounded result-completion continuation for this call. "
+            "Required-read coverage is complete; finish the remaining independent evaluation, "
+            "update the current result scratch and use the briefing's validated submission. "
+            "Coverage alone is not understanding or acceptance: reread anything no longer "
+            "available in this session and preserve every existing evidence and permission gate."
+        )
     runtime._send_transport_task(role.instance_id, briefing, prompt, context)
     runtime._note_prompt_sent(role.instance_id, row["dispatch_id"])
     runtime.event_writer.append(ZfEvent(
@@ -104,6 +112,8 @@ def deliver_reader_continuation(runtime: Any, dispatch: ZfEvent, claim: ZfEvent)
         causation_id=claim.id,
         payload={**p, "recovery_decision_event_id": claim.id, "continuation_id": claim.id},
     ))
-    runtime._set_worker_state(role.instance_id, "busy", reason="reader_input_progress",
+    runtime._set_worker_state(role.instance_id, "busy",
+                              reason="reader_result_completion" if claim.payload.get("continuation_phase") == "result_completion"
+                              else "reader_input_progress",
                               task_id=row["task_id"])
     return True

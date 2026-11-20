@@ -166,6 +166,11 @@ class CanonicalHandoffResolver:
             mutable,
             stage_id=str(authority_contract.get("stage_id") or ""),
         )
+        if profile in {"workflow-read", "candidate-verify", "goal-closure", "thin-judge-goal-closure"}:
+            from zf.runtime.continuation_evidence import continuation_input_refs
+            reader_inputs.extend(continuation_input_refs(
+                self.state_dir, self.query._events(), workflow_run_id,
+            ))
         if reader_inputs:
             input_refs = (
                 list(mutable.get("input_refs") or [])
@@ -684,9 +689,19 @@ class CanonicalHandoffResolver:
                 raise ArtifactReadError(
                     "candidate-verify freeze receipt task set mismatch"
                 )
+        from types import SimpleNamespace
+        from zf.runtime.candidate_continuation import source_evidence_run
+
+        try:
+            evidence_run_id = source_evidence_run(SimpleNamespace(
+                state_dir=self.state_dir,
+                event_log=SimpleNamespace(read_all=lambda: all_events),
+            ), event)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise ArtifactReadError("invalid Candidate continuation authority: " + str(exc)) from exc
         integrated = candidate_task_source_commits(
             all_events,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=evidence_run_id,
             candidate_head_commit=candidate_head,
         )
         missing = sorted(set(completed) - set(integrated))

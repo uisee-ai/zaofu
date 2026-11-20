@@ -91,6 +91,87 @@ def fail_reader_child_operations(
 
 
 class FanoutTimeoutOperationsMixin:
+    def _reconcile_partial_reader_timeouts(self, events: list[ZfEvent]) -> bool:
+        """Repair the legacy premature aggregate, retaining every child outcome.
+
+        Only a current, running Run with unchanged live Reader calls may resume
+        waiting. Terminal Runs and real whole-stage deadlines stay terminal.
+        """
+        from zf.runtime.run_admission import build_run_admission_projection
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+        from zf.runtime.pause_lifecycle import is_dispatch_paused
+
+        if is_dispatch_paused(self.state_dir, events=events):
+            return False
+        failures = [e for e in events if e.type == "fanout.aggregate.completed"
+                    and e.actor == "zf-cli" and e.origin in {"", "kernel"}
+                    and e.payload.get("reason") == "timeout"
+                    and e.payload.get("status") == "failed"
+                    and e.payload.get("timeout_seconds") == 0]
+        if not failures:
+            return False
+        runs = build_run_admission_projection(events).runs
+        operations = reduce_workflow_operations(events)
+        for failed in reversed(failures):
+            fanout_id = str(failed.payload.get("fanout_id") or "")
+            manifest = self._fanout_manifest(fanout_id)
+            aggregate = manifest.get("aggregate") or {}
+            run_id = str(manifest.get("trace_id") or "")
+            run = runs.get(run_id)
+            if (run is None or run.status != "running"
+                    or manifest.get("topology") != "fanout_reader"
+                    or aggregate.get("last_event_id") != failed.id
+                    or aggregate.get("status") != "failed"
+                    or (manifest.get("aggregate_config") or {}).get("mode") != "wait_for_all"
+                    or self._fanout_identity_stale_reason(fanout_id)[0]):
+                continue
+            timeout = next((e for e in events if e.id == failed.causation_id), None)
+            if (timeout is None or timeout.type != "fanout.timed_out"
+                    or timeout.actor != "zf-cli" or timeout.origin not in {"", "kernel"}
+                    or timeout.payload.get("fanout_id") != fanout_id):
+                continue
+            children = manifest.get("children") or []
+            timed_out = set(timeout.payload.get("pending_children") or [])
+            live = [c for c in children if c.get("status") == "dispatched"]
+            if (not timed_out or not live
+                    or not timed_out <= {c.get("child_id") for c in children if c.get("status") == "failed"}):
+                continue
+            for child in live:
+                payload = child.get("payload") or {}
+                operation = operations.get(str(payload.get("operation_id") or ""), {})
+                if (operation.get("status") != "running"
+                        or operation.get("operation_type") != "fanout_reader_child"
+                        or operation.get("workflow_run_id") != run_id
+                        or operation.get("role_instance") != child.get("role_instance")
+                        or operation.get("active_attempt_id") != payload.get("attempt_id")
+                        or not payload.get("request_hash")
+                        or operation.get("request_hash") != payload["request_hash"]):
+                    break
+            else:
+                self.event_writer.append(ZfEvent(type="fanout.aggregate.started", actor="zf-cli",
+                    origin="kernel", causation_id=failed.id, correlation_id=run_id, payload={
+                        "fanout_id": fanout_id, "trace_id": run_id, "workflow_run_id": run_id,
+                        "stage_id": manifest.get("stage_id"), "mode": "wait_for_all",
+                        "recovery_kind": "partial_reader_idle_timeout",
+                        "recovered_from_event_id": failed.id,
+                    }))
+                return True
+        return False
+
+    def _defer_partial_reader_timeout(self, *, manifest: dict,
+                                     pending_children: list[str], causation_event: ZfEvent) -> bool:
+        """Settle the timed-out children while healthy siblings keep their calls."""
+        if (manifest.get("topology") != "fanout_reader"
+                or (manifest.get("aggregate_config") or {}).get("mode", "wait_for_all") != "wait_for_all"):
+            return False
+        if not any(child.get("child_id") not in pending_children
+                   and child.get("status") not in {"completed", "failed", "cancelled", "timed_out"}
+                   for child in manifest.get("children", [])):
+            return False
+        fail_reader_child_operations(self, manifest=manifest, pending_children=pending_children,
+                                     causation_event=causation_event, reason="reader_idle_timeout")
+        return True
+
     def _publish_fanout_timeout_failure(
         self,
         *,
@@ -117,6 +198,7 @@ class FanoutTimeoutOperationsMixin:
         stage_id = str(manifest.get("stage_id") or "")
         failure_event = str(aggregate_config.get("failure_event") or "")
         mode = str(aggregate_config.get("mode") or "wait_for_all")
+        identity = self._fanout_flow_identity_payload(manifest)
         has_aggregate_started = any(
             event.type == "fanout.aggregate.started"
             and isinstance(event.payload, dict)
@@ -141,7 +223,8 @@ class FanoutTimeoutOperationsMixin:
                 "child_id": child_id,
                 "message": (
                     "fanout worker did not reach a terminal result within "
-                    f"the {timeout_seconds}s runtime liveness deadline"
+                    + (f"the {timeout_seconds}s runtime liveness deadline" if timeout_seconds > 0
+                       else "the configured per-worker idle deadline")
                 ),
             }
             for child_id in pending_children
@@ -163,6 +246,7 @@ class FanoutTimeoutOperationsMixin:
             type="fanout.aggregate.completed",
             actor="zf-cli",
             payload={
+                **identity,
                 "fanout_id": fanout_id,
                 "trace_id": trace_id,
                 "stage_id": stage_id,
@@ -203,6 +287,7 @@ class FanoutTimeoutOperationsMixin:
                 type=failure_event,
                 actor="zf-cli",
                 payload={
+                    **identity,
                     "fanout_id": fanout_id,
                     "trace_id": trace_id,
                     "stage_id": stage_id,

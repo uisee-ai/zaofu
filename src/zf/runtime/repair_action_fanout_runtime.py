@@ -79,7 +79,14 @@ class RepairActionFanoutRuntimeMixin:
                 task_id=task_id,
                 reason="fanout_child_terminal:fanout.child.completed",
             )
+        undelivered_anchor = None
         if not dispatches:
+            from zf.runtime.reader_undelivered_retry import undelivered_retry_anchor
+
+            undelivered_anchor = undelivered_retry_anchor(
+                self, manifest=manifest, child=child, events=events,
+            )
+        if not dispatches and undelivered_anchor is None:
             return WorkflowRuntimeDecision(
                 action="rerun_fanout_child_failed",
                 role=role.instance_id,
@@ -87,7 +94,7 @@ class RepairActionFanoutRuntimeMixin:
                 reason="missing_previous_fanout_child_dispatch",
             )
         interrupted_dispatch: ZfEvent | None = None
-        latest_dispatch_is_open = (
+        latest_dispatch_is_open = bool(dispatches) and (
             not terminal_events
             or dispatches[-1][0] > terminal_events[-1][0]
         )
@@ -111,7 +118,7 @@ class RepairActionFanoutRuntimeMixin:
                 )
             if operation_status in {"suspended", "cancelled", "blocked"}:
                 interrupted_dispatch = dispatches[-1][1]
-        previous_dispatch = dispatches[-1][1]
+        previous_dispatch = dispatches[-1][1] if dispatches else undelivered_anchor
         if interrupted_dispatch is not None:
             interrupted_payload = (
                 interrupted_dispatch.payload
@@ -167,7 +174,10 @@ class RepairActionFanoutRuntimeMixin:
                 manifest=manifest,
                 child=child,
                 previous_dispatch=previous_dispatch,
-                attempt=len(dispatches),
+                attempt=max([1, len(dispatches), *[
+                    e.payload['attempt'] for _, e in dispatches
+                    if type(e.payload.get('attempt')) is int
+                ]]),
                 fresh_operation=True,
             )
         except ValueError as exc:

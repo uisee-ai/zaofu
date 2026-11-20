@@ -14,7 +14,7 @@ from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
 from zf.runtime.task_contract_snapshot import TaskContractSnapshotError
 
 
-def _prepared_candidate(tmp_path):
+def _prepared_candidate(tmp_path, *, feedback=False):
     seeded_runtime = _runtime(tmp_path)
     seeded = _seed_frozen_candidate(seeded_runtime)
     role = RoleConfig(name="verify", backend="mock", role_kind="reader")
@@ -38,6 +38,8 @@ def _prepared_candidate(tmp_path):
         trigger_event_id="evt-candidate-ready", target_ref=seeded["candidate_head"],
         expected_children=[],
     )
+    if feedback:
+        payload["rework_feedback"] = [{"message": "Use bound host receipt", "source_event_id": "host-evidence"}]
     child = FanoutChild(child_id="verify", role_instance="verify",
                         target_ref=seeded["candidate_head"], payload=payload)
     prepared = runtime._prepare_reader_fanout_child_operation(
@@ -95,3 +97,47 @@ def test_candidate_reader_retry_rejects_superseded_freeze(tmp_path):
         runtime._prepare_reader_contract_target(
             SimpleNamespace(payload=payload, target_ref=context.target_ref),
         )
+
+
+def test_fresh_candidate_retry_keeps_recovery_reads_resolvable(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    runtime, role, context, payload = _prepared_candidate(tmp_path, feedback=True)
+    initial = deepcopy(payload["required_reads"])
+    child = {"child_id": "verify", "target_ref": context.target_ref, "payload": deepcopy(payload)}
+    manifest = {"fanout_id": context.fanout_id, "stage_id": context.stage_id,
+                "trace_id": context.trace_id, "trigger_event_id": context.trigger_event_id,
+                "target_ref": context.target_ref}
+    for attempt in (1, 2):
+        prepare_fresh_reader_retry(runtime, manifest=manifest, child=child, role=role,
+            attempt=attempt, previous_dispatch=ZfEvent(type="fanout.child.dispatched",
+                payload=deepcopy(child["payload"])))
+        new = child["payload"]
+        source = hydrate_sidecar_ref(runtime.state_dir, new["attempt_source_manifest"]).payload
+        available = {(r["source_id"], r["artifact_id"], r["sha256"]) for r in source["sources"]}
+        assert all((r["source_id"], r["artifact_id"], r["artifact_sha256"]) in available
+                   for r in new["required_reads"])
+        assert new["required_reads"] == initial
+
+
+@pytest.mark.parametrize("fault", ["feedback", "unbound_read", "tampered_body", "foreign_run", "foreign_role"])
+def test_retry_recovery_context_rejects_changed_or_unbound_inputs(tmp_path, fault):
+    runtime, role, context, payload = _prepared_candidate(tmp_path, feedback=True)
+    child = {"child_id": "verify", "target_ref": context.target_ref, "payload": deepcopy(payload)}
+    p = child["payload"]
+    if fault == "feedback":
+        p["rework_feedback"] = [{"message": "different recovery"}]
+    elif fault == "unbound_read":
+        p["required_reads"][0]["artifact_sha256"] = "f" * 64
+    elif fault == "tampered_body":
+        row = next(r for r in p["required_reads"] if r["source_id"] == "critical-reader-repair-context")
+        (runtime.state_dir / f"artifacts/reader-repair-context/{row['artifact_sha256']}.json").write_text('{}')
+    elif fault == "foreign_run":
+        p["workflow_run_id"] = "foreign"
+    else:
+        role.instance_id = "foreign"
+    with pytest.raises(ValueError):
+        prepare_fresh_reader_retry(runtime,
+            manifest={"fanout_id": context.fanout_id, "stage_id": context.stage_id,
+                      "trace_id": context.trace_id, "trigger_event_id": context.trigger_event_id,
+                      "target_ref": context.target_ref}, child=child, role=role, attempt=1,
+            previous_dispatch=ZfEvent(type="fanout.child.dispatched", payload=deepcopy(payload)))

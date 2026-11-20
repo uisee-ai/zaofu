@@ -11,6 +11,7 @@ from zf.runtime.artifact_read_ledger import (
     _parse_ledger,
     _read_matches,
     active_read_ledger_path,
+    required_read_satisfied,
 )
 from zf.runtime.artifact_read_requirements import required_reads_for_attempt
 from zf.runtime.cli_command import zf_cli_cmd
@@ -25,19 +26,34 @@ def required_read_progress(
     ledger. Unreadable or inconsistent evidence never grants another nudge.
     """
     try:
-        requirements = required_reads_for_attempt(
-            events, attempt_id, state_dir=state_dir, operation_id=operation_id,
-        )
-        active = active_read_ledger_path(state_dir, attempt_id)
-        files = sorted(active.parent.glob("read-ledger-*.jsonl"))
-        if active.exists():
-            files.append(active)
-        rows = [row for path in files for row in _parse_ledger(
-            path.read_bytes(), expected_attempt_id=attempt_id,
-        )]
+        requirements, rows = _read_state(state_dir, events, attempt_id, operation_id)
         return sum(_coverage(rows, requirement) for requirement in requirements)
     except (OSError, ValueError, TypeError, KeyError, ArtifactReadError):
         return None
+
+
+def required_reads_complete(state_dir: Path, events: list[Any], *,
+                            attempt_id: str, operation_id: str) -> bool:
+    """Prove current input obligations, never the product verdict."""
+    try:
+        requirements, rows = _read_state(state_dir, events, attempt_id, operation_id)
+        return bool(requirements) and all(required_read_satisfied(rows, req) for req in requirements)
+    except (OSError, ValueError, TypeError, KeyError, ArtifactReadError):
+        return False
+
+
+def _read_state(state_dir: Path, events: list[Any], attempt_id: str, operation_id: str):
+    requirements = required_reads_for_attempt(
+        events, attempt_id, state_dir=state_dir, operation_id=operation_id,
+    )
+    active = active_read_ledger_path(state_dir, attempt_id)
+    files = sorted(active.parent.glob("read-ledger-*.jsonl"))
+    if active.exists():
+        files.append(active)
+    rows = [row for path in files for row in _parse_ledger(
+        path.read_bytes(), expected_attempt_id=attempt_id,
+    )]
+    return requirements, rows
 
 
 def progress_nudge_state(

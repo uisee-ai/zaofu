@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.attempt_read_progress import required_read_progress
+from zf.runtime.attempt_read_progress import required_read_progress, required_reads_complete
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 
 
@@ -15,6 +15,7 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     it cannot be interpreted as permission to resend or as product completion.
     Reads are finite, unique coverage of the unchanged frozen input, not tokens,
     repeated tool calls, chat activity, or an assertion about model memory.
+    Complete input permits one result-completion turn under the same gates.
     """
     if is_dispatch_paused(runtime.state_dir, events=events):
         return None
@@ -31,7 +32,11 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
             or (p.get("request_hash") or nested.get("request_hash")) != request_hash
             or (nested.get("attempt_id") or p.get("attempt_id")) != attempt_id):
         return False
-    if _waiting(events, role, operation_id, attempt_id, operation.get("task_id"), closed):
+    waiting, tool_observations = _waiting(
+        events, role, operation_id, attempt_id, operation.get("task_id"), closed,
+        state_dir=runtime.state_dir,
+    )
+    if waiting:
         return None
     if (closed.type != "provider.turn.closed"
             or closed.payload.get("provider_status") != "completed"):
@@ -69,8 +74,20 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     progress = required_read_progress(runtime.state_dir, events,
                                      attempt_id=attempt_id, operation_id=operation_id)
     previous = claims[-1].payload.get("input_read_progress") if claims else 0
-    if progress is None or type(previous) is not int or progress <= previous:
+    if progress is None or type(previous) is not int:
         return False
+    phase = "required_reads"
+    if progress <= previous:
+        # Reading and delivering the result are distinct obligations. Give the
+        # same authorized call one bounded completion turn after all input is
+        # covered, without charging a new infrastructure attempt or retrying
+        # unknown effects. Further no-progress turns keep the existing limit.
+        if (not claims or progress != previous
+                or any(e.payload.get("continuation_phase") == "result_completion" for e in claims)
+                or not required_reads_complete(runtime.state_dir, events,
+                    attempt_id=attempt_id, operation_id=operation_id)):
+            return False
+        phase = "result_completion"
     claim = runtime.event_writer.append(ZfEvent(
         type="worker.continuation.claimed", origin="kernel", actor=role,
         task_id=operation.get("task_id") or None,
@@ -81,11 +98,14 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
                  "workflow_run_id": operation.get("workflow_run_id"),
                  "fanout_id": p.get("fanout_id"), "child_id": p.get("child_id"),
                  "input_read_progress": progress, "closed_event_id": closed.id,
+                 "continuation_phase": phase,
                  "delivery_status": "unknown", "business_completed": False,
                  "recovery_owner": "run_manager",
+                 "tool_result_observations": tool_observations,
                  "next_action": "reconcile_existing_turn_before_retry"},
     ))
-    runtime._set_worker_state(role, "idle", reason="reader_input_progress", force=True)
+    runtime._set_worker_state(role, "idle", force=True,
+        reason="reader_result_completion" if phase == "result_completion" else "reader_input_progress")
     delivered = runtime._retry_fanout_child(
         manifest=manifest, child=child, previous_dispatch=dispatch,
         attempt=attempt, provider_session_replaced=True,
@@ -103,10 +123,10 @@ def continue_progressing_reader(runtime, *, events, manifest, child, dispatch,
     return True
 
 
-def _waiting(events, role, operation_id, attempt_id, task_id, closed) -> bool:
+def _waiting(events, role, operation_id, attempt_id, task_id, closed, *, state_dir) -> tuple[bool, list[dict]]:
     if closed.payload.get("pending_tool_ids") or closed.payload.get("tool_identity_unknown"):
-        return True
-    pending = set()
+        return True, []
+    pending = {}
     seen_dispatch = False
     for event in events:
         p = event.payload
@@ -117,22 +137,27 @@ def _waiting(events, role, operation_id, attempt_id, task_id, closed) -> bool:
             continue
         if event.type == "agent.tool.use":
             if not p.get("tool_use_id"):
-                return True
-            pending.add(p["tool_use_id"])
+                return True, []
+            pending[p["tool_use_id"]] = event
         elif event.type == "agent.tool.result":
-            pending.discard(p.get("tool_use_id"))
+            pending.pop(p.get("tool_use_id"), None)
     approvals = {e.payload.get("approval_ref") for e in events
                  if e.type == "approval.resolved" and e.origin == "kernel"}
     if task_id and any(
         e.type == "approval.requested" and (e.task_id or e.payload.get("task_id")) == task_id
         and e.payload.get("approval_ref") not in approvals for e in events
     ):
-        return True
+        return True, []
     resolved = {e.payload.get("request_id") for e in events
                 if e.type == "worker.assistance.closed" and e.origin == "kernel"}
-    return bool(pending) or any(
+    if any(
         e.type == "worker.assistance.requested" and e.actor == role
         and e.payload.get("operation_id") == operation_id
         and e.payload.get("active_attempt_id") == attempt_id
         and e.payload.get("request_id") not in resolved for e in events
-    )
+    ):
+        return True, []
+    from zf.runtime.reader_tool_observation import observe_completed_tools
+    observations = observe_completed_tools(state_dir, role, pending, closed)
+    observed = {row["tool_use_id"] for row in observations}
+    return bool(pending.keys() - observed), observations

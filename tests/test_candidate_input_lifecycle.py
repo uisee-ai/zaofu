@@ -11,7 +11,7 @@ from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_ope
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 
 
-def setup(tmp_path, profile="candidate-verify"):
+def setup(tmp_path, profile="candidate-verify", continuation_key=""):
     runtime = _runtime(tmp_path)
     seeded = _seed_frozen_candidate(runtime)
     body = _package(runtime.state_dir, generation=seeded['generation'])
@@ -30,7 +30,7 @@ def setup(tmp_path, profile="candidate-verify"):
         'artifact_package_mode': 'shadow', 'target_commit': seeded['candidate_head'],
         'plan_artifact_package_ref': package.payload['package_ref'],
         'plan_artifact_package_digest': package.payload['package_digest'],
-        'task_map_generation': seeded['generation']}
+        'task_map_generation': seeded['generation'], 'rework_of': continuation_key}
     if profile == 'thin-judge-goal-closure':
         identity = {'workflow_run_id': seeded['run_id'], 'goal_id': 'goal-1',
             'task_map_generation': seeded['generation'],
@@ -51,7 +51,8 @@ def setup(tmp_path, profile="candidate-verify"):
     mark_call_operation_started(runtime, prepared, task_id='FLOW-ANCHOR',
         dispatch_id='candidate-dispatch', causation_id='candidate-with-package')
     manifest = hydrate_sidecar_ref(runtime.state_dir, payload['attempt_source_manifest']).payload
-    runtime.task_store.update('FLOW-ANCHOR', status='done')
+    if not continuation_key:
+        runtime.task_store.update('FLOW-ANCHOR', status='done')
     return runtime, manifest, prepared, payload
 
 
@@ -61,6 +62,18 @@ def test_candidate_reader_does_not_require_active_anchor_task(tmp_path):
     assert result['requires_rebind'] is False
     assert result['status'] == 'current'
     assert result['authorizes_rebind'] is False
+
+
+def test_live_candidate_anchor_without_task_contract_keeps_reader_binding(tmp_path):
+    from zf.core.task.schema import TaskContract
+    runtime, manifest, _, _ = setup(tmp_path, continuation_key='previous-reader-failure')
+    runtime.task_store.update('FLOW-ANCHOR', status='in_progress', contract=TaskContract(),
+        active_dispatch_id=manifest['dispatch_id'], assigned_to='verify-lane-0')
+    result = input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)
+    assert result['status'] == 'current'
+    assert result['requires_rebind'] is False
+    manifest['target_commit'] = 'f' * 40
+    assert input_lifecycle(manifest, runtime.event_log.read_all(), state_dir=runtime.state_dir)['requires_rebind']
 
 
 @pytest.mark.parametrize('fault', ['manifest', 'cancelled', 'new_attempt', 'fanout_cancelled',

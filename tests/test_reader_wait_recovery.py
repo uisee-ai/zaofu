@@ -110,3 +110,22 @@ def test_explicit_stop_excludes_downtime_without_resetting_wait(tmp_path):
     assert not exhaust_reader_wait(runtime, **args)
     runtime._now=lambda: (start+timedelta(seconds=3901)).timestamp()
     assert exhaust_reader_wait(runtime, **args)
+
+
+def test_successful_first_delivery_removes_only_its_old_wait_diagnosis():
+    from zf.runtime.reader_wait_recovery import pending_reader_wait_diagnoses
+    from dataclasses import replace
+    failed = ZfEvent(type="fanout.child.failed", origin="kernel", payload={
+        "workflow_run_id": "run", "fanout_id": "f", "child_id": "c", "stage_id": "verify",
+        "role_instance": "reader", "run_id": "old", "target_ref": "frozen",
+        "failure_class": "reader_environment_wait_exhausted"})
+    recovered = ZfEvent(type="fanout.child.dispatched", origin="kernel", payload={
+        **failed.payload, "run_id": "new", "retry_of_run_id": "old"})
+    assert pending_reader_wait_diagnoses([failed])
+    assert not pending_reader_wait_diagnoses([failed, recovered])
+    assert pending_reader_wait_diagnoses([recovered, failed])
+    assert pending_reader_wait_diagnoses([failed, replace(recovered, origin="")])
+    for field in ("workflow_run_id", "fanout_id", "child_id", "role_instance", "stage_id", "retry_of_run_id", "target_ref"):
+        foreign = replace(recovered, payload={**recovered.payload, field: "foreign"})
+        assert pending_reader_wait_diagnoses([failed, foreign]), field
+    assert pending_reader_wait_diagnoses([failed, replace(recovered, payload={**recovered.payload, "run_id": "old"})])

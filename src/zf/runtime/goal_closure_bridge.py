@@ -340,6 +340,14 @@ class GoalClosureBridgeMixin:
             source_id="goal-claim-set",
             kind="goal_claim_set",
         )
+        from zf.runtime.candidate_continuation import closure_provenance
+
+        continuation = closure_provenance(events, state_dir=self.state_dir, workflow_run_id=workflow_run_id)
+        if continuation:
+            from zf.runtime.continuation_evidence import continuation_input_refs
+            for ref in continuation_input_refs(self.state_dir, events, workflow_run_id):
+                add_descriptor(ref=ref["ref"], digest=ref["sha256"],
+                    source_id=ref["source_id"], kind="historical_execution_evidence")
         package_ref = str(identity.get("plan_artifact_package_ref") or "")
         package_digest = str(identity.get("plan_artifact_package_digest") or "")
         product_acceptance: dict = {"required": False}

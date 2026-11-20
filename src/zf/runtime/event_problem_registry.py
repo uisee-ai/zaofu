@@ -2525,6 +2525,7 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             severity="medium",
             title="Task attempt failed",
             owner_route="run_manager",
+            suggested_route="run_manager_recovery",
             action_policy="needs_diagnosis",
             intervention_class="diagnose",
             suggested_action_kind="diagnose_task_attempt_failure",

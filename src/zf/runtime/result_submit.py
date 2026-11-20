@@ -365,7 +365,10 @@ class SemanticResultSubmitService:
                 profile_id=profile_id,
                 revision=_revision,
             )
-        if profile_id in {"task-verify", "candidate-verify"}:
+        if profile_id in {"task-verify", "candidate-verify"} or (
+            profile_id == "workflow-read"
+            and request.get("canonical_success_event") == "flow.discovery.child.completed"
+        ):
             from zf.runtime.verification_submit_validation import validate_verification_submission
 
             return validate_verification_submission(

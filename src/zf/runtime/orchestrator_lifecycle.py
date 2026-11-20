@@ -613,7 +613,9 @@ class LifecycleManagerMixin(
                 detector.reset()
                 self._stuck_already_reported.discard(role.instance_id)
                 continue
-            if active_task is not None:
+            # A live fanout child has its own dispatch/terminal identity. Parent
+            # Task progress must not suppress monitoring of this later operation.
+            if active_task is not None and active_fanout_child is None:
                 dispatch = self._latest_dispatch_event_for_task(active_task.id)
                 dispatch_payload = dispatch.payload if dispatch is not None else {}
                 dispatch_id = ""

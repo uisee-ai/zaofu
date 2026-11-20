@@ -1876,6 +1876,8 @@ def test_resident_semantic_advisor_timeout_falls_back_to_diagnosis() -> None:
 
 def test_resident_triage_advice_counts_as_prompt_response(tmp_path: Path) -> None:
     state_dir, _, _ = _state(tmp_path)
+    config = _config()
+    config.runtime.run_manager.resident_agent.enabled = True
     events = [
         ZfEvent(
             id="resident-spawned",
@@ -1903,7 +1905,7 @@ def test_resident_triage_advice_counts_as_prompt_response(tmp_path: Path) -> Non
     projection = build_run_manager_projection(
         state_dir,
         events=events,
-        config=_config(),
+        config=config,
     )
 
     assert projection["resident_agent"]["status"] == "observing"

@@ -130,6 +130,7 @@ def reconcile_host_verification(service) -> int:
         if is_dispatch_paused(service.state_dir, events=events):
             return 0
         operations = reduce_workflow_operations(events)
+        candidate_probe_owners: set[tuple[str, ...]] = set()
         for operation_id, operation in operations.items():
             if operation.get('status') != 'settled' or operation.get('semantic_verdict') not in {'blocked', 'failed', 'abstained'}:
                 continue
@@ -137,7 +138,7 @@ def reconcile_host_verification(service) -> int:
             if reader_probe_handoff_complete(operation, events):
                 continue
             try:
-                _, _, contract, _ = binding(service, operation_id)
+                _, request, contract, _ = binding(service, operation_id)
                 if contract.get('authority_scope') == 'candidate':
                     result = hydrate_sidecar_ref(service.state_dir,
                         operation.get('admitted_control_result_ref') or {}).payload
@@ -147,13 +148,27 @@ def reconcile_host_verification(service) -> int:
                         continue
             except (ValueError, KeyError, OSError):
                 continue
+            group = ()
+            if contract.get('authority_scope') == 'candidate':
+                group = (operation.get('workflow_run_id'), request.get('fanout_id'),
+                         request.get('target_commit'),
+                         request.get('result_identity', {}).get('contract_snapshot_digest'))
+                if not all(group):
+                    group = ()
+                if group and group in candidate_probe_owners:
+                    continue
             from zf.runtime.task_host_verification_handoff import resume_task_after_probes
             if resume_task_after_probes(service, operation, contract, policy, events):
                 return 1
             from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
-            if completed_reader_probes(service, operation, contract, policy, events)[2]:
+            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
+            if group and receipts:
+                # One exact Candidate cohort owns the probes while awaiting its
+                # aggregate; sibling Readers must not repeat the same effects.
+                candidate_probe_owners.add(group)
+            if failed_probe:
                 # The aggregate failure may still await a sibling Reader. Keep
                 # this failure for handoff; do not spend its remaining probes.
                 continue

@@ -60,8 +60,12 @@ def test_actual_fanout_briefing_delivers_recovery_navigation(tmp_path):
     path = orch._write_fanout_briefing(
         role=config.roles[0], context=context, child_id="verify-1", run_id="a1",
         aggregate=config.workflow.stages[0].aggregate,
-        child_payload={**child["payload"], **_payload()},
+        child_payload={**child["payload"], **_payload(),
+                       "semantic_result_submit_mode": "blocking",
+                       "output_profile_id": "candidate-verify", "output_profile_revision": "1"},
     )
     text = path.read_text()
     assert "--source critical-reader-repair-context --artifact recovery.json" in text
     assert text.index("before probing the runner") < text.index("Success command:")
+    assert "complete=false with next_cursor is remaining work, not an execution failure" in text
+    assert "A corrected pagination option error is no longer a blocker" in text

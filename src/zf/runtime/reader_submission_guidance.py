@@ -46,6 +46,11 @@ def verifier_failure_schema_guidance(
     else:
         example = "```json\n" + body + "\n```"
     return (
+        "- Required reads: complete=false with next_cursor is remaining work, not an execution failure. "
+        "Continue the next bounded batch with that cursor. A corrected pagination option error is no longer a blocker; "
+        "use the accepted option/default and finish the reads. A batch boundary or unfinished evaluation alone "
+        "does not justify a terminal failed/abstained submission. Report an execution failure only for an "
+        "actual unresolved obstruction, with its current evidence.\n"
         "- Runner unavailable before evaluation: execution_status=failed, verdict=abstained, "
         "failure_class=verifier_execution_failure, concrete summary and actual failure evidence_refs. "
         "Incomplete product reads do not prevent reporting this execution failure. "

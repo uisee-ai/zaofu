@@ -20,7 +20,7 @@ def reconcile_undelivered_wait_failures(runtime: Any, events: list[ZfEvent]) -> 
         return False
     positions = {e.id: i for i, e in enumerate(events)}
     for op in reduce_workflow_operations(events).values():
-        if (op.get('status') != 'requested' or op.get('operation_type') != 'fanout_reader_child'
+        if (op.get('status') not in {'requested', 'suspended'} or op.get('operation_type') != 'fanout_reader_child'
                 or op.get('started_event_id') or op.get('call_result_admitted_event_id')):
             continue
         for failed in reversed(failures):
@@ -106,11 +106,20 @@ def pending_reader_wait_diagnoses(events: list[ZfEvent]) -> list[dict[str, Any]]
     """Workflow failures remain owned even when every product Task is done."""
     cancelled = {e.payload.get("fanout_id") for e in events if e.type == "fanout.cancelled"}
     actions = []
-    for event in events:
+    for index, event in enumerate(events):
         p = event.payload or {}
         if (event.type != "fanout.child.failed"
                 or p.get("failure_class") != "reader_environment_wait_exhausted"
                 or p.get("fanout_id") in cancelled):
+            continue
+        # A real, bound successor delivery ends this old wait's diagnosis duty.
+        # It does not settle the product result or hide a later distinct failure.
+        if any(e.type == 'fanout.child.dispatched' and e.origin == 'kernel'
+               and p.get('run_id') and e.payload.get('retry_of_run_id') == p['run_id']
+               and e.payload.get('run_id') and e.payload['run_id'] != p['run_id']
+               and all(p.get(key) and e.payload.get(key) == p[key] for key in
+                       ('workflow_run_id', 'fanout_id', 'child_id', 'stage_id',
+                        'role_instance', 'target_ref')) for e in events[index + 1:]):
             continue
         actions.append({
             "schema_version": "run-manager.pending-action.v1",

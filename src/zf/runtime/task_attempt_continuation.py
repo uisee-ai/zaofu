@@ -32,6 +32,11 @@ def validate_task_continuation(runtime: Any, role: str, context: DispatchContext
         raise RuntimeError("continuation is paused")
     if context.continuation_id:
         claim = next((e for e in events if e.id == context.continuation_id), None)
+        if claim and claim.payload.get("recovery_action") == "result_protocol_correction":
+            from zf.runtime.call_result_repair_delivery import validate_repair_continuation
+
+            validate_repair_continuation(runtime, role, context, events, claim)
+            return
         if claim and claim.payload.get("recovery_action") == "reader_progress_continuation":
             from zf.runtime.reader_attempt_continuation import validate_reader_continuation
 

@@ -35,6 +35,16 @@ def repair_instruction(issue: Mapping[str, Any]) -> str:
         )
     if code == "semantic_submit_required":
         return "Use the exact result submit command for the existing operation."
+    if code == "product_acceptance_invalid":
+        return (
+            "Author product_acceptance_report at the result scratch JSON root using the pinned "
+            "product_acceptance_spec. Cover every mandatory journey/assertion with exact ref/sha256 "
+            "evidence on the frozen target. An independently reviewed existing report may instead "
+            "be bound via product_acceptance_report_ref plus product_acceptance_report_digest at "
+            "that root; an evidence_refs entry alone does not bind the report. Preserve its actual "
+            "source identity and verdict. Do not invent evidence or copy an unreviewed conclusion. "
+            "If evaluation could not complete, report the actual blocker rather than claiming passed."
+        )
     detail = f" ({message})" if message else ""
     return f"Replace {field} with a value matching the required schema{detail}."
 
@@ -198,9 +208,30 @@ def dispatch_call_result_correction(
         trace_id=source_event.correlation_id,
         run_id=str(payload.get("workflow_run_id") or source_event.correlation_id or "") or None,
         operation_id=outcome.operation_id,
-        dispatch_id=str(payload.get("dispatch_id") or "") or None,
+        dispatch_id=str(payload.get("dispatch_id") or payload.get("run_id") or "") or None,
     )
-    runtime._send_transport_task(role.instance_id, path, prompt, context)
+    from zf.runtime.call_result_repair_delivery import prepare_repair_continuation
+    from zf.runtime.transport import DispatchContext
+
+    prepared = prepare_repair_continuation(runtime, context, outcome, prompt)
+    if isinstance(context, DispatchContext) and context.task_id and prepared is None:
+        return False
+    context = prepared
+    from zf.runtime.orchestrator import BudgetExceededError
+    from zf.runtime.run_admission import RunDispatchBlocked
+    try:
+        runtime._send_transport_task(role.instance_id, path, prompt, context)
+    except (BudgetExceededError, RunDispatchBlocked) as exc:
+        from zf.runtime.call_result_repair_delivery import record_unsent_repair
+        record_unsent_repair(runtime, context, type(exc).__name__)
+        raise
+    if isinstance(context, DispatchContext) and context.continuation_id:
+        runtime.event_writer.append(ZfEvent(type="worker.continuation.reconciled", origin="kernel",
+            actor=role.instance_id, task_id=task_id or None, causation_id=context.continuation_id,
+            correlation_id=context.run_id, payload={**context.to_payload(),
+                "claim_id": context.continuation_id, "recovery_action": "result_protocol_correction",
+                "delivery_status": "sent", "business_completed": False,
+                "next_action": "observe_bound_progress"}))
     runtime.event_writer.append(ZfEvent(
         type="workflow.call.result.repair.dispatched",
         actor="zf-cli", task_id=task_id or None,
@@ -238,6 +269,10 @@ def _result_submit_command(
             cli_command=zf_cli_cmd(),
             semantic_template={},
         )
+        if (source_payload.get("output_profile_id") == "workflow-read"
+                and source_payload.get("canonical_success_event") == "flow.discovery.child.completed"):
+            from zf.runtime.stage_execution_card import render_result_validate_command
+            command = render_result_validate_command(command) + " --submit"
     except (OSError, ValueError):
         return "", ""
     return command, str(scratch)

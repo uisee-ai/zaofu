@@ -104,6 +104,11 @@ def build_closure_identity(
             package_identity=package_identity,
         ),
     }
+    from zf.runtime.candidate_continuation import closure_provenance
+
+    continuation = closure_provenance(events, state_dir=state_dir, workflow_run_id=workflow_run_id)
+    if continuation:
+        closure_source["candidate_continuation"] = continuation
     descriptor = write_immutable_json_sidecar(
         state_dir,
         closure_source,

@@ -1,5 +1,53 @@
 # 持续推进、恢复效果与无人资格
 
+## 2026-11-19 冻结候选的验收接续
+
+K5 已完成16项 Task，但最终 Reader/Goal 未完成，且诊断收尾已取消 Run。
+`run-resume` 只恢复 paused；取消记录不能通过改状态复活。`candidate-continue`
+增加显式操作员令牌控制的后继入口：先以 source_run_id、candidate_event_id 和
+dry_run=true 获取预览，再提交同一输入、reviewed_digest 和 approval_ref。
+入口为 `POST /api/projects/{id}/actions/candidate-continue`；同摘要重复提交不创建第二个 Run。
+
+预览及实际 admission 均核对终态、最新冻结候选、Git ref/提交、当前代际完整 Task
+集合、done 状态、独立 Verify 准入、当前 Task 合同权威、不可变 Plan/端口、原批准、
+Goal claims 与执行策略摘要。预览可生成不可变校验快照，但不创建任务或派发 Provider。
+任何输入漂移都需要新预览。新 Run 沿原 admission/队列/暂停/终态门禁进入配置的
+Candidate Readers；不发布 task_map.ready，不重新执行 scan、Plan 或 Impl。
+
+新 Plan package 显式继承原端口并记录来源包，Goal claims 与产品验收规格（PAS）只
+重绑定运行身份，原始条款、用户旅程和断言保持不变；新候选合同
+绑定新 Run，子 Task 权威仍指向旧 Run。旧 Run、Task、验证事件不改写，不建立 Run
+别名，也不导入旧 Candidate passed。宿主采证仅复用同一目标的逐命令最新观察
+（包括失败），原始执行事件仍保留；Reader 独立判断适用性和缺失项。最终 Judge 的
+事实及必读证据包含接续授权、历史批准和 Task 结果来源，当前验收仍走原准入门禁。
+
+受控动作回执先于 invoke 持久化；接纳、Goal、包及候选各步幂等。既有 Orchestrator
+空闲重放入口补齐已接纳但入口生命周期不完整的崩溃窗口，paused/terminal 不补发。
+Goal/Plan 事件必须通过实际 v5 schema，写入拒绝立即停止后续 Candidate 发布；
+历史上已发 Candidate 但缺失 Goal/Plan 准入的情况同样幂等补齐。Reader 的 canonical
+handoff 仅经接续回执鉴权后读取原 TaskRef 来源，新冻结候选和包仍绑定新 Run。
+Reader 派发入口同样先补齐接续生命周期；不能让启动时积压的 Candidate 先派发，
+再等待空闲巡检修复，否则会浪费一次 Reader 重试。补齐失败时禁止启动 fanout。
+带重试来源的 Candidate Reader 在输入 index/recover 中先验证其不可变候选合同、
+operation/request、冻结目标和当前包；活动锚点没有 Task 合同不是重绑定理由。
+普通 Task/Task recovery 的校验保留，篡改或已终止 Reader 仍不可读取为 current。
+预授权宿主采证按同Run、fanout、冻结目标和合同摘要协调一个已开始采证的Reader。
+它等待聚合并交回原恢复入口时，兄弟Reader不重复执行同组命令；不同目标、合同或
+fanout不互相阻塞。这里只协调外部执行效果，不共享Reader结论或授予跨attempt读取。
+接续首次发布候选前，对继承的容器回执复用既有媒体投影器，校验原证据摘要、目标、
+镜像和文件路径后原子生成只读图片/视频及索引，并交给Reader。无需先失败一轮再
+由恢复入口生成媒体，也不让只读Reader自行解码落盘；原证据与独立验收职责不变。
+从未投递的Reader请求经过暂停可处于suspended；这不等同于已有消费者。空闲释放
+仍核对精确Run/stage/attempt及完整派发历史。Provider退出遗留空shell时，额外确认
+受管槽位身份、PID、Reader工作目录、进程树可见且无子进程，再沿既有role lifecycle
+释放该槽位。活跃或曾投递操作、未知持有者、路径/身份冲突保持等待，不删除锁文件。
+当前范围限定同项目、已取消/失败的原始 Task Pipeline Run；不支持接续的再次接续，
+也不把历史8×8并发记作新源码从头无人资格。需要改产品候选时仍走正常修复规划。
+
+任务：[冻结候选接续](../../tasks/active/2026-11-19-1008-candidate-continuation.md)。
+验证记录位于 `reports/candidate-continuation-20261119/`；真实接续完成与否单独记录，
+源码/mock 通过不能把未完成的 P2 资格归档。
+
 ## 2026-11-19 Reader 失败路由与 idle 预算
 
 K5真实轮第二Candidate的输入读取失败被预授权宿主协调器错误选中，额外执行19条
@@ -330,3 +378,196 @@ canonical attempt绑定的operation/dispatch/lease，保留原typed输入和输�
 `reader_progress_continuation`在必读材料唯一覆盖增加后，使用原生session和原简报继续原sent TaskAttempt。它不调用故障重试分配器，不改变lease、dispatch、durable call request/attempt，也不因续读增加故障重试次数。真实K3暴露旧实现保留了逻辑WorkflowOperation attempt，但重新分配底层TaskAttempt，导致正常读取耗尽3/3预算；原shadow测试未覆盖该边界。
 
 新的发送仍经过统一预算及Run门禁，再校验kernel claim、当前Reader/operation/fanout/dispatch、独立的transport TaskAttempt身份、未到期lease和活worker。发送成功才记dispatched；结果未知保留原claim，不盲目重送。重复页不产生新进展，真实失败仍走原有有界故障恢复。该路径不赋予Reader写权限，也不替代最终结果准入。回归入口见`tests/test_reader_attempt_continuity.py`和`tests/test_reader_progress_continuation.py`。
+
+### Reader返回遗漏的证据对账与分页方法
+
+控制器在工具执行期间重启，遥测tailer从EOF重新挂接可能漏掉返回事件。Reader的
+续跑器不能因账本中存在历史tool.use就永久等待，也不能将未知工具当作完成。
+仅对当前RoleSessionRegistry绑定的Codex会话核对精确call ID、工具名、输入及
+完成时间；单一调用/返回对存在且返回不晚于已关闭回合时，保存完整不可变观察
+sidecar并绑定到continuation claim。缺失、重复、错会话、错输入、未来返回均
+保持等待；显式pending tool、未知身份、审批和协助等待也不被覆盖。不重放工具，
+不补造产品结果，不把历史返回当作当前模型理解。实际恢复入口的正反例见
+`tests/test_reader_tool_observation.py`。
+
+分页的`complete:false`和next_cursor表示继续工作。单批页数限制不是整个验收
+attempt的结束条件；修正选项后已恢复读取的错误不再是弃权依据。Evaluator skill
+及实际Task/Candidate输出合同统一说明这一点；真正未解决的执行失败仍按原
+failed/abstained路径上报。此方法修复不增加确定性语义门禁，也不降低必读义务。
+
+### wait_for_all中的单Reader空闲失败
+
+单个Reader空闲超时只结算该子项及其durable operation。还有健康子项时不发布
+整个fanout的timed_out或最终失败；它们继续原身份的阅读、结果编写与提交，最后
+仍按原wait_for_all策略聚合。any_failed_fail及真实整阶段期限保持既有终止语义。
+超时聚合沿普通fanout路径携带父Run/Plan身份；禁用阶段时限时不显示误导的“0秒”。
+
+历史版本可能已因单项idle错误地终止聚合、留下其他dispatched Reader。恢复扫尾
+只对当前running Run、当前wait_for_all Reader批次、timeout_seconds=0且存在精确
+匹配的running调用进行对账，追加带原失败引用的aggregate.started恢复等待。原
+失败事件和已失败子项不变，所有operation/attempt/lease不变。暂停、终态Run、
+已替代批次、整阶段超时、错调用/attempt均不恢复；不是重启终态Run或复用旧通过。
+回归`tests/test_reader_partial_timeout.py`直接覆盖超时和实际恢复入口及最终聚合。
+
+### 同批Reader定向重试的恢复材料
+
+现有`repair.action.requested(kind=rerun_fanout_child)`可为单个失败Reader创建新调用，
+保留同批已通过和仍在运行的兄弟项。新调用必须重新完成自己的必读义务。
+恢复材料正文未变化时保留父Reader已固定的不可变引用和来源，避免新dispatch
+因source_event_id变化生成不同摘要，却把旧required_reads带入新请求而不可读。
+复用前核对父调用Run/Task/role、必读登记、摘要、正文及恢复字段；改变或未绑定的
+输入拒绝沿此路径继承。原结果不改，旧read coverage不转移。实际Candidate准备入口
+及连续两次重试、篡改/错身份反例见`tests/test_candidate_reader_retry_authority.py`。
+
+### 从未送达的Reader等待失败
+
+环境等待超时后，requested或从未送达的suspended调用都应沿精确失败事件收敛；
+曾started、retry_started或dispatched的调用不得当作未送达。现有单子项受控重试
+入口可处理这类失败：要求当前running Run、未暂停、当前fanout、唯一匹配的
+Reader请求及完整不可变身份，先结算原失败，再经过普通准备、目标锁定、权限
+和transport门禁创建新调用。首次真实dispatch以原等待失败事件为因果，不伪造
+历史派发，不重新Plan/Impl。新一轮继续失败时attempt序号仍递增，避免重复身份。
+暂停、取消、已送达、错请求、晚于原失败的新状态均拒绝这一窄恢复路径。
+回归`tests/test_reader_undelivered_retry.py`包含实际repair.action入口、幂等和反例。
+
+受管空闲Reader占用被确认释放后，同一次受控操作立即再探测一次原目标锁定。
+只有真实pin成功才继续；仍忙/超时继续defer，目标错误仍fail-closed。重试不增加
+角色释放权限、不杀活跃持有者、不跳过环境锁。该检查消除“释放成功但请求仍被
+拒绝、必须人工再次请求”的常见断点；第二次探测也失败时不循环或冒充成功。
+
+旧Reader等待失败的待诊断投影在精确后继真实派发后停止提出同一诊断义务。
+要求kernel事件、晚于失败、相同Run/fanout/child/stage/role/target及精确retry-of；
+伪造、错身份、早于失败或同attempt事件不能清除。旧失败与RecoveryCase历史保留，
+不代表产品通过；后续新的等待失败仍有独立诊断责任。
+
+### 必读完成后的单次结果收尾
+
+正常成功关闭的Reader回合若没有新增读取量，不能立即等同于Provider故障：输入
+消费与结果交付是两个义务。对同一运行中的operation/request/attempt，在此前
+已交付续跑、当前全部必读通过原ledger规则、没有未结束工具/审批/协助且没有
+交付未知的条件下，允许一次`continuation_phase=result_completion`。它继续原
+TaskAttempt/lease及原生会话，走原发送时预算、暂停、身份和权限门禁；不重读
+已知材料来人为增加进度，不使用Task工作记录的越权替代，不生成产品通过结果。
+
+此收尾机会不因控制器重启或重复关闭事件重置；后续仍无结果时回到原有有界
+故障恢复。输入未读全、证据无效、失败的Provider回合或未知工具效果不获此机会。
+这是机械交付宽限，不是对业务“已完成”的语义判断，不能代替validate/submit与
+独立准入。回归同时覆盖TaskAttempt enforce和发送瞬间的预算/权限/暂停反例。
+
+### 过期诊断建议的一次结算
+
+Resident返回的human、reflect、repair、autoresearch建议沿同一运行条件和当前
+operation/attempt校验。目标已被后继替代或绑定的运行条件已失效时，追加一次
+superseded消费回执；后续tick不再反复deferred，也不对旧身份启动新效果。原建议
+及原失败历史保留，产品Task/Run状态不受此诊断清理影响。共享修复被其他案卷
+持有等临时门禁仍deferred，门禁解除且身份仍有效时可重新消费；暂停期间不消费。
+真实Run Manager入口及临时等待恢复反例见`tests/test_run_manager_action_admission.py`。
+
+### 已解决断点与后继Reader的诊断选择
+
+工作流恢复断点参与优先级选择前，先按正式problem envelope规范化案卷身份。
+已有resolved回执的断点不再占据恢复分支，避免后续去重删除旧动作后留下空队列、
+同时压住当前失败的诊断。verifying、waiting、blocked案卷保持原有门禁与所有权。
+旧案卷事件和投影保留，回归见`tests/test_run_manager_recovery_frontier.py`。
+
+同一Run/Task/阶段/role的内核Reader请求已存在不同的后继operation时，旧调用的
+失败不再抢占语义诊断入口。必须有完整旧/新请求身份、非空摘要和匹配的失败归属；
+缺失、歧义、worker来源、不同角色/Run/Task/阶段均不能据此屏蔽诊断。晚到的旧
+失败同样不能冻结后继，当前调用失败仍须诊断；不删除历史、不生成产品通过。
+回归`tests/test_reader_failure_currentness.py`沿Run Manager实际选择入口验证。
+并行Reader共享Task时，调用失败的诊断去重按operation身份区分，避免一个Reader
+的诊断吞掉另一项当前失败；缺少operation身份的历史事件保持原有回退规则。
+诊断动作保留原失败明确给出的Run及task-map代际，Autoresearch请求同时携带
+顶层Task ID和事件Task ID，让后续intake可沿原身份处理；不从当前最新Run猜测
+已有失败归属。上下文附件仍保留完整操作证据，诊断请求不授予产品状态写权限。
+
+### 诊断中的控制器版本证据
+
+诊断context侧车的`runtime_sources`复用已有`loop.started.runtime_load_ref`，
+同时索引各来源失败事件发生前的启动回执及最新启动回执。验证侧车摘要、schema
+和state_dir归属后才暴露source_root/revision；缺失、损坏、跨状态目录保持
+unavailable，不能用最新版本填补历史未知。运行版本与产品target、诊断实验基线
+是不同身份；启动回执也不证明进程仍在线或修复有效。此信息供诊断核对，不自动
+切换实验工作区、执行代码或授予合并权限。实际诊断发起入口与反例见
+`tests/test_diagnosis_runtime_context.py`。
+
+### 当前调用失败的常驻诊断路由
+
+`task.attempt.failed`通过统一事件注册表声明`run_manager_recovery`，进入已有
+常驻Run Manager诊断消费者；可用时投递带request/context绑定的诊断，收到建议
+前仍保持原故障未解决。显式Autoresearch路由和常驻不可用的回退保持不变。
+当前配置明确关闭resident时，历史spawn事件只能作为历史证据，不能重新启用
+发消息能力；无配置的只读投影仍可根据历史描述观察状态。实际tick入口及关闭、
+投递失败、等待响应反例见`tests/test_run_manager_diagnosis_consumer.py`。
+
+### Candidate 续跑的跨阶段证据接力
+
+受控 continuation 的历史证明由 `continuation_evidence` 统一提供给实际 Reader
+handoff、Goal read contract 和常驻诊断 context。入口先校验原授权、冻结目标及
+sidecar 摘要，索引原 Task Verify control/envelope、精确 Task 提交上的已准入
+Impl/self-check、它引用的工具事实，以及原 Run 派发/native hook 发生记录。
+摘要损坏拒绝；找不到的工具引用明确 unavailable，不从其他 Run 补造。
+所有事实保留原身份；派发/hook 观察不是硬件推理并发或最终资格 verdict。
+
+`critical-continuation-context` 保存执行范围、原批准及证据导航。经现有受控
+stage retry 成功发布的 owner feedback 同步进入后续消费，不修改历史 claims、
+原失败/取消终态或已完成任务。产品条款与执行资格的适用性由评估 agent 对账，
+不能把后继产品交付成功当作重新证明零人工干预。规范方法见
+`skills/zf-verify-rescan-replan/SKILL.md`；完成审阅但缺证据使用既有 blocked/
+dependency_blocked 结果，执行失败仅用于真实执行故障，不通过文本猜测改判。
+
+常驻 Run Manager 的每次诊断 context 带当前 reflect/source-repair 能力及历史
+证据 refs。已有资料的有界只读核对由 resident 自身先完成，避免依赖关闭的路由；
+它不能释放人工门禁、批准重试或提交产品通过。当前恢复仍经原受控动作、精确失败
+身份、Run/暂停/幂等校验执行。未将“readonly”当作绕过所有门禁的通行证。
+
+回归：`tests/test_continuation_evidence_handoff.py` 覆盖真实派发消费者、Goal
+消费、损坏/缺授权及历史工具身份；`tests/test_recovery_evidence_context.py`
+覆盖实际常驻诊断入口和受控 scope review。真实状态与介入次数另记 reports。
+
+### Reader 自动续读的停止条件（2026-11-20）
+
+真实 Discovery 在 102 项必读尚未完成时连续结束两轮，再由 Run Manager 接回。
+已有续读提示提供同 session 游标恢复和证据边界，但未明确排除任意页数后的提前
+交接。补充实际 Reader continuation 派发提示：同轮持续读取，直到输入覆盖完成
+或有具体阻塞；之后完成独立评估和受控提交。权限、预算、证据及未知工具效果
+门禁保留，不靠修改 required reads 或将部分进度当作通过解决。该提示的效果需
+真实 provider 继续观察，mock 仅证明实际派发携带提示且既有状态约束保持。
+
+### 原生工具事实与前序 attempt（2026-11-20）
+
+`hook-recv` 的 PostToolUse 不设置 `origin=kernel`，不能用该条件筛除原生事实。
+continuation 复用 `task_execution_evidence.capture_execution_evidence`：核对内核
+派发因果链、Run/Task/operation/attempt/角色/工作目录及结束边界，校验原始输出
+侧车摘要并脱敏；不将截断预览冒充完整输出。
+
+最终 Impl 可显式引用同一 Task、同代际中前序已准入 attempt 的工具记录。前序
+结果可以是 blocked：结果被准入不等于产品通过，也不应因此丢弃其中真实发生的
+测试事实。索引保留原 admission、verdict、提交、operation、attempt 和 origin，
+标记为历史观察而非当前候选通过证明。未准入、错身份、晚于边界及损坏输出仍
+保留 unavailable；当前通过状态仍只取已通过且与 Task Verify 提交一致的 Impl。
+前序结算后发生的受控宿主机验证沿同一捕获器的完整 lease/request/代际/批准及
+回执校验读取；rework 控制事件显式说明不是执行输出，不能补成测试证明。
+
+### 结果纠错必须沿用当前派发（2026-11-20）
+
+Discovery 首次提交缺少产品验收报告时，结果修复已请求，但发送入口把纠错当作
+新 TaskAttempt delivery，被防重复派发保护拒绝。纠错现绑定原 operation/request、
+纠错侧车、当前未过期的 sent TaskAttempt，使用 continuation 通过既有发送入口；
+预算、暂停、Run、身份和存活检查仍执行。发送前记录 claim，未知发送结果不盲目
+重试，也不新增 attempt 或清空读取进度。发送完成仅是交付回执，不是产品通过。
+
+Discovery 的产品评估输出补齐与 Candidate Verify 同源的报告模板及只读 preflight。
+缺报告、错目标或缺旅程在实际提交前返回诊断；准入仍复查当前身份与证据。已有
+报告只有经独立审阅并以 ref/digest 正式绑定才算报告，普通 evidence_refs 引用不
+替代绑定。旧 attempt 只接收有界纠错，不改写其既有 source manifest。
+
+回归通过真实 `_send_transport_task` 检查幂等、控制器重启、发送未知、租约、预算
+和身份边界：`tests/test_result_repair_delivery.py`；预检与实际提交、输出卡片见
+`tests/test_verification_submit_preflight.py`。测试不再替换掉 TaskAttempt 发送保护。
+
+发送前的预算或 Run 授权拒绝可以证明没有发送，单独记为 `not_sent`，恢复授权后
+仍可纠错。仅这两类明确的前置拒绝可释放 claim；运输异常保持 unknown，禁止
+将失败一律当作未发送。最终 Judge 的活跃 fanout child 也拥有自己的派发身份，
+父 Task 的历史 discriminator/完成事件不能将它写为空闲或关闭其卡顿监测；
+普通 Task 当前派发的真实完成仍按原规则识别。

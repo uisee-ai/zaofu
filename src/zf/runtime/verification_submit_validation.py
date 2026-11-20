@@ -64,7 +64,8 @@ def validate_verification_submission(
     )
     adapted = bind_product_acceptance_report(
         adapted, state_dir=state_dir,
-        operation={**dict(operation), "result_identity": identity, "output_profile_id": profile_id},
+        operation={**dict(operation), "result_identity": identity, "output_profile_id": profile_id,
+                   "canonical_success_event": request.get("canonical_success_event", "")},
         source_event_id="", persist=False,
     )
     errors = [dict(issue) for issue in adapted.issues]

@@ -14,6 +14,11 @@ def run_replay_sweep(
 ) -> None:
     event_batch = list(events or [])
     if not event_batch:
+        from zf.runtime.candidate_continuation_runtime import recover_pending_continuations
+
+        runtime._safe_housekeeping(
+            "candidate_continuation_replay", lambda: recover_pending_continuations(runtime),
+        )
         from zf.runtime.channel_prd_evaluation_reactor import reconcile_channel_prd_evaluations
 
         runtime._safe_housekeeping(

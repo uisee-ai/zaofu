@@ -475,6 +475,23 @@ def prepare_profiled_stage_result(
         for key, value in semantic_body.items()
         if key not in _IMMUTABLE_RESULT_FIELDS
     }
+    is_discovery = (profile_id == "workflow-read"
+                    and child_payload.get("canonical_success_event") == "flow.discovery.child.completed")
+    if is_discovery:
+        from zf.runtime.product_acceptance import product_acceptance_binding_from_package, product_acceptance_report_template
+
+        package_ref = child_payload.get("plan_artifact_package_ref")
+        package_digest = child_payload.get("plan_artifact_package_digest")
+        if package_ref and package_digest:
+            binding = product_acceptance_binding_from_package(
+                state_dir, {"ref": package_ref, "sha256": package_digest},
+            )
+            if binding.get("spec"):
+                semantic_body.setdefault("product_acceptance_report", product_acceptance_report_template(
+                    spec=binding["spec"], spec_ref=binding["spec_ref"], spec_digest=binding["spec_digest"],
+                    candidate_ref=str(child_payload.get("candidate_ref") or ""),
+                    target_commit=str(child_payload.get("target_commit") or ""),
+                ))
     output_names = [
         str(port.get("name") or "").strip()
         for port in child_payload.get("workflow_output_ports") or []
@@ -535,7 +552,7 @@ def prepare_profiled_stage_result(
             "record extra independent probes without `command_id` and attach "
             "their command/evidence through requirement reproduction evidence.",
         ]
-    if profile_id == "candidate-verify" and semantic_body.get("product_acceptance_report"):
+    if (profile_id == "candidate-verify" or is_discovery) and semantic_body.get("product_acceptance_report"):
         lines.extend([
             "- Candidate Product Acceptance is separate from task requirement rows: "
             "verify every mandatory product journey/assertion on this target, even "
@@ -593,7 +610,7 @@ def prepare_profiled_stage_result(
             "```",
             "",
         ])
-    elif profile_id in {"task-verify", "candidate-verify"}:
+    elif profile_id in {"task-verify", "candidate-verify"} or is_discovery:
         command = render_result_validate_command(command) + " --submit"
         operation_id = str(child_payload.get("operation_id") or "").strip()
         lines.extend([

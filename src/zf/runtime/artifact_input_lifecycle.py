@@ -33,9 +33,11 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
         authority = manifest.get("handoff_authority_contract") or {}
         if state_dir is not None and isinstance(authority, Mapping) and authority.get("attempt_domain") == "task":
             try:
-                valid = (_current_task_binding(state_dir, manifest, events)
-                         or _current_recovery_reader_binding(state_dir, manifest, events)
-                         or current_candidate_input_binding(state_dir, manifest, events))
+                # Frozen Reader authority is independent of its mutable anchor,
+                # whose empty Task contract must not abort this validation.
+                valid = (current_candidate_input_binding(state_dir, manifest, events)
+                         or _current_task_binding(state_dir, manifest, events)
+                         or _current_recovery_reader_binding(state_dir, manifest, events))
             except (OSError, ValueError):
                 return {**result, "status": "unknown", "reason": "task_binding_unavailable", "requires_rebind": True}
             if not valid:
