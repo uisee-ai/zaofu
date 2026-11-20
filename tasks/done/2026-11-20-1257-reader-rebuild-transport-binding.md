@@ -1,6 +1,8 @@
 # 8×8 真实验证：Reader 重试后受控恢复的双层身份绑定
 
-> 状态: active
+> 状态: done
+
+实现：`e5f1d26b fix: bind reader recovery to retried transport and durable call`。
 
 来源：用户授权发现问题修复并评估。真实 Run `workflow-055abbd5196f67c6`
 两个扫描 Reader 的自动重试失败后，`reader_rebuild_error` 只读预览返回
