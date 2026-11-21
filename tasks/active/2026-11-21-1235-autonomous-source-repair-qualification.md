@@ -71,3 +71,43 @@ RM在12:52已准确诊断上述故障（evt-d8e74e6c5787），不是未发现；
 保留。33项直接回归（含原四项安全回归）全部通过，完整闭包重新验证中。
 
 收窄后的Reader调用闭包650 passed/7 skipped；sentinel53、flow mock10通过。
+
+
+Reader绑定修复提交`9cc84d3a fix: refresh reader consumer bindings on retry`，13:17 UTC
+已部署，旧pane保持，两个child-rebuild均获controlled action准入。对应原失败与
+已通过6项保留；核验新尝试的manifest/read-policy并观察实际派发，尚未签收。
+
+RM恢复继续补两项真实问题：
+- 正式诊断请求绑定的故障Reader，用原operation/request/attempt/结果与Goal/代际核
+  前置；同级Reader进展不使建议过期。新尝试、目标替换、终止仍拒绝。
+- 旧建议已被kernel以operation_precondition_changed消费为superseded后，严格更新的
+  同Run基础设施失败可重新进入原案卷的只读诊断。未返回请求、伪造消费、其他回复、
+  人工等待和变更动作不放行；不把“诊断结束”视作故障修复。
+后者真实RED2失败/3通过；前者初始fixture缺kernel origin已更正，回放9cc84d3a原函数
+得到真实RED1失败/3通过。当前直接调用闭包94通过，整体影响闭包待执行。
+
+
+RM主影响闭包5984 passed/7 skipped，sentinel53与flow mock10通过。随后实账本回放
+发现role-v1 TaskAttempt没有request_hash，增补与workflow.operation.settled正式准入
+回执、dispatch及原admitted_call_result_ref的绑定；不会把TaskAttempt ID当call attempt。
+修复后12:52原快照scope=reader_operation且precondition=true；13:18已重试后的旧目标
+current=false，符合预期。格式与调用链最后335项通过。研究复核同时检查原diagnose
+转resident reprompt后的再次准入；补两项RED并使同一只读恢复规则覆盖实际转换形态。
+
+下一窗口隔离目录已准备（未启动）：/tmp/zf-eight-unattended-20261121T132814Z；
+对应独立harness worktree。新配置OA Astra high、Judge/RM 6.1 Sol high、其余Luna high；
+Impl/Task Verify各8，采证120。源码修复仅新隔离实验采用验证后checkpoint应用，
+限制runtime/events/tests/impl文档/active审计范围，拒绝配置/security/runtime状态文件；
+主dev与原Run配置不动。旧准备脚本watchdog60短于同步宿主命令180，被配置校验正确
+拒绝；新实验设watchdog600后重做准备，不算业务或无人验证失败。最终版本与预检待完成。
+
+
+新窗口产品基线`a049638635b2d55944cfb4b833f50ee50c315839`；构建通过，准备阶段8项
+文本工具34条冻结断言通过，后8项仍TODO。不计本轮Impl或无人交付。Docker预检镜像
+sha256:8342e03e…、Chromium149.0.7827.22，浏览器可启动；没有用这次环境探针冒充
+16项产品浏览器验收。新项目尚无runtime state或Run，待最终修复版本与冷启动预检。
+
+
+最终独立只读复核签收：无阻断项，核对role-v1绑定、resident转换准入和重复分诊抑制；
+复核会话未重跑测试或操作Run。最终sentinel53通过，flow mock10通过。
+此修复尚不证明真实无人交付；原窗口保持失败，两个Reader仍执行中。

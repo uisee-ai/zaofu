@@ -12506,6 +12506,13 @@ def _operation_precondition_holds(
         from zf.runtime.resident_semantic_handoff import semantic_handoff_precondition_holds
         return (not bool(current.get("terminal"))
                 and semantic_handoff_precondition_holds(events, action, precondition))
+    if precondition.get("scope") == "reader_operation":
+        from zf.runtime.reader_diagnosis_scope import reader_diagnosis_current
+
+        return (not bool(current.get("terminal"))
+                and all(not precondition.get(key) or precondition[key] == current.get(key)
+                        for key in ("run_id", "generation"))
+                and reader_diagnosis_current(events, action, precondition))
     for key in ("run_id", "generation", "progress_digest"):
         expected = str(precondition.get(key) or "")
         if expected and str(current.get(key) or "") != expected:

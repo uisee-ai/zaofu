@@ -20,6 +20,11 @@ def has_new_reader_diagnosis_input(
     Keep the case identity and allow only diagnosis of a newer kernel input.
     Active effects, human waits and execution permissions remain separate gates.
     """
+    from zf.runtime.reader_diagnosis_scope import has_retired_reader_diagnosis
+
+    events = list(events)
+    if has_retired_reader_diagnosis(events, action, state):
+        return True
     if state.get("status") != "resolved" or not (
         action.get("action") == "diagnose-attention"
         or (action.get("action") == "resident-agent-reprompt"
@@ -189,7 +194,9 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
             bound[key] = value
     bound["checkpoint_id"] = f"recommendation:{event.id}"
     bound["recorded_event_id"] = event.id
-    return bound
+    from zf.runtime.reader_diagnosis_scope import bind_reader_diagnosis_scope
+
+    return bind_reader_diagnosis_scope(events, request, bound)
 
 
 def recommendation_target_current(events, action: Mapping[str, Any]) -> bool:

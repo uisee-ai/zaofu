@@ -494,3 +494,19 @@ lane3自动retry生成了新candidate-host consumer摘要，却继承旧required
 通过原调用路径从新清单重建；保留自定义选段与严格限制，既有失败请求/读回执不改。
 首次与多代retry均验证全部必读身份可解析，宿主执行不重复。原窗口仍非无人通过。
 RM正确诊断之后遇到全Run进度前置误过期，当前单独跟进，不以本读取修复声称解决。
+
+
+RM故障定位与处理：原建议evt-d8e74e6c5787的Reader目标仍当前，唯全Run进度摘要变化，
+致建议被误判过期。经kernel诊断请求中的确切故障事件证明后，回复前置收窄为该
+Reader的operation/request/attempt/结果、Run代际及Goal；兄弟lane进展不再使其失效。
+原请求、角色、失败事件或目标不匹配仍用原拒绝路径；不增加Agent修复权限。
+旧建议已superseded而案卷停留diagnosing时，仅严格更新的kernel infra失败可重新分诊。
+必须核原请求、指定响应者及kernel过期消费事实；未完成请求/人工等待不解除，
+变更动作不走此例外。该处理保留旧失败和旧建议，不把空队列解释为完成。
+
+
+旧式role-v1 TaskAttempt失败没有call request_hash。对它核kernel settlement回执与
+原admitted_call_result_ref、source_event_id和dispatch绑定，再采用Reader范围前置；
+不猜测或把ta-*当作call attempt。实账本原快照通过、已有新尝试后的旧目标拒绝。
+独立研究重点复核diagnose到resident reprompt的二次准入，最后335项闭包和原有人工门
+均通过。完整自动闭包5984/7skip，加最后格式/实际派发形态增量验证，非全仓pytest。
