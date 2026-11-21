@@ -201,3 +201,14 @@ Planner正文相等，content_error/artifacts_error为空。证据`p0-plan-previ
 预览补修最终验证：含页面/API路径的自动调用闭包249 passed，新增独立locator正例后的
 定向13 passed，sentinel53 passed、flow mock10 passed。独立研究复核确认PV1已关闭，
 仅读源码及主监工日志、未独立执行测试；不据此宣告真实产品完成。
+
+`3da8db2a fix: recover plan previews from the exact reviewed author`于08:07加载，
+控制器PID1433161，Worker pane PID保留。审批dry-run初次把历史archive一并计数得到48条，
+该检查脚本已改为TaskStore.get逐ID核当前16项；这不是新增业务Task，也不是产品修复。
+真实预览与准确版本审阅通过后，08:08:41执行既有委托的Plan批准`evt-5a92e418ccbd`。
+没有新增stage代次或增加宿主预算。审阅文件`reports/p0-scoped-plan-owner-review.json`。
+
+运行时随后产生`evt-f24051344e80`局部pipeline代次，仅派发MEDIAN与AVERAGE；
+08:08:57 / 08:09:07两个真实Impl进入running（dev-lane-0/1），当前14 done、2 in_progress。
+其余14项没有重新实施。P0-3仍需独立Verify、新Candidate、Judge/Goal/local delivery正式
+签收，不能把成功派发当作真实闭环完成。Owner增加宿主采证额度的答复仍未收到。
