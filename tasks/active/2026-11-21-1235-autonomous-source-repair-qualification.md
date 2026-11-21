@@ -15,9 +15,35 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已提交，341直接闭包、7143自动闭包通过；独立review问题已修，待部署 |
 | SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | c7e403ac已验证提交，实际gate未改，待部署 |
 | SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证提交，当前不匹配仍拒绝resume，待部署 |
+| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | 真实缺口已复现；本地实现及验证中 |
+| SR-ENV | 独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及workspace registry不被测试指向，旧失败保留。 | 原生验证出现真实环境污染，待修复 |
+| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | OLD已受控暂停；已复现14项重开副作用，待修复恢复 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
+
+2026-11-21 16:23 UTC：隔离新控制面已部署f2e927da，包含SR-WAKE/STRICT/
+DISPOSITION/POLICY/BOOT及解释器冻结修复；原Worker与配置保持。受控disposition
+evt-1a6b5db55281仅关闭已被原生已应用替代接替的旧枚举候选，原失败和原案卷未变；
+约2秒后RM再次动作。准备期人工介入已记录，不计无人成功。原生CLI修复自动启动并
+于16:28被收取完成，独立验证失败于writer briefing长度边界（2751 passed/1 failed），
+未应用。Plan仍未审批，下一资格窗口仍未开始。
+
+PLAN-SOURCE：Plan Critic已正式rejected，自动返工Planner也因缺少原正文abstained。
+RM原生建议evt-68f6e695aa8c独立确认TODO只有可选引用、SOURCE-PROMPT没有输入，
+未把数据缺失当作已证产品失败。8项回归RED复现传递/摘要/受控补充缺口；首轮两项
+fixture调用签名错误已更正后重新RED，不计产品缺陷。修复保留准确需求/owner amendment
+优先级，不解析Markdown链接，不把全部artifact_refs升级为必读。后续仍需独立审核准确16项Plan。
+
+PLAN-SOURCE最终：独立复核无阻断；收窄后的自动影响闭包6150 passed/9 skipped，
+sentinel53、flow10通过；之后补畸形读取限制拒绝分支，最终直接调用110、sentinel53、
+flow10通过。完整受控redrive→Plan→必读回归已覆盖，旧manifest隔离回放确认TODO正文
+现在可到达且必读；SOURCE-PROMPT仍需显式补充。代码待部署，不宣称实Run已恢复。
+
+16:41:51 OLD按既有委托准确批准当前完整16项Plan（evt-fd09060d18a6），原无人失败不变。
+后续重放却在准入拒绝前重开14项历史完成Task，terminal_tasks误判schema_gap又开Planner。
+16:44:47经ControlledActionService暂停旧Run（evt-67ef2172796f），保持账本与工件；
+新Run未暂停。此新缺陷与恢复义务保留，不能把Plan审批回执当Goal已完成。
 
 12:32–12:33 UTC真实Reader新增两项执行失败（lane3/4，19/40必读）：lane3提交的cursor解码后摘要缺少`c9b`，与实际已交付bundle不符，现有拒绝正确；lane4遇到事件日志持续追加，前缀复核期间签名变化导致两次读取拒绝。两项均不是产品失败，也不是宿主媒体缺失。先补此运行前置：证明正常并发append不会饿死读取且仍拒绝改写/旋转漏终态；提供基于已交付页面的恢复方法，不允许猜游标或绕过必读。
 

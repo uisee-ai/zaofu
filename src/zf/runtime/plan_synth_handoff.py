@@ -214,6 +214,13 @@ def build_plan_handoff_input_refs(
         input_refs.append(source)
         seen_sources.add(identity)
 
+    from zf.runtime.plan_declared_inputs import declared_plan_inputs
+
+    input_refs.extend(declared_plan_inputs(
+        state_dir=state_dir, project_root=project_root, payload=payload,
+        trigger=trigger, source_refs=source_refs, existing=input_refs,
+    ))
+
     rework_context = {"schema_version": "plan-rework-context.v1"}
     for key in _PLAN_REWORK_CONTEXT_KEYS:
         value = payload.get(key)

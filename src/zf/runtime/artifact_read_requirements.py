@@ -150,6 +150,7 @@ def build_canonical_required_reads(
                 or source_id.startswith("child-result-")
                 or source_id.startswith("child-artifact-")
                 or source_id.startswith("previous-plan-candidate-")
+                or source_id.startswith("plan-declared-input-")
                 or source_id in {
                     "goal-objective",
                     "requirement",
@@ -167,7 +168,8 @@ def build_canonical_required_reads(
             ):
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
-                    if source.get("kind") == "plan_rework_candidate_partition" else ("$",)
+                    if source.get("kind") in {"plan_rework_candidate_partition", "plan_declared_input"}
+                    else ("$",)
                 )
 
     sources = _sources(manifest)

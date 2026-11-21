@@ -311,6 +311,13 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
+        from zf.runtime.plan_declared_inputs import supplemental_plan_inputs
+
+        try:
+            supplemental = supplemental_plan_inputs(
+                self.state_dir, payload, request_id=requested.id)
+        except (ValueError, OSError) as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
         if payload.get("reuse_completed_plan"):
             from zf.core.state.locks import locked_path
             from zf.runtime.plan_completion_reuse import apply, preview
@@ -343,6 +350,8 @@ class RecoveryActionsMixin:
         elif payload.get("retain_completed_task_ids"):
             return self._recovery_failed(
                 requested, action, requested_action, "completion retention requires a Plan output repair")
+        if supplemental:
+            base['artifact_refs'] = [*base.get('artifact_refs', []), *supplemental]
         base["redrive_of"] = source_event_id
         base["rework_of"] = source_event_id  # 代际:retrigger 不是 replay
         trigger = ZfEvent(

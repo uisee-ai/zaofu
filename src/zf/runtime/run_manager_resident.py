@@ -323,6 +323,8 @@ def build_resident_run_manager_briefing(
         "  workflow_run_id、target_operation_id、active_attempt_id、source_event_id，最后一项为当前失败事件)、",
         "  若环境等待在 operation 创建前超时，仍绑定原 pending run_id 为 active_attempt_id；仅此时可省略 target_operation_id。",
         "  `stage-retrigger`(推进事件未消费/消费已败,自动新代际)、",
+        "  原文输入遗漏可在该动作的 supplemental_input_refs 中显式提供已冻结state sidecar的ref+sha256；",
+        "  保留原需求、失败和审批门，仅向新尝试补充证据，不解析反馈文本中的路径。",
         "  `stage-replan-new-generation`(stage replan cap 后凭 owner approval 开新代际,保留既有 checkpoint)、",
         "  `rescan-grant`(goal idle 驱动器弹尽后追加一轮)。",
         "  `repair-closeout-dispose` 仅关闭失败旧候选：提供 queue_id、repair_contract_digest、",

@@ -723,3 +723,33 @@ NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应
 旧Run最终Judge15:57:15正式settled/blocked，准入evt-7bf557eee79e、结果bf040c32…，69必读全部完成。产品验收passed，19目标声明closed、1 blocked；明确未获得16任务Plan的准确审批（evt-1695fe7d4282）。此外监工仍保留原无人窗口失败、真实8+8重叠和故障恢复未证明，不能因后来审批或本次机械门修复宣称原轮无人通过。旧Run尚无Goal完成或本地交付通过。
 
 新Plan第二轮16:17:08正式abstained，missing primary authority bodies仍在；RM16:17:13自行进入语义诊断rmd-ffb913102f3bd820。只读研究确认：trigger artifact_refs与Task spec已声明TODO但plan handoff未消费；SOURCE-PROMPT只在正文引用中，未显式声明为原文输入。应由上游声明并冻结两份正文再进入新审阅输入；不递归猜链接，不靠重复Planner改文案掩盖输入缺失。此后续项尚未修复。
+
+16:23 UTC f2e927da已部署新隔离控制面。显式处置evt-1a6b5db55281关闭旧枚举失败候选，
+保留原失败和案卷；约2秒后RM动作，快速唤醒真实生效。CLI续作自动派发，但其独立
+影响验证在16:30因最终Writer briefing 12681字节超过12288失败（2751通过），没有应用。
+RM随后自行诊断并派发新隔离续作，不放宽长度检查或改写旧候选。
+
+Plan正文传递修复增加以下通用合同：
+- Plan handoff从已绑定的requirement-spec.v1读取明确source_refs（含Task spec），以及
+  显式requirement_authority/source_document输入；将正文冻结进入当前Plan输入和必读。
+  普通artifact_refs、中间矩阵和Markdown链接不被批量提升为需求权威。
+- 已有digest必须匹配；缺失的明确本地正文拒绝。access_scope和allowed_paths保持，
+  不因为成为必读就扩大访问或选段。当前需求及合法owner amendment的语义优先级不变。
+- stage-retrigger可携带supplemental_input_refs，每项必须是已存在且sha256匹配的state
+  sidecar；受控动作绑定请求来源，仅追加新trigger输入。RM建议归一/转发保留此字段，
+  身份冲突拒绝。原Request、旧attempt、失败和审批门不变；反馈中的路径不会被自动读取。
+
+回归先8项RED；首个收窄候选自动影响闭包3216 passed/2 skipped、sentinel53通过。
+独立review提出allowed_paths保持和RM字段转发缺口，已补回归；最终验证另记。
+真实Plan manifest在隔离状态目录回放，原版本TODO正文0份，新候选1份且必读；
+SOURCE-PROMPT仍需通过受控补充明确交付，不能宣称现有Run已恢复或完整正文已到达。
+
+最终Plan修复核验：重复同ref+digest但读取限制冲突时拒绝，不选择较宽声明；畸形
+选段及scope限制拒绝，明确Task spec摘要校验。独立复核无阻断。冻结版自动影响闭包
+6150 passed/9 skipped、sentinel53、flow10；最后纯验证分支增补后直接110、sentinel53、
+flow10通过。完整受控恢复到新Plan输入/必读的回归已覆盖；尚未部署，不等同真实恢复。
+
+16:41:51 OLD当前完整Plan准确批准evt-fd09060d18a6，保留原无人失败。其后审批重放
+重开14个历史done Task，并把terminal_tasks拒绝错误路由为schema_gap重新规划。
+16:44:47受控暂停OLD evt-67ef2172796f，NEW继续。旧审批去重又被本次fanout.cancelled
+排除，旧同图trigger重新请求审批；需要修复完成状态保护及恢复路由，未重写历史。
