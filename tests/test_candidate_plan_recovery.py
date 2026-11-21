@@ -27,7 +27,7 @@ from zf.runtime.task_contract_snapshot import (
 from zf.runtime.verification_result import normalize_candidate_blocker, VerificationResultError
 
 
-def _incident(tmp_path, *, unknown_ac=False, blocked=False):
+def _incident(tmp_path, *, unknown_ac=False, blocked=False, expected_children=None):
     runtime = _runtime(tmp_path)
     runtime.config.roles.append(RoleConfig(name="verify", instance_id="verify-0", role_kind="reader"))
     package = runtime.event_log.read_all()[-1].payload
@@ -97,7 +97,9 @@ def _incident(tmp_path, *, unknown_ac=False, blocked=False):
         "active_attempt_id": "reader-attempt",
         "request_hash": "a" * 64,
     }
-    emit("fanout.started", {"fanout_id": "verify-fanout", "trigger_event_id": candidate.id})
+    emit("fanout.started", {"fanout_id": "verify-fanout", "trigger_event_id": candidate.id,
+        **({"expected_children": expected_children, "stage_id": "candidate-verify"}
+           if expected_children is not None else {})})
     emit("workflow.operation.requested", operation)
     verdict = "blocked" if blocked else "rejected"
     ac = "unmapped-ac" if unknown_ac else "TASK-2/AC-5"

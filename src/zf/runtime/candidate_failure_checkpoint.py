@@ -5,6 +5,7 @@ from zf.core.events import ZfEvent
 from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding, candidate_plan_scope
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.candidate_timeout_members import candidate_failed_members, candidate_unresolved_timeout
 
 
 def aggregate_candidate_binding(
@@ -21,18 +22,18 @@ def aggregate_candidate_binding(
             or aggregate.payload.get('status') != 'failed'
             or not fanout or aggregate.payload.get('fanout_id') != fanout):
         raise ValueError('candidate aggregate lineage mismatch')
-    expected = aggregate.payload.get('failed_children')
-    if not isinstance(expected, list) or not expected or len(set(expected)) != len(expected):
-        raise ValueError('candidate aggregate failed members missing')
-    children = {e.payload.get('child_id'): e for e in history[:history.index(aggregate)]
-                if e.origin == 'kernel' and e.type == 'fanout.child.failed'
-                and e.payload.get('fanout_id') == fanout}
-    if set(children) != set(expected):
-        raise ValueError('candidate aggregate failed members differ')
+    children = candidate_failed_members(events, aggregate)
     operations = reduce_workflow_operations(events)
     members, semantic = [], []
-    for child_id in sorted(expected):
+    unresolved, unresolved_scopes = [], []
+    for child_id in sorted(children):
         child = children[child_id]
+        if not child.payload.get('control_result_ref'):
+            member, scope = candidate_unresolved_timeout(state_dir, events, child, aggregate,
+                operations, run_id=run_id, task_id=task_id)
+            unresolved.append(member)
+            unresolved_scopes.append(scope)
+            continue
         op_id = child.payload.get('operation_id')
         op = operations.get(op_id, {})
         ref = op.get('admitted_control_result_ref')
@@ -71,7 +72,18 @@ def aggregate_candidate_binding(
         raise ValueError('candidate aggregate has no completed semantic result')
     # The primary Reader is an identity anchor, not a selected semantic winner.
     op_id, primary = min(semantic, key=lambda row: row[0])
+    if any(any(scope[key] != primary[key] for key in (
+            'candidate_event_id', 'task_map_generation', 'source_commit', 'plan_artifact_package_digest'))
+            for scope in unresolved_scopes):
+        raise ValueError('candidate timeout member scope differs')
     scopes = [bound['failed_task_ids'] for _, bound in semantic]
     affected = sorted({task for scope in scopes for task in scope}) if all(scopes) else []
+    completed = {e.payload.get('child_id'): e for e in history[:history.index(aggregate)]
+                 if e.origin == 'kernel' and e.payload.get('fanout_id') == fanout
+                 and e.type in {'fanout.child.completed', 'fanout.child.failed',
+                               'fanout.child.cancelled', 'fanout.child.dispatched'}}
+    completed_facts = [{'child_id': key, 'role_instance': event.payload.get('role_instance'),
+                        'child_event_id': event.id, 'outcome': 'reported_completed'}
+                       for key, event in completed.items() if event.type == 'fanout.child.completed']
     return {**primary, 'operation_id': op_id, 'failed_task_ids': affected,
-            'members': members}
+            'members': members, 'unresolved_members': unresolved, 'completed_members': completed_facts}

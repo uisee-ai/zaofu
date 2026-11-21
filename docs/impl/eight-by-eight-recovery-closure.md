@@ -208,3 +208,12 @@ Reader transport重投可能更新外层TaskAttempt/dispatch，而嵌套payload�
 attempt与request hash。恢复信号、读权限续期及读取指引使用原call身份，transport
 收据仍指向最新派发；两层都必须与Kernel账本绑定。外/内operation、request hash、
 Run冲突及source-manifest digest不匹配时拒绝，不能以一次新transport重试重置必读或WRC。
+## Candidate超时交接
+
+真实timeout聚合曾只列最后一个pending Reader，遗漏此前已准入的拒绝/abstention；OA因此无法对账失败集合。修复在既有timeout入口保留全部失败成员和finding，并按各失败kind合并；超时child事件补齐call身份。
+
+旧账本不重写。Candidate恢复仅在精确kernel timeout因果、同fanout/child/role/transport→call、不可变请求与当前候选绑定成立时，补全遗漏成员。无result成员放入`unresolved_members`，保持outcome unknown；已准入结果仍留在`members`，不伪造control result、不授予通过。OA必须仍有至少一个有效语义拒绝作为主绑定；申请与apply均重核成员，后继只能进入既有Plan路径。执行/证据未知与产品语义结论分别由其owner处理。
+
+任务：[Candidate超时交接](../../tasks/active/2026-11-21-0148-candidate-timeout-semantic-handoff.md)。
+
+timeout兼容输入还须与kernel `fanout.started.expected_children`及role/stage闭合，每个预期成员都有终态；名单缺失、成员遗漏/额外/未决均拒绝。已有完成成员单列原事件事实，不生成产品verdict。原aggregate之后出现同fanout的新派发、终态或重开时旧checkpoint失效，申请与apply使用同一检查。旧显式infra timeout若同时含已准入negative，恢复分类经过完整候选绑定才得到mixed；绑定损坏保留unknown，避免宿主命令成功触发纯infra后继而掩盖反例。历史事件不修改。

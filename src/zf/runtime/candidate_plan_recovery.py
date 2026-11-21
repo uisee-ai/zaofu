@@ -134,12 +134,14 @@ def candidate_checkpoint_binding(
     scope, _ = candidate_reader_binding(
         state_dir, events, fanout_id=payload["fanout_id"], operation_id=operation_id
     )
+    from zf.runtime.candidate_timeout_members import candidate_failed_members
+    failed_members = candidate_failed_members(events, aggregate)
     if (
         (task_id and scope["anchor_task_id"] != task_id)
         or scope["workflow_run_id"] != run_id
         or scope["pdd_id"] != payload.get("pdd_id")
         or scope["task_map_generation"] != payload.get("task_map_generation")
-        or scope["child_id"] not in (aggregate.payload.get("failed_children") or [])
+        or scope["child_id"] not in failed_members
         or not any(e.id == scope["child_event_id"] for e in earlier)
     ):
         raise ValueError("candidate failure and reader scope differ")

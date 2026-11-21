@@ -6344,6 +6344,7 @@ class FanoutCoordinationMixin(
                 continue
             pending_children = [str(child.get("child_id") or "") for child in timed_out]
             for child in timed_out:
+                from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
                 child_failure = self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",
@@ -6360,6 +6361,7 @@ class FanoutCoordinationMixin(
                         ),
                         "timeout_seconds": timeout_seconds,
                         "failure_kind": "infra",
+                        **{key: value for key, value in reader_dispatch_call_identity(child).items() if value},
                     },
                     correlation_id=str(manifest.get("trace_id") or ""),
                 ))
