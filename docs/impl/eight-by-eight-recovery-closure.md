@@ -510,3 +510,32 @@ Reader的operation/request/attempt/结果、Run代际及Goal；兄弟lane进展�
 不猜测或把ta-*当作call attempt。实账本原快照通过、已有新尝试后的旧目标拒绝。
 独立研究重点复核diagnose到resident reprompt的二次准入，最后335项闭包和原有人工门
 均通过。完整自动闭包5984/7skip，加最后格式/实际派发形态增量验证，非全仓pytest。
+
+
+### Reader missing-reads 与提交门禁声明统一（2026-11-21）
+
+真实lane3重试先收到“missing_reads=[]”，提交时却被退回30项必读。
+回放确认query旧路径只查事件内联required_reads，Reader声明实际在不可变request→policy
+sidecar中：旧查询required=0/missing=0，canonical required=40/missing=30。
+服务复用required_reads_for_attempt，通过唯一operation/attempt定位并校验sidecar；
+保留原有任务内联声明兼容。缺失、错误attempt、摘要损坏或歧义声明为unknown，
+missing_reads和required_read_count为null、protocol_repair_required=true，不能当全部读完。
+CLI与Web端使用同一服务。真正完整读取后才返回missing=[]。不修改门禁、消费账本或语义结果。
+4项CLI回归RED，加入Web一致性检查；真实回放与完整影响闭包随后记录。
+
+
+RC-QUERY最终验证：188项影响闭包（含CLI/Web入口与mock E2E）、sentinel53、
+flow smoke10通过。测试环境曾缺httpx；补齐项目dev/web依赖后重跑sentinel通过，
+没有把环境启动错误计作产品RED。独立只读review未发现阻断项。
+真实被拒绝sealed ledger摘要3d133cf3119088ee…回放：新查询required40/missing30，
+与提交门禁一致；旧查询0/0。未写业务状态或消费凭证。
+
+旧Run在13:59:52由lane3自动修正后正式passed；8/8 Reader通过，13:59:54产生
+`test.passed evt-059b07206036`，14:00自动进入post-verify discovery。
+这次补读与重新提交没有人工代交，之前的整轮人工介入记录仍保留，整体无人未通过。
+
+新Run规划阶段13:51失败：Planner未产出必需Plan且失败报告recommendation枚举不一致。
+RM在13:54自动诊断并接受修复evt-5fba52d8c454，已派发Luna隔离源码修复
+（/tmp/zf-self-repair/self-repair_recommendation-evt-1d0ac4bd0779-e890eeeb6f07e70a-a0），
+同时在原Run下发起缺失Plan语义诊断。当前只观察，不与其并发改动新harness HEAD；
+独立验证、应用与恢复仍待真实结果。Plan尚未批准，8×8资格窗口仍未开始。

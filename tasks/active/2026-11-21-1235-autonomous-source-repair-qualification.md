@@ -111,3 +111,45 @@ sha256:8342e03e…、Chromium149.0.7827.22，浏览器可启动；没有用这�
 最终独立只读复核签收：无阻断项，核对role-v1绑定、resident转换准入和重复分诊抑制；
 复核会话未重跑测试或操作Run。最终sentinel53通过，flow mock10通过。
 此修复尚不证明真实无人交付；原窗口保持失败，两个Reader仍执行中。
+
+
+RM Reader诊断修复提交 `61bd4219 fix: preserve reader diagnosis scope across sibling progress`。
+13:38 UTC通过受控控制器停启部署，原配置摘要不变、全部Worker pane/PID保留。
+13:45:46 lane4重试正式passed，旧Run累计7/8 Reader passed，lane3仍在补齐结果；
+19条当前目标命令证据保持有效，本次未新增宿主采证，原窗口失败结论不变。
+
+下一轮规划正式启动：Run `workflow-ddd320aa0dc7c2ef`，anchor `TASK-127CE3`，
+提案 `evt-7ab47f70fcf7`经委托审阅受控apply。产品基线 `ed631c3`，harness `61bd4219`。
+`zf init`及静态Provider/派发检查通过，workflow inspect为0 STOP/7 WARN；
+通用cold-start硬编码根src，实际app/src导致4/5（CLI退出0），记录未伪造目录。
+准备阶段外部systemd监督接管，保留所有扫描会话；Plan准确版本审批仍开启。
+新worktree官方8槽/Reader/宿主恢复加新增RM回归合计59 passed；仅准备期mock证据。
+新资格窗口尚未开始：须准确Plan批准及前置条件复核后，才计零人工恢复。
+预声明Worker退出、控制器退出与可重建Reader投影丢失，未实际注入均保持未证明；
+Reader投影丢失不能冒充不可恢复语义正文丢失。模型/宿主120/权限边界均已记录。
+准备过程操作员合同缺字段/错误tier、临时脚本属性错误均已纠正并在incidents.md记录；
+它们不冒充运行中自动恢复，未生成业务通过结论。
+
+
+新增真实问题RC-QUERY：13:46 lane3首次提交被门禁退回30项，自动修正正在执行。
+进一步核实发现监工此前看到“missing=[]”不是完成：CLI查询遗漏不可变Reader策略，
+实账本required=0与canonical=40不一致。最小修复统一required读取入口；未知策略明确
+unknown/null、不伪装0项。已有4项RED（首次运行缺PYTHONPATH是环境错误，未计RED）；
+43项直接调用测试通过，扩展CLI/Web/共享工件闭包及真实回放待完成。
+
+
+RC-QUERY最终验证：188项影响闭包（含CLI/Web入口与mock E2E）、sentinel53、
+flow smoke10通过。测试环境曾缺httpx；补齐项目dev/web依赖后重跑sentinel通过，
+没有把环境启动错误计作产品RED。独立只读review未发现阻断项。
+真实被拒绝sealed ledger摘要3d133cf3119088ee…回放：新查询required40/missing30，
+与提交门禁一致；旧查询0/0。未写业务状态或消费凭证。
+
+旧Run在13:59:52由lane3自动修正后正式passed；8/8 Reader通过，13:59:54产生
+`test.passed evt-059b07206036`，14:00自动进入post-verify discovery。
+这次补读与重新提交没有人工代交，之前的整轮人工介入记录仍保留，整体无人未通过。
+
+新Run规划阶段13:51失败：Planner未产出必需Plan且失败报告recommendation枚举不一致。
+RM在13:54自动诊断并接受修复evt-5fba52d8c454，已派发Luna隔离源码修复
+（/tmp/zf-self-repair/self-repair_recommendation-evt-1d0ac4bd0779-e890eeeb6f07e70a-a0），
+同时在原Run下发起缺失Plan语义诊断。当前只观察，不与其并发改动新harness HEAD；
+独立验证、应用与恢复仍待真实结果。Plan尚未批准，8×8资格窗口仍未开始。

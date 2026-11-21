@@ -376,7 +376,14 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
                 reducer_version=ATTEMPT_REDUCER_VERSION,
                 payload=reduced,
             )
-        required_reads = self._required_reads(events, attempt_id)
+        from zf.runtime.artifact_read_requirements import ArtifactReadRequirementError
+
+        policy_error = ""
+        try:
+            required_reads = self._required_reads(events, attempt_id)
+        except (ArtifactReadRequirementError, SidecarRefError, OSError) as exc:
+            required_reads = []
+            policy_error = str(exc)
         read_rows = self._read_rows(attempt_id)
         from zf.runtime.artifact_read_ledger import required_read_satisfied
 
@@ -398,8 +405,10 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
             "handoff": reduced,
             "required_reads": required_reads,
             "read_count": len(read_rows),
-            "missing_reads": missing,
-            "protocol_repair_required": bool(missing),
+            "missing_reads": None if policy_error else missing,
+            "required_policy_status": "unknown" if policy_error else "available",
+            "required_policy_error": policy_error,
+            "protocol_repair_required": bool(missing) or bool(policy_error),
             "semantic_rework_required": False,
         })
         return result
@@ -415,9 +424,12 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
             "schema_version": "attempt-read-compliance.v1",
             "attempt_id": attempt_id,
             "attempt_domain": inspected.get("attempt_domain", ""),
-            "required_read_count": len(inspected.get("required_reads") or []),
+            "required_read_count": (len(inspected.get("required_reads") or [])
+                                    if inspected["required_policy_status"] == "available" else None),
             "read_count": inspected.get("read_count", 0),
-            "missing_reads": inspected.get("missing_reads") or [],
+            "missing_reads": inspected["missing_reads"],
+            "required_policy_status": inspected["required_policy_status"],
+            "required_policy_error": inspected["required_policy_error"],
             "protocol_repair_required": inspected.get(
                 "protocol_repair_required", False
             ),
@@ -733,23 +745,24 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
                 return str(payload.get("attempt_domain") or "")
         return ""
 
-    @staticmethod
     def _required_reads(
+        self,
         events: Iterable[ZfEvent],
         attempt_id: str,
     ) -> list[dict[str, Any]]:
-        for event in reversed(list(events)):
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if attempt_id not in {
-                str(payload.get("attempt_id") or ""),
-                str(payload.get("active_attempt_id") or ""),
-                str(payload.get("dispatch_id") or ""),
-            }:
-                continue
-            rows = payload.get("required_reads")
-            if isinstance(rows, list):
-                return [dict(row) for row in rows if isinstance(row, Mapping)]
-        return []
+        from zf.runtime.artifact_read_requirements import (
+            ArtifactReadRequirementError, required_reads_for_attempt,
+        )
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        events = list(events)
+        operations = [op for op in reduce_workflow_operations(events).values()
+                      if op.get("active_attempt_id") == attempt_id]
+        if len(operations) > 1:
+            raise ArtifactReadRequirementError("ambiguous operation for required-read policy")
+        operation_id = str(operations[0].get("operation_id") or "") if operations else ""
+        return required_reads_for_attempt(events, attempt_id,
+            state_dir=self.state_dir, operation_id=operation_id)
 
     def _read_rows(self, attempt_id: str) -> list[dict[str, Any]]:
         safe = "".join(
