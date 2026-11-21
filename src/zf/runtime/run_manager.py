@@ -4231,7 +4231,9 @@ def build_run_completion_profile(
     )
     if blocking_human:
         blockers.append("pending_human_decision")
-    if (closeout_required or merge_pending) and not terminal_run_passed:
+    if (closeout_required or merge_pending) and (
+        not terminal_run_passed or repair_blockers["strict_pending"]
+    ):
         blockers.append("repair_closeout_pending")
     if failed_verifications:
         blockers.append("action_verify_failed")
@@ -12171,20 +12173,23 @@ def _blocking_repair_merge_counts(
     terminal_statuses = {"merged", "discarded"}
     pending = 0
     closeout_required = 0
+    strict_pending = 0
     for row in repair_merge_queue.get("items") or []:
         if not isinstance(row, dict):
             continue
         status = str(row.get("status") or "")
         if status in terminal_statuses:
             continue
-        if _repair_merge_row_superseded_by_later_progress(events, row):
+        if not row.get("repair_contract_required") and _repair_merge_row_superseded_by_later_progress(events, row):
             continue
         pending += 1
+        strict_pending += bool(row.get("repair_contract_required"))
         if status == "closeout_required":
             closeout_required += 1
     return {
         "pending": pending,
         "closeout_required": closeout_required,
+        "strict_pending": strict_pending,
     }
 
 

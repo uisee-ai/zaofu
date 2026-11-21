@@ -16,11 +16,21 @@ RECOVERY_INPUTS = frozenset({
 })
 
 
+def is_recovery_input(event: ZfEvent) -> bool:
+    if event.type in RECOVERY_INPUTS:
+        return True
+    body = event.payload
+    return bool(event.origin == "kernel"
+        and event.type in {"run.manager.action.applied", "run.manager.action.failed"}
+        and body.get("action") in {"repair-closeout-validate", "repair-closeout-apply"}
+        and body.get("queue_id") and body.get("repair_contract_digest"))
+
+
 def has_new_recovery_input(events: Iterable[ZfEvent], consumed_id: str) -> bool:
     """Wake once for new recovery facts; ordinary observations remain periodic."""
     for event in reversed(list(events)):
         if event.id == consumed_id:
             return False
-        if event.type in RECOVERY_INPUTS:
+        if is_recovery_input(event):
             return True
     return False

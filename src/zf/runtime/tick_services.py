@@ -803,7 +803,9 @@ def _is_run_manager_noop_input(event: ZfEvent) -> bool:
     if event_type in _RUN_MANAGER_NOOP_INPUT_EVENTS:
         return True
     if event_type.startswith("run.manager."):
-        return event_type not in _RUN_MANAGER_REACTIVE_SELF_EVENTS
+        from zf.runtime.recovery_tick_wake import is_recovery_input
+
+        return event_type not in _RUN_MANAGER_REACTIVE_SELF_EVENTS and not is_recovery_input(event)
     return False
 
 

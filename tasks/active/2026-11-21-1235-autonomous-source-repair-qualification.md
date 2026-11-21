@@ -10,6 +10,8 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 新隔离实验已启动；原生修复候选完成后验证失败，受控重验明确拒绝旧基线，待RM按新基线恢复 |
 | LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务任务、8/8 Reader与post-verify discovery通过；Judge校验修复已部署并精确重试，完整Goal仍缺无监工资格证据 |
+| SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 本地修复及独立review通过；236项直接闭包、6149项自动闭包、sentinel53、flow10通过；待部署 |
+| SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数修复及独立review通过；显式disposition入口仍待实施 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -292,3 +294,26 @@ repair_validation_live_base_changed失败，results为空，冻结候选未应�
 原候选1d39f418/旧合同/evt-77004db6fefb原失败均保留；当前基线不允许强行rebase/apply。
 RM已经收到另一条恢复诊断，新增验证失败应由调度继续交给原生RM。
 资格窗口仍未开始；SR-DISPOSITION与真实自动apply→restart→resume仍未签收。
+
+
+15:27–15:34 UTC原生恢复实测：RM自行产生两项repair建议并派发Luna workers。
+原枚举修复候选22630368由独立验证evt-30e3183682a9通过，runtime应用为3d9b917f，
+merge回执evt-944b7e8dd7ab；systemd自行重启，evt-fd1659b0e696的runtime-load匹配
+applied commit/source tree/state，repaired_runtime_observed=True。根会话未代替本轮
+生成候选、应用或启动重启。原业务Planner尚未恢复，不能将四步当作五步闭环通过。
+CLI包装事件注册候选dfb5f95c受并行前一项应用影响，验证拒绝live_base_changed，保留失败。
+另有watchdog候选b3e965a4验证通过，但缺少continuation，保持应用门拒绝。
+
+发现SR-WAKE：15:27:12 repair-closeout-validate失败后，post-repair诊断和新失败诊断
+均可派发、门禁为空，但self-event被NOOP过滤且不在快速恢复输入集合，实际到15:32:17
+才由300秒Supervisor周期唤醒。4条真实tick入口RED已复现；仅将kernel-origin、带
+queue+contract绑定的repair-closeout-validate/apply成功或失败收据作为新输入。普通
+bookkeeping、blocked、未绑定或worker事件不快唤醒；cursor消费后不重复循环。
+
+SR-STRICT：strict repair_contract_required队列原来可因human确认/普通业务进展消失，
+且terminal_run_passed可绕过它。修复只针对strict非merged/discarded行；legacy不变。
+初始fixture缺resume_original_workflow已更正，对642ec609实跑RED为3失败/3通过。
+两个修复的直接调用及相关mock闭包236通过，独立review和自动影响闭包待完成。
+当前还存在活跃原生repair worker，暂不部署根会话更新去改变其冻结基线。
+
+15:40 UTC：SR-WAKE/SR-STRICT 自动影响闭包6149 passed/7 skipped，sentinel53、flow mock10通过；独立只读review未发现阻断项，确认cursor取执行前快照，不吞掉执行中产生的后继回执。仍不代表原业务恢复或无监工资格通过。原生第三个repair worker已终结，候选6aea45e2同样因live_base_changed被拒绝，尚未应用。

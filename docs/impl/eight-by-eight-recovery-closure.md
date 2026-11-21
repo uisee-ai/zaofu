@@ -678,3 +678,26 @@ repair_validation_live_base_changed失败，results为空，冻结候选未应�
 原候选1d39f418/旧合同/evt-77004db6fefb原失败均保留；当前基线不允许强行rebase/apply。
 RM已经收到另一条恢复诊断，新增验证失败应由调度继续交给原生RM。
 资格窗口仍未开始；SR-DISPOSITION与真实自动apply→restart→resume仍未签收。
+
+
+15:27–15:34 UTC原生恢复实测：RM自行产生两项repair建议并派发Luna workers。
+原枚举修复候选22630368由独立验证evt-30e3183682a9通过，runtime应用为3d9b917f，
+merge回执evt-944b7e8dd7ab；systemd自行重启，evt-fd1659b0e696的runtime-load匹配
+applied commit/source tree/state，repaired_runtime_observed=True。根会话未代替本轮
+生成候选、应用或启动重启。原业务Planner尚未恢复，不能将四步当作五步闭环通过。
+CLI包装事件注册候选dfb5f95c受并行前一项应用影响，验证拒绝live_base_changed，保留失败。
+另有watchdog候选b3e965a4验证通过，但缺少continuation，保持应用门拒绝。
+
+发现SR-WAKE：15:27:12 repair-closeout-validate失败后，post-repair诊断和新失败诊断
+均可派发、门禁为空，但self-event被NOOP过滤且不在快速恢复输入集合，实际到15:32:17
+才由300秒Supervisor周期唤醒。4条真实tick入口RED已复现；仅将kernel-origin、带
+queue+contract绑定的repair-closeout-validate/apply成功或失败收据作为新输入。普通
+bookkeeping、blocked、未绑定或worker事件不快唤醒；cursor消费后不重复循环。
+
+SR-STRICT：strict repair_contract_required队列原来可因human确认/普通业务进展消失，
+且terminal_run_passed可绕过它。修复只针对strict非merged/discarded行；legacy不变。
+初始fixture缺resume_original_workflow已更正，对642ec609实跑RED为3失败/3通过。
+两个修复的直接调用及相关mock闭包236通过，独立review和自动影响闭包待完成。
+当前还存在活跃原生repair worker，暂不部署根会话更新去改变其冻结基线。
+
+15:40 UTC：SR-WAKE/SR-STRICT 自动影响闭包6149 passed/7 skipped，sentinel53、flow mock10通过；独立只读review未发现阻断项，确认cursor取执行前快照，不吞掉执行中产生的后继回执。仍不代表原业务恢复或无监工资格通过。原生第三个repair worker已终结，候选6aea45e2同样因live_base_changed被拒绝，尚未应用。
