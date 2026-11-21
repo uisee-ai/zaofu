@@ -122,3 +122,51 @@ def test_unknown_apply_or_restart_gets_diagnosis_after_deadline(tmp_path, status
         assert actions[0]["source_event_ids"] == [event.id]
         writer.emit("run.manager.action.applied", payload=actions[0])
         assert diagnostics() == []
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+def test_agent_repair_without_workflow_checkpoint_resumes_through_bound_diagnosis(tmp_path, loaded):
+    from zf.runtime.run_manager import _resident_diagnosis_reprompt_action
+
+    root, repair, base, commit = _repair_repositories(tmp_path)
+    state, log, writer = _state(tmp_path)
+    writer.default_origin = "kernel"
+    action = _action(repair, base, commit)
+    action["continuation"].update(checkpoint_id="recommendation:original",
+        safe_resume_action="agent_recommendation", task_id="task-original",
+        workflow_run_id="run-original", recovery_case_id="original-case")
+    with patch("zf.runtime.self_repair_runner.harness_root", return_value=root), patch(
+        "zf.runtime.run_manager._spawn_source_repair_restart_actuator", return_value=1234,
+    ):
+        assert _execute_repair_closeout_apply(state_dir=state, writer=writer,
+            project_root=tmp_path, action=action, causation_id="cause") == "applied"
+    receipt = next(e.payload["apply_receipt"] for e in log.read_all()
+                   if e.type == "run.manager.repair.merge.merged")
+    if loaded:
+        ref = write_sidecar_json(state, "diagnostics/runtime-load/new.json", {
+            "schema_version": "runtime-load.v1", "state_dir": str(state.resolve()),
+            "source_root": str(root), "source_revision": receipt["applied_commit"],
+            "source_tree_sha256": receipt["source_tree_sha256"],
+        }, kind="runtime-load", schema_version="runtime-load.v1", created_by="zf-cli", required=True)
+        writer.emit("loop.started", payload={"runtime_load_ref": ref})
+    def actions():
+        return build_run_manager_projection(state, events=log.read_all(), config=_config())["pending_actions"]
+    pending = actions()
+    assert not any(a["action"] == "workflow-batch-resume" for a in pending)
+    diagnoses = [a for a in pending if a.get("failure_class") == "self_repair_post_merge_continuation_missing_checkpoint"]
+    assert bool(diagnoses) is loaded
+    if loaded:
+        diagnosis = diagnoses[0]
+        assert diagnosis["workflow_run_id"] == "run-original"
+        assert diagnosis["continuation"]["recovery_case_id"] == "original-case"
+        assert diagnosis["checkpoint_id"] != "recommendation:original"
+        dispatch = _resident_diagnosis_reprompt_action(diagnosis, {
+            "status": "observing", "tmux_session": "resident", "briefing_path": "/tmp/brief",
+            "instance_id": "run-manager",
+        })
+        assert dispatch is not None
+        assert dispatch["request_kind"] == "recovery_diagnosis"
+        writer.emit("run.manager.resident.prompted", payload={
+            "source_action_checkpoint_id": diagnosis["checkpoint_id"],
+        })
+        assert not any(a.get("failure_class") == diagnosis["failure_class"] for a in actions())

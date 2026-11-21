@@ -576,3 +576,40 @@ checkpoint按失败验证event ID去重，携带原Run、queue/candidate、Git b
 SR-FAIL-FEEDBACK最终自动影响闭包：5931 passed/7 skipped（184秒），sentinel53、
 flow mock10通过；resident实际二次准入形态另3项通过。准备部署新隔离harness，
 保留旧候选及其失败，不动dev、不push。当前任务仍active，真实自动应用/恢复未证明。
+
+
+2026-11-21 14:24:45：新实验harness已加载d1b173b7，loop.started evt-d1a15de78209
+与runtime-load receipt一致，配置sha fadd068e…不变，全部worker pane/PID保留。
+14:21 Anchor的1800秒orphan计时升级产生evt-dd6422696838，叠加等待门。14:28监工
+依既有继续恢复授权，通过controlled human-decision-dismiss确认该计时告警，记录
+operator.intent evt-3e382fb5e1a5；未删失败、未改任务结果，属于准备期人工介入。
+14:29:55 runtime原生派发新的验证失败诊断evt-edb724d5b0ba（request rmd-d1244b1228c8ddfa）；
+14:33:47 RM返回evt-bf72aa9523ef，完整保留旧候选/旧失败，指出controlled重验入口缺失。
+因此已证明失败会回到RM，但尚未证明自动完成修复。
+
+新增两个复现与修复：
+- SR-SELECT：Autoresearch单飞槽忙时，普通attention占队首，空闲resident的后续诊断
+  被饿死；原逻辑只对no_progress特例让行。改为按实际可用执行角色选择：保留旧诊断，
+  优先已有合法可派发的resident/OA动作；人工门、pause、case和去重仍检查。
+  1项RED，292项定向调用闭包通过；独立只读review未发现放宽权限。
+- SR-CONT：原合同continuation的agent_recommendation是建议身份，不是workflow
+  checkpoint。真实Git apply+mock restart复现后，未知/缺失恢复动作改为绑定合入与
+  load receipt后的RM新诊断，原case保留在continuation，新诊断不复用已结束动作身份。
+  没有匹配新load receipt仍不恢复；1项RED，268项调用闭包通过。
+
+后续已确认能力缺口仍在本active批次：
+- [ ] SR-REVALIDATE：Agent在既有授权内请求重验 -> kernel依据queue/候选/原失败/冻结
+  合同重建验证动作，不能信任Agent重新传入的路径/命令/required标志；保留旧失败，
+  有界的新验证记录通过后才回到apply检查。
+- [ ] SR-DISPOSITION：旧候选因基线变化不可直接应用 -> 受控记录替代/丢弃关系，
+  保留提交与失败，不以新候选存在就关闭原业务故障。
+- [ ] SR-POLICY：medium风险和实际预授权apply准入展示一致，避免把已授权恢复误写为
+  必须再次请Owner授权；真正缺失执行入口应报告能力缺口，不冒充权限限制。
+
+新资格窗口仍未开始，旧Run42项post-verify必读已读齐，正式discovery/Judge/Goal待结果。
+
+SR-SELECT/SR-CONT最终自动影响闭包：5944 passed/7 skipped，sentinel53、flow mock10
+通过；独立只读review未发现阻断项。新Run的RM当前已返回human请求，因为缺少受控
+重验入口；这不是新授权自动出现。下一步补kernel重建入口及当前基线漂移检查，
+不让Agent重传命令/合同、不靠不断换失败ID重置次数。每候选+冻结合同+可信验证器
+版本最多一次，失败ID仅校验当前性。旧失败与新结果均留账。

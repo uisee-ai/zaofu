@@ -1441,14 +1441,17 @@ def build_run_manager_projection(
         pending_actions=[a for a in pending_actions if not _action_seen(events, a)],
         completion_profile=completion_profile,
     )
-    # A no-progress diagnosis remains first in the queue, but cannot be sent
-    # while another Autoresearch request occupies the single-flight slot.
+    # A diagnosis that requires Autoresearch cannot be sent while another
+    # request occupies its single-flight slot.
     # Allow current task work with a separate available owner (OA review or
     # resident diagnosis); retain human gates and the background diagnosis.
     selected = continuation.get("next_operation")
+    selected_action = next((action for action in pending_actions
+        if isinstance(selected, dict) and action.get("operation_key") == selected.get("operation_key")), None)
     if (
-        isinstance(selected, dict)
-        and selected.get("failure_class") == "no_progress_breaker"
+        selected_action is not None
+        and (selected_action.get("policy_decision") or {}).get("decision") == "needs_diagnosis"
+        and _resident_diagnosis_reprompt_action(selected_action, resident_agent) is None
         and _autoresearch_inflight_request_ids(events)
         and not _run_manager_reflect_enabled(config, None)
     ):
@@ -9429,18 +9432,17 @@ def _pending_post_repair_continuation_actions(
             or ""
         ).strip()
         fingerprint = str(item.get("fingerprint") or item.get("queue_id") or "post-repair")
-        checkpoint = checkpoint_id or (
-            "post-repair-continuation-"
-            + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
-        )
         source_event_ids = _repair_queue_event_ids(item)
-        if _post_repair_continuation_seen(
+        supported_checkpoint = bool(checkpoint_id and safe_action in (
+            _SAFE_BATCH_ACTIONS | _SAFE_TASK_ACTIONS | {"trigger_rework"}
+        ))
+        if supported_checkpoint and _post_repair_continuation_seen(
             events,
-            checkpoint_id=checkpoint,
+            checkpoint_id=checkpoint_id,
             fingerprint=fingerprint,
         ):
             continue
-        if checkpoint_id and safe_action:
+        if supported_checkpoint:
             action = {
                 "schema_version": "run-manager.pending-action.v1",
                 "action": "workflow-batch-resume",
@@ -9469,43 +9471,9 @@ def _pending_post_repair_continuation_actions(
                 mutating_resume_supported=bool(action.get("mutating_resume_supported")),
             )
         else:
-            action = {
-                "schema_version": "run-manager.pending-action.v1",
-                "action": "diagnose-attention",
-                "checkpoint_id": checkpoint,
-                "safe_resume_action": "diagnose_attention",
-                "fingerprint": fingerprint,
-                "failure_class": (
-                    "self_repair_post_merge_continuation_missing_checkpoint"
-                ),
-                "owner_route": "run_manager",
-                "action_policy": "needs_diagnosis",
-                "intervention_class": "diagnose",
-                "queue_id": str(item.get("queue_id") or ""),
-                "candidate_id": str(item.get("candidate_id") or ""),
-                "continuation": continuation,
-                "source_event_ids": source_event_ids,
-                "title": "Self-repair merged but continuation checkpoint is missing",
-                "summary": (
-                    "repair merge completed and requested original workflow resume, "
-                    "but no checkpoint_id/safe_resume_action was recorded"
-                ),
-                "recommended_actions": [
-                    "inspect_repair_closeout_continuation",
-                    "find_latest_workflow_resume_checkpoint",
-                    "return_resume_or_wait_proposal_to_run_manager",
-                ],
-                "expected_output": [
-                    "continuation_checkpoint",
-                    "safe_resume_action",
-                    "resume_or_wait_decision",
-                ],
-                "expected_downstream_events": ["run.manager.autoresearch.requested"],
-                "verify_condition": (
-                    "expected_downstream_event:run.manager.autoresearch.requested"
-                ),
-                "route_registry": "run-manager-router.v1",
-            }
+            from zf.runtime.source_repair_recovery import post_repair_diagnosis
+
+            action = post_repair_diagnosis(item, continuation, source_event_ids)
             action["preflight"] = preflight_action(
                 action="diagnose-attention",
                 payload=action,

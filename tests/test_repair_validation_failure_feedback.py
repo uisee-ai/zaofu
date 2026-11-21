@@ -65,3 +65,42 @@ def test_terminal_candidate_does_not_reopen_validation_diagnosis(tmp_path, termi
     writer.emit("run.manager.repair.merge." + terminal, payload=identity)
     pending = build_run_manager_projection(state, events=log.read_all(), config=_config())["pending_actions"]
     assert not any(a.get("failure_class") == "repair_validation_failed" for a in pending)
+
+
+@pytest.mark.parametrize("gate", ["", "human", "pause"])
+def test_busy_research_does_not_starve_available_resident_diagnosis(tmp_path, gate):
+    from unittest.mock import patch
+    from zf.runtime.run_manager import _attention_diagnostic_action, decide_action_policy, preflight_action
+
+    state, log, writer = _state(tmp_path)
+    _failed_candidate(writer)
+    writer.emit("run.manager.autoresearch.requested", payload={
+        "request_id": "occupied", "checkpoint_id": "old-research", "fingerprint": "old-research",
+    })
+    if gate == "human":
+        writer.emit("human.escalate", task_id="task-original", payload={
+            "decision_token": "owner-gate", "blocking_scope": "task", "reason": "owner input",
+        })
+    elif gate == "pause":
+        writer.emit("dispatch.paused", actor="operator")
+    attention = _attention_diagnostic_action({
+        "fingerprint": "earlier-attention", "failure_class": "human_attention_delivery",
+        "task_id": "task-original", "suggested_route": "autoresearch_trigger",
+    })
+    attention["preflight"] = preflight_action(action="diagnose-attention", payload=attention)
+    attention["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=attention)
+    resident = {"enabled": True, "status": "observing", "tmux_session": "resident",
+                "briefing_path": "/tmp/brief", "instance_id": "run-manager", "requests": []}
+    with patch("zf.runtime.run_manager._pending_attention_diagnostic_actions", return_value=[attention]), \
+            patch("zf.runtime.run_manager.build_resident_agent_projection", return_value=resident), \
+            patch("zf.runtime.run_manager._execute_resident_agent_reprompt", return_value="applied") as dispatch:
+        projection = build_run_manager_projection(state, events=log.read_all(), config=_config())
+        if not gate:
+            assert projection["continuation"]["next_operation"]["failure_class"] == "repair_validation_failed"
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    if gate:
+        dispatch.assert_not_called()
+    else:
+        dispatch.assert_called_once()
+        assert dispatch.call_args.kwargs["action"]["failure_class"] == "repair_validation_failed"
+        assert len(projection["pending_actions"]) == 2

@@ -1,6 +1,7 @@
 """Evidence binding for resuming a workflow after a harness repair restart."""
 from pathlib import Path
 from datetime import datetime, timezone
+import hashlib
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -34,6 +35,34 @@ def pending_validation_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
         "reason": "Repair validation failed: " + str(validation.get("reason") or "unknown")
             + "; inspect the frozen candidate and retained validation result before choosing recovery. "
               "A diagnosis does not authorize retry, rebase, apply, or replacement of failed evidence.",
+    }
+
+
+def post_repair_diagnosis(
+    item: dict[str, Any], continuation: dict[str, Any], source_event_ids: list[str],
+) -> dict[str, Any]:
+    """An agent recommendation is not an executable workflow checkpoint."""
+    key = hashlib.sha256("|".join([
+        str(item.get("queue_id") or ""), str(item.get("applied_commit") or ""),
+        *source_event_ids,
+    ]).encode()).hexdigest()[:20]
+    return {
+        "schema_version": "run-manager.pending-action.v1", "action": "diagnose-attention",
+        "checkpoint_id": "post-repair-diagnosis-" + key, "fingerprint": "post-repair:" + key,
+        "safe_resume_action": "diagnose_attention",
+        "failure_class": "self_repair_post_merge_continuation_missing_checkpoint",
+        "owner_route": "run_manager", "suggested_route": "run_manager_recovery",
+        "action_policy": "needs_diagnosis", "intervention_class": "diagnose",
+        "workflow_run_id": continuation.get("workflow_run_id", ""),
+        "run_id": continuation.get("run_id", ""), "task_id": continuation.get("task_id", ""),
+        "queue_id": item.get("queue_id"), "candidate_id": item.get("candidate_id"),
+        "applied_commit": item.get("applied_commit"), "continuation": continuation,
+        "source_event_ids": source_event_ids,
+        "summary": "Repair is applied, but the retained continuation has no supported workflow "
+                   "checkpoint. Diagnose the original fault against the loaded repair and choose "
+                   "a current controlled resume action; do not treat the recommendation ID as a checkpoint.",
+        "expected_output": ["run.manager.agent.recommendation"],
+        "expected_downstream_events": ["run.manager.resident.prompted", "run.manager.autoresearch.requested"],
     }
 
 
