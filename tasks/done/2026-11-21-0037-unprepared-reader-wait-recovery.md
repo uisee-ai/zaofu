@@ -1,6 +1,6 @@
 # Reader 在准备 operation 前等待超时的恢复
 
-> 状态: active
+> 状态: done
 
 本项沿用用户对8×8真实验证问题修复与恢复的授权；隔离工作区实现，不合并dev、不push。
 
@@ -15,3 +15,7 @@
 有效行为RED：1 failed / 7 passed。
 
 验证：262项定向通过；相对已部署fcfb0abd的自动增量闭包4312 passed / 9 skipped，sentinel53 passed、flow smoke10 passed。随后补充保留旧Task child-rebuild入口的执行检查，最后57项相关回归通过。实际现场只读preflight通过；原生派发及效果仍待部署，不称全量验证或无人通过。
+
+实现：7ec3fd16 fix: recover reader waits before operation preparation。
+真实验证：实际受控恢复后evt-30beeb85dbba以evt-e7faceadbc3b为因果派发lane1 retry-1；首次durable operation a92a4dc40f66运行，目标09094c2d/current输入有效。旧failed和16业务完成证据保持，未伪造前序operation。验证的是恢复首次派发，不代表Candidate/Judge已通过。
+证据：reports/eight-qualification-20261120T122929Z/unprepared-reader-wait-dispatch-proof.json、terminal-reader-owner-applied.json。

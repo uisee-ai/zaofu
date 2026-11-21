@@ -1,6 +1,6 @@
 # 终结 fanout 的过期 Reader 占用清理
 
-> 状态: active
+> 状态: done
 
 用户授权8×8验证中的问题修复、记录和恢复；不合并dev、不push。
 
@@ -19,3 +19,7 @@ fanout，导致既有过期operation取消路径没执行。不是产品失败�
 验证：有效行为 RED 1 fail / 3 pass；focused 227 passed；相对 4d2d81d7 的自动影响闭包 612 passed / 7 skipped；sentinel 53 passed；deterministic flow smoke 10 passed。日志保存在隔离验证 reports 的 terminal-reader-owner-* 文件。只读真实选择预览仅选择旧 fanout 的 lane1，准入因果为 evt-3f815fec2b82。
 
 部署前新 lane1 于 00:29:40 UTC 因 reader_environment_wait_exhausted 失败，尚无当前 operation。清理旧持有者后还需核实受控恢复入口，不能将原 lane1 的 operation 冒充新 lane1，也不能声称已经恢复。
+
+实现：fcfb0abd fix: release superseded readers after terminal fanout。
+真实验证：原生取消evt-a775b93fbea6绑定准入evt-3f815fec2b82，旧operation cancelled、旧aggregate failed，未重置尝试。后续7ec3fd16补齐首次交付入口后，evt-30beeb85dbba派发新lane1，其他Reader保持原operation；新占用校验未绕过。
+证据：reports/eight-qualification-20261120T122929Z/unprepared-reader-wait-dispatch-proof.json、terminal-reader-owner-applied.json。

@@ -70,7 +70,7 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 只有同 Run 的 Kernel 准入证明确认过期，才沿既有取消/transport 所有权路径释放旧
 持有者。保留原聚合结果，不补写 `fanout.cancelled` 覆盖失败，不重试旧 Reader，也不
 重置其 attempt 上限。当前代际和其他 Run 的持有者仍受保护。
-见[终结 Reader 清理](../../tasks/active/2026-11-21-0027-terminal-reader-owner-closeout.md)。
+见[终结 Reader 清理](../../tasks/done/2026-11-21-0027-terminal-reader-owner-closeout.md)。
 
 连续 Plan 修订还需追溯更早的原生 Task 验收。第二次恢复不能要求上一代重新产生
 `task.done`：上一代可能只保存已批准的完成复用。预览以该代归档 Task 建立历史读视图，
@@ -184,4 +184,4 @@ operation ID。精确 `child-rebuild` 允许此唯一未准备情形省略 `targ
 expected-child、无历史operation/派发、当前性和暂停边界。正常准备入口生成首次call，
 以真实失败为因果，不补造前序身份。已有call仍须提供精确operation，不修改attempt上限。
 RM建议、控制入口、执行及效果观察使用相同绑定；见
-[首次Reader恢复任务](../../tasks/active/2026-11-21-0037-unprepared-reader-wait-recovery.md)。
+[首次Reader恢复任务](../../tasks/done/2026-11-21-0037-unprepared-reader-wait-recovery.md)。
