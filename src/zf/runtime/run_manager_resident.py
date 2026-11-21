@@ -321,6 +321,7 @@ def build_resident_run_manager_briefing(
         "  `task-requeue`(wip_without_carrier:任务挂进行中但承接 child 已死)、",
         "  `child-rebuild`(精确重试失败 Reader；action_payload 必须包含 fanout_id、fanout_child_id、",
         "  workflow_run_id、target_operation_id、active_attempt_id、source_event_id，最后一项为当前失败事件)、",
+        "  若环境等待在 operation 创建前超时，仍绑定原 pending run_id 为 active_attempt_id；仅此时可省略 target_operation_id。",
         "  `stage-retrigger`(推进事件未消费/消费已败,自动新代际)、",
         "  `stage-replan-new-generation`(stage replan cap 后凭 owner approval 开新代际,保留既有 checkpoint)、",
         "  `rescan-grant`(goal idle 驱动器弹尽后追加一轮)。",

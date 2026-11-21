@@ -329,7 +329,10 @@ class RepairActionExecutor:
     ) -> None:
         action_id = str(record.get("id") or "")
         task_id = str(record.get("task_id") or event.task_id or "")
-        if event.payload.get("target_operation_id"):
+        if event.payload.get("target_operation_id") or (
+            event.payload.get("recovery_action") == "child-rebuild"
+            and "workflow_run_id" in event.payload
+        ):
             from zf.runtime.reader_rebuild_admission import reader_rebuild_error
             error = reader_rebuild_error(self.task_store.path.parent, self.event_log.read_all(), event.payload)
             if error:

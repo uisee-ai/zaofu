@@ -35,7 +35,7 @@ def recovery_preflight(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     required = ("checkpoint_id",)
     if action == "child-rebuild":
         required += ("fanout_id", "fanout_child_id", "workflow_run_id",
-                     "target_operation_id", "active_attempt_id", "source_event_id")
+                     "active_attempt_id", "source_event_id")
     return {"schema_version": "run-manager.action-preflight.v1",
             "status": "passed" if all(payload.get(k) for k in required) else "blocked",
             "failures": [f"missing_{k}" for k in required if not payload.get(k)],

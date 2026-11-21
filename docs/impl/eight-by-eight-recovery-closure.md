@@ -175,3 +175,13 @@ attempt上限、不重开已完成Task。最终amend的消费合同门禁继续�
 实际窗口发现必读齐全仍固定推荐reconstruct_required_inputs，压缩后反复全读。恢复投影用required_scope_count表示输入规模；historical_missing为0时交给Agent识别具体上下文缺口并继续，不再给出默认required批读命令。缺读、权限和输入版本门禁保留；历史不证明当前模型理解。Verifier在阅读完成和验收组完成时按既有WRC入口保存语义进度，恢复先读记录、按索引补正文，不用摘要替代首次必读或验收。
 
 原WRC在同operation受控重派后可读：当前请求、manifest、角色、fanout、候选及有效lease仍须验证；旧记录必须有原生发布/派发/attempt证据，新的启动须绑定发布之后的kernel redrive准入。只允许传输dispatch/canonical attempt/lease变化，原记录不改写、不授予执行或通过。参见[上下文进度恢复任务](../../tasks/active/2026-11-20-2303-reader-context-progress-recovery.md)。
+
+### 首次 Reader 尚未创建 call 的恢复
+
+目标 pin 在 durable call 准备之前可能等待环境；若超时，不应要求一个从未存在的
+operation ID。精确 `child-rebuild` 允许此唯一未准备情形省略 `target_operation_id`，
+仍绑定 Run、fanout、child、原 pending run_id 与失败事件，并验证 Kernel 原始等待、
+expected-child、无历史operation/派发、当前性和暂停边界。正常准备入口生成首次call，
+以真实失败为因果，不补造前序身份。已有call仍须提供精确operation，不修改attempt上限。
+RM建议、控制入口、执行及效果观察使用相同绑定；见
+[首次Reader恢复任务](../../tasks/active/2026-11-21-0037-unprepared-reader-wait-recovery.md)。

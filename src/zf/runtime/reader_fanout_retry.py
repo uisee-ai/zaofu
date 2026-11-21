@@ -26,18 +26,26 @@ def prepare_fresh_reader_retry(
     old_operation_id = str(
         payload.get('operation_id') or previous_dispatch.payload.get('operation_id') or ''
     )
-    # Legacy shadow readers have no durable call to replace.
+    # A failed initial pin has an obligation but no call; legacy shadow readers
+    # still use their existing path without inventing a preceding operation.
     if not old_operation_id:
-        return None
+        from zf.runtime.reader_rebuild_admission import reader_rebuild_error
+        error = reader_rebuild_error(runtime.state_dir, runtime.event_log.read_all(), {
+            "fanout_id": manifest["fanout_id"], "fanout_child_id": child["child_id"],
+            "workflow_run_id": manifest.get("trace_id"),
+            "active_attempt_id": previous_dispatch.payload.get("run_id"),
+            "source_event_id": previous_dispatch.id})
+        if error:
+            return None
     for key in _READER_RETRY_CALL_IDENTITY_KEYS:
         payload.pop(key, None)
         child.pop(key, None)
     payload.update({
-        'parent_operation_id': old_operation_id,
-        'retry_of_operation_id': old_operation_id,
         'retry_of_run_id': str(previous_dispatch.payload.get('run_id') or ''),
         'retry_attempt': attempt,
     })
+    if old_operation_id:
+        payload.update(parent_operation_id=old_operation_id, retry_of_operation_id=old_operation_id)
     context = FanoutContext(
         fanout_id=str(manifest['fanout_id']),
         stage_id=str(manifest['stage_id']), topology='fanout_reader',

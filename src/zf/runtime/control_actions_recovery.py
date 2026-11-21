@@ -175,10 +175,10 @@ class RecoveryActionsMixin:
                 correlation_id=payload["workflow_run_id"], causation_id=requested.id,
                 payload={**{k: payload[k] for k in (
                     "fanout_id", "fanout_child_id", "workflow_run_id",
-                    "target_operation_id", "active_attempt_id", "source_event_id")},
+                    "target_operation_id", "active_attempt_id", "source_event_id") if k in payload},
                     "action_id": action_id, "kind": "rerun_fanout_child",
                     "recovery_action": action,
-                    "idempotency_key": f"reader-rebuild:{payload['target_operation_id']}:{payload['source_event_id']}",
+                    "idempotency_key": f"reader-rebuild:{payload.get('target_operation_id') or payload['active_attempt_id']}:{payload['source_event_id']}",
                     "reason": str(payload.get("reason") or "retry the exact failed Reader")},
             ))
             return self._recovery_ok(requested, emitted, action, requested_action,
