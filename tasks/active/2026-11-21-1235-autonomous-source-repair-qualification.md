@@ -9,7 +9,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 原生候选已验证、应用、重启；恢复Plan需owner审批，已执行并进入新一轮Plan返工；五步无人闭环未通过 |
-| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；准确Plan已审批，聚合恢复后19:54最终Judge retry-3执行中，Goal/本地交付尚未通过；原无人窗口失败保留 |
+| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；准确Plan已审批，20:13操作员模型激活中断原尝试；20:20受控Judge retry-4执行中，Goal/本地交付尚未通过；原无人窗口失败保留 |
 | SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 已验证并随f2e927da部署；236项直接闭包、6149项自动闭包、sentinel53、flow10通过 |
 | SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数及显式disposition入口已验证部署；受控处理仅关闭有有效替代的旧候选 |
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已验证部署；341直接闭包、7143自动闭包通过，真实受控disposition保留旧失败 |
@@ -20,6 +20,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 24420dc0已验证部署，真实入口/独立review与最终34项边界通过；全资格故障实验仍待完成 |
 | RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | 6b9d72e3防复发及14项受控补偿已部署执行，22e6e1f0补齐Goal证明消费；原Judge正式结果仍待收取 |
 | READER-TERMINAL | 协议耗尽有明确fanout终态与合法恢复入口 -> verify: 当前精确失败投影、崩溃重放、暂停门禁及受控重试，不制造语义结论。 | 7becfc7b已部署；2380项自动闭包、sentinel53、flow10通过，真实历史前缀只读匹配通过；OLD正常child-rebuild已派发 |
+| QUAL-TOOLS | 真实并发采证及预声明故障工具 -> verify: 原生时间/turn绑定、准确审批、项目暂停、当前派发、源码加载及共享选段拒绝，外部工具不代做恢复。 | 实验目录6份工具已冻结，25项检查及独立静态review通过；真实旧Task Verify字段兼容检查通过，故障尚未注入 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -567,3 +568,31 @@ wop-prd-lanes-final-judge-prd-trig-evt-5640085e-retr-ebb5314aa35b，19:54正式�
  evt-5c65ca2533c5派发新Planner；16业务Task、19命令、全部独立资格标准和权限
 保持。生命周期义务映射到交付后外部资格判定，不隐藏、降级或伪造通过。
 本轮仍为准备期，资格窗口未开始；报告plan-qualification-boundary-recovery.json。
+
+
+20:20–20:31 UTC：NEW Planner正式通过evt-7a0ae468f400，Synth operation
+wop-prd-plan-synth-trig-evt-5c65ca25-d410f5b1e3fa独立审核中。操作员读完冻结Plan
+正文并核对16独立Task、19命令、20产品Goal claim、3独立强制资格义务及来源映射，
+尚未批准。产品acceptance_spec与real_e2e断言一致，文本工具不再继承数字恢复。
+证据planner-package-operator-review.json；新窗口仍未开始、正式业务0/16。
+
+QUAL-TOOLS：独立研究发现初版脚本会用事件入账时刻扩大区间、跨turn串接，注入前
+operation可能已过期，worker恢复仅凭done，资格窗口/Reader阶段门禁与共享chunk检查
+不全。现使用精确原生token_count时间和turn终止；未知间隙不计。注入前核对准确
+审批/package/generation、当前Run/全局pause、dispatch/native turn/pidfd/出生时间。
+controller要求只读因果审阅绑定原生恢复链，并验证当前boot/PID实际加载的声明源码。
+Reader只删除固定完整正文可重建、当前活跃消费者独占的派生块，失败仍为未知。
+实际Reader读取attempt取nested payload/dispatch_id而非TaskAttempt id。首次CLI
+导入检查失败为新增import顺序错误，已纠正并补入口检查。25项通过，独立静态复核
+无剩余确定阻断；真实旧MEDIAN Verify原生区间字段兼容通过，不冒充本轮容量成绩。
+六份脚本及摘要保全于NEW reports的qualification-tools/；全部故障尚未注入。
+
+OLD监工操作纠正：19:55界面所选6.1-sol不等于当前turn实际模型；原生记录仍Luna。
+20:13为激活选定模型主动Esc，中断被runtime正确记为provider关闭且恢复耗尽，
+operation终结evt-89f0c5deb1dd，不能原地续跑。20:18原生6.1-sol turn已无有效
+operation，因此不计有效恢复。20:20受控child-rebuild intent evt-f001d39cc29e
+重建operation wop-prd-lanes-final-judge-prd-trig-evt-5640085e-retr-bb655a9584d4、
+retry-4。新pane %475初始仍Luna；仅重新选定未来turn设置，未再次中断，必须按实际
+turn证据报告模型。保留16完成业务、同Candidate和旧失败；不扩预算或改资格结论。
+详见OLD judge-model-interruption-incident.json。此人工操作失误不归因产品缺陷；
+真实最终Judge/Goal/local delivery仍待正式结果，整批继续active。
