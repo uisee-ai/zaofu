@@ -331,3 +331,10 @@ Plan 输入和 stage 代次；不重新授予预算或扩大任务集合。真�
 只承认 producer 声明的 metadata 和 task_id 回填；不能凭一个 original_trigger_event_id
 退役不同的新工作。抑制事件逐 stage 绑定，并分别结算原触发和副本，使既有停滞检测器
 看到已处理事实，不因缺少 stage_id 再次重派或把退休工作升级为新故障。
+
+真实Planner随后暴露基线导出遗漏：`execution_spec`、`task_execution_input`及
+`product_acceptance_spec`虽已绑定为Planner可读输入/可编写输出，却被CLI端口白名单拒绝，
+增加重新构造未变规格的风险。补齐这三个已存在的输出端口，复用相同的Planner身份、
+同Run/代次/Package、全文授权、ref/digest与私有草稿目录校验，逐字节导出。
+未分配或不存在的端口继续拒绝；需求、审批和Goal权威不成为可编辑导出。复制不产生
+阅读回执，也不证明语义修复或验收完成。

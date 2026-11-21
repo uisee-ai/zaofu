@@ -6,7 +6,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 
 | ID | 优先级 | 工作与验收 | 状态 |
 |---|---|---|---|
-| P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实被拒草稿只读回放拦截14项漂移 |
+| P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实同operation先拦截14项漂移、修复后正式准入，14项保留行未变 |
 | P0-2 | P0 | 故障类型与最小恢复动作 -> verify: 输入/执行故障进入技术恢复；Agent判断合同不变的产品缺陷进入Task返工；明确义务变化才进入Plan；实际决策提交/应用测试，不靠关键词推断。 | 已实现并通过准入/受控动作/输入消费测试；真实生产行只读编译通过 |
 | P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 待真实验证 |
 | P1-1 | P1 | Autoresearch子退出事实 -> verify: 自定义state_dir、同Run绑定；预算、Owner wait、未知退出分别保留原事件ref和检查点；父流程不误判源码缺陷，不擅自恢复。 | 已实现并通过回归；历史真实子Run已准确回放为wall_clock预算停止 |
@@ -111,3 +111,44 @@ operation/attempt均与重启前一致，没有新stage触发。
 skill补充自动验证41 passed、1 skipped；canonical与两份分发副本逐字节一致。
 07:07同一真实Planner已恢复14项保留行，预检仅剩AC-MEDIAN的mandatory_claim_rewritten，
 正原地恢复强制Goal原文。没有因此消耗新的Plan/Critic派发；待零错误正式提交后再签收。
+
+## 真实局部计划准入与自动返工（07:11–07:29 UTC）
+
+- Planner 在同一 operation 修复完所有预检错误后正式提交，完成事件
+  `evt-ee7dbc03516c`、准入 `evt-6eae5d3789d1`；用时约29分32秒。
+  冻结Map摘要`107a2f82b49008916742cac33a6ebe25ae87e7a31b2c13af71012a0a57693b6e`，
+  仍有16项Task、19条命令，仅MEDIAN行变化，14项范围外保留行逐项相等。
+  原Goal原文保留，新增AC-MEDIAN-SUBNORMAL。证据：
+  `reports/p0-final-planner-control-result.json`、`reports/p0-admitted-plan-preservation.json`。
+- Critic 运行约9分30秒后正式拒绝：前八个只读审计的Acceptance Matrix和execution_spec
+  仍将验收/命令Owner写为task_verify，与已确认的candidate_verify不一致。
+  逐项核实冻结输出后确认这是真实语义遗漏；Planner正文声称修正不构成字段已修。
+  Critic保留8条精确fix_items，其他本轮范围/执行约束通过其评审。结果事件
+  `evt-066e69bd0794`，证据`reports/p0-scoped-critic-rejection.json`。
+- `prd.plan.failed`事件`evt-e77ae9ba3477`之后约22秒，运行时自动派发第二轮Planner
+  （`evt-503516488724` → `evt-c254b6d602a7`），没有监工手动重启。
+  仍为AVERAGE/MEDIAN、failed_children_only、原stage代次；当前2/2自动返工额度，
+  不能任意重置或再授新代次。
+- 新输入显示78项必读选择，实际为24个source/artifact组合；一份前轮typed结果拆成55个
+  顶层字段选择。未发现78份文件或精确必读引用重复，不以计数增长直接判定加载实现失效。
+  证据`reports/p0-current-replan-input-inventory.json`。
+- P0-3仍active：以上证明预检生效及失败后自动接续，不证明Candidate、Judge、Goal或
+  local delivery已通过；原无人监工窗口失败不变。
+
+独立研究会话07:23已完成CR4/CR5限定源码复核（07:30读取报告确认），审查HEAD为
+`7af14d77`，未发现确定的剩余阻塞。复核阅读真实证明文件和测试源码，没有独立运行测试
+或操作Run；不等于产品验收。报告为实验目录中的`loopforge-recovery-review.md`及
+`loopforge-recovery-review-status.json`，其`cr4_cr5_final_review`节记录最终范围及文件摘要。
+
+## 基线补充端口导出缺口（07:34 UTC）
+
+实际第二轮Planner调用draft-baseline时，execution_spec、task_execution_input及
+product_acceptance_spec被CLI静态choices拒绝；它们已是当前Package分配的合法Planner
+输出。原方法要求从已批准正文开始，但工具只支持部分端口，模型随后重写补充规格。
+这是可复现工具缺口，不据此把所有模型遗漏归咎同一原因。真实CLI回归3 failed
+（`p0-supplemental-draft-red.log`）。补齐三项名称，沿用全部原身份、全文ACL、摘要和目录
+校验；不导出需求/审批/Goal权威供编辑，不豁免必读。完成验证后部署CLI，无须中断Worker。
+
+补充端口验证：真实CLI/保留行定向80 passed；相对7af14d77的自动影响闭包175 passed、
+1 skipped；sentinel53 passed、flow mock10 passed，三份skill一致。完整分支的`--base dev`
+规划单独留存，本次未重复运行已验证的整个历史闭包。日志为`p0-supplemental-draft-*`。

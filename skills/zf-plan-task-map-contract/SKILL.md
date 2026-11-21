@@ -288,6 +288,12 @@ derived-claim continuity still protects the approved obligations. Keep historica
 obligations and edit only the affected behavior, consumers and evidence in this
 draft. Select the assigned ports you need. For a pending Plan rejected by the
 Owner, carry the rejection forward when reusing its files.
+The export also supports assigned `execution_spec`, `task_execution_input` and
+`product_acceptance_spec` ports. Copy these bodies before making local changes;
+do not reconstruct unchanged specifications from memory. Select only ports
+present in the assigned package; a supported name does not mean that this
+baseline contains it. Source requirements and approval/claim authority remain
+read-only inputs, not editable draft ports.
 
 Use the paths returned by this invocation for editing and result output refs.
 Exporting a draft does not replace an existing `artifacts/plan/task_map.json`:

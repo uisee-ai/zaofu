@@ -15,21 +15,24 @@ from zf.runtime.plan_artifact_package import write_plan_artifact_package
 from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
 
 
+@pytest.mark.parametrize("draft_port", [
+    "test_matrix", "execution_spec", "task_execution_input", "product_acceptance_spec",
+])
 @pytest.mark.parametrize("change", [
     "none", "wrong_role", "terminal", "no_credential", "run", "generation", "package",
     "acl", "selection", "descriptor", "bytes", "missing",
     "workspace_ok", "workspace_cwd", "workspace_symlink", "workspace_partial",
 ])
-def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, capsysbinary, change):
+def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, capsysbinary, change, draft_port):
     state = tmp_path / "custom-state"
     package = _package(state)
-    matrix = _fixture_port(state, "test_matrix", "换行\n")
+    matrix = _fixture_port(state, draft_port, "换行\n")
     package["produced"].append(matrix)
     desc = write_plan_artifact_package(state, package)
     metadata = dict(workflow_run_id="run-1", task_map_generation=package["task_map_generation"],
                     plan_artifact_package_ref=desc["ref"], plan_artifact_package_digest=desc["sha256"])
     sources = replan_authority_sources(state_dir=state, project_root=tmp_path, payload=metadata, context={})
-    selected = next(s for s in sources if s["source_id"] == "baseline-plan-port-test_matrix")
+    selected = next(s for s in sources if s["source_id"] == f"baseline-plan-port-{draft_port}")
     if change == "acl":
         selected["access_scope"] = {"roles": ["private-role"]}
     elif change == "selection":
@@ -77,20 +80,20 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
         if change == "workspace_symlink":
             (project / "artifacts").symlink_to(tmp_path)
     args = ["plan", "--state-dir", str(state), "draft-baseline", "--attempt", "a1", "--port", "task_map",
-                   "--port", "source_index" if change in ("missing", "workspace_partial") else "test_matrix", "--port", "task_map"]
+                   "--port", "source_index" if change in ("missing", "workspace_partial") else draft_port, "--port", "task_map"]
     status = main([*args, "--workspace"] if workspace else args)
     stdout, stderr = capsysbinary.readouterr()
     if change == "none":
         assert status == 0, stderr
         with tarfile.open(fileobj=io.BytesIO(stdout)) as files:
-            assert files.getnames() == ["task_map.json", "test_matrix.json"]
+            assert files.getnames() == ["task_map.json", f"{draft_port}.json"]
             for name in files.getnames():
                 port = next(p for p in package["produced"] if p["logical_name"] == name[:-5])
                 assert files.extractfile(name).read() == (state / port["ref"]).read_bytes()
     elif change == "workspace_ok":
         assert status == 0, stderr
         output = json.loads(stdout)
-        path = project / output["draft_dir"] / "test_matrix.json"
+        path = project / output["draft_dir"] / f"{draft_port}.json"
         assert path.read_bytes() == (state / matrix["ref"]).read_bytes()
         path.write_text("edited")
         assert main([*args, "--workspace"]) == 0

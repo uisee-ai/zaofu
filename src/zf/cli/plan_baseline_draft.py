@@ -25,7 +25,8 @@ from zf.runtime.sidecar_refs import sidecar_path
 # These JSON bodies are edited by the Planner. Approvals, claims and source
 # requirements are issued by their own authorities.
 _DRAFT_PORTS = ("task_map", "test_matrix", "source_index", "source_inventory",
-                "acceptance_matrix", "real_e2e_matrix", "capability_matrix", "coverage_ledger")
+                "acceptance_matrix", "real_e2e_matrix", "capability_matrix", "coverage_ledger",
+                "execution_spec", "task_execution_input", "product_acceptance_spec")
 
 
 def register(sub):
