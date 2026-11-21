@@ -194,17 +194,30 @@ def test_aggregate_apply_revalidates_all_member_refs(tmp_path):
     assert not any(e.type == 'prd.plan.requested' for e in runtime.event_log.read_all())
 
 
-def test_candidate_checkpoint_includes_scoped_new_host_facts(tmp_path):
+@pytest.mark.parametrize('size_allowed', [False, True])
+def test_candidate_checkpoint_includes_scoped_new_host_facts(tmp_path, size_allowed):
+    import base64
+    import hashlib
+    from tests.test_host_evidence_media import PNG
     from zf.core.events import ZfEvent
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
     runtime, request, _, child = _incident(tmp_path)
     request, _ = _peer_failure(runtime, request, child)
+    runtime.config.runtime.host_verification.image = 'bound-image'
+    if not size_allowed:
+        runtime.config.runtime.host_verification.max_artifact_bytes = 1
+    evidence = write_sidecar_json(runtime.state_dir, 'artifacts/fixtures/media.json', {
+        'image': 'bound-image', 'target_commit': 'c' * 40, 'files': [{
+            'path': 'desktop.png', 'sha256': hashlib.sha256(PNG).hexdigest(),
+            'base64': base64.b64encode(PNG).decode(),
+        }]}, kind='container_evidence', schema_version='container-evidence.v1', created_by='test')
     for op, commit in [('peer-operation', 'c' * 40), ('foreign-operation', 'd' * 40)]:
         ref = write_sidecar_json(runtime.state_dir, f'artifacts/fixtures/{op}.json', {
             'schema_version': 'task-host-receipt.v1', 'workflow_run_id': 'run-semantic-1',
             'operation_id': op, 'kind': 'verify', 'target_commit': commit,
             'command_id': 'browser', 'command': 'node tests/browser.cjs',
             'status': 'completed', 'exit_code': 0, 'source_stable': True,
+            'image': 'bound-image', 'evidence_ref': evidence,
             'execution_origin': 'preauthorized_container'}, kind='task_host_receipt',
             schema_version='task-host-receipt.v1', created_by='run-manager')
         runtime.event_writer.append(ZfEvent(type='runtime.action.attempt.completed', origin='kernel',
@@ -220,3 +233,11 @@ def test_candidate_checkpoint_includes_scoped_new_host_facts(tmp_path):
     assert effects[0]['target_commit'] == 'c' * 40
     assert effects[0]['receipt_status'] == 'observed'
     assert body['candidate_verify']['permitted_recovery_action'] == 'return_to_plan'
+    media = [s for s in prepared.context.input_body['sources']
+             if s['source_id'].startswith('candidate-host-media-')]
+    if size_allowed:
+        assert len(media) == 1
+        assert 'host_media_unavailable' not in body
+    else:
+        assert not media
+        assert 'limit' in body['host_media_unavailable']

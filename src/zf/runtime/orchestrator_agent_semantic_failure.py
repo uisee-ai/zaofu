@@ -193,7 +193,8 @@ def request_semantic_failure_checkpoint(
         image = host["host_verification"].get("image")
         if receipt_refs and image:
             try:
-                media_refs = materialize_container_media(runtime.state_dir, receipt_refs, image=image)
+                media_refs = materialize_container_media(runtime.state_dir, receipt_refs, image=image,
+                                                        policy=runtime.config.runtime.host_verification)
             except (ValueError, OSError) as exc:
                 failure_body["host_media_unavailable"] = str(exc)
     failure_ref = write_immutable_json_sidecar(

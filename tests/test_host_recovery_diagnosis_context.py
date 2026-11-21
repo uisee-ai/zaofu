@@ -38,6 +38,8 @@ def test_real_diagnosis_entry_exposes_partial_host_execution(tmp_path):
     config.runtime.host_verification.enabled = True
     config.runtime.host_verification.approval_ref = 'owner:test'
     config.runtime.host_verification.commands = ['npm test', 'node tests/browser.cjs']
+    config.runtime.host_verification.max_artifact_bytes = 64 * 1024 * 1024
+    config.runtime.host_verification.max_total_evidence_bytes = 128 * 1024 * 1024
     ref = receipt(state); effect(writer, ref)
     writer.append(ZfEvent(type='runtime.action.attempt.started', actor='run-manager', origin='kernel',
         payload={'action':'task-host-assist', 'kind':'verify', 'workflow_run_id':'R1',
@@ -46,6 +48,8 @@ def test_real_diagnosis_entry_exposes_partial_host_execution(tmp_path):
     assert body['host_verification']['enabled'] is True
     assert body['host_verification']['approval_ref'] == 'owner:test'
     assert body['host_verification']['commands'] == ['npm test', 'node tests/browser.cjs']
+    assert body['host_verification']['max_artifact_bytes'] == 64 * 1024 * 1024
+    assert body['host_verification']['max_total_evidence_bytes'] == 128 * 1024 * 1024
     assert len(body['effects']) == 2
     completed = body['effects'][0]
     assert completed['receipt_status'] == 'observed'

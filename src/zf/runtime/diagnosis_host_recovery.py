@@ -15,7 +15,8 @@ def host_recovery_context(
         value = getattr(config.runtime, name, None) if config else None
         result = {'enabled': value.enabled if value else None}
         if value:
-            for key in ('approval_ref', 'commands', 'image', 'max_executions_per_run', 'timeout_seconds'):
+            for key in ('approval_ref', 'commands', 'image', 'max_executions_per_run', 'timeout_seconds',
+                        'max_artifact_bytes', 'max_total_evidence_bytes'):
                 if hasattr(value, key):
                     result[key] = getattr(value, key)
         return result

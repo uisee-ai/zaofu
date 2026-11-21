@@ -153,7 +153,8 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                         'resume_condition': 'bound execution receipts for the complete frozen command contract'}))
             return False
         from zf.runtime.host_evidence_media import materialize_container_media
-        indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image)
+        indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image,
+                                             policy=policy)
         media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '
                  + ', '.join(str(service.state_dir / ref['ref']) for ref in indices)
                  + '. Open the indexed image files directly with the image viewer; do not extract to scratch '

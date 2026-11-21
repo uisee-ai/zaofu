@@ -217,3 +217,9 @@ Run冲突及source-manifest digest不匹配时拒绝，不能以一次新transpo
 任务：[Candidate超时交接](../../tasks/done/2026-11-21-0148-candidate-timeout-semantic-handoff.md)。
 
 timeout兼容输入还须与kernel `fanout.started.expected_children`及role/stage闭合，每个预期成员都有终态；名单缺失、成员遗漏/额外/未决均拒绝。已有完成成员单列原事件事实，不生成产品verdict。原aggregate之后出现同fanout的新派发、终态或重开时旧checkpoint失效，申请与apply使用同一检查。旧显式infra timeout若同时含已准入negative，恢复分类经过完整候选绑定才得到mixed；绑定损坏保留unknown，避免宿主命令成功触发纯infra后继而掩盖反例。历史事件不修改。
+
+## 媒体捕获与读取尺寸一致性
+
+媒体投影沿用zf.yaml的host_verification.max_artifact_bytes/max_total_evidence_bytes，经过同一配置边界验证。Reader宿主恢复、OA失败输入、Candidate continuation均传入当前配置；无配置的独立调用保留20MiB/64MiB默认。先核验全部文件路径、base64、单文件/总量及digest，再发布只读投影和索引；不会重跑命令、改变原receipt或授予产品通过。真实23MB左右trace已在64MiB配置下合法捕获，读取端不能另用硬编码20MiB拒绝。
+
+任务：[配置媒体读取上限](../../tasks/active/2026-11-21-0230-configured-media-projection-limits.md)。

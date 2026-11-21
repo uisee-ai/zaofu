@@ -7,13 +7,18 @@ import os
 import tempfile
 from pathlib import Path, PurePosixPath
 
+from zf.core.config.host_verification import HostVerificationConfig, parse_host_verification
 from zf.runtime.sidecar_refs import (
     build_sidecar_ref_descriptor, hydrate_sidecar_ref, write_sidecar_json,
 )
 
 
-def materialize_container_media(state_dir: Path, receipt_refs: list[dict], *, image: str) -> list[dict]:
+def materialize_container_media(state_dir: Path, receipt_refs: list[dict], *, image: str,
+                                policy: HostVerificationConfig | None = None) -> list[dict]:
     """No command execution or verdict; originals remain the required evidence."""
+    configured = policy or HostVerificationConfig()
+    limits = parse_host_verification({key: getattr(configured, key) for key in (
+        'max_artifact_bytes', 'max_total_evidence_bytes')})
     indices = []
     seen = set()
     for receipt_ref in receipt_refs:
@@ -37,6 +42,7 @@ def materialize_container_media(state_dir: Path, receipt_refs: list[dict], *, im
             raise ValueError('container media file list is invalid')
         decoded = []
         names = set()
+        total_bytes = 0
         for item in files:
             if not isinstance(item, dict):
                 raise ValueError('container media file entry is invalid')
@@ -48,12 +54,16 @@ def materialize_container_media(state_dir: Path, receipt_refs: list[dict], *, im
                 raise ValueError('container media path is invalid')
             names.add(name)
             encoded = item.get('base64')
-            if not isinstance(encoded, str) or len(encoded) > 28 * 1024 * 1024:
+            if (not isinstance(encoded, str)
+                    or len(encoded) > ((limits.max_artifact_bytes + 2) // 3) * 4):
                 raise ValueError('container media exceeds file limit')
             data = base64.b64decode(encoded, validate=True)
+            total_bytes += len(data)
             sha = hashlib.sha256(data).hexdigest()
-            if len(data) > 20 * 1024 * 1024 or sha != item.get('sha256'):
-                raise ValueError('container media digest or size mismatch')
+            if len(data) > limits.max_artifact_bytes or total_bytes > limits.max_total_evidence_bytes:
+                raise ValueError('container media exceeds configured size limits')
+            if sha != item.get('sha256'):
+                raise ValueError('container media digest mismatch')
             decoded.append((name, data, sha))
         if not decoded:
             continue
