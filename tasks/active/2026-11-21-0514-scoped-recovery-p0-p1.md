@@ -85,3 +85,15 @@ reports/p0-frontier-controlled-retry.json。仍无新的Candidate/Judge/Goal/loc
 
 复核边界：此前独立复核关闭CR1–CR3；CR4/CR5的独立研究会话遇到Astra容量不足，
 没有最终复核结果。本批有主会话源码审查、确定性回归与上述真实入口证据，不将其冒充独立通过。
+
+06:47真实Planner调用draft-baseline成功，`p0-goal-seed-live-proof.json`记录原Map与本地草稿
+SHA完全相等（249c46d8…）、16行和Goal参考侧车完整。06:52已读25/25项，进入计划修订。
+独立研究会话随后从容量错误恢复，仍需等最终结果。
+
+CR5补充回归用实际`stall_redispatch_event`复现：晚于Owner恢复的新副本仍承载旧意图，
+仅按副本时间会放行。现复用精确stall身份解析，以原触发位置判定；payload/Run/Task改变
+不归并。抑制事件补stage_id并结算原触发，使`emit_stall_recoveries`不继续派发/升级它。
+原始失败日志`p0-late-stall-red.log`；此修正不改变正在执行的有效Planner输入。
+
+晚到副本验证：writer/reader/fanout/synth/Event及恢复mock调用闭包439 passed；最后补producer
+task_id回填后的定向61 passed；sentinel53 passed、flow mock10 passed。没有降低cap或删改事件。

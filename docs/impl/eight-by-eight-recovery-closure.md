@@ -326,3 +326,8 @@ Provider 输出和 Owner 批准是测试 actor；测试通过不代表真实 Pro
 恢复重试使用既有 `stage-retrigger` 重新发出被错误覆盖的原授权触发，保留其选择、
 Plan 输入和 stage 代次；不重新授予预算或扩大任务集合。真实旧事件、后代和正确恢复
 触发的只读回放分别验证“退役、退役、保持有效”；完整产品签收仍由后续正式结果证明。
+
+晚到的自动重派也按原意图排序：复用 stall copy 的完整 payload/Run/Task 身份比较，
+只承认 producer 声明的 metadata 和 task_id 回填；不能凭一个 original_trigger_event_id
+退役不同的新工作。抑制事件逐 stage 绑定，并分别结算原触发和副本，使既有停滞检测器
+看到已处理事实，不因缺少 stage_id 再次重派或把退休工作升级为新故障。

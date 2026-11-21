@@ -9,7 +9,7 @@ from zf.core.events import ZfEvent
 from zf.runtime.control_actions import ControlledActionService
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, *, writer_actor="zf-stall-redispatch"):
     state, log, transport, runtime = _state(tmp_path)
     _seed_tasks(state)
     runtime.config.workflow.stages.append(WorkflowStageConfig(id="prd-plan", trigger="prd.scan.completed",
@@ -27,7 +27,7 @@ def fixture(tmp_path):
     escalation = writer.append(ZfEvent(type="human.escalate", task_id=pdd, correlation_id=run,
         causation_id=failure.id, payload={"failure_class": "stage_replan_cap_exhausted",
             "source_event_id": failure.id, "allowed_actions": ["start_new_generation"]}))
-    old = writer.append(ZfEvent(type="task_map.ready", actor="zf-stall-redispatch", correlation_id=run,
+    old = writer.append(ZfEvent(type="task_map.ready", actor=writer_actor, correlation_id=run,
         payload={"workflow_run_id": run, "pdd_id": pdd, "source": "workflow_resume_batch",
             "resume_scope": "all_tasks_rework", "rework_of": failure.id,
             "plan_artifact_package_ref": "missing-old-package.json", "plan_artifact_package_digest": "a" * 64}))
@@ -153,3 +153,51 @@ def test_controlled_retry_preserves_the_authorized_scope_and_generation(tmp_path
     assert retry.payload["resume_scope"] == "failed_children_only"
     assert retry.payload["stage_replan_generation"] == recovery["stage_replan_generation"]
     assert not retired_plan_branch(events, retry, runtime.config)
+
+
+def test_later_stall_copy_cannot_revive_a_retired_writer_intent(tmp_path):
+    from zf.runtime.stall_detector import StallFinding, stall_redispatch_event, emit_stall_recoveries
+
+    runtime, old, recovery, transport = fixture(tmp_path, writer_actor="zf-cli")
+    events = runtime.event_log.read_all()
+    finding = StallFinding(trigger="task_map.ready", stage_id="prd-lanes-impl",
+        success_event="candidate.ready", feature_id="F-11111111", fingerprint="stall:old-writer",
+        trigger_event_id=old.id)
+    retry = stall_redispatch_event(finding, events)
+    assert retry is not None
+    runtime.event_writer.append(retry)
+    before = len(runtime.event_log.read_all())
+    runtime._maybe_start_writer_fanout(retry)
+    emitted = runtime.event_log.read_all()[before:]
+    assert any(e.type == "fanout.retrigger.suppressed"
+               and e.payload.get("superseded_by") == recovery["stage_trigger_event_id"] for e in emitted)
+    assert not any(e.type == "prd.plan.failed" for e in emitted)
+    assert not transport.sent
+    stages = [(stage.id, stage.trigger, stage.aggregate.success_event)
+              for stage in runtime.config.workflow.stages if stage.topology == "fanout_writer_scoped"]
+    assert emit_stall_recoveries(runtime.event_log.read_all(), runtime.event_writer,
+        stages=stages, min_events_after=0) == 0
+    runtime._maybe_start_writer_fanout(retry)
+    assert len([e for e in runtime.event_log.read_all()[before:]
+                if e.type == "fanout.retrigger.suppressed"]) == 2
+
+
+@pytest.mark.parametrize("changed", ["payload", "run", "task"])
+def test_late_changed_work_is_not_mistaken_for_a_stall_copy(tmp_path, changed):
+    from zf.runtime.stall_detector import StallFinding, stall_redispatch_event
+    from zf.runtime.writer_replan_frontier import retired_writer_trigger
+
+    runtime, old, _, _ = fixture(tmp_path, writer_actor="zf-cli")
+    finding = StallFinding(trigger="task_map.ready", stage_id="prd-lanes-impl",
+        success_event="candidate.ready", feature_id="F-11111111", fingerprint="stall:old-writer",
+        trigger_event_id=old.id)
+    retry = stall_redispatch_event(finding, runtime.event_log.read_all())
+    assert retry is not None
+    if changed == "payload":
+        retry = replace(retry, payload={**retry.payload, "task_ids": ["TASK-2"]})
+    elif changed == "run":
+        retry = replace(retry, correlation_id="OTHER")
+    else:
+        retry = replace(retry, task_id="OTHER")
+    retry = runtime.event_writer.append(retry)
+    assert not retired_writer_trigger(runtime.event_log.read_all(), retry, runtime.config)

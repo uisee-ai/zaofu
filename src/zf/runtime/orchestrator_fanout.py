@@ -2346,7 +2346,9 @@ class FanoutCoordinationMixin(
         if not stages:
             return False
         from zf.runtime.writer_replan_frontier import suppress_retired_plan_branch
-        if suppress_retired_plan_branch(self, event):
+        if suppress_retired_plan_branch(self, event, stage_ids=[
+            stage.id for stage in stages if stage.attempt_domain == "plan"
+        ]):
             return False
         if suppress_stale_task_pipeline_generation(
             self,
@@ -3292,7 +3294,7 @@ class FanoutCoordinationMixin(
         if stage_barrier_blocks_dispatch(self, event):
             return
         from zf.runtime.writer_replan_frontier import suppress_retired_writer_trigger
-        if suppress_retired_writer_trigger(self, event):
+        if suppress_retired_writer_trigger(self, event, stage_ids=[stage.id for stage in stages]):
             return
         from zf.runtime.plan_artifact_package_runtime import admit_task_map_trigger_package
         event = admit_task_map_trigger_package(self, event, stages)
