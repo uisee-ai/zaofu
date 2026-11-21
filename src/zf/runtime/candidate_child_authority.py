@@ -105,6 +105,23 @@ def goal_child_authority_issues(state_dir: Path, events: list, *, snapshot: Mapp
         if not _goal_pins_candidate_verify(state_dir, events, snapshot, result, candidate):
             return [_currentness_issue("control_result.contract_snapshot_ref", "stale_task_authority",
                 "Goal closure lacks its exact admitted Candidate Verify freeze binding")]
+        # An admitted pre-compensation Verify remains immutable. Only after its
+        # exact pin is proven may Goal validate through the Owner-authorized
+        # compensation view; every original identity/proof still checks below.
+        from zf.runtime.candidate_retained_tasks import candidate_child_proofs
+
+        try:
+            proofs = candidate_child_proofs(SimpleNamespace(state_dir=state_dir,
+                task_store=TaskStore(state_dir / "kanban.json")), events, candidate)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return [_currentness_issue("control_result.contract_snapshot_ref", "stale_task_authority", str(exc))]
+        children = [
+            {**child, "completion_restore_ref": proofs[child["task_id"]]["completion_restore_ref"]}
+            if isinstance(child, Mapping) and "completion_restore_ref" not in child
+                and proofs.get(child.get("task_id"), {}).get("completion_restore_ref")
+            else child
+            for child in children
+        ]
     return candidate_child_authority_issues(state_dir, events, candidate, children, require_all=True)
 
 

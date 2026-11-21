@@ -25,7 +25,11 @@ def closure(r):
         "closure_fact_ref": fact["ref"], "closure_fact_digest": fact["sha256"],
         "contract_snapshot_ref": ref["ref"], "contract_snapshot_digest": ref["sha256"]}
     envelope = r.sidecar({"schema_version": "call-result-envelope.v1",
-        "identity": {"workflow_run_id": r.source.correlation_id, **fields}})
+        "identity": {"workflow_run_id": r.source.correlation_id, **fields,
+            "operation_id": "candidate-verify", "request_hash": "candidate-request",
+            "attempt_id": "candidate-attempt", "producer_role": "verify"},
+        "execution": {"status": "completed"},
+        "control_result": r.sidecar({"schema_version": "verification-result.v1", "verdict": "passed"})})
     r.emit("workflow.call.result.admitted", {"control_result_schema": "verification-result.v1",
         "semantic_verdict": "passed", "envelope_ref": envelope})
     r.emit("flow.goal.closed", {**result, "input_result_refs": [envelope["ref"]]})

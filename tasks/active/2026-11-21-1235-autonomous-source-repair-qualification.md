@@ -520,3 +520,17 @@ Judge operation wop-prd-lanes-final-judge-prd-trig-evt-5640085e-a075a6f53872；�
 真实证据位于OLD reports/eight-qualification-20261120T122929Z/aggregate-replay-real-proof.json；
 Judge结论与最终交付仍待核验，原无人失败窗口保持。NEW Planner passed、Synth运行，
 资格尚未开始；故障注入工具仅准备，未执行。
+
+19:30 UTC OLD 最终 Judge 再次协议失败（evt-6bf0c7d99661）：14 个 Goal children
+缺少受控补偿 ref，产品通过意见没有准入，不能计为 Judge 通过。19:25/19:28 原生
+WRC continuation 已自动补齐读取，但不能解决此证明消费者不一致。问题记录：
+goal-compensation-authority-mismatch.json；独立研究确认根因。新回归先 RED 1/9，
+修复 Goal 专属已准入历史证据的只读补偿视图后，67 项直接测试通过；待影响闭包、
+独立 review 和部署恢复。NEW 仍为 Plan 准备阶段，同一 Planner 已消费补充反馈，
+正在修正 audit 命令归属、生命周期证明与数字专属错误恢复验收，尚未批准或计入资格。
+
+Goal 补偿修复验证：自动影响闭包238 passed/7 skipped，sentinel53、flow mock10；
+独立静态复核通过。随后补齐真实 Goal builder→Thin Judge 调用回归与已存在错误/空
+restore ref 拒绝用例，最终36项相关回归通过。真实 OLD 原结果只读回放 authority_issues=[]，
+仍保留原 blocked 语义意见，未替 Judge 提交结果。另发现 operation.failed 后没有对应
+fanout.child.failed，恢复投影无合法 Reader checkpoint；记录并继续排查终态交接。

@@ -828,3 +828,17 @@ partial_task_continuation明确绑定当前baseline事件及自身continuation r
 完成回执，但不能重新选择最新Candidate。真实controlled repair两种副本正例与新
 freeze反例通过。最终252直接调用/候选恢复mock、sentinel53、flow10通过，独立复核
 无剩余确定阻断。
+
+### 最终 Goal 消费历史完成补偿（2026-11-21）
+
+真实 OLD Judge 的 `output_repair_exhausted` 并非产品验收失败：14 个历史完成 Task
+经 Owner 审核补偿后，Goal 仍复制补偿前已准入 Candidate Verify 的不可变 children，
+缺少新增的 `completion_restore_ref`，严格 currentness 因此拒绝。不能要求 Reader
+改写冻结合同，也不能为解决证明格式问题重新执行已完成业务。
+
+Goal 准入先保留原 Candidate、freeze receipt、Candidate Verify 准入和完整 children
+的精确绑定，再读取受控补偿链生成仅供当前校验的内存视图。补偿必须具有精确的
+manifest、Owner intent、原 mutation、当前 replacement 和同一 Candidate 绑定；
+仅补充历史 child 缺少的 restore ref，原身份、复用证明和 Verify 事件仍逐项校验。
+现有 ref 不被覆盖，原快照及账本不改写；新 Candidate Verify 合同仍必须显式携带
+完整证明。后续真正的合同变化、伪造来源或缺失证据继续拒绝。

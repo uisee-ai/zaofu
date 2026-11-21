@@ -18,6 +18,8 @@ def incident(recovery, monkeypatch):
     assert action(r, reviewed_digest=reviewed(r), approval_ref='owner:reviewed',
                   reuse_rationale='Same acceptance; explicit completion reuse')['ok']
     candidate = r.emit('candidate.ready', {**r.candidate.payload, **r.source.payload})
+    from tests.test_goal_closure_retained_authority import closure
+    r.pre_compensation_goal = closure(r)
     original = asdict(r.runtime.task_store.get('TASK-1'))
     r.runtime.event_writer.append(ZfEvent(type='plan.approved', actor='operator', origin='kernel',
         payload={'plan_id': r.source.id}))
