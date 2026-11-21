@@ -185,3 +185,11 @@ expected-child、无历史operation/派发、当前性和暂停边界。正常�
 以真实失败为因果，不补造前序身份。已有call仍须提供精确operation，不修改attempt上限。
 RM建议、控制入口、执行及效果观察使用相同绑定；见
 [首次Reader恢复任务](../../tasks/done/2026-11-21-0037-unprepared-reader-wait-recovery.md)。
+
+### 控制器重启后的用量采样与活性
+
+磁盘读取器重发计费事件时，新的事件时间不代表Provider产生了新活动。仅当
+`usage_timestamp` 有效、不晚于观察时间且晚于已有心跳收据时，disk usage才刷新活性；
+通用activity兜底不抢先刷新该来源。计费记录保留，普通工具/实时usage不受此检查影响。
+这修复重放延期，不缩短既有失联阈值或长turn宽限。见
+[磁盘用量活性任务](../../tasks/active/2026-11-21-0051-disk-usage-liveness-replay.md)。

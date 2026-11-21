@@ -3102,17 +3102,11 @@ class WorkflowRuntimeCoordinator(
                         from zf.core.state.role_sessions import (
                             RoleSessionRegistry,
                         )
-                        inst = str(event.actor or "").strip()
-                        if inst:
-                            RoleSessionRegistry(
-                                self.state_dir / "role_sessions.yaml",
-                                project_root=str(self.project_root),
-                            ).record_heartbeat(inst, {
-                                "instance_id": inst,
-                                "last_action_ts": event.ts,
-                                "source": "agent.usage",
-                                "event_id": event.id,
-                            })
+                        from zf.runtime.usage_liveness import apply_usage_fallback_liveness
+                        apply_usage_fallback_liveness(RoleSessionRegistry(
+                            self.state_dir / "role_sessions.yaml",
+                            project_root=str(self.project_root),
+                        ), event)
                     except Exception:
                         pass
             elif event.type == "memory.note":
