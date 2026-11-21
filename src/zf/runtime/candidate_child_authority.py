@@ -56,6 +56,7 @@ def candidate_child_authority_issues(state_dir: Path, events: list, current_cand
             proof = reused.get(child_task_id)
             if (not proof or proof.get("completion_reuse_ref") != child.get("completion_reuse_ref")
                     or proof.get("retained_task_evidence") != child.get("retained_task_evidence")
+                    or proof.get("completion_restore_ref") != child.get("completion_restore_ref")
                     or proof["verification_event_id"] != child.get("verification_event_id")):
                 issues.append(_currentness_issue("control_result.contract_snapshot_ref", "stale_task_authority",
                     f"candidate child {child_task_id!r} lacks its exact reviewed completion proof"))

@@ -217,6 +217,7 @@ def prepare_candidate_verification_authority(
         child_authorities.append({
             **({"completion_reuse_ref": reuse["completion_reuse_ref"]} if reuse and reuse.get("completion_reuse_ref") else {}),
             **({"retained_task_evidence": reuse["retained_task_evidence"]} if reuse and reuse.get("retained_task_evidence") else {}),
+            **({"completion_restore_ref": reuse["completion_restore_ref"]} if reuse and reuse.get("completion_restore_ref") else {}),
             "task_id": child_task_id,
             "target_commit": task_commits[child_task_id],
             "verification_event_id": verification.id,

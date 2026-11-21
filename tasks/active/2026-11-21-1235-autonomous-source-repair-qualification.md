@@ -18,7 +18,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已部署；17:15真实Planner manifest含两份原始正文且必读，正式Plan结果待收取 |
 | SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7/1a9e8667 已部署，1852项影响闭包通过；可信检查点恢复，17:15重新派发原Plan |
 | SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 发现 provider 终态后仍有孤儿测试进程，已定向停止；进程治理尚待验证修复 |
-| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | OLD保持暂停；防复发实现中，直接33通过；14项记录补偿与真实Judge恢复未完成 |
+| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | 防复发6b9d72e3已提交；补偿实现及独立review通过，待受控部署/14项补偿与真实Judge恢复 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -426,3 +426,27 @@ sentinel因Supervisor超过1000行拒绝；已提取同职责helper，尚待最�
 独立只读review无确定阻断。扩大闭包10535通过/9skip是在最后fixture修正前，其唯一失败
 已由真实fanout入口回归修正并重验，不能把两组相加当唯一用例数或全pytest通过。
 14项历史补偿、源码修复进程树治理及新无监工资格仍未完成，整批保持active。
+
+18:00 UTC后续补偿实现中：防复发提交6b9d72e3未合dev/未push。新增受控恢复分支独立返回，
+不走stage-retrigger普通重发；要求暂停Run、准确Owner Plan批准、已拒绝的terminal replay、
+原归档/变更ref及全Candidate完成证明。预览冻结当前/原始/向前新版本，精确Owner intent
+绑定manifest和digest。TaskStore仅允许同一既有归档桶，整批一次原子append，索引不变，
+重放只接受全旧或全新，无backlog过渡、不发task.done。Candidate消费者显式携带补偿ref，
+原前缀中的完成证明经认证只读视图解析，后续authority变化拒绝。
+真实OLD只读preview已核验14项全部完成链，未执行恢复写入。新增及调用方100测试通过，
+尚待独立review及最终闭包；一次错误测试路径未运行任何测试，纠正后重跑。
+NEW Plan synth17:50正式rejected：8+8/自动恢复/零人工恢复只有说明文字，缺独立验收项、
+owner、证据及分别裁定标准；属于有效计划合同缺口。17:50:35运行时自行派发返工Planner，
+保持16项、不加预算/权限、不伪造未来收据。原始输入正文缺失已不再是本次拒绝原因。
+
+终态补偿独立review发现重放审计P2：already-restored分支只验证sidecar，未重绑原mutation
+event ID。按review用已恢复后替换为不存在event的场景实跑RED；共用incident_event现覆盖
+preview/首次apply/重放/证据消费，核对kernel来源、Task/Run/ref/map及批准→mutation→取消。
+完整replacement机械校验、当前所有Candidate成员完成证明、原归档绑定均保留。最终调用
+闭包127 passed，独立复核无剩余确定阻断，冻结进入自动闭包。真实Run仍未补偿或恢复。
+
+终态补偿冻结自动检查10522 passed/9 skipped、serial4、sentinel53、flow10通过。
+最后Doctor一致性断言复现旧格式空binding的token失配；preview与manifest校验均先按
+既有task_execution_binding规范化，再生成向前authority，历史原body不改。修正后直接
+调用78 passed，独立复核无阻断；新预览需按最终代码重建。一次不存在测试路径导致
+未执行测试，纠正后重跑，不将该次当产品失败。真实补偿仍待执行。

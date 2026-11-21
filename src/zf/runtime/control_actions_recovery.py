@@ -271,6 +271,10 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",
             )
+        if payload.get("restore_completed_tasks"):
+            from zf.runtime.terminal_completion_restore import execute
+
+            return execute(self, source, payload, requested, requested_action)
         if source.type == "flow.gap_plan.ready":
             if source.origin != "kernel":
                 return self._recovery_failed(

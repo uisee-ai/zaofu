@@ -18,11 +18,16 @@ from zf.runtime.task_pipeline_contexts import (
 
 
 def candidate_child_proofs(runtime: Any, events: list, candidate: Any) -> dict:
+    from zf.runtime.terminal_completion_proofs import compensated_completion_view
+
+    runtime, restorations = compensated_completion_view(runtime, events, candidate)
     from zf.runtime.plan_completion_reuse import current_proofs, _native_proof
     from zf.runtime.candidate_verification_authority import _latest_task_verification
     from zf.runtime.task_pipeline_terminal import _latest_integration_event
 
     proofs = current_proofs(runtime, events, candidate)
+    for task_id in set(proofs) & set(restorations):
+        proofs[task_id]['completion_restore_ref'] = restorations[task_id]
     before = events[:events.index(candidate)]
     contexts = task_pipeline_generation_contexts(before)
     body = candidate.payload
@@ -96,6 +101,8 @@ def candidate_child_proofs(runtime: Any, events: list, candidate: Any) -> dict:
         snapshot = _verify_snapshots(state, verify, proof['prior_identity'], run)
         _checked_integration(runtime, descriptor, body, task, child_generation, snapshot, plan_row)
         proof['retained_task_evidence'] = retained_evidence
+        if task_id in restorations:
+            proof['completion_restore_ref'] = restorations[task_id]
         proofs[task_id] = proof
     return proofs
 

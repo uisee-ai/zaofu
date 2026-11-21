@@ -24,6 +24,13 @@ NEW于17:15从可信检查点恢复后的原Plan阶段继续，真实Planner冻�
 SOURCE-PROMPT完整必读正文。恢复步骤包含参数纠正和transport bootstrap，均为人工介入。
 本次准备Run及旧失败窗口不改判无监工通过，新资格窗口仍未开始。
 
+终态历史补偿使用受控`stage-retrigger`的独立`restore_completed_tasks`分支，提前返回，
+不得与普通重发选项混用。仅补偿已拒绝Plan重放造成的done合同替换；精确Owner意图
+绑定不可变预览，核对暂停Run、当前Candidate、归档与原完成证明。存储层在原归档桶
+一次追加整批新authority，完成时间仍为原时间，历史记录不改写、索引不搬迁、无backlog
+中间态。旧格式execution binding经既有解析器规范化后计算新token，原历史body仍保留。消费者需携带completion_restore_ref，旧Verify identity不被伪造成新的验证；
+新authority或证据变化继续拒绝。无新业务trigger、task.done、Judge或Goal通过。
+
 本说明对应 [实施任务](../../tasks/active/2026-11-18-0001-eight-by-eight-recovery-closure.md)。基于 dev dda38a25 的隔离实验发现；原实验仅证明 Impl 峰值 8、Verify 峰值 5、总同时峰值 11，1/16 完成，未证明真实同时 8+8 或最终产品交付。
 
 ## 修复边界
