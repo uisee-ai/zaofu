@@ -19,20 +19,14 @@ from zf.runtime.artifact_input_index import load_attempt_source_manifest
 from zf.runtime.artifact_read_capability import authorize_artifact_read_from_environment
 from zf.runtime.plan_candidate_ports import read_plan_port_bytes
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+from zf.runtime.plan_artifact_ports import PLAN_DRAFT_PORTS
 from zf.runtime.sidecar_refs import sidecar_path
-
-
-# These JSON bodies are edited by the Planner. Approvals, claims and source
-# requirements are issued by their own authorities.
-_DRAFT_PORTS = ("task_map", "test_matrix", "source_index", "source_inventory",
-                "acceptance_matrix", "real_e2e_matrix", "capability_matrix", "coverage_ledger",
-                "execution_spec", "task_execution_input", "product_acceptance_spec")
 
 
 def register(sub):
     parser = sub.add_parser("draft-baseline", help="Export pinned Plan ports as a tar stream for local editing")
     parser.add_argument("--attempt", required=True)
-    parser.add_argument("--port", action="append", required=True, choices=_DRAFT_PORTS, help="Logical port name, repeat to include more")
+    parser.add_argument("--port", action="append", required=True, choices=PLAN_DRAFT_PORTS, help="Logical port name, repeat to include more")
     parser.add_argument("--workspace", action="store_true", help="Create an editable private draft in this Planner workdir")
     parser.add_argument("--seed-goals", action="store_true", help="Preserve pinned goals in a local task map draft")
     parser.set_defaults(func=run)
@@ -74,7 +68,7 @@ def draft_files(state, manifest, identity, names, *, seed_goals=False):
         return raw
 
     for name in dict.fromkeys(names):
-        if name not in _DRAFT_PORTS:
+        if name not in PLAN_DRAFT_PORTS:
             raise ValueError(f"unknown editable port: {name}")
         raw = assigned_bytes(name)
         if seed_goals and name == "task_map":

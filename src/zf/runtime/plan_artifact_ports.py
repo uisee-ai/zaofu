@@ -8,6 +8,14 @@ from typing import Any
 
 PLAN_ARTIFACT_PORT_ADAPTER_VERSION = "plan-artifact-port-adapter.v1"
 
+# Planner-authored JSON drafts. Requirements, approvals and claims retain
+# their own authorities and are never editable exports.
+PLAN_DRAFT_PORTS = (
+    "task_map", "test_matrix", "source_index", "source_inventory",
+    "acceptance_matrix", "real_e2e_matrix", "capability_matrix", "coverage_ledger",
+    "execution_spec", "task_execution_input", "product_acceptance_spec",
+)
+
 _CANONICAL_PORTS = frozenset({
     "requirement_spec",
     "issue_spec",

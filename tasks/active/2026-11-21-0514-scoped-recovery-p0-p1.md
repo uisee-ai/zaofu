@@ -152,3 +152,24 @@ product_acceptance_spec被CLI静态choices拒绝；它们已是当前Package分�
 补充端口验证：真实CLI/保留行定向80 passed；相对7af14d77的自动影响闭包175 passed、
 1 skipped；sentinel53 passed、flow mock10 passed，三份skill一致。完整分支的`--base dev`
 规划单独留存，本次未重复运行已验证的整个历史闭包。日志为`p0-supplemental-draft-*`。
+
+补充端口实现`ac4b1e8b fix: export supplemental plan ports from the pinned baseline`，
+07:36隔离源码快进，控制器PID1172300未变；CLI新调用直接加载。进一步核对实际briefing
+发现仍只渲染旧三端口，真实render→CLI parser回归1 failed/7 passed；改为与CLI共用名单，
+只导出本attempt分配且全文可读的可编辑端口，不把需求/评审、局部选择或不存在端口加入。
+
+07:38核实宿主采证额度：上限100、已用90、剩10。修复后新target的19条规范命令不能直接
+复用旧target收据。已询问Owner是否批准提高到120；未收到答复前保持配置原值。当前Plan
+仍按原范围推进，未以未来额度不足假装当前任务已停止。
+
+简报入口验证：初次定向命令误写一个不存在的测试路径，退出4且未执行测试，随后更正；
+有效定向86 passed。相对ac4b1e8b自动影响闭包2699 passed、sentinel53 passed，另跑flow
+mock10 passed。测试从实际render入口取命令交给CLI parser，核已分配补充端口被列入、
+局部ACL及需求/评审权威不被列入；没有增加输入必读范围或免除权限检查。
+
+07:44第二轮Planner再次完成同operation内预检修复，正式提交
+`evt-6ec73838d11c`（准入`evt-3fda2aa8e10e`），耗时约23分18秒。
+冻结输出仍16项Task、19条命令，仅MEDIAN行变化；八项Acceptance Matrix归属已修正，
+执行规格改为重新生成正文，须由Critic核验完整性，不能按preflight通过提前签收。
+07:45 Critic自动派发`wop-prd-plan-synth-trig-evt-50351648-97e1fe52f93d`。
+证据`reports/p0-second-planner-control-result.json`、`reports/p0-second-plan-preservation.json`。
