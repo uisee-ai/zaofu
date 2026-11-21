@@ -12,6 +12,7 @@ from typing import Any
 
 from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.repair_process_environment import isolated_repair_environment
+from zf.runtime.repair_process_supervisor import RepairProcessCleanupError, run_repair_command
 
 
 LAUNCH_SCHEMA = "self-repair.process-launch.v1"
@@ -61,7 +62,7 @@ def run_launch(launch_path: Path, result_path: Path) -> dict[str, Any]:
     timeout_seconds = max(1, int(launch.get("timeout_seconds") or 1800))
     try:
         with TemporaryDirectory(prefix='zf-repair-worker-') as workspace:
-            completed = subprocess.run(
+            completed = run_repair_command(
                 argv,
                 cwd=str(cwd),
                 env=isolated_repair_environment(workspace),
@@ -75,15 +76,23 @@ def run_launch(launch_path: Path, result_path: Path) -> dict[str, Any]:
             status="completed" if completed.returncode == 0 else "failed",
             returncode=int(completed.returncode),
             reason="" if completed.returncode == 0 else "provider_nonzero_exit",
+            process_cleanup=completed.cleanup_receipt,
             started_at=started_at,
         ))
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         return _write_result(result_path, _result(
             launch,
             status="timeout",
             returncode=124,
             reason="provider_timeout",
+            process_cleanup=exc.cleanup_receipt,
             started_at=started_at,
+        ))
+    except RepairProcessCleanupError as exc:
+        return _write_result(result_path, _result(
+            launch, status="failed", returncode=125,
+            reason=f"repair_process_cleanup_unknown:{exc}", started_at=started_at,
+            process_cleanup={"cleanup": "unknown"},
         ))
     except OSError as exc:
         return _write_result(result_path, _result(
@@ -102,6 +111,7 @@ def _result(
     returncode: int,
     reason: str,
     started_at: str,
+    process_cleanup: dict | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": RESULT_SCHEMA,
@@ -115,6 +125,7 @@ def _result(
         "reason": reason,
         "started_at": started_at,
         "completed_at": _utc_now(),
+        "process_cleanup": process_cleanup or {},
     }
 
 

@@ -17,7 +17,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证提交，当前不匹配仍拒绝resume，待部署 |
 | PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已部署；17:15真实Planner manifest含两份原始正文且必读，正式Plan结果待收取 |
 | SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7/1a9e8667 已部署，1852项影响闭包通过；可信检查点恢复，17:15重新派发原Plan |
-| SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 发现 provider 终态后仍有孤儿测试进程，已定向停止；进程治理尚待验证修复 |
+| SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 已实现两个真实入口的私有subreaper治理；正常/超时/脱离会话/双fork/调用Worker死亡97项直接闭包通过，待最终验证部署 |
 | RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | 防复发6b9d72e3已提交；补偿实现及独立review通过，待受控部署/14项补偿与真实Judge恢复 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
@@ -450,3 +450,30 @@ preview/首次apply/重放/证据消费，核对kernel来源、Task/Run/ref/map�
 既有task_execution_binding规范化，再生成向前authority，历史原body不改。修正后直接
 调用78 passed，独立复核无阻断；新预览需按最终代码重建。一次不存在测试路径导致
 未执行测试，纠正后重跑，不将该次当产品失败。真实补偿仍待执行。
+
+18:21–18:24 UTC：OLD部署2ca7d927，控制器PID692864、Worker pane全保留、配置摘要
+cd98304a…不变。新代码重新预览14项，manifest e15f8055…；原完成时间/完整合同保持，
+authority由错误seq4向前到seq5。受控intent evt-5f83dd321561、补偿完成evt-cc91713f50c3；
+精确14替换及Doctor一致性通过，无新增task.done或业务派发。预览首次按单秒筛选仅2项，
+断言拒绝未写；纠正为准确批准→取消事件区间14项后执行。
+18:26最终Discovery aggregate已受控请求重建evt-7fc60ea3f3c2；run-resume拒绝，因为
+错误Planner链已把Run从paused变为blocked。经既有goal CLI仅恢复active
+(evt-7aa25aff36ff)，保留旧cap/失败和120额度，真实最终验收仍待结果。
+
+NEW17:31原生源码修复f3d42868独立验证/应用/boot，原Planner17:40继续passed；
+本分支99c23cd5保留该修复，没有代替原生apply。18:17 Plan rejected并达cap；只读
+研究确认candidate_verify owner可进入task-stage verify，Critic按owner筛选Task Verify
+的理由不成立。实际产物使用不识别的work_mode/verification_mode，且审计命令遗漏build。
+18:26受控新规划代际evt-93abdded5768交回源码证据与准确字段，保持16项/owner/权限，
+Planner运行中；没有批准Plan或开始新资格窗口。
+
+SR-PROCESS：四项真实替身入口RED证明正常退出/超时/双fork及独立验收遗留后代。
+私有subreaper接入Worker与RM验证，清理后才完成，unknown阻止optional成功。首次
+GREEN失败定位uv Python3.11未编译pidfd绑定，采用libc同名接口而非宽松kill PID。
+增加调用Worker被SIGKILL后清理、无关进程存活、后续写入停止及unknown持久化回归；
+97项直接调用闭包通过。一次不存在lifecycle测试路径未执行，纠正后重跑。
+
+SR-PROCESS最终：首版自动闭包1870 passed/7 skipped、sentinel53、flow10。独立review
+指出全局PID祖先快照复用风险；改为只枚举直接子进程、pidfd打开后复核PPid/birth，
+逐轮收养后代，增加拒绝过期归属负例。最终34个真实边界/直接测试、sentinel53、flow10
+通过，独立复核无剩余确定阻断。上轮1870是此前冻结版，不称最终全量或无人E2E。

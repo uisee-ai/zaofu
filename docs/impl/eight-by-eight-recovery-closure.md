@@ -4,7 +4,7 @@
 独立验收。两者均经 `repair_process_environment.isolated_repair_environment` 剥离
 父控制面的 `ZF_*`、Git/tmux 和 Python/pytest 定位，显式注入可信解释器、本地 `src`
 与一次性 workspace。Provider 的现有 sandbox 和凭据配置保持。真实子进程回归证明
-项目事件文件不被污染；该证明不覆盖 Provider 退出后全部后代的清理。
+项目事件文件不被污染；后代进程清理使用下述独立边界，不能由环境隔离证明替代。
 
 NEW 验证准备期曾被测试 `zf init --force` 重置运行状态。17:09 UTC 恢复可信检查点
 （2818 条，截至16:22:19），保留原 session ID、六个已终结 TaskAttempt、引用 sidecar，
@@ -797,3 +797,11 @@ ZF_STATE_DIR、ZF_WORKSPACE_HOME等。16:46:52测试force-init清空NEW原账本
 回归先RED后GREEN，证明运行项目定位/控制凭证不继承，写入隔离workspace且测试后删除。
 直接调用42、自动影响闭包1823 passed/7 skipped、sentinel53、flow mock10通过。
 一次人工focused命令含不存在的测试文件，未执行测试；已更正，不算产品失败或通过。
+
+源码修复进程治理：Worker与RM独立验证通过同一私有Linux subreaper执行命令。
+正常结束、命令超时、调用Worker死亡均先清理后代再报告终态；独立setsid/double-fork
+后代仍被收养。只枚举直接子进程，父进程退出后逐轮收养其后代；pidfd加PPid/出生时间复核限定信号目标，Python未编译pidfd时使用libc
+同名接口，无法建立能力时不执行命令。直接子进程表与后代表均空才证明清理完成。
+清理收据随Worker结果或验证step持久化，unknown不能成为成功，optional step同样
+阻止验证通过及后续命令。该机制不是文件系统sandbox；supervisor自身丢失/超时保持
+unknown，不宣称强杀宿主或不可中断内核任务后仍能完全清理。

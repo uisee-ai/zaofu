@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.repair_process_environment import isolated_repair_environment
+from zf.runtime.repair_process_supervisor import RepairProcessCleanupError, run_repair_command
 
 
 def execute_repair_verification_plan(
@@ -102,7 +103,7 @@ def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: in
         env = environment.copy()
         env.update(invocation["env"])
         try:
-            completed = subprocess.run(
+            completed = run_repair_command(
                 invocation["argv"],
                 cwd=str(root),
                 env=env,
@@ -121,6 +122,7 @@ def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: in
                 "returncode": returncode,
                 "stdout_tail": _tail(completed.stdout),
                 "stderr_tail": _tail(completed.stderr),
+                "process_cleanup": completed.cleanup_receipt,
             }
         except subprocess.TimeoutExpired as exc:
             result = {
@@ -132,7 +134,12 @@ def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: in
                 "returncode": 124,
                 "stdout_tail": _tail(exc.stdout),
                 "stderr_tail": _tail(exc.stderr),
+                "process_cleanup": exc.cleanup_receipt,
             }
+        except RepairProcessCleanupError as exc:
+            result = {"kind": kind, "command": command, "required": required,
+                "status": "failed", "reason": f"repair_process_cleanup_unknown:{exc}",
+                "returncode": 125, "process_cleanup": {"cleanup": "unknown"}}
         except OSError as exc:
             result = {
                 "kind": kind,
@@ -143,13 +150,13 @@ def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: in
                 "returncode": 127,
             }
         results.append(result)
-        if required and result["status"] != "passed":
+        if result.get("process_cleanup", {}).get("cleanup") == "unknown" or (required and result["status"] != "passed"):
             break
 
     failed_required = [
         result for result in results
-        if bool(result.get("required", True))
-        and result.get("status") != "passed"
+        if result.get("process_cleanup", {}).get("cleanup") == "unknown"
+        or (bool(result.get("required", True)) and result.get("status") != "passed")
     ]
     ok = not failed_required
     return {

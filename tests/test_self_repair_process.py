@@ -37,8 +37,8 @@ def test_process_wrapper_persists_exit_status(
 ):
     launch, result_path = _launch(tmp_path)
     monkeypatch.setattr(
-        "zf.runtime.self_repair_process.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=returncode),
+        "zf.runtime.self_repair_process.run_repair_command",
+        lambda *args, **kwargs: SimpleNamespace(returncode=returncode, cleanup_receipt={"cleanup":"complete"}),
     )
 
     result = run_launch(launch, result_path)
@@ -52,10 +52,12 @@ def test_process_wrapper_persists_timeout(tmp_path, monkeypatch):
     launch, result_path = _launch(tmp_path, timeout_seconds=1)
 
     def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], timeout=1)
+        error = subprocess.TimeoutExpired(args[0], timeout=1)
+        error.cleanup_receipt = {"cleanup": "complete"}
+        raise error
 
     monkeypatch.setattr(
-        "zf.runtime.self_repair_process.subprocess.run",
+        "zf.runtime.self_repair_process.run_repair_command",
         timeout,
     )
 
