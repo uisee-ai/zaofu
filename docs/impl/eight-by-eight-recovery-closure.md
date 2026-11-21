@@ -349,3 +349,15 @@ Critic因果关系和reviewed generation，读取被审核合同绑定的唯一P
 不借前轮Plan，也不修改Package、事件或审批；仅恢复已有正文的只读展示，Owner仍须审批。
 检测到绑定的typed审核合同但正文恢复校验失败时，禁止继续旧的无摘要路径兜底；
 没有typed合同的历史请求仍沿原有兼容入口。
+
+### 宿主发布在新 Task Map 上的恢复（2026-11-21）
+
+真实MEDIAN在新Map第1次Impl因Git索引只读提交blocked；旧Map已结束的第3次执行
+被错误解释为当前占用者，Run Manager反复defer。宿主effect绑定现在仅把已结束、
+Run/Map身份完整且不同的operation视为历史；当前范围的更高代次、任何活跃占用及
+身份不完整的较高代次继续拒绝。当前Run、Task合同、唯一dispatch、路径与摘要核验不变。
+
+类型化Impl结果的transport完成事件可以是`dev.build.done`，业务verdict仍是blocked。
+重试入口同时接受它和旧式`dev.blocked`，但必须仍是当前已settled且已准入的
+blocked/failed Impl，且canonical source精确属于该operation。宿主发布只生成一次
+Git effect及其回执，后续仍由Worker复核提交和独立Verify裁决；不把发布当作验收通过。

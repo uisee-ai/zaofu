@@ -16,7 +16,7 @@ from zf.runtime.task_contract_snapshot import (
 )
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
 from zf.runtime.workflow_git_readiness import git_read
-from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.workflow_operation import TERMINAL_OPERATION_STATUSES, reduce_workflow_operations
 
 
 def digest(value: object) -> str:
@@ -60,11 +60,19 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     context = task_pipeline_generation_contexts(events).get(op["task_id"], {})
     if any(context.get(k) != op.get(k) for k in ("workflow_run_id", "task_map_generation")):
         raise ValueError("task generation is no longer current")
-    if any(other.get("task_id") == op["task_id"] and other.get("operation_id") != operation_id
-           and (other.get("status") in {"requested", "reserved", "running", "suspended"}
-                or int(other.get("operation_generation") or 0) > int(op["operation_generation"]))
-           for other in operations.values()):
-        raise ValueError("another operation owns the task")
+    for other in operations.values():
+        if other.get("task_id") != op["task_id"] or other.get("operation_id") == operation_id:
+            continue
+        # Counters restart for each admitted Run/Task Map. Only known, ended
+        # foreign scopes are historical; live or ambiguous ownership still blocks.
+        keys = ("workflow_run_id", "task_map_generation")
+        historical = (other.get("status") in TERMINAL_OPERATION_STATUSES
+                      and all(other.get(k) for k in keys)
+                      and any(other.get(k) != op.get(k) for k in keys))
+        if (other.get("status") in {"requested", "reserved", "running", "suspended"}
+                or (not historical
+                    and int(other.get("operation_generation") or 0) > int(op["operation_generation"]))):
+            raise ValueError("another operation owns the task")
     request = hydrate_sidecar_ref(service.state_dir, op["request_ref"]).payload["request"]
     identity = request["result_identity"]
     contract = hydrate_task_contract_snapshot(service.state_dir, descriptor_from_payload(identity),

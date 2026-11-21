@@ -212,3 +212,24 @@ Planner正文相等，content_error/artifacts_error为空。证据`p0-plan-previ
 08:08:57 / 08:09:07两个真实Impl进入running（dev-lane-0/1），当前14 done、2 in_progress。
 其余14项没有重新实施。P0-3仍需独立Verify、新Candidate、Judge/Goal/local delivery正式
 签收，不能把成功派发当作真实闭环完成。Owner增加宿主采证额度的答复仍未收到。
+
+## MEDIAN宿主发布恢复补修（08:26 UTC）
+
+AVERAGE的Impl正式准入后08:22自动派发独立Verify；MEDIAN完成真实RED/GREEN，但Git
+索引只读，08:26:24提交`host_publication_required`，canonical `evt-6458307a9a99`、
+admission `evt-43b74a788d20`。运行时反复defer，原因`another operation owns the task`。
+只读回放确认冲突者是旧Task Map已settled的generation3，而当前新Map为generation1。
+不是仍有Worker占用，也不是当前业务测试失败；保留已有两文件改动与红绿证据。
+
+修复宿主绑定只在相同Run/Map或不完整身份下比较代次数值；完整不同范围的终态历史
+不再阻止当前发布，所有活跃占用继续拦截。另外复现类型化blocked使用dev.build.done，
+后续retry仅接受旧式dev.blocked，导致提交后仍无法接续；按已准入语义结果和精确source
+绑定兼容此transport事件。不扩大权限/预算，不直接手工提交产品变更。
+
+新增回归初次3 failed、5 passed；首轮定向85 passed。后续影响闭包与真实恢复待记录。
+
+补修影响闭包465 passed；新增实际run_manager_tick回归与Flow smoke mock合计17 passed，
+sentinel53 passed。真实账本只读探针确认当前MEDIAN的binding及typed canonical source
+已可通过，不执行Git或发事件。证据`p0-publication-real-binding-probe.json`；其他日志
+为`p0-publication-*`。08:33 AVERAGE独立Verify通过并准入`evt-8783b3abbadb`，
+8条定向测试通过，候选级条款留给后续阶段。
