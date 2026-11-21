@@ -31,6 +31,16 @@ mock10通过。最后补其他gate保留和request_id响应绑定的直接调用
 修复、测试输出和人工介入保存在reader-repair-*与reader-diagnosis-* reports。
 本轮代码验证不等于真实Reader/Judge通过，P0-3仍active；后续部署与签收另记。
 
+实现提交`fd50b2d6 fix: reuse candidate evidence and unblock bounded recovery diagnosis`。
+12:18:16 UTC隔离控制器部署完成（PID2535257），配置摘要、120额度和已有Worker pane
+PID均保留；不合dev、不push。12:18:29自动退出静默evt-28afb4f87e29，12:18:47自动
+受控接续candidate.ready evt-2cb4b9c6c993，未由监工手工发重派动作。
+12:21:32新8路请求全部注册并冻结19/19 available回执，contract摘要仍d841bd…、
+currentness无错误，原source operation身份保留；4路running、4路requested。
+部署后新增host effect为0，无新失败，用量仍120/120。该证明是运行时对已修输入的
+自动交接；RM Agent实际诊断输出、Reader/Judge/Goal最终语义签收不能由此推定完成。
+证据reader-input-recovery-deployment.json、reader-input-recovery-consumption.json。
+
 Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0实施已讨论的五项；先复现、最小修复、影响闭包、提交，随后在既有授权范围内受控真实复测。原无监工窗口失败保持；不合ZaoFu dev、不push、不修改canonical JSON、不代Worker提交结果。
 
 | ID | 优先级 | 工作与验收 | 状态 |
