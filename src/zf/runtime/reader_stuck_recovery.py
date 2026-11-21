@@ -3,6 +3,7 @@ from typing import Any
 
 from zf.core.events import ZfEvent
 from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
 
 
 def reader_stuck_dispatch(runtime: Any, role: Any) -> ZfEvent | None:
@@ -16,7 +17,9 @@ def reader_stuck_dispatch(runtime: Any, role: Any) -> ZfEvent | None:
     if (dispatch is None or dispatch.origin != 'kernel' or dispatch.actor != 'zf-cli'
             or dispatch.type not in {'fanout.child.dispatched','fanout.synth.dispatched'}
             or any(dispatch.payload.get(k) != child.get(k)
-                   for k in ('operation_id','request_hash','run_id','role_instance'))):
+                   for k in ('operation_id','run_id','role_instance'))
+            or (child.get('request_hash') and child['request_hash']
+                != reader_dispatch_call_identity(dispatch.payload).get('request_hash'))):
         return None
     return dispatch
 
@@ -30,6 +33,7 @@ def reader_stuck_block_reason(runtime: Any, role: Any) -> str:
         return 'reader dispatch no longer owned'
     events = runtime.event_log.read_all()
     p = dispatch.payload
+    identity = reader_dispatch_call_identity(p)
     manifest = runtime._fanout_manifest(str(p.get('fanout_id') or ''))
     terminal = {'completed', 'failed', 'timed_out', 'cancelled'}
     if (not manifest or manifest.get('status') in terminal
@@ -39,8 +43,8 @@ def reader_stuck_block_reason(runtime: Any, role: Any) -> str:
     if (operation.get('status') != 'running'
             or operation.get('operation_type') not in {'fanout_reader_child','fanout_synth'}
             or operation.get('role_instance') != role.instance_id
-            or operation.get('request_hash') != p.get('request_hash')
-            or operation.get('active_attempt_id') != (p.get('attempt_id') or p.get('run_id'))
+            or operation.get('request_hash') != identity.get('request_hash')
+            or operation.get('active_attempt_id') != identity.get('attempt_id')
             or operation.get('workflow_run_id') != p.get('workflow_run_id')
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         return 'reader operation binding changed or already settled'

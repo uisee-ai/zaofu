@@ -203,3 +203,8 @@ respawn；在角色恢复锁内重检 operation、attempt、request hash、已�
 暂停/终态。恢复沿原 provider session、冻结输入和工作记录继续，不重排共享 Task，
 也不把重新投递认定为产品通过。失败收据同样保留自身身份。
 见[实施任务](../../tasks/active/2026-11-21-0108-reader-stuck-dispatch-identity.md)。
+
+Reader transport重投可能更新外层TaskAttempt/dispatch，而嵌套payload保留原不可变call
+attempt与request hash。恢复信号、读权限续期及读取指引使用原call身份，transport
+收据仍指向最新派发；两层都必须与Kernel账本绑定。外/内operation、request hash、
+Run冲突及source-manifest digest不匹配时拒绝，不能以一次新transport重试重置必读或WRC。

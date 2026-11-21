@@ -9,7 +9,7 @@ from zf.core.task.schema import Task
 from zf.runtime.workflow_operation import load_workflow_operation
 
 
-def _stuck_reader(tmp_path, monkeypatch, *, spawn_fails=False):
+def _stuck_reader(tmp_path, monkeypatch, *, spawn_fails=False, retry=False):
     state, log, transport, runtime, config, _child = _durable_reader_state(tmp_path)
     role = config.roles[0]
     dispatch = next(e for e in log.read_all() if e.type == 'fanout.child.dispatched')
@@ -19,6 +19,17 @@ def _stuck_reader(tmp_path, monkeypatch, *, spawn_fails=False):
     runtime.task_store.add(Task(id=task_id, title='candidate anchor', status='in_progress',
                                 assigned_to=role.instance_id, active_dispatch_id='sibling-attempt'))
     runtime.event_writer.emit('run.started', payload={'workflow_run_id': 'run-durable'})
+    if retry:
+        # Native retry carrier: TaskAttempt is renewed; immutable Reader call stays nested.
+        retried = {**identity, 'run_id':'reader-transport-retry',
+                   'dispatch_id':'reader-transport-retry', 'attempt_id':'ta-transport-retry',
+                   'retry_of_run_id':identity['run_id'], 'attempt':2}
+        retried.pop('request_hash', None)
+        dispatch = runtime.event_writer.append(ZfEvent(type='fanout.child.dispatched',
+            actor='zf-cli', origin='kernel', task_id=task_id, correlation_id='run-durable',
+            payload=retried))
+        identity = dispatch.payload
+        assert identity['payload']['attempt_id'] == op['active_attempt_id']
     runtime.event_writer.append(ZfEvent(type='fanout.child.dispatched', actor='zf-cli', origin='kernel',
         task_id=task_id, correlation_id='run-durable', payload={**identity,
         'child_id':'sibling', 'role_instance':'verify-2', 'run_id':'sibling-attempt',
@@ -42,8 +53,9 @@ def _stuck_reader(tmp_path, monkeypatch, *, spawn_fails=False):
     return runtime, log, role, dispatch, op, stopped
 
 
-def test_silent_reader_resumes_own_operation_with_newer_sibling(tmp_path, monkeypatch):
-    runtime, log, role, dispatch, op, stopped = _stuck_reader(tmp_path, monkeypatch)
+@pytest.mark.parametrize('retry', [False, True])
+def test_silent_reader_resumes_own_operation_with_newer_sibling(tmp_path, monkeypatch, retry):
+    runtime, log, role, dispatch, op, stopped = _stuck_reader(tmp_path, monkeypatch, retry=retry)
     result = runtime._report_stuck_worker(role, source='heartbeat_sweep', heartbeat_age_s=3000)
     assert result.action == 'respawn'
     assert stopped == [role.instance_id]
@@ -51,6 +63,7 @@ def test_silent_reader_resumes_own_operation_with_newer_sibling(tmp_path, monkey
     assert signal.causation_id == dispatch.id
     assert signal.payload['dispatch_id'] == dispatch.payload['run_id']
     assert signal.payload['operation_id'] == op['operation_id']
+    assert signal.payload['attempt_id'] == op['active_attempt_id']
     assert signal.payload['workflow_run_id'] == op['workflow_run_id']
     recovered = next(e for e in log.read_all() if e.type == 'worker.recovery.injected')
     assert recovered.payload['recovered_dispatch_event_id'] == dispatch.id
@@ -84,8 +97,9 @@ def test_reader_stuck_preserves_lifecycle_fences(tmp_path, monkeypatch, guard):
     assert not any(e.type == 'task.requeued' for e in log.read_all())
 
 
-def test_reader_respawn_failure_is_bound_to_own_operation(tmp_path, monkeypatch):
-    runtime, log, role, dispatch, op, stopped = _stuck_reader(tmp_path, monkeypatch, spawn_fails=True)
+@pytest.mark.parametrize('retry', [False, True])
+def test_reader_respawn_failure_is_bound_to_own_operation(tmp_path, monkeypatch, retry):
+    runtime, log, role, dispatch, op, stopped = _stuck_reader(tmp_path, monkeypatch, spawn_fails=True, retry=retry)
     result = runtime._report_stuck_worker(role, source='heartbeat_sweep', heartbeat_age_s=3000)
     assert result.action == 'respawn_failed'
     failed = next(e for e in log.read_all() if e.type == 'worker.respawn.failed')
@@ -93,3 +107,14 @@ def test_reader_respawn_failure_is_bound_to_own_operation(tmp_path, monkeypatch)
     assert failed.payload['dispatch_id'] == dispatch.payload['run_id']
     assert failed.payload['attempt_id'] == op['active_attempt_id']
     assert load_workflow_operation(log, op['operation_id'])['status'] == 'running'
+
+
+@pytest.mark.parametrize('field', ['request_hash','attempt_id','workflow_run_id'])
+def test_retry_cannot_replace_immutable_reader_identity(tmp_path, monkeypatch, field):
+    runtime, log, role, dispatch, op, stopped = _stuck_reader(tmp_path, monkeypatch, retry=True)
+    bad = {**dispatch.payload, 'payload':{**dispatch.payload['payload'], field:'foreign'}}
+    runtime.event_writer.append(ZfEvent(type='fanout.child.dispatched', actor='zf-cli',
+        origin='kernel', task_id=op['task_id'], correlation_id=op['workflow_run_id'], payload=bad))
+    runtime._report_stuck_worker(role, source='heartbeat_sweep', heartbeat_age_s=3000)
+    assert not stopped
+    assert not any(e.type == 'task.requeued' for e in log.read_all())

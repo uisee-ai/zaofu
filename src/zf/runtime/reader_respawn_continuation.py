@@ -7,6 +7,19 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 
 
+def reader_dispatch_call_identity(payload: dict) -> dict:
+    """Transport retries renew TaskAttempt fields but retain the nested Reader call."""
+    nested = payload.get("payload") or {}
+    if not isinstance(nested, dict):
+        return {}
+    for key in ("operation_id", "request_hash", "workflow_run_id"):
+        if payload.get(key) and nested.get(key) and payload[key] != nested[key]:
+            return {}
+    return {**{key: payload.get(key) or nested.get(key) or "" for key in (
+        "operation_id", "request_hash", "workflow_run_id")},
+        "attempt_id": nested.get("attempt_id") or payload.get("attempt_id") or ""}
+
+
 def reader_respawn_in_progress(state_dir: Path, role_instance: str) -> bool:
     """Observe the existing replacement lock without creating or unlinking it."""
     path = state_dir / "locks" / "respawns" / f"{role_instance}.lock"
@@ -36,9 +49,10 @@ def reader_recovery_fence(
     }
     if not role or not all(expected.values()):
         return dispatch_index
+    identity = reader_dispatch_call_identity(original)
     for key in ("operation_id", "request_hash"):
-        if original.get(key):
-            expected[key] = str(original[key])
+        if identity.get(key):
+            expected[key] = str(identity[key])
     for index in range(len(events) - 1, dispatch_index, -1):
         event = events[index]
         if event.type != "worker.recovery.injected" or event.actor != role:
@@ -84,12 +98,12 @@ def reader_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
     """Prepare authenticated continuation before delivering a recovery prompt."""
     from zf.runtime.cli_command import zf_cli_cmd
 
-    renew_reader_recovery_capability(runtime, role, child)
-    return reader_continuation_guidance(attempt_id=str(child.get("attempt_id") or ""),
+    attempt_id = renew_reader_recovery_capability(runtime, role, child)
+    return reader_continuation_guidance(attempt_id=attempt_id,
                                        backend=role.backend, cli=zf_cli_cmd())
 
 
-def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> None:
+def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> str:
     """Renew the existing input grant only after checking its immutable carrier."""
     from zf.runtime.artifact_read_capability import bind_attempt_artifact_read_capability
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -97,20 +111,23 @@ def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> No
 
     operation_id = str(child.get("operation_id") or "")
     if not operation_id:  # Legacy unbound fanouts have no capability to renew.
-        return
+        return str(child.get("attempt_id") or "")
     events = runtime.event_log.read_all()
+    dispatch = next((e for e in reversed(events) if e.id == child.get("event_id")), None)
+    identity = reader_dispatch_call_identity(dispatch.payload) if dispatch else {}
     operation = reduce_workflow_operations(events).get(operation_id, {})
     if (operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}
             or operation.get("status") not in {"requested", "running"}
             or operation.get("role_instance") != role.instance_id
             or operation.get("workflow_run_id") != (child.get("workflow_run_id") or child.get("trace_id"))
-            or operation.get("request_hash") != child.get("request_hash")):
+            or identity.get("operation_id") != operation_id
+            or operation.get("request_hash") != identity.get("request_hash")
+            or (child.get("request_hash") and child["request_hash"] != identity.get("request_hash"))):
         raise ValueError("reader recovery capability has no matching active operation")
-    dispatch = next((e for e in reversed(events) if e.id == child.get("event_id")), None)
     if (dispatch is None or dispatch.origin != "kernel" or dispatch.actor != "zf-cli"
             or dispatch.type not in {"fanout.synth.dispatched", "fanout.child.dispatched"}
             or any(dispatch.payload.get(k) != child.get(k)
-                   for k in ("operation_id", "request_hash", "run_id", "role_instance"))
+                   for k in ("operation_id", "run_id", "role_instance"))
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         raise ValueError("reader recovery capability has no current dispatch")
     nested = dispatch.payload.get("payload") or {}
@@ -123,7 +140,12 @@ def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> No
     if (operation_request_hash(request) != operation["request_hash"]
             or descriptor.get("sha256") != request["request"].get("source_manifest_digest")
             or operation.get("active_attempt_id") != attempt_id
-            or (child.get("attempt_id") and child["attempt_id"] != attempt_id)):
+            or identity.get("attempt_id") != attempt_id
+            or (child.get("attempt_id") and child["attempt_id"] not in {
+                attempt_id, dispatch.payload.get("attempt_id")})):
         raise ValueError("reader recovery immutable input binding differs")
     bind_attempt_artifact_read_capability(runtime.state_dir, operation_id=operation_id,
         attempt_id=attempt_id, role_instance=role.instance_id, manifest=manifest)
+    # This is a local lifecycle descriptor, not a canonical operation mutation.
+    child.update(attempt_id=attempt_id, request_hash=identity["request_hash"])
+    return attempt_id

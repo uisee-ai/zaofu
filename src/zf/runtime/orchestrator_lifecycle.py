@@ -1087,6 +1087,13 @@ class LifecycleManagerMixin(
             # Shared candidate tasks have multiple independent Reader attempts.
             recovery_operation_id = str(active_fanout.get("operation_id") or "")
             recovery_attempt_id = str(active_fanout.get("attempt_id") or active_fanout.get("run_id") or "")
+            if role.role_kind == "reader":
+                from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
+                dispatched = next((e for e in reversed(self.event_log.read_all())
+                                   if e.id == active_fanout.get("event_id")), None)
+                if dispatched is not None:
+                    recovery_attempt_id = str(reader_dispatch_call_identity(
+                        dispatched.payload).get("attempt_id") or recovery_attempt_id)
             recovery_dispatch_id = str(active_fanout.get("run_id") or "")
             recovery_lease_id = ""
         # B3: watchdog has tripped — worker is currently stuck/dead and
