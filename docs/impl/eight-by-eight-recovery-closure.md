@@ -377,3 +377,9 @@ escalation、未结算effect继续阻断。额度等待解除后产生的新失�
 宿主证据准备完成后仍经受控Reader恢复与独立语义验证，不能由执行器宣告产品通过。
 
 现场记录与验证见[局部恢复实施任务](../../tasks/active/2026-11-21-0514-scoped-recovery-p0-p1.md)。
+
+
+静默入口也必须重判已解除的预算等待：旧kernel/Run Manager预算告警宽限期结束
+不能让tick提前返回并饿死已获授权的采证。仅当当前同Run/approval_ref尚有余量、
+同manifest无其他hold且没有未结算effect，静默判断允许RM重新检查。此判断只唤醒
+既有执行器，不签发权限或跳过operation/目标/合同校验；其他阻塞保持原有静默规则。

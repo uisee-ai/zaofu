@@ -68,6 +68,34 @@ def _enabled(config: Any) -> bool:
     )
 
 
+def _host_probe_budget_available(config: Any, rows: list[ZfEvent], alert: ZfEvent) -> bool:
+    """Allow RM to revalidate a known budget hold; grant no execution authority."""
+    payload = alert.payload
+    policy = getattr(getattr(config, "runtime", None), "host_verification", None)
+    manifest = payload.get("host_manifest_digest")
+    run = alert.correlation_id
+    if (alert.origin != "kernel" or alert.actor != "run-manager"
+            or payload.get("reason") != "preauthorized_probe_budget_exhausted"
+            or payload.get("blocking_scope") != "verification"
+            or payload.get("owner_route") != "run_manager" or not run or not manifest
+            or not policy or not policy.enabled or not policy.approval_ref):
+        return False
+    if any(event.type == "human.escalate"
+           and event.payload.get("host_manifest_digest") == manifest
+           and event.payload.get("reason") != "preauthorized_probe_budget_exhausted"
+           for event in rows):
+        return False
+    attempts = {event.type for event in rows
+                if event.payload.get("manifest_digest") == manifest}
+    if ("runtime.action.attempt.started" in attempts
+            and "runtime.action.attempt.completed" not in attempts):
+        return False  # More allowance cannot resolve an unknown external effect.
+    used = sum(event.type == "runtime.action.attempt.started"
+               and event.payload.get("workflow_run_id") == run
+               and event.payload.get("approval_ref") == policy.approval_ref for event in rows)
+    return used < policy.max_executions_per_run
+
+
 def quiescent_now(
     events: Iterable[ZfEvent],
     *,
@@ -124,6 +152,10 @@ def quiescent_now(
         return QuiescentStatus(quiescent=False, reason="no_escalate")
     if woke_after:
         return QuiescentStatus(quiescent=False, reason="woken")
+    if _host_probe_budget_available(config, rows, escalate):
+        # The executor still checks the exact operation, target, commands,
+        # retained effects and current Owner policy before doing any work.
+        return QuiescentStatus(quiescent=False, reason="host_verification_budget_available")
     if inflight_fanouts:
         # E8(prd-goal e2e finding-18):escalate 后仍有未终局 fanout
         # (含待派发 child)→ 静默会暂停派发扫描,潜在互锁。有活干

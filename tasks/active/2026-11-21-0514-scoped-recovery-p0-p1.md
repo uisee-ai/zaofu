@@ -294,3 +294,30 @@ passed、flow mock10 passed。追加定向与Candidate恢复mock86 passed。一�
 SOURCE完整venv。全分支plan、最终自动验证receipt、日志保存为host-budget-*。
 真实只读预检确认旧额度100/已用100，当前候选9份采证回执在120配置下均保持有效。
 独立research源码复核未发现确定剩余阻塞，未独立执行测试；真实部署接续另行记录。
+
+
+额度修复提交`7c423287 fix: continue host verification after an authorized budget increase`。
+09:51:31 UTC加载到隔离控制器PID1882102，仅改配置100→120，Worker pane PID全部
+保留、原授权身份及计数不变。09:52:02起原Run Manager自动继续采证；09:57:40当前
+候选18/19份回执有效且退出码均0，累计109/120。未合并dev或push。
+
+### 真实复验追加：静默闸门仍读旧额度告警
+
+09:57:58 `evt-b67d24c40f21 run.goal.quiescent.entered`引用旧预算告警
+`evt-4cf37bcef07d`。旧告警宽限窗10分钟届满后，tick_services整体提前返回，
+最后一条unique_words命令没有派发；不是Docker失败，也没有Judge执行。前一补丁
+只修executor内部判断，漏了上游静默入口，不能以初步恢复或隔离通过宣告真实闭环。
+
+新增实际run_standard_tick_services复现先1 failed/8 passed；门禁补修只让来源为
+kernel/Run Manager、明确预算耗尽、仍有同Run/approval_ref额度的等待重新进入RM。
+同manifest其他原因或未结算effect仍静默，原告警不删除；这只是调度唤醒，执行器
+继续核验当前Run、operation、目标、合同与所有权限。不会把旧告警转换为产品通过。
+
+定向修正测试fixture补上生产中实际存在的已完成effect唤醒事实后117 passed；最初
+自动闭包使用了旧fixture并失败，不能记为成功，最终闭包另记录。真实只读回放和
+部署效果分别留证，继续保持P0-3 active。
+
+静默补修最终自动调用闭包125 passed，sentinel53 passed、flow mock10 passed。
+真实账本只读对照：已部署7c423287仍为escalate_unresolved（evt-4cf37bcef07d），
+修复工作区为host_verification_budget_available；二者均读取同一120额度，没有
+执行effect或发事件。证据host-budget-quiescence-deployed.json/repaired.json。
