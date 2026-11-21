@@ -75,28 +75,39 @@ def preview(service: Any, source: ZfEvent) -> dict:
     if not previous_context or previous_context["task_map_generation"] != body["task_map_generation"]:
         raise ValueError("completion reuse source generation differs")
     archived_tasks = store.list_all_with_archive()
-    old_tasks = {}
+    from zf.runtime.plan_completion_lineage import historical_task_view, completion_evidence_additions
+    from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
+
+    historic_runtime = historical_task_view(service, historical, candidate, archived_tasks)
+    prior_reuse = current_proofs(historic_runtime, historical, candidate)
+    evidence_contexts = task_pipeline_generation_contexts(historical)
     rows = []
     for task_id in task_ids:
         current = store.get(task_id)
         if current is None or current.status not in {"backlog", "done"} or current.active_dispatch_id:
             raise ValueError("completion reuse requires inactive Tasks: " + task_id)
+        reused = prior_reuse.get(task_id)
+        evidence_generation = reused["task_map_generation"] if reused else body["task_map_generation"]
+        evidence_context = evidence_contexts.get(task_id, {})
+        if evidence_context.get("task_map_generation") != evidence_generation:
+            raise ValueError("completion reuse native generation context differs: " + task_id)
         done = next((e for e in reversed(historical) if e.type == "task.done" and e.origin == "kernel"
                      and e.task_id == task_id and e.payload.get("workflow_run_id") == run_id
-                     and e.payload.get("task_map_generation") == body["task_map_generation"]), None)
+                     and e.payload.get("task_map_generation") == evidence_generation), None)
         verify = next((e for e in reversed(historical) if e.type == "task.pipeline.verify.completed"
                        and e.task_id == task_id and e.payload.get("workflow_run_id") == run_id
-                       and e.payload.get("task_map_generation") == body["task_map_generation"]), None)
+                       and e.payload.get("task_map_generation") == evidence_generation), None)
         if done is None or verify is None:
             raise ValueError("completion reuse lacks native completion/Verify: " + task_id)
+        if reused and (done.id != reused["completion_event_id"] or verify.id != reused["verification_event_id"]):
+            raise ValueError("completion reuse original native proof changed: " + task_id)
         old = next((t for t in reversed(archived_tasks) if t.id == task_id and t.status == "done"
                     and t.contract_authority_revision == verify.payload.get("contract_authority_revision")), None)
         if old is None:
             raise ValueError("completion reuse lacks archived Task authority: " + task_id)
-        from zf.runtime.plan_output_recovery import _acceptance_contract
-
-        if _acceptance_contract(old.contract) != _acceptance_contract(current.contract):
-            raise ValueError("completion reuse cannot change acceptance/execution contract: " + task_id)
+        additions = completion_evidence_additions(old, current)
+        previous_task = historic_runtime.task_store.get(task_id)
+        completion_evidence_additions(previous_task, current)
         _native_proof(service.state_dir, events, done, verify)
         _settled_redispatches(root, events, source, task_id, head)
         from zf.runtime.plan_completion_refs import validate_reference
@@ -106,8 +117,13 @@ def preview(service: Any, source: ZfEvent) -> dict:
         refs = current.contract.evidence_contract.get("source_refs", {})
         if refs.get("task_map_generation") != context["task_map_generation"] or refs.get("plan_artifact_package_digest") != package_ref["sha256"]:
             raise ValueError("completion reuse Task is not bound to the current Plan: " + task_id)
-        old_tasks[task_id] = old
         rows.append({"task_id": task_id, "completion_event_id": done.id,
+                     "evidence_task_map_generation": evidence_generation,
+                     "evidence_generation_event_id": evidence_context["generation_admitted_event_id"],
+                     "candidate_evidence_additions": additions,
+                     **({"predecessor_reuse_ref": reused["completion_reuse_ref"],
+                         "previous_identity": current_task_contract_identity(previous_task),
+                         "previous_contract": asdict(previous_task.contract)} if reused else {}),
                      "task_ref_proof": ref_proof,
                      "verification_event_id": verify.id, "integration_receipt_ref": done.payload["integration_receipt_ref"],
                      "prior_identity": current_task_contract_identity(old),
@@ -115,8 +131,6 @@ def preview(service: Any, source: ZfEvent) -> dict:
                      "prior_contract": asdict(old.contract), "current_contract": asdict(current.contract),
                      "completed_at": old.completed_at})
     # Historical validation is a read view, never a rewrite of the event ledger.
-    historic_runtime = SimpleNamespace(state_dir=service.state_dir, project_root=root, config=service.config,
-        event_log=SimpleNamespace(read_all=lambda: historical), task_store=SimpleNamespace(get=old_tasks.get))
     authority = prepare_candidate_verification_authority(historic_runtime, payload={}, workflow_run_id=run_id,
                                                         task_id=str(body.get("pdd_id") or ""))
     if not authority:
@@ -182,8 +196,15 @@ def apply(service: Any, source: ZfEvent, payload: dict, requested: ZfEvent) -> d
             or not str(payload.get("reuse_rationale") or "").strip()
             or payload.get("reviewed_digest") != manifest["manifest_digest"]):
         raise ValueError("completion reuse requires a reviewed digest, semantic rationale and approval_ref")
+    evidence_review = payload.get("candidate_evidence_review") or {}
+    if not isinstance(evidence_review, dict) or any(row.get("candidate_evidence_additions") and (
+               not isinstance(evidence_review.get(row["task_id"]), str)
+               or not evidence_review[row["task_id"]].strip())
+           for row in manifest["tasks"]):
+        raise ValueError("completion reuse requires explicit review of new Candidate evidence obligations")
     receipt = {"schema_version": SCHEMA, "manifest": manifest,
-               "approval_ref": payload["approval_ref"], "rationale": payload["reuse_rationale"]}
+               "approval_ref": payload["approval_ref"], "rationale": payload["reuse_rationale"],
+               "candidate_evidence_review": evidence_review}
     descriptor = write_immutable_json_sidecar(service.state_dir, receipt, root="plan-completion-reuse",
         kind="plan_completion_reuse", schema_version=SCHEMA, created_by="controlled-plan-recovery")
     from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
@@ -230,7 +251,7 @@ def apply(service: Any, source: ZfEvent, payload: dict, requested: ZfEvent) -> d
             payload={"from": task.status, "to": "done", "status": "done", "source": SOURCE,
                 "workflow_run_id": manifest["workflow_run_id"],
                 "generation_admitted_event_id": manifest["generation_admitted_event_id"],
-                "prior_generation_event_id": manifest["prior_generation_event_id"],
+                "prior_generation_event_id": row.get("evidence_generation_event_id", manifest["prior_generation_event_id"]),
                 "completion_event_id": row["completion_event_id"], "completion_reuse_ref": descriptor}))
         from zf.core.state.role_sessions import RoleSessionRegistry
         from zf.runtime.task_pipeline_terminal import _archive_settled_task_sessions
@@ -276,6 +297,11 @@ def current_proofs(runtime: Any, events: list[ZfEvent], candidate: ZfEvent) -> d
                 or row["current_identity"] != current_task_contract_identity(task)
                 or row["current_contract"] != asdict(task.contract)):
             raise ValueError("completion reuse Task authority changed")
-        proofs[event.task_id] = {**row, "task_map_generation": manifest["prior_task_map_generation"],
+        if row.get("candidate_evidence_additions") and not (receipt.get("candidate_evidence_review") or {}).get(event.task_id):
+            raise ValueError("completion reuse lacks new Candidate evidence review")
+        from zf.runtime.plan_completion_lineage import validate_predecessor
+
+        validate_predecessor(runtime.state_dir, row, manifest)
+        proofs[event.task_id] = {**row, "task_map_generation": row.get("evidence_task_map_generation", manifest["prior_task_map_generation"]),
                                  "completion_reuse_ref": event.payload["completion_reuse_ref"]}
     return proofs

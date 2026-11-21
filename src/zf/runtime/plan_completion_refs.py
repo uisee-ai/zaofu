@@ -49,5 +49,5 @@ def restore_reference(service: Any, row: dict, manifest: dict, descriptor: dict,
     service.writer.append(ZfEvent(type="task.ref.updated", origin="kernel", actor=service.actor,
         task_id=row["task_id"], causation_id=requested.id, correlation_id=manifest["workflow_run_id"],
         payload={**result.payload, "workflow_run_id": manifest["workflow_run_id"],
-                 "task_map_generation": manifest["prior_task_map_generation"],
+                 "task_map_generation": row.get("evidence_task_map_generation", manifest["prior_task_map_generation"]),
                  "completion_reuse_ref": descriptor, "source": "plan_completion_reuse"}))

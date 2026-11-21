@@ -65,6 +65,17 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ### 已完成任务在 Plan 恢复后重复实施（2026-11-20）
 
+连续 Plan 修订还需追溯更早的原生 Task 验收。第二次恢复不能要求上一代重新产生
+`task.done`：上一代可能只保存已批准的完成复用。预览以该代归档 Task 建立历史读视图，
+验证完整复用引用链，再绑定最初的 Verify/集成事件和原始任务派发代际；新代际的
+Candidate 继续校验当前合同与整条不可变链。破损引用、变更目标或原生证据缺失均拒绝。
+
+若标准开发任务只在既有 `candidate_verify` 最终命令追加 `producer_paths`，预览完整
+列出新增义务，受控动作还要求逐 Task 的 `candidate_evidence_review`，与精确 manifest
+摘要、批准引用及复用理由一同持久化。此范围不覆盖只读审计、Task 本地验收、命令或
+权限变化，也不允许删除既有证据。追加的产物仍必须由新 Candidate 阶段验证，旧 Task
+完成证明不构成该项通过。见[连续恢复任务](../../tasks/active/2026-11-21-0010-repeated-plan-completion-reuse.md)。
+
 真实实验的新 Plan 更新恢复基线与来源边界说明，原 16 项已完成，但完整 Task Map 的新代际令 runtime 全部重开。OA 的文字要求“保留完成证据”没有执行效力；pre_impl 为 shadow，所以不是 blocking gate 被绕过。
 
 受控 `stage-retrigger` 增加 `reuse_completed_plan=true`：先 `dry_run=true` 生成完整新旧合同、原 native Verify/integration、原 Candidate 与当前 Plan 审批绑定的 manifest。Owner 审阅精确 `manifest_digest` 后，以 `reviewed_digest`、`reuse_rationale`、`approval_ref` 执行。只支持原完整 Task 集合、原冻结提交、验收/执行合同不变的 Plan 导航更新；拒绝 terminal Run、目标移动、过期审批、活动 Task、未停止或有改动的重新派发工作区。导航材料的语义适用性由审核人负责，运行时不从 ID 或文件存在推断。
