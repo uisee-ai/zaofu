@@ -842,3 +842,14 @@ manifest、Owner intent、原 mutation、当前 replacement 和同一 Candidate 
 仅补充历史 child 缺少的 restore ref，原身份、复用证明和 Verify 事件仍逐项校验。
 现有 ref 不被覆盖，原快照及账本不改写；新 Candidate Verify 合同仍必须显式携带
 完整证明。后续真正的合同变化、伪造来源或缺失证据继续拒绝。
+
+### Reader 提交协议耗尽的终态交接（2026-11-21）
+
+另一真实停顿是 `result submit` 拒绝后仅持久化 operation failed；未准入的语义
+事件不会发布，因而普通 fanout 结果处理器没有输入。loss sweep 随后发现 Provider
+已停，但 failed operation 不能重派，形成空转。恢复 sweep 现先将精确
+`output_repair_exhausted` 的内核失败投影到 `fanout.child.failed`，再交既有失败
+处理链。持久 request、当前 dispatch、原 invalid envelope、Run/operation/hash/
+attempt/role 必须一致；原 CLI 空 origin 的 invalid 仅在精确内核因果及不可变
+attempt envelope 同时存在时兼容。新 invalid 明确写 kernel origin。失配、过期、
+暂停/终止 Run 不恢复；不发布产品 verdict，不重开 failed operation，也不增加额度。

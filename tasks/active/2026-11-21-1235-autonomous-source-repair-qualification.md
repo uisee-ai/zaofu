@@ -534,3 +534,18 @@ Goal 补偿修复验证：自动影响闭包238 passed/7 skipped，sentinel53、
 restore ref 拒绝用例，最终36项相关回归通过。真实 OLD 原结果只读回放 authority_issues=[]，
 仍保留原 blocked 语义意见，未替 Judge 提交结果。另发现 operation.failed 后没有对应
 fanout.child.failed，恢复投影无合法 Reader checkpoint；记录并继续排查终态交接。
+
+补充真实阻断：`result submit` 耗尽仅生成 operation.failed 与 task.attempt.failed，
+未发布语义事件；fanout child 仍 dispatched，loss sweep 无法重派 failed operation，
+child-rebuild 又缺少精确 child failure。新增 Reader 协议失败投影到现有恢复 sweep，
+仅处理精确内核 output_repair_exhausted，核验 immutable request/envelope/current
+transport binding，保留语义未知与原失败。独立研究确认该链路根因；初始10项失败
+为测试误以为 EventLog.append 返回事件，修正fixture后10通过，待影响闭包及部署。
+
+协议终态最终验证：第一版自动2377 passed/7 skipped、sentinel53、flow10；独立review
+发现投影失败窗口，补已有精确child.failed的投影恢复及全局pause门禁，13项边界通过。
+最终自动2380 passed/7 skipped、sentinel53、flow mock10，独立静态复核通过。
+真实账本截至19:30 evt-6bf0c7d99661的纯reducer回放selected=true、绑定准确且无状态写入。
+现场19:45 native idle timeout另产生evt-fb2f1e2c6418；补丁保留该历史失败，恢复使用正常
+child-rebuild。NEW 19:50前后Planner passed并进入Synth；发现product_acceptance_spec
+仍漏改文本工具数字恢复要求，已通过精确worker.reply反馈evt-a373749f4cab，仍不批准。

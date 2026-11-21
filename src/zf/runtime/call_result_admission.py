@@ -495,6 +495,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             invalid = self.event_writer.append(ZfEvent(
                 type="workflow.call.result.invalid",
                 actor="zf-cli",
+                origin="kernel",
                 task_id=event.task_id,
                 payload={
                     **operation_identity,
