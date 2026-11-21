@@ -268,7 +268,7 @@ def apply(service: Any, source: ZfEvent, payload: dict, requested: ZfEvent) -> d
     return {**source.payload, "completion_reuse_ref": descriptor}
 
 
-def current_proofs(runtime: Any, events: list[ZfEvent], candidate: ZfEvent) -> dict:
+def current_proofs(runtime: Any, events: list[ZfEvent], candidate: ZfEvent, *, task_ids: set[str] | None = None) -> dict:
     """Recheck exact current identity before accepting historical child authority."""
     from zf.runtime.task_contract_snapshot import current_task_contract_identity
 
@@ -279,6 +279,8 @@ def current_proofs(runtime: Any, events: list[ZfEvent], candidate: ZfEvent) -> d
         if event.type != "task.status_changed" or event.origin != "kernel" or event.payload.get("source") != SOURCE:
             continue
         if event.payload.get("workflow_run_id") != run_id:
+            continue
+        if task_ids is not None and event.task_id not in task_ids:
             continue
         receipt = _json(runtime.state_dir, event.payload.get("completion_reuse_ref") or {})
         manifest = receipt.get("manifest") or {}

@@ -44,6 +44,7 @@ def recovery(tmp_path, monkeypatch, request):
     contract = json.loads((state / old_verify.payload["contract_snapshot_ref"]).read_text())
     contract.update(current_task_contract_identity(task))
     contract["task_map_generation"] = "generation-1"
+    contract["allowed_paths"] = list(task.contract.scope)
     contract_ref = write_task_contract_snapshot(state, contract)
     target_ref = write_target_snapshot(state, build_target_snapshot(contract_ref,
         target_commit="b" * 40, contract_snapshot=contract))
@@ -60,7 +61,12 @@ def recovery(tmp_path, monkeypatch, request):
     receipt = sidecar({"schema_version": "task-integration-receipt.v1", "task_id": task.id,
         "workflow_run_id": run, "task_map_generation": "generation-1", "status": "integrated",
         "new_candidate_head": "c" * 40, "task_ref": "task/TASK-1", "task_commit": "b" * 40,
-        "contract_revision": contract["contract_revision"]})
+        "contract_revision": contract["contract_revision"],
+        "pipeline_key": "pipeline-old", "integration_operation_id": "integrate-old",
+        "candidate_generation": "g1", "expected_candidate_head": "a" * 40,
+        "patch_identity": "old-patch", "command_registry_digest": "old-commands",
+        "candidate_branch": "candidate/demo", "rolling_smoke_receipt_refs": [
+            sidecar({"schema_version": "rolling-smoke-receipt.v1", "status": "passed"})]})
     (state / "refs").mkdir(exist_ok=True)
     (state / "refs/task-index.json").write_text(json.dumps({"TASK-1": {
         "task_ref": "task/TASK-1", "source_commit": "b" * 40}}))
@@ -71,7 +77,8 @@ def recovery(tmp_path, monkeypatch, request):
         "dispatch_base_commit": "a" * 40})
     frozen = next(e for e in events if e.type == "candidate.ready")
     candidate = emit("candidate.ready", {**frozen.payload, "pdd_id": "FLOW-ANCHOR"})
-    task_map = {"tasks": [{"task_id": task.id}], "target_commit": "c" * 40}
+    task_map = {"tasks": [{"task_id": task.id,
+        "verification_read_paths": ["src/pulse.py", "tests/test_pulse.py"]}], "target_commit": "c" * 40}
     map_ref = sidecar(task_map)
     package = build_plan_artifact_package(workflow_run_id=run, flow_kind="issue", producer_stage_id="plan",
         run_contract=write_run_contract_snapshot(state, {"schema_version": "run-contract.v1"}),

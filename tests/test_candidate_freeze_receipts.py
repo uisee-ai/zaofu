@@ -13,19 +13,7 @@ from zf.runtime.task_pipeline_terminal import (
 from tests.test_candidate_incremental import _setup, _git, _integrate
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        "none",
-        "missing_receipt",
-        "unarchived_old",
-        "active_old",
-        "wrong_generation",
-        "advanced_head",
-        "divergent_head",
-    ],
-)
-def test_old_generation_last_completion_freezes_full_run_receipts(tmp_path, change):
+def mixed_generation_freeze_case(tmp_path, change="none"):
     state, config, log, writer, base, _ = _setup(tmp_path)
     store = TaskStore(state / "kanban.json")
     task = Task(id="TASK-B", title="delta", key="F-11111111:TASK-B")
@@ -175,3 +163,10 @@ def test_old_generation_last_completion_freezes_full_run_receipts(tmp_path, chan
     assert len(p["task_integration_receipt_refs"]) == 2
     assert p["candidate_head"] == _git(tmp_path, "rev-parse", "candidate/F-11111111")
     assert not reconcile_task_pipeline_freeze(runtime, generation_contexts=contexts)
+    return runtime
+
+
+@pytest.mark.parametrize("change", ["none", "missing_receipt", "unarchived_old", "active_old",
+                                   "wrong_generation", "advanced_head", "divergent_head"])
+def test_old_generation_last_completion_freezes_full_run_receipts(tmp_path, change):
+    mixed_generation_freeze_case(tmp_path, change)

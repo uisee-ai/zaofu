@@ -121,10 +121,10 @@ def prepare_candidate_verification_authority(
         )
 
     missing_verify: set[str] = set()
-    from zf.runtime.plan_completion_reuse import current_proofs
+    from zf.runtime.candidate_retained_tasks import candidate_child_proofs
 
     try:
-        reused = current_proofs(runtime, events, candidate)
+        reused = candidate_child_proofs(runtime, events, candidate)
     except ValueError as exc:
         raise CandidateVerificationAuthorityError(str(exc)) from exc
     child_authorities: list[dict[str, Any]] = []
@@ -214,7 +214,8 @@ def prepare_candidate_verification_authority(
             },
         )
         child_authorities.append({
-            **({"completion_reuse_ref": reuse["completion_reuse_ref"]} if reuse else {}),
+            **({"completion_reuse_ref": reuse["completion_reuse_ref"]} if reuse and reuse.get("completion_reuse_ref") else {}),
+            **({"retained_task_evidence": reuse["retained_task_evidence"]} if reuse and reuse.get("retained_task_evidence") else {}),
             "task_id": child_task_id,
             "target_commit": task_commits[child_task_id],
             "verification_event_id": verification.id,

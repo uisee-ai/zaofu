@@ -243,3 +243,27 @@ Planner(workflow-read)和Critic(plan-synth)的新call装配对完整授权、已
 独立Verify可在`host_execution_receipt_ids`引用本call冻结的receipt_id；既不填Impl的`reused_command_receipt_ids`，也不冒称自己的新probe。预检与正式准入重新核验原事件和证据，只有精确匹配且exit0的完整事实支持规范命令覆盖；AC矩阵、产品验收报告、读证明与Judge义务不变。新字段无合同、无consumer绑定、错身份或错目标均拒绝。读取事实不授予新命令、预算、镜像、网络或host权限。
 
 任务：[Candidate host证据消费](../../tasks/active/2026-11-21-0300-candidate-host-evidence-consumption.md)。真实新Candidate派发前，聚焦测试通过仅证明确定性链路，不代表本轮8×8最终成功。
+
+
+### 局部代次的 Candidate 逐 Task 证据（2026-11-21）
+
+原生 freezer 已可汇集同 Run 不同 Task Map 代次的已集成任务，但 Candidate authority
+默认按全局新代次检索全部 Verify，导致未重开任务报缺少当前 Verify。隔离真实 Git /
+集成 / freezer 已复现；Verify 输入由测试提供，不是实际 Provider 完成证据。
+
+修复由 Candidate 准备和结果 currentness 共用只读解析：以冻结事件前的逐 Task context、
+完整 roster、不可变 integration refs 和原 Verify admission 为来源，并核对当前 Task
+合同、完成状态、无活动 operation。此前经批准的 completion reuse 沿原 Candidate 与
+完整 predecessor 链逐行验证；变化的兄弟任务不再被当成仍须满足旧合同的 Task。
+不改写历史完成事件、旧目标或旧收据，不为新 Candidate 生成通过判定。
+
+保留任务的旧/新 Plan Task Map 整行必须相同。沿用原 integration 校验，重新检查
+TaskRef index、Git ref、rolling smoke 侧车与集成祖先；比较新候选与集成点之间的
+已声明写入/读取路径。只读任务从相等且已核验的 Task Map 行读取
+`verification_read_paths`，不能因 canonical `scope=[]` 而误拒，也不能把空集合
+当作输入未变。缺失、变化或无法核验均返回结构化拒绝，走正常修复/重新验收。
+
+新的 Candidate 仍绑定新 head、Plan package 和全局代次，并执行自己的命令、验收、
+Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命令拒绝、真实 Git ref
+变化、多轮复用链和只读输入；现场因 stage replan cap 等待 Owner，不能把隔离通过
+写成真实恢复通过。见[实施任务](../../tasks/active/2026-11-21-0346-retained-candidate-task-authority.md)。

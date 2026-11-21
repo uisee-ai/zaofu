@@ -19,7 +19,8 @@ def next_revision(r, generation="generation-3"):
     r.emit("candidate.ready", {**r.candidate.payload, **r.source.payload,
                               "freeze_receipt_ref": freeze_ref, "freeze_receipt_digest": freeze_ref["sha256"]})
     state = r.runtime.state_dir
-    task_map = r.sidecar({"tasks": [{"task_id": "TASK-1"}], "target_commit": "c" * 40})
+    prior_map = json.loads((state / r.source.payload["task_map_ref"]).read_text())
+    task_map = r.sidecar({"tasks": prior_map["tasks"], "target_commit": "c" * 40})
     pkg = build_plan_artifact_package(workflow_run_id=r.source.correlation_id, flow_kind="issue",
         producer_stage_id="plan", run_contract=write_run_contract_snapshot(state, {"schema_version": "run-contract.v1"}),
         plan_revision=generation, task_map_generation=generation,
