@@ -129,6 +129,19 @@ def normalize_workflow_read_result(
     report.setdefault("findings", [])
 
     issues: list[dict[str, str]] = []
+    if report["recommendation"] not in {
+        "approve", "reject", "rejected", "needs_rework",
+        "abstain", "abstained", "block", "blocked",
+    }:
+        issues.append({
+            "field": "control_result.recommendation",
+            "code": "schema_invalid",
+            "message": (
+                "recommendation must be approve, reject, needs_rework, "
+                "abstain, or block; "
+                f"got {report['recommendation']!r}"
+            ),
+        })
     if not str(report.get("summary") or "").strip():
         issues.append({
             "field": "control_result.summary",

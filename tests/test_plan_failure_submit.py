@@ -80,6 +80,29 @@ def test_plan_failure_still_requires_typed_report_and_authorization(tmp_path: Pa
     assert not any(e.type == "workflow.call.result.admitted" for e in runtime.event_log.read_all())
 
 
+def test_invalid_rework_is_rejected_before_plan_failure_admission(tmp_path: Path) -> None:
+    runtime, prepared, service, token = _running_plan_candidate_operation(tmp_path)
+    semantic = {**_failure(), "recommendation": "rework"}
+    before = [event.id for event in runtime.event_log.read_all()]
+
+    result = service.validate_plan_candidate(
+        operation_id=prepared.operation_id, semantic_result=semantic,
+        role_instance="planner", credential=token, project_root=runtime.project_root,
+    )
+
+    assert result["status"] == "failed"
+    assert any(error["field"] == "control_result.recommendation" for error in result["errors"])
+    assert [event.id for event in runtime.event_log.read_all()] == before
+    with pytest.raises(ResultSubmitError):
+        service.submit(
+            operation_id=prepared.operation_id, semantic_result=semantic,
+            role_instance="planner", credential=token,
+        )
+    events = runtime.event_log.read_all()
+    assert not any(event.type == "workflow.call.result.admitted" for event in events)
+    assert not any(event.type == "issue.triage.child.failed" for event in events)
+
+
 def _empty_ports_failure():
     return {
         "execution_status": "failed", "status": "failed",
