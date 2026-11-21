@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
     same_task_map_generation,
@@ -362,7 +363,7 @@ def _latest_frozen_candidate(
         if event_run_id != workflow_run_id:
             continue
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
-            return event
+            return native_freeze_for_recovery(events, event)
     return None
 
 
@@ -413,14 +414,14 @@ def frozen_candidate_for_payload(
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
             if freeze_id and str(body.get("freeze_id") or "") != freeze_id:
                 return None
-            return current
+            return native_freeze_for_recovery(events, current)
         parent_id = str(
             body.get("candidate_snapshot_event_id")
             or body.get("candidate_event_id")
             or ""
         ).strip()
         current = candidates.get(parent_id) if parent_id else None
-    if freeze_id:
+    if freeze_id and not candidate_event_id:
         for event in reversed(events):
             if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
                 continue
@@ -436,7 +437,7 @@ def frozen_candidate_for_payload(
                 == "candidate-freeze-receipt.v1"
                 and str(body.get("freeze_id") or "") == freeze_id
             ):
-                return event
+                return native_freeze_for_recovery(events, event)
     return None
 
 

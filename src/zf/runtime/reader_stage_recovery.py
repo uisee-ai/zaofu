@@ -61,4 +61,11 @@ def repaired_reader_stage_trigger(
     bind_operator_feedback(trigger, operator_feedback(payload), request_id=requested.id)
     trigger.payload.update(repaired_failure_event_id=failure.id,
                            repair_reason=str(payload["reason"]))
+    if trigger.type == 'candidate.ready':
+        from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+        native = frozen_candidate_for_payload(events, run_id, payload=trigger.payload)
+        if native is None:
+            raise ValueError('Candidate Reader repair requires its exact frozen source')
+        trigger.payload['candidate_snapshot_event_id'] = native.id
+        trigger.payload.pop('schema_version', None)
     return trigger

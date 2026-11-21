@@ -8,7 +8,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 |---|---|---|---|
 | P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实同operation先拦截14项漂移、修复后正式准入，14项保留行未变 |
 | P0-2 | P0 | 故障类型与最小恢复动作 -> verify: 输入/执行故障进入技术恢复；Agent判断合同不变的产品缺陷进入Task返工；明确义务变化才进入Plan；实际决策提交/应用测试，不靠关键词推断。 | 已实现并通过准入/受控动作/输入消费测试；真实生产行只读编译通过 |
-| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，Owner已批准采证上限100→120，正在修复额度接续 |
+| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，Owner已批准采证上限100→120且19/19宿主采证成功；正修复Reader重试冻结身份接续 |
 | P1-1 | P1 | Autoresearch子退出事实 -> verify: 自定义state_dir、同Run绑定；预算、Owner wait、未知退出分别保留原事件ref和检查点；父流程不误判源码缺陷，不擅自恢复。 | 已实现并通过回归；历史真实子Run已准确回放为wall_clock预算停止 |
 | P1-2 | P1 | 恢复纵向回归与活性 -> verify: 失败→RM/OA→修复→独立验证→受控应用→恢复→最终签收；未完成且无执行/队列/明确阻塞必须产出诊断请求，重放幂等，不重新实现已有机制。 | 确定性验证通过；补齐Candidate infra诊断Owner与发布崩溃幂等；真实最终签收归P0-3 |
 
@@ -321,3 +321,38 @@ kernel/Run Manager、明确预算耗尽、仍有同Run/approval_ref额度的等�
 真实账本只读对照：已部署7c423287仍为escalate_unresolved（evt-4cf37bcef07d），
 修复工作区为host_verification_budget_available；二者均读取同一120额度，没有
 执行effect或发事件。证据host-budget-quiescence-deployed.json/repaired.json。
+
+
+### 19/19 采证后的恢复身份故障
+
+`077b5a3d fix: wake budget recovery through the quiescence gate`于10:07:34 UTC
+加载，Worker pane全部保留。10:07:44静默退出；10:08:05最后unique_words采证成功，
+当前冻结候选19/19成功，累计110/120，同approval_ref。自动受控恢复evt-4749b975e3d0
+随后两轮Reader均在operation preregistration失败，没有启动新Reader，更没有Judge。
+10:12:43仅停止控制器服务防止已知错误循环；不修改Run/Task状态和历史失败。
+
+复现根因：精确fanout恢复复制时过滤两个空数组，导致原生freeze receipt全字段校验
+拒绝；恢复副本还携带native schema，使新事件ID进入contract/target摘要，不能合法
+消费19份原回执。workflow_resume另有独立冻结锚点解析；只改派发入口不够。
+
+最小修复：精确fanout lineage保留完整字段；新Candidate Reader恢复只发引用原native
+freeze的调度通知。历史坏副本通过完整kernel failure→fanout→native、批准请求、
+受控action started/applied因果和时序解析回原身份，仅兼容两个本来为[]的缺键；
+显式null、其他缺失、变更目标/receipt/approval、跨Run、缺applied、新native取代均拒绝。
+Reader输入/结果currentness、成功消费和resume投影共用解析；缺因果产生明确不可
+变更checkpoint，不令整个投影崩溃。显式父ID失效时不回退到同freeze_id搜索。
+
+Reader preregistration失败按kernel已知的启动前阶段记录infra/reader_execution_failure，
+不再默认质量返工。原有两个错误质量路由事件保留；真实只读检查16Tasks仍done、
+14份retained proofs完整，原contract摘要d841bd…不变，currentness无错误。
+证明retained-freeze-repaired-identity-proof.json；研究报告reader-judge-loopforge-loopx-research.md
+保留LoopForge/LoopX借鉴和未验证边界，不借宿主命令成功替代独立语义验收。
+
+初始身份回归RED4 failed/7 passed，调用闭包首轮105 passed。新增实际batch投影测试
+发现调用方传入裁剪后的failure_inputs会丢授权因果事件，改用完整账本后再验证。
+测试fixture参数错误/无效文件路径不计验证成功，最终验证结果另记。
+
+最终身份修复验证：新增23项通过；相对077b5a3d的自动影响闭包6030 passed、7 skipped，
+sentinel53 passed、flow smoke10 passed。完整命令输出retained-freeze-automatic.log；
+全分支plan与增量plan均已保存。独立research复核RR1在真实batch投影已关闭，未发现
+确定剩余阻塞；其未独立重跑pytest。仍需部署后确认8路Reader消费及正式Judge结果。

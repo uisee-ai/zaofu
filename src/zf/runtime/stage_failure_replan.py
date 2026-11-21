@@ -444,9 +444,12 @@ def reader_stage_lineage_payload(
             if trigger is not None and isinstance(trigger.payload, dict)
             else {}
         )
-        for key, value in trigger_payload.items():
-            if value not in (None, "", [], {}):
-                lineage[key] = value
+        if fanout_id:
+            lineage = dict(trigger_payload)
+        else:
+            for key, value in trigger_payload.items():
+                if value not in (None, "", [], {}):
+                    lineage[key] = value
     return lineage
 
 

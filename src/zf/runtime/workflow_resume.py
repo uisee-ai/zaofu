@@ -876,10 +876,21 @@ def build_workflow_batch_resume_checkpoints(
                     continue
             anchor = _anchor_for_event(event, anchors)
             if candidate_trigger is not None:
-                candidate_trigger = _candidate_authority_event(
-                    failure_inputs,
-                    candidate_trigger,
-                )
+                try:
+                    candidate_trigger = _candidate_authority_event(
+                        event_list, candidate_trigger,
+                    )
+                except ValueError as exc:
+                    checkpoint = _batch_checkpoint_from_event(
+                        event, source_event_type=event.type,
+                        safe_resume_action="blocked_external_gate",
+                        evidence_event_ids=[event.id], anchor=anchor,
+                    )
+                    aggregates[checkpoint.fanout_id] = replace(
+                        checkpoint, safe_resume_action="blocked_external_gate",
+                        mutating_resume_supported=False, reason=str(exc),
+                    )
+                    continue
                 candidate_anchor = _payload(candidate_trigger)
                 anchor = {
                     **anchor,
@@ -1130,7 +1141,9 @@ def _candidate_authority_event(
         visited.add(current.id)
         body = _payload(current)
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
-            return current
+            from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
+
+            return native_freeze_for_recovery(events, current)
         parent_id = str(
             body.get("candidate_snapshot_event_id")
             or body.get("candidate_event_id")

@@ -383,3 +383,18 @@ escalation、未结算effect继续阻断。额度等待解除后产生的新失�
 不能让tick提前返回并饿死已获授权的采证。仅当当前同Run/approval_ref尚有余量、
 同manifest无其他hold且没有未结算effect，静默判断允许RM重新检查。此判断只唤醒
 既有执行器，不签发权限或跳过operation/目标/合同校验；其他阻塞保持原有静默规则。
+
+
+### Candidate Reader 重试保持原冻结身份
+
+受控`stage-replan-new-generation`的Candidate infra重试创建新调度通知/operation，
+引用原始`candidate_snapshot_event_id`；不会因为重试事件ID变化而改变验收合同或目标。
+完整精确fanout来源保留空集合。历史复制native schema且漏两空数组的恢复通知，
+只能通过同Run失败fanout、真实授权请求、已完成受控动作及全字段一致性回到原native。
+不会改写旧事件、freeze receipt、Task完成证明或host receipt的source operation。
+
+派发、输入/结果准入、成功消费及resume投影共用解析；真正新freeze仍使旧结果过期。
+显式无效父ID不回退搜索；坏因果在resume投影表现为不可变更的阻塞checkpoint。
+恢复投影必须用完整账本核授权因果，不能用仅筛选失败的事件视图作为证明。
+Reader operation注册前已知执行失败记录infra，避免无依据进入产品质量返工。
+新Reader独立消费现有采证，原request不修改；主机命令成功仍不是Reader/Judge通过。

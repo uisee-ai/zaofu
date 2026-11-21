@@ -103,7 +103,11 @@ def evaluate_candidate_success_currentness(
             "candidate success has no workflow_run_id",
         ))
 
-    current_candidate = _latest_frozen_candidate(events, workflow_run_id)
+    try:
+        current_candidate = _latest_frozen_candidate(events, workflow_run_id)
+    except ValueError as exc:
+        return CandidateSuccessCurrentness(applies=True, current=False,
+            issues=(_issue("candidate_snapshot_event_id", "candidate_currentness_unprovable", str(exc)),))
     if current_candidate is None:
         issues.append(_issue(
             "candidate_snapshot_event_id",
@@ -220,7 +224,8 @@ def _latest_frozen_candidate(
         if candidate_run != workflow_run_id:
             continue
         if _text(body.get("schema_version")) == "candidate-freeze-receipt.v1":
-            return candidate
+            from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
+            return native_freeze_for_recovery(list(events), candidate)
     return None
 
 

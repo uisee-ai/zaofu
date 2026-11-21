@@ -94,7 +94,10 @@ def candidate_currentness_issues(
         )]
 
     workflow_run_id = str(identity.get("workflow_run_id") or "")
-    current_candidate = _latest_frozen_candidate(list(events), workflow_run_id)
+    try:
+        current_candidate = _latest_frozen_candidate(list(events), workflow_run_id)
+    except ValueError as exc:
+        return [_currentness_issue("control_result.contract_snapshot_ref", "stale_contract_snapshot", str(exc))]
     if current_candidate is None:
         return [_currentness_issue(
             "control_result.target_commit",
