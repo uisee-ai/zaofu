@@ -662,3 +662,19 @@ freeze ref/digest及完整child authorities；新freeze同内容不能偷用旧�
 补充的closure pin回归及最终helper另跑直接调用闭包68 passed，恢复入口最终109 passed。
 原始Judge结果完整_goal_closure_issues只读回放为0问题，其语义blocked原样保留。
 以上是确定性/模拟与历史证据回放，不是新的real-provider无监工资格通过。待真实恢复。
+
+
+15:12–15:15 UTC真实部署与恢复：实现提交539bd829（fix: preserve recovery and retained
+verification authority）已分别fast-forward到两个实验harness分支，未合dev/未push。
+两次runtime-load均证明源码539bd829；配置摘要不变、全部Worker pane/PID保留。
+旧Run按既有Owner授权解除本次修复请求等待，精确恢复Judge，原生派发evt-0679d912c398，
+新operation为wop-prd-lanes-final-judge-prd-trig-evt-60082029-retr-bf26469e5409。
+Judge新会话启动Luna，按既有授权在tmux切换6.1 Sol high并确认；单列人工模型介入，
+未把它计入无监工窗口。旧业务/Reader证据保留，最终语义裁决待正式回执。
+
+新Run首次受控重验遇到human解除尚未进入当前投影，门禁拒绝且未执行命令。
+只读确认gate为空、case admitted后才再次调用；evt-131cc16f41e8以
+repair_validation_live_base_changed失败，results为空，冻结候选未应用。
+原候选1d39f418/旧合同/evt-77004db6fefb原失败均保留；当前基线不允许强行rebase/apply。
+RM已经收到另一条恢复诊断，新增验证失败应由调度继续交给原生RM。
+资格窗口仍未开始；SR-DISPOSITION与真实自动apply→restart→resume仍未签收。
