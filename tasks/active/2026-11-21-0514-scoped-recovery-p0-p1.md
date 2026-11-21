@@ -173,3 +173,31 @@ mock10 passed。测试从实际render入口取命令交给CLI parser，核已分
 执行规格改为重新生成正文，须由Critic核验完整性，不能按preflight通过提前签收。
 07:45 Critic自动派发`wop-prd-plan-synth-trig-evt-50351648-97e1fe52f93d`。
 证据`reports/p0-second-planner-control-result.json`、`reports/p0-second-plan-preservation.json`。
+
+## Critic通过后的审批正文断链
+
+`664e4ba4 fix: expose assigned baseline ports in planner briefings`已于07:48载入隔离控制器
+PID1362582；所有pane PID及Critic operation/attempt/request_ref不变，未新建stage代次。
+Critic 07:54正式通过（`evt-334f6ed5cf04`、准入`evt-4b4d0cb4465a`），约9分23秒；
+`evt-bee26e4ebf31` ready与`evt-8053186c939f`审批请求确实只选AVERAGE/MEDIAN。
+
+审批前dry-run发现Plan Preview正文不可读，故尚未批准。Critic预填的synth-plan.md不存在；
+它这次输出source_id:digest证据定位符，旧恢复入口仅识别Markdown路径。实际已审核的
+Planner正文及其摘要仍完整存在于当前typed candidate contract，未丢失文件。
+
+新只读恢复沿ready的精确Critic因果、reviewed generation和合同/author/TaskMap/Plan
+摘要找唯一正文；不存在或跨Run/代次、改Map、篡改正文/作者、歧义、局部授权均拒绝。
+实际preview入口原2 failed/9 passed；初步调用回归72 passed。真实只读探针已恢复完整
+正文SHA59281812079e84a63dbe47fce9ced42120f1f6792455537bbee55d4cfbbf1103，内容与冻结
+Planner正文相等，content_error/artifacts_error为空。证据`p0-plan-preview-red.log`及
+`reports/p0-plan-preview-repair-probe.json`；尚未因此批准或修改任何运行态。
+
+独立复核PV1补充：原helper拒绝后仍可经旧无摘要Markdown fallback读出正文。
+混合locator+可读路径的实际preview负例复现9 failed（`p0-plan-preview-fallback-red.log`）；
+已阻止typed审核合同失败后降级，保留无typed合同的历史兼容。描述符allowed_paths只是
+实际携带字段时的防御；合同source_bindings不是完整Worker ACL，不能声称本补丁验证
+了其中不存在的权限元数据。这里只沿Operator Preview既有权限做只读展示。
+
+预览补修最终验证：含页面/API路径的自动调用闭包249 passed，新增独立locator正例后的
+定向13 passed，sentinel53 passed、flow mock10 passed。独立研究复核确认PV1已关闭，
+仅读源码及主监工日志、未独立执行测试；不据此宣告真实产品完成。

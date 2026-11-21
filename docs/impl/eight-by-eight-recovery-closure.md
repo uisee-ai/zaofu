@@ -340,3 +340,12 @@ Plan 输入和 stage 代次；不重新授予预算或扩大任务集合。真�
 阅读回执，也不证明语义修复或验收完成。
 实际派发简报与CLI共用可编辑端口清单，仅把当前manifest已分配且全文可读的端口列入
 导出命令；部分选择、未分配端口及需求/评审权威不会被简报扩成可编辑文件。
+
+后续Critic通过却未提供可读取的Markdown路径时，Plan Preview可从同一ready事件的精确
+Critic因果关系和reviewed generation，读取被审核合同绑定的唯一Planner报告及其Plan。
+要求同Run/fanout、合同完整身份、同Task Map引用及摘要、作者/正文摘要；描述符如声明
+局部选择则拒绝，沿用Operator Preview既有权限，不签发Worker读取能力。
+缺失、歧义或篡改均不恢复。此路径支持Critic使用source_id:digest定位符，不搜索目录，
+不借前轮Plan，也不修改Package、事件或审批；仅恢复已有正文的只读展示，Owner仍须审批。
+检测到绑定的typed审核合同但正文恢复校验失败时，禁止继续旧的无摘要路径兜底；
+没有typed合同的历史请求仍沿原有兼容入口。

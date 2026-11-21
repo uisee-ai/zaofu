@@ -74,11 +74,24 @@ def canonical_plan_content(state_dir: Path, events: list[Any], *, payload: dict,
                 payload["plan_artifact_digest"] = hashlib.sha256(
                     markdown.encode("utf-8")
                 ).hexdigest()
+    typed_review = False
+    if not markdown and bound_source is not None:
+        from zf.runtime.plan_reviewed_markdown import has_reviewed_plan_contract, reviewed_plan_markdown
+
+        typed_review = has_reviewed_plan_contract(events, bound_source)
+        reviewed = reviewed_plan_markdown(state_dir, events, bound_source,
+            task_map_ref=str(payload.get("task_map_ref") or ""))
+        if reviewed is not None:
+            markdown, markdown_ref = reviewed
+            plan_ref = markdown_ref
+            payload["plan_artifact_ref"] = markdown_ref
+            payload["plan_artifact_digest"] = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+            markdown_error = ""
     # A pure plan critic may carry the planner's markdown only as an explicit
     # evidence ref while retaining its own prefilled, workdir-local plan path.
     # Reuse that bound evidence ref when the declared path is unavailable;
     # never scan directories or infer an artifact from unrelated events.
-    if not markdown and bound_source is not None:
+    if not markdown and bound_source is not None and not typed_review:
         source_payload = _payload(bound_source)
         synth_id = str(source_payload.get("synth_event_id") or "").strip()
         synth = next((
