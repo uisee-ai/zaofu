@@ -31,6 +31,22 @@ def test_non_artifact_reader_preserves_typed_execution_failure():
     assert result["verdict"] == "abstained"
 
 
+def test_reader_rejects_unknown_recommendation_enum():
+    result, issues = normalize_workflow_read_result(ZfEvent(
+        type="workflow.child.completed", payload={"report": {
+            "status": "failed", "recommendation": "rework",
+            "summary": "Invalid recommendation", "findings": [],
+        }},
+    ))
+
+    assert result["recommendation"] == "rework"
+    assert any(
+        issue["field"] == "control_result.recommendation"
+        and issue["code"] == "schema_invalid"
+        for issue in issues
+    )
+
+
 @pytest.mark.parametrize("recommendation,expected", [("abstain", "abstained"), ("blocked", "blocked")])
 def test_semantic_submit_preserves_unavailable_report(tmp_path, recommendation, expected):
     from tests.test_result_submit import _running_workflow_read_operation
