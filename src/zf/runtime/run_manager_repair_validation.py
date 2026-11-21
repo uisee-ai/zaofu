@@ -68,10 +68,12 @@ def execute_repair_verification_plan(
                 "kind": kind,
                 "command": command,
                 "required": required,
-                "status": "passed",
-                "reason": "manual_review_instruction_recorded",
-                "returncode": 0,
+                "status": "failed" if required else "skipped",
+                "reason": "manual_review_evidence_required",
+                "returncode": 1 if required else 0,
             })
+            if required:
+                break
             continue
         invocation = _trusted_invocation(command)
         if invocation is None:
@@ -138,7 +140,6 @@ def execute_repair_verification_plan(
         result for result in results
         if bool(result.get("required", True))
         and result.get("status") != "passed"
-        and str(result.get("reason") or "") != "manual_review_instruction_recorded"
     ]
     ok = not failed_required
     return {
@@ -183,7 +184,7 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
         and argv[3] == "--base"
         and re.fullmatch(r"[A-Za-z0-9._/-]+", argv[4])
     ):
-        return {"argv": argv, "env": env}
+        return {"argv": [sys.executable, *argv[1:]], "env": {**env, "PYTHONPATH": "src"}}
     if argv == ["bash", "scripts/dev-premerge-gate.sh"]:
         return {"argv": argv, "env": env}
     if argv == ["bash", "scripts/run-flow-smoke.sh"]:

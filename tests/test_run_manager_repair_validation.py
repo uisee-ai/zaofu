@@ -45,3 +45,21 @@ def test_independent_validator_rejects_unbound_interpreter_or_environment(tmp_pa
     result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{'command': command}])
     assert not result['ok']
     assert result['reason'] == 'command_not_allowlisted'
+
+
+@pytest.mark.parametrize('mode', ['plan', 'run'])
+def test_impact_validation_uses_own_interpreter_without_path_python(tmp_path, monkeypatch, mode):
+    (tmp_path / 'scripts').mkdir()
+    (tmp_path / 'scripts/dev-verify.py').write_text('import sys\nprint(sys.executable)\n')
+    monkeypatch.setenv('PATH', '/nonexistent')
+    result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{
+        'command': f'python scripts/dev-verify.py {mode} --base abc123'}])
+    assert result['ok']
+    assert sys.executable in result['results'][0]['stdout_tail']
+
+
+def test_required_manual_review_is_not_a_pass_without_evidence(tmp_path):
+    result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{
+        'kind': 'docs_review', 'command': 'review changed markdown', 'required': True}])
+    assert not result['ok']
+    assert result['reason'] == 'manual_review_evidence_required'

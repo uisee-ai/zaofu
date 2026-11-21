@@ -253,6 +253,7 @@ def _source_repair_payload(
                 "phase": "zaofu_self_repair",
                 "behavior": f"Run Manager watchdog detected {reason}",
                 "verification": "PYTEST_ADDOPTS=--no-cov uv run pytest tests/test_run_manager.py tests/test_run_manager_watchdog.py tests/test_tick_services.py -q",
+                "verification_commands": ["pytest tests/test_run_manager.py tests/test_run_manager_watchdog.py tests/test_tick_services.py -q --no-cov"],
                 "verification_tiers": ["static", "runtime"],
                 "scope": scope,
                 "acceptance": "focused verification passes and runtime truth is not edited directly",

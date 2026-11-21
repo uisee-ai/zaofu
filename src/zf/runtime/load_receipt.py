@@ -13,6 +13,12 @@ from uuid import uuid4
 from zf.runtime.sidecar_refs import write_sidecar_json
 
 
+def source_tree_sha256(source_root: Path) -> str:
+    files = {str(path.relative_to(source_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+             for path in sorted((source_root / "src" / "zf").rglob("*.py"))}
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+
+
 def runtime_load_payload(*, config, state_dir: Path, project_root: Path) -> dict:
     from zf.runtime.orchestrator import Orchestrator
     from zf.runtime.run_manager import run_manager_tick
@@ -26,15 +32,13 @@ def runtime_load_payload(*, config, state_dir: Path, project_root: Path) -> dict
     source_root = Path(__file__).resolve().parents[3]
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source_root,
                               capture_output=True, text=True, timeout=5)
-    source_files = {str(path.relative_to(source_root)): hashlib.sha256(path.read_bytes()).hexdigest()
-                    for path in sorted((source_root / "src" / "zf").rglob("*.py"))}
     config_digest = hashlib.sha256(json.dumps(asdict(config), sort_keys=True, default=str).encode()).hexdigest()
     config_path = project_root / "zf.yaml"
     lockfile = state_dir / "skills.lock.json"
     body = {
         "schema_version": "runtime-load.v1", "pid": os.getpid(), "python": sys.executable,
         "source_root": str(source_root), "source_revision": revision.stdout.strip() if revision.returncode == 0 else "",
-        "source_tree_sha256": hashlib.sha256(json.dumps(source_files, sort_keys=True).encode()).hexdigest(),
+        "source_tree_sha256": source_tree_sha256(source_root),
         "loaded_consumers": code, "effective_config_sha256": config_digest,
         "config_file_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest() if config_path.is_file() else "",
         "state_dir": str(state_dir.resolve()),

@@ -253,6 +253,7 @@ def _command_for_repair_request(
         "zf.cli.main",
         "self-repair",
         "run",
+        "--accepted-only",
         "--state-dir",
         str(state_dir),
     ]

@@ -130,6 +130,10 @@ def special_action_preflight(
             validation = validation if isinstance(validation, dict) else {}
             if str(validation.get("repair_contract_digest") or "") != contract_digest:
                 failures.append("repair_validation_contract_mismatch")
+            from zf.runtime.repair_validation_binding import validation_matches_candidate
+
+            if not validation_matches_candidate(payload):
+                failures.append("repair_validation_candidate_mismatch")
         if not str(payload.get("continuation_checkpoint_id") or ""):
             failures.append("missing_continuation_checkpoint_id")
         if not str(payload.get("continuation_safe_resume_action") or ""):

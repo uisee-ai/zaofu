@@ -4080,6 +4080,7 @@ def build_repair_merge_queue(events: list[ZfEvent]) -> dict[str, Any]:
                 payload.get("restart_request_event_id") or ""
             )
             row["applied_commit"] = str(payload.get("applied_commit") or "")
+            row["apply_receipt"] = payload.get("apply_receipt") or {}
         elif event.type == RUN_MANAGER_REPAIR_MERGE_NEEDS_REVIEW:
             row["status"] = "needs_review"
             row["next_allowed_action"] = "operator_review"
@@ -5391,6 +5392,9 @@ def _repair_task_payload_from_agent_action(
             "phase": "zaofu_self_repair",
             "behavior": behavior,
             "verification": verification,
+            "verification_commands": [command for command in (payload.get("verification_commands") or [])
+                                      if isinstance(command, str) and command.strip()]
+                if isinstance(payload.get("verification_commands"), list) else [],
             "verification_tiers": ["static", "runtime"],
             "scope": scope,
             "acceptance": "focused verification passes and no runtime truth is edited directly",
@@ -6987,7 +6991,7 @@ def _execute_repair_closeout_validate(
     contract_digest = str(action.get("repair_contract_digest") or "")
     if bool(action.get("repair_contract_required", False)):
         try:
-            validate_repair_contract_action(state_dir, action)
+            contract = validate_repair_contract_action(state_dir, action)
         except RepairContractError as exc:
             result = {
                 "schema_version": "run-manager.repair-validation-result.v1",
@@ -6999,12 +7003,9 @@ def _execute_repair_closeout_validate(
                 "repair_contract_digest": contract_digest,
             }
         else:
-            result = execute_repair_verification_plan(
-                worktree=str(
-                    action.get("worktree_path") or action.get("worktree") or ""
-                ),
-                verification_plan=list(action.get("verification_plan") or []),
-            )
+            from zf.runtime.repair_validation_binding import validate_bound_repair
+
+            result = validate_bound_repair(action, contract)
             result["repair_contract_digest"] = contract_digest
     else:
         result = execute_repair_verification_plan(
@@ -7079,9 +7080,16 @@ def _execute_repair_closeout_apply(
         validation_result = (
             validation_result if isinstance(validation_result, dict) else {}
         )
+        from zf.runtime.repair_validation_binding import validation_matches_candidate
+
+        binding_reason = ""
         if str(validation_result.get("repair_contract_digest") or "") != str(
             action.get("repair_contract_digest") or ""
         ):
+            binding_reason = "repair_validation_contract_mismatch"
+        elif not validation_matches_candidate(action):
+            binding_reason = "repair_validation_candidate_mismatch"
+        if binding_reason:
             writer.emit(
                 RUN_MANAGER_ACTION_FAILED,
                 actor="run-manager",
@@ -7090,7 +7098,7 @@ def _execute_repair_closeout_apply(
                     "schema_version": "run-manager.action.v1",
                     **_action_payload(action),
                     "status": "failed",
-                    "reason": "repair_validation_contract_mismatch",
+                    "reason": binding_reason,
                 },
             )
             return "failed"
@@ -7109,6 +7117,18 @@ def _execute_repair_closeout_apply(
         causation_id=planned.id,
         payload={**queue_payload, "status": "queued"},
     )
+    if project_root is None or not Path(project_root).is_dir():
+        writer.emit(
+            RUN_MANAGER_REPAIR_MERGE_NEEDS_REVIEW, actor="run-manager", causation_id=queued.id,
+            payload={**queue_payload, "status": "needs_review",
+                     "reason": "project_root_missing_for_control_plane_restart"},
+        )
+        writer.emit(
+            RUN_MANAGER_ACTION_BLOCKED, actor="run-manager", causation_id=queued.id,
+            payload={**_action_payload(action), "status": "blocked",
+                     "reason": "project_root_missing_for_control_plane_restart"},
+        )
+        return "blocked"
     merging = writer.emit(
         RUN_MANAGER_REPAIR_MERGE_MERGING,
         actor="run-manager",
@@ -7156,32 +7176,6 @@ def _execute_repair_closeout_apply(
             },
         )
         return "blocked" if blocked else "failed"
-    if project_root is None:
-        reason = "project_root_missing_for_control_plane_restart"
-        review = writer.emit(
-            RUN_MANAGER_REPAIR_MERGE_NEEDS_REVIEW,
-            actor="run-manager",
-            causation_id=merging.id,
-            payload={
-                **queue_payload,
-                "status": "needs_review",
-                "reason": reason,
-                "apply_receipt": result,
-            },
-        )
-        writer.emit(
-            RUN_MANAGER_ACTION_FAILED,
-            actor="run-manager",
-            causation_id=review.id,
-            payload={
-                "schema_version": "run-manager.action.v1",
-                **_action_payload(action),
-                "status": "failed",
-                "reason": reason,
-                "apply_receipt": result,
-            },
-        )
-        return "failed"
     try:
         actuator_pid = _spawn_source_repair_restart_actuator(
             state_dir=state_dir,
@@ -7189,6 +7183,9 @@ def _execute_repair_closeout_apply(
         )
     except Exception as exc:
         reason = f"control_plane_restart_actuator_failed: {exc}"
+        from zf.runtime.source_repair_recovery import rollback_unstarted_repair
+
+        result["rollback"] = rollback_unstarted_repair(harness_root(), result)
         review = writer.emit(
             RUN_MANAGER_REPAIR_MERGE_NEEDS_REVIEW,
             actor="run-manager",
@@ -9390,11 +9387,18 @@ def _pending_post_repair_continuation_actions(
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
             continue
-        if str(item.get("status") or "") != "merged":
+        if str(item.get("status") or "") not in {"merging", "merged"}:
             continue
-        if bool(item.get("control_plane_restart_required")) and not (
-            _control_plane_restart_observed(events, item)
-        ):
+        if item.get("status") == "merging" or (bool(item.get("control_plane_restart_required")) and not (
+            _control_plane_restart_observed(events, item, state_dir=state_dir)
+        )):
+            from zf.runtime.source_repair_recovery import pending_restart_diagnosis
+
+            diagnosis = pending_restart_diagnosis(item)
+            if diagnosis and not _action_seen(events, diagnosis):
+                diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
+                diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
+                out.append(diagnosis)
             continue
         continuation = item.get("continuation")
         continuation = continuation if isinstance(continuation, dict) else {}
@@ -9512,6 +9516,7 @@ def _pending_post_repair_continuation_actions(
 def _control_plane_restart_observed(
     events: list[ZfEvent],
     item: dict[str, Any],
+    *, state_dir: Path | None = None,
 ) -> bool:
     queue_id = str(item.get("queue_id") or "")
     merged_index = -1
@@ -9523,12 +9528,10 @@ def _control_plane_restart_observed(
             merged_index = index
     if merged_index < 0:
         return False
-    return any(
-        event.type == "session.started"
-        and isinstance(event.payload, dict)
-        and bool(event.payload.get("control_plane_only"))
-        and bool(event.payload.get("workers_preserved"))
-        for event in events[merged_index + 1:]
+    from zf.runtime.source_repair_recovery import repaired_runtime_observed
+
+    return repaired_runtime_observed(
+        state_dir, events[merged_index + 1:], item.get("apply_receipt") or {},
     )
 
 

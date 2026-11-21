@@ -8,7 +8,7 @@ from zf.runtime.repair_candidate_publish import publish_repair_candidate
 from zf.runtime.task_host_manifest import git
 
 
-@pytest.mark.parametrize('scenario', ['basic', 'missing_identity', 'baseline_fixture', 'new_secret', 'late_change'])
+@pytest.mark.parametrize('scenario', ['basic', 'missing_identity', 'baseline_fixture', 'new_secret', 'late_change', 'governance', 'governance_denied'])
 def test_kernel_publishes_only_authorized_patch_after_provider_exit(tmp_path, monkeypatch, scenario):
     root = tmp_path / 'harness'; root.mkdir()
     def run(*args):
@@ -28,6 +28,18 @@ def test_kernel_publishes_only_authorized_patch_after_provider_exit(tmp_path, mo
                              allow_paths=['src/zf/**'], deny_paths=['**/events.jsonl'])
     (work / 'src/zf').mkdir(parents=True)
     (work / 'src/zf/fix.py').write_text('fixed = True\n')
+    if scenario.startswith('governance'):
+        contract['governance_scope'] = ['tasks/**']
+        (work / 'tasks').mkdir()
+        (work / 'tasks/repair.md').write_text('> 状态: active\n')
+        if scenario == 'governance':
+            policy.allow_paths.append('tasks/**')
+        else:
+            with pytest.raises(ValueError, match='outside authorized scope: tasks/repair.md'):
+                publish_repair_candidate(writer=writer, state_dir=tmp_path/'state', harness=root, root=work,
+                    payload=payload, contract=contract, policy=policy)
+            assert git(work, 'rev-parse', 'HEAD') == base
+            return
     if scenario == 'missing_identity':
         run('config', '--unset', 'user.email'); run('config', 'user.useConfigOnly', 'true')
         from zf.runtime.workflow_git_readiness import git_environment

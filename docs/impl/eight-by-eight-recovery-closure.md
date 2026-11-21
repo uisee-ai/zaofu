@@ -450,3 +450,38 @@ never_during_active_run：即使诊断正确也没有自动源码发布权限，
 consumption_status，也没有覆盖“新Reader再次blocked后的真实reconcile”。本轮回归
 增加请求冻结→结果准入→blocked后对账→输入变化才交接，并核实际tick和动作准入。
 这比只增加监工角色或调高模型更直接地覆盖了此次故障。
+# 2026-11-21：自动修复实验前的边界核验
+
+Owner已批准原Run继续验收，同时补齐源码修复链，再开始新的零人工干预窗口。
+跟踪任务：`tasks/active/2026-11-21-1235-autonomous-source-repair-qualification.md`。
+当前代码与真实8×8签收分开记账；原窗口的人工介入事实保留。
+
+- Reader真实新增失败：lane3传入的base64 cursor解码后bundle摘要漏字符，原拒绝正确；
+  提供精确复制/当前会话仍可用时受控`--resume`的方法，不猜游标、不跳过必读。
+  lane4在正常事件持续append时两次前缀复核失效，已用独立进程复现；仅在前缀证明
+  期间取同一EventLog写锁，不在解码/工件读取期间锁全账本，继续保留改写与轮转拒绝。
+- 独立源码验证现在检查实际Git共同仓库、精确HEAD/base/单提交、干净索引/工作区、
+  实际完整差异与冻结scope，验证前后均核对并记录tested_candidate。应用入口同时
+  要求这份身份绑定；旧的仅有合同摘要的validation不能充当新的自动应用证明。
+- 缺少重启项目目录在应用前阻断。已应用但actuator尚未启动且spawn明确失败时，
+  仅对仍是原应用HEAD、干净且父提交正确的checkout执行保留历史的revert；有并发
+  编辑则拒绝回滚并保留needs_review。未知启动结果不擅自revert或再次cherry-pick。
+- 原检查点只在最新`loop.started`的runtime-load侧车验证状态目录、源码根、提交和
+  Python源码树摘要均匹配后恢复。仅`session.started`、旧版本、缺失/损坏侧车、
+  后续stopped或未知boot均不能证明加载成功。merging/等待重启超过120秒产出幂等
+  RM只读诊断动作；不是新的自动修复授权，也不声称进程永远存活。
+- 修复provider在dispatcher统一消费source_repair的显式backend/model/effort，
+  缺省保留调用方fallback。watchdog与兼容推荐生产者保留结构化验证命令；不把
+  verification prose解析成shell。dev-verify使用当前可信解释器和候选cwd；
+  必需人工文档审查缺证时失败，不把“记录了审查指令”标为passed。
+- resident接管修复时使用`zf self-repair run --accepted-only`，与正常RM消费同一
+  `run.manager.repair.accepted`事实；legacy/manual默认仍消费原autoresearch请求。
+  实际CLI→dispatcher测试使用真实临时Git，只替换provider进程，证明accepted-only
+  请求产生一次派发，未接受请求不混入，重放无重复。此前仅mock命令返回0漏掉该断链。
+- 审计文件只有同时匹配冻结governance_scope和Owner allow_paths才能发布。
+  默认授权不扩大。ignored的新backlog原本不参与publisher枚举，因此此前“必然
+  被审计文件挡住”的调研猜测已撤回；本次只对显式纳入候选的审计文件统一边界。
+
+尚待真实证明：source_repair仍关闭，自动发布/重启没有据以上单测冒充已启用。
+需完成隔离纵向验证及配置预检，再部署当前Reader修复，观察真实Reader/Judge/Goal/
+本地交付。新无监工资格窗口只有满足前置条件后才启动。120次原采证额度不变。

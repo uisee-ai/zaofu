@@ -130,3 +130,10 @@ def test_verified_checkpoint_repair_requires_exactly_one_commit(tmp_path: Path):
 
     assert result["reason"] == "repair_commit_count_invalid"
     assert result["commit_count"] == 2
+
+
+def test_repair_apply_rejects_repository_subdirectory(tmp_path: Path):
+    root, worktree, base, commit = _repair_repositories(tmp_path)
+    result = _apply(root, worktree / "src", base, commit)
+    assert result["reason"] == "repair_repository_missing"
+    assert _git(root, "rev-parse", "HEAD") == base
