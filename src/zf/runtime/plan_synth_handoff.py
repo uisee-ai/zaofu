@@ -285,6 +285,8 @@ def build_plan_handoff_input_refs(
             )
         if descriptor.get("kind") == "plan_rework_candidate_partition":
             raise ValueError("previous Plan candidate cannot declare a runtime overlap partition")
+        if descriptor.get("kind") == "plan_preflight_delivery":
+            raise ValueError("previous Plan candidate cannot declare a runtime delivery projection")
         ref = str(descriptor.get("ref") or "").strip()
         expected = str(
             descriptor.get("sha256") or descriptor.get("digest") or ""

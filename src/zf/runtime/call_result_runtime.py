@@ -314,6 +314,10 @@ def prepare_call_operation(
 
     from zf.core.workflow.flow_metadata import flow_metadata_for
     configured_review = flow_metadata_for(runtime.config, payload=payload).get("plan_review", {})
+    if output_profile_id in {"workflow-read", "plan-synth"}:
+        from zf.runtime.previous_preflight_delivery import prepare_previous_preflight_delivery
+
+        prepare_previous_preflight_delivery(runtime, payload=payload, operation_id=operation_id)
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_replay import pin_replayed_review_usage, remove_replayed_scoped_read_projection
 

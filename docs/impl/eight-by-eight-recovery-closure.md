@@ -223,3 +223,13 @@ timeout兼容输入还须与kernel `fanout.started.expected_children`及role/sta
 媒体投影沿用zf.yaml的host_verification.max_artifact_bytes/max_total_evidence_bytes，经过同一配置边界验证。Reader宿主恢复、OA失败输入、Candidate continuation均传入当前配置；无配置的独立调用保留20MiB/64MiB默认。先核验全部文件路径、base64、单文件/总量及digest，再发布只读投影和索引；不会重跑命令、改变原receipt或授予产品通过。真实23MB左右trace已在64MiB配置下合法捕获，读取端不能另用硬编码20MiB拒绝。
 
 任务：[配置媒体读取上限](../../tasks/active/2026-11-21-0230-configured-media-projection-limits.md)。
+
+## 历史preflight的usage按需输送
+
+Planner(workflow-read)和Critic(plan-synth)的新call装配对完整授权、已知plan-candidate-preflight.v1中的execution-usage-facts.v1复用既有摘要/明细投影。新plan-preflight-delivery.v1明确标注原preflight的ref/digest及可检索source；仅usage groups成为按需明细，所有业务字段、错误、verification条款和未知字段原样保留。原文件不改写。部分授权和未知schema不自动扩张或缩减。
+
+已有operation继续使用冻结输入：legacy全量输入不因升级被改变；已投影operation重放恢复其精确source集合，并校验原件与明细摘要。来源或授权变化仍进入request divergence检查。不能用新投影补写旧attempt的已读凭据，也不能把摘要视为业务验收。
+
+原件、派生摘要和usage明细均保留原access_scope，未授权角色/用途仍拒绝；导入描述符不能自行声明kernel专属plan_preflight_delivery。各旧candidate使用独立source身份，避免与当前review的usage来源混淆。
+
+任务：[历史preflight读取](../../tasks/active/2026-11-21-0244-previous-preflight-usage-delivery.md)。
