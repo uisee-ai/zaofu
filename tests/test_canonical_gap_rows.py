@@ -11,6 +11,7 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.module_gap_plan import build_gap_task_map_amend
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package, write_plan_artifact_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.canonical_gap_rows import canonical_gap_rows
 
 
 def test_canonical_replacement_reaches_scoped_input_consumer(case):
@@ -52,7 +53,7 @@ def test_canonical_replacement_reaches_scoped_input_consumer(case):
         assert sources[0]["allowed_paths"] == ["$.shared", "$.tasks[0]"]
 
 
-@pytest.mark.parametrize("field", ["evidence_contract", "owner_role", "validation", "allowed_paths"])
+@pytest.mark.parametrize("field", ["evidence_contract", "owner_role", "validation", "allowed_paths", "blocked_by"])
 def test_canonical_mode_itself_rejects_contract_drift(field):
     baseline = _task_map()
     baseline["tasks"][0].update(owner_role="dev", source_ref="requirements.md", evidence_contract={"input": "bound"})
@@ -62,3 +63,25 @@ def test_canonical_mode_itself_rejects_contract_drift(field):
     with pytest.raises(ValueError, match="changed its predecessor contract"):
         build_gap_task_map_amend(baseline, gap_tasks=[gap], supersedes_task_map_ref="bound-map",
                                 successor_base_commit="c" * 40, preserve_task_rows=True)
+
+
+def test_exact_obligations_comparison_allows_bound_dependency_identity_rebinding():
+    baseline = _task_map()
+    first = baseline["tasks"][0]
+    first.update(source_ref="requirements.md", owner_role="dev")
+    second = {**deepcopy(first), "task_id": "TASK-2", "dependencies": ["TASK-1"]}
+    second.pop("blocked_by", None)
+    second["allowed_paths"] = ["src/second.py", "tests/test_second.py"]
+    second["claim_paths"] = list(second["allowed_paths"])
+    baseline["tasks"].append(second)
+    gaps = [{**deepcopy(row), "task_id": row["task_id"] + "-FIX", "base_commit": "c" * 40,
+             "supersedes_task_ids": [row["task_id"]]} for row in baseline["tasks"]]
+    amended = build_gap_task_map_amend(baseline, gap_tasks=gaps, supersedes_task_map_ref="bound-map",
+                                      successor_base_commit="c" * 40, preserve_task_rows=True)
+    actual = {row["task_id"]: row for row in amended["tasks"]}
+    # Same exact-field comparison as the OA caller, after canonical mechanical rebinding.
+    for expected in canonical_gap_rows(baseline, gaps, target_commit="c" * 40):
+        for key, value in expected.items():
+            if key not in {"supersedes_task_ids", "base_commit", "task_id", "wave", "source_refs"}:
+                assert actual[expected["task_id"]].get(key) == value
+    assert actual["TASK-2-FIX"]["blocked_by"] == ["TASK-1-FIX"]

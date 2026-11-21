@@ -30,4 +30,9 @@ def canonical_gap_rows(base: dict, gaps: list[dict], *, target_commit: str) -> l
             if command.get("producer_task_id") == parents[0]:
                 command["producer_task_id"] = row["task_id"]
         out.append(row)
-    return out
+    # The graph compiler substitutes predecessor node identities and normalizes
+    # dependencies into blocked_by. Validate against that mechanical binding,
+    # preserving every prerequisite instead of comparing obsolete node ids.
+    from zf.runtime.module_gap_replacement import inherit_superseded_incoming_dependencies
+
+    return inherit_superseded_incoming_dependencies(out, base_tasks_by_id=original)

@@ -25,6 +25,9 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 3. 带anchor Task ID的Candidate infra事件原来被RM视为Task L1并跳过；现在产生diagnose-attention，仍不替Agent判产品缺陷。
 4. Autoresearch父流程原来把子Run预算停止归成diagnosis_runner_failed；现在保留同Run停止/预算因果、WRC、Owner wait、退出码和下一责任人。未知保持未知。
 5. 崩溃注入证实amended/ready/result写入后、OA applied之前退出会重复发布。新增按checkpoint/Run/类型的完整身份一致性复用；三处崩溃重放均只发布一次。畸形predecessor输入改为结构化拒绝。
+6. 独立审查补充CR2：相互依赖的两个Task同时替换时，旧依赖ID与合法新ID被误判合同漂移。复用原图编译器的一对一依赖重绑作为比较预期，仍保留全部前置依赖并拒绝OA删除依赖。
+
+实现提交：`adf18198 fix: preserve scoped recovery contracts and diagnostic ownership`。P0-3尚未完成，因此整批保持active，不归档为done。
 
 ## 验证证据
 
@@ -33,3 +36,5 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 - 纵向mock用真实Git、结果准入、账本和受控动作：post-verify discovery Reader故障→RM诊断→测试Owner批准输入修复→控制器对象重建→Reader→Judge→Goal完成。Provider/Owner为测试输入；不称为真实Provider、OS崩溃或无监工闭环。
 - OA产品修复另测真实submit→受控Task Map→writer选择、前任输入解析，含生产行形状、aggregate未解决成员、终态Run、次数及越权负例；不与mock拼接宣称一条未经执行的端到端链。
 - 临时日志和现场只读探针保留在`/tmp/zf-eight-qualification-20261120T122929Z/p0-*`及`p1-*`。真实恢复与最终交付仍待P0-3签收，原无监工资格失败不变。
+
+CR2增量验证：module gap及Candidate调用闭包192 passed，最终正负例25 passed，sentinel 53 passed。
