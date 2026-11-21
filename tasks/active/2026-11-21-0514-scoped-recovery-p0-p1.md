@@ -26,6 +26,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 4. Autoresearch父流程原来把子Run预算停止归成diagnosis_runner_failed；现在保留同Run停止/预算因果、WRC、Owner wait、退出码和下一责任人。未知保持未知。
 5. 崩溃注入证实amended/ready/result写入后、OA applied之前退出会重复发布。新增按checkpoint/Run/类型的完整身份一致性复用；三处崩溃重放均只发布一次。畸形predecessor输入改为结构化拒绝。
 6. 独立审查补充CR2：相互依赖的两个Task同时替换时，旧依赖ID与合法新ID被误判合同漂移。复用原图编译器的一对一依赖重绑作为比较预期，仍保留全部前置依赖并拒绝OA删除依赖。
+7. 独立审查CR3发现原测试Writer缺少生产kernel origin，未触发ready导致的Candidate失效检查。改为生产身份后两个崩溃窗口复现；新增仅确认既有完整发布链的回执恢复，不重新准入旧Candidate。终态Run只补历史回执，外部ready/损坏侧车拒绝，未发布ready仍按currentness检查。
 
 实现提交：`adf18198 fix: preserve scoped recovery contracts and diagnostic ownership`。P0-3尚未完成，因此整批保持active，不归档为done。
 
@@ -38,3 +39,11 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 - 临时日志和现场只读探针保留在`/tmp/zf-eight-qualification-20261120T122929Z/p0-*`及`p1-*`。真实恢复与最终交付仍待P0-3签收，原无监工资格失败不变。
 
 CR2增量验证：module gap及Candidate调用闭包192 passed，最终正负例25 passed，sentinel 53 passed。
+
+CR3增量验证：生产origin的崩溃与边界21 passed，OA/恢复直接调用闭包278 passed。旧的空origin测试结果不能作为生产崩溃恢复证明。
+
+## 真实恢复记录
+
+06:00 UTC已将`adf18198`及`824556e7`快进到隔离控制面。记录本轮用户授权，通过既有Owner控制动作恢复一次stage代次，触发`evt-b662f50bca09`；不修改预算、权限或历史失败。控制器PID958768，既有tmux会话保留。Planner于06:01继续运行，新operation为`wop-prd-plan-planner-trig-evt-046dea37-rework-57e95e5770d3`；采用批准Plan的draft-baseline。最终Candidate/Judge/Goal/local delivery仍待签收。
+
+最终自动验证（base 824556e7，显式tests/test_candidate_task_repair_decision.py绑定新模块）：380 passed、7 skipped；sentinel 53 passed、flow mock 10 passed。独立只读复核确认CR1/CR2/CR3无剩余阻塞，复核本身不构成真实8×8通过。

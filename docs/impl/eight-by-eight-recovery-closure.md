@@ -288,6 +288,9 @@ Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命
   successor lineage 和命令 producer 身份，不通过 legacy 默认值改写合同。
   amendment/ready 以 checkpoint、Run、事件类型锁定，重放需完整 payload 和因果身份相等；
   在发布后、OA 回执前退出时复用既有事件，不重复派发，也不重复消耗同一修复的次数。
+  若 ready 已发布，旧 Candidate 合法失效；恢复入口核验原 typed submit、Kernel admission、
+  action start、amendment、ready 和侧车摘要，只补已发生动作的 OA 回执。此路径不重新执行
+  旧 Candidate、不复活终态 Run；未发布 ready 的动作仍须经过当前版本与权限检查。
 - 完整恢复测试发现 `test.failed` 的 registry 只把质量失败交给产品返工，技术失败没有
   RM pending action。现根据明确 `failure_kind=infra`、Candidate scope 和 fanout 身份
   生成诊断请求；Task 局部、产品拒绝和未知类型不据此生成技术重试或通过结论。

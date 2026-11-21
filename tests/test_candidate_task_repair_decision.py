@@ -11,7 +11,7 @@ from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agen
 from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_failure_checkpoint
 
 
-def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=False):
+def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=False, capped=False):
     task_map = _task_map()
     task = task_map["tasks"][0]
     task.update(task_id="TASK-2", source_refs=["docs/prd.md"], owner_role="dev",
@@ -34,7 +34,15 @@ def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=Fals
         return {**ref, "logical_name": name, "artifact_kind": name, "producer_stage_id": "prd-plan"}
 
     monkeypatch.setattr(oa, "_port", port)
-    runtime, request, candidate, child = _incident(tmp_path, blocked=blocked)
+    def prior_repairs(runtime, run):
+        from zf.core.events import ZfEvent
+        for index in range(2):
+            runtime.event_writer.append(ZfEvent(type="task_map.ready", origin="kernel", correlation_id=run,
+                payload={"workflow_run_id": run, "pdd_id": "TASK-1", "rework_of": f"earlier-failure-{index}"}))
+
+    runtime, request, candidate, child = _incident(tmp_path, blocked=blocked,
+        before_candidate=prior_repairs if capped else None)
+    runtime.event_writer.default_origin = "kernel"
     if peer:
         from tests.test_candidate_semantic_handoff import _peer_failure
         request, _ = _peer_failure(runtime, request, child)
@@ -82,7 +90,7 @@ def test_unchanged_contract_product_fix_dispatches_successor_once_without_plan(t
 @pytest.mark.parametrize("change", ["scope", "acceptance", "command", "classification", "contract", "missing",
                                    "unknown_task", "malformed_parent", "blocked", "cap"])
 def test_candidate_repair_cannot_expand_authority_or_hide_a_blocker(tmp_path, monkeypatch, change):
-    runtime, request, repair = incident(tmp_path, monkeypatch, blocked=change == "blocked")
+    runtime, request, repair = incident(tmp_path, monkeypatch, blocked=change == "blocked", capped=change == "cap")
     gap = repair["gap_tasks"][0]
     if change == "scope":
         gap["allowed_paths"].append("secrets/**")
@@ -100,11 +108,6 @@ def test_candidate_repair_cannot_expand_authority_or_hide_a_blocker(tmp_path, mo
         gap["supersedes_task_ids"] = ["TASK-UNRELATED"]
     elif change == "malformed_parent":
         gap["supersedes_task_ids"] = [{"task_id": "TASK-2"}]
-    elif change == "cap":
-        for index in range(2):
-            runtime.event_writer.emit("task_map.ready", correlation_id=request.correlation_id,
-                payload={"workflow_run_id": request.correlation_id, "pdd_id": "TASK-1",
-                         "rework_of": f"earlier-failure-{index}"})
     _, result = submit(runtime, request, repair)
     assert not result["applied"]
     assert not any(e.type == "task_map.amended" for e in runtime.event_log.read_all())
@@ -156,3 +159,37 @@ def test_candidate_repair_recovers_partial_publication_without_duplicate_dispatc
     for kind in ("task_map.amended", "task_map.ready"):
         assert len([e for e in runtime.event_log.read_all() if e.type == kind]) == 1
     assert runtime.task_store.get("TASK-2").status == "done"
+
+
+@pytest.mark.parametrize("after_publication", ["run_cancelled", "corrupt_map", "external_ready"])
+def test_recovery_acknowledges_only_exact_native_historical_effect(tmp_path, monkeypatch, after_publication):
+    runtime, request, repair = incident(tmp_path, monkeypatch, canonical=True)
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    event = oa._submit_rework(runtime, prepared, action="rework", directive_fields={"candidate_repair": repair})
+    emit = runtime.event_writer.emit
+
+    def crash(kind, **kwargs):
+        if kind == "task_map.ready" and after_publication == "external_ready":
+            runtime.event_writer.default_origin = "external"
+        emitted = emit(kind, **kwargs)
+        runtime.event_writer.default_origin = "kernel"
+        if kind == "task_map.ready":
+            raise RuntimeError("exit after publication")
+        return emitted
+
+    monkeypatch.setattr(runtime.event_writer, "emit", crash)
+    with pytest.raises(RuntimeError, match="exit after publication"):
+        apply_orchestrator_agent_decision(runtime, event)
+    monkeypatch.setattr(runtime.event_writer, "emit", emit)
+    ready = next(e for e in runtime.event_log.read_all() if e.type == "task_map.ready")
+    if after_publication == "run_cancelled":
+        emit("run.cancelled", correlation_id=request.correlation_id, payload={"workflow_run_id": request.correlation_id})
+    elif after_publication == "corrupt_map":
+        (runtime.state_dir / ready.payload["task_map_ref"]).write_text('{}\n')
+    result = apply_orchestrator_agent_decision(runtime, event)
+    assert bool(result["applied"]) == (after_publication == "run_cancelled"), result
+    if result["applied"]:
+        assert result["publication_replayed"] is True
+    events = runtime.event_log.read_all()
+    assert len([e for e in events if e.type == "task_map.ready"]) == 1
+    assert not any(e.type == "run.goal.updated" for e in events)

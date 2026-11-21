@@ -20,6 +20,14 @@ def apply_orchestrator_agent_decision(runtime: Any, event: ZfEvent) -> dict[str,
     existing = _existing_outcome(runtime, event.id)
     if existing:
         return existing
+    from zf.runtime.candidate_repair_outcome import published_candidate_repair_outcome
+
+    published = published_candidate_repair_outcome(runtime, event)
+    if published:
+        runtime.event_writer.append(ZfEvent(type="orchestrator.semantic.decision.applied",
+            actor="zf-cli", origin="kernel", payload=published,
+            causation_id=event.id, correlation_id=event.correlation_id))
+        return published
     admission = admit_orchestrator_agent_decision(runtime, event)
     if not admission.admitted:
         payload = {
