@@ -1,6 +1,6 @@
 # Candidate超时保留全部失败与未知结果
 
-> 状态: active
+> 状态: done — 4c67f76e fix: retain mixed candidate outcomes across reader timeouts
 
 用户授权隔离8×8发现问题、修复、记录及恢复。本项不合dev、不push。
 
@@ -20,3 +20,7 @@
 另复现旧显式infra会绕过已保留语义结论的分类消费：2 failed/22 passed；严格限定kernel timeout+已准入negative sibling，完整Candidate binding有效才读作mixed，损坏为unknown阻止纯infra host后继，不重写历史。最终相关调用链聚焦139 passed/2 deselected；真实只读preflight仍为7 admitted+1 unknown，历史infra/有效mixed均已核对。完整最终闭包运行中。
 
 最终闭包：3705 passed/7 skipped，sentinel53 passed，flow mock10 passed。相关聚焦139 passed/2 deselected。独立研究会话快速复核确认F1/F2及真实stage/role绑定修正，无新增阻塞项；其仅静态审核和纯内存探针，未冒充真实E2E。真实OA准入/后继效果待部署，暂不归档done。
+
+真实闭环（02:18 UTC）：隔离控制器载入4c67f76e，受控请求evt-fe1df9af0f53创建原生OA checkpoint evt-643b978ece5f；operation.started=evt-0733a4319cac，quiescent.exited=evt-c619af1b08e0。通过实际checkpoint_input_ref/digest读取确认7份原control refs及1个无verdict的unknown；恢复后业务Task重派0。证据保存在SOURCE reports/eight-qualification-20261120T122929Z/candidate-timeout-native-proof.json及candidate-timeout-recovery-applied.json。
+
+本项只结算timeout交接/分类/当前性修复；median/browser语义、独立最终验收、Judge/Goal/交付继续观察，不以OA开始运行冒充产品成功。38977756 Reader stuck实际respawn待证，另项保留active。
