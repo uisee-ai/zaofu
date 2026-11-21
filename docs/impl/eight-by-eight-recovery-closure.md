@@ -613,3 +613,52 @@ SR-SELECT/SR-CONT最终自动影响闭包：5944 passed/7 skipped，sentinel53�
 重验入口；这不是新授权自动出现。下一步补kernel重建入口及当前基线漂移检查，
 不让Agent重传命令/合同、不靠不断换失败ID重置次数。每候选+冻结合同+可信验证器
 版本最多一次，失败ID仅校验当前性。旧失败与新结果均留账。
+
+
+SR-REVALIDATE实现记录：复用repair-closeout-validate，已同时接入真实RM recommendation
+消费与ControlledActionService；Agent/操作员只给queue_id、原失败event ID和合同digest，
+kernel重建原worktree/base/commit/命令/required合同，忽略调用者传入的替代计划或路径。
+仍检查source_repair启用、当前Owner路径范围、原失败当前性、pause/human/case门、
+冻结合同与候选前后Git身份。每候选+合同+可信验证器源码digest仅一次；更换失败event
+不能重置次数。原始失败保留，新结果携带previous_validation_event_id和validator_digest。
+只有绑定成功的新结果才能使needs_review回到closeout_required，错误来源/旧候选/
+旧失败/merged/discarded不恢复。活跃harness HEAD偏离冻结base时，验证前即明确失败
+repair_validation_live_base_changed，避免用旧候选测试通过冒充可应用的新候选。
+原生RM入口另有RED，已验证重复tick只执行一次且不采用Agent注入命令。
+这仍不等同真实自动应用或最终无人验收通过。
+
+旧Run补充：post-verify discovery已正式passed并进入最终Judge；14:35与14:42两次
+提交被child_authorities的contract_revision/task_map_generation当前性门拒绝，
+14:45:10 operation失败evt-91d70f6f1c21（output_repair_exhausted）。原16业务任务和
+8Reader结果未改，不能把Judge的尝试算通过。独立研究正在对照不可变输入与门禁，
+核查旧权限版本来自Agent输出还是派发上下文绑定。
+
+
+2026-11-21 15:02 UTC复核补充：SR-REVALIDATE首轮自动影响闭包6397 passed/9 skipped、
+sentinel53、flow mock10通过；独立只读review发现RM入口覆盖了当前诊断的recovery_case_id。
+已用真实tick复现：原诊断case为blocked却执行验证。修复后保留已绑定诊断case，
+Run/Task与冻结continuation矛盾即拒绝；操作员入口仍只采信原失败case。
+新测试先证明case_blocked，再验证命令执行次数为0；相关闭包107 passed。
+
+SR-JUDGE-REUSE：旧Run的42条拒绝来自14项已审核复用任务各3项身份。Candidate准入
+已验证复用链并比较prior_identity，但Thin Judge直接与当前Task身份比较；第二次
+Agent修改输出child_authorities没有作用，因为门禁读取不可变snapshot。
+已抽取共用child authority校验；Judge先绑定当前冻结Candidate的Run/目标/generation/
+Plan package，再核验完整复用证明、原Verify/整合及当前合同，普通任务继续校验当前身份。
+不修改快照或原生结果，不以存在reuse字段放行。相关直接调用测试66 passed；
+旧Run原始b8f5f2e1提交只读回放从42条错误变为0，尚未正式重试，不代表Judge通过。
+篡改证明、当前合同、普通任务合同、Candidate目标、generation或原Verify ID均拒绝。
+SR-REVALIDATE+SR-JUDGE-REUSE最终自动影响闭包与部署结果待记录；任务保持active。
+
+最终review收口：RM仅继承已成功绑定的durable request原字段；无request或无case的
+request不得用自报case绕开原失败门。相关109测试通过。Judge另外绑定准确closure
+fact ref/digest和snapshot，从其kernel-admitted Verify追溯原native Candidate event、
+freeze ref/digest及完整child authorities；新freeze同内容不能偷用旧验收，相同snapshot
+的新closure有独立回归。Judge最终直接调用闭包68通过。独立只读review无剩余阻塞。
+旧原生Judge的语义意见为blocked：产品旅程通过，但8+8真实重叠、自恢复、零介入证据
+不足；本轮只修机械误拒，恢复后仍由Judge如实裁决，不能把旧窗口改判无监工成功。
+
+本批自动影响闭包6562 passed/9 skipped，sentinel53、flow mock10通过；自动测试采集后
+补充的closure pin回归及最终helper另跑直接调用闭包68 passed，恢复入口最终109 passed。
+原始Judge结果完整_goal_closure_issues只读回放为0问题，其语义blocked原样保留。
+以上是确定性/模拟与历史证据回放，不是新的real-provider无监工资格通过。待真实恢复。

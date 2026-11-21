@@ -34,6 +34,8 @@ def repair_validation_identity(action: dict[str, Any], contract: dict[str, Any])
             or _git_text(root, *common) != _git_text(harness_root(), *common)
             or root == harness_root().resolve()):
         reject("repair_validation_repository_mismatch")
+    if _git_text(harness_root(), "rev-parse", "HEAD") != base:
+        reject("repair_validation_live_base_changed")
     if _git_text(root, "rev-parse", "HEAD") != commit:
         reject("repair_validation_head_drift")
     status = _git(root, "status", "--porcelain", "--untracked-files=all")

@@ -4093,6 +4093,14 @@ def build_repair_merge_queue(events: list[ZfEvent]) -> dict[str, Any]:
         elif event.type in {RUN_MANAGER_ACTION_APPLIED, RUN_MANAGER_ACTION_FAILED}:
             action_name = str(payload.get("action") or "")
             if action_name == "repair-closeout-validate":
+                revalidation = bool(payload.get("previous_validation_event_id"))
+                if revalidation:
+                    from zf.runtime.repair_revalidation import result_matches_queue
+
+                    if event.origin not in {"", "kernel"} or not result_matches_queue(
+                        row, payload, passed=event.type == RUN_MANAGER_ACTION_APPLIED,
+                    ):
+                        continue
                 row["validation"] = {
                     "status": "passed" if event.type == RUN_MANAGER_ACTION_APPLIED else "failed",
                     "event_id": event.id,
@@ -4103,6 +4111,9 @@ def build_repair_merge_queue(events: list[ZfEvent]) -> dict[str, Any]:
                 if event.type == RUN_MANAGER_ACTION_FAILED:
                     row["status"] = "needs_review"
                     row["next_allowed_action"] = "repair_validation_failed"
+                elif revalidation:
+                    row["status"] = "closeout_required"
+                    row["next_allowed_action"] = "operator_merge_or_reject"
             elif (
                 action_name == "repair-closeout-apply"
                 and event.type == RUN_MANAGER_ACTION_FAILED
@@ -4706,6 +4717,8 @@ def emit_human_escalation_package(
         "applied_commit": str(action.get("applied_commit") or ""),
         "worktree_path": str(action.get("worktree_path") or ""),
         "validation_event_id": str(action.get("validation_event_id") or ""),
+        "previous_validation_event_id": str(action.get("previous_validation_event_id") or ""),
+        "validator_digest": str(action.get("validator_digest") or ""),
         "continuation_checkpoint_id": str(
             action.get("continuation_checkpoint_id") or ""
         ),
@@ -4815,6 +4828,27 @@ def _consume_agent_recommendations(
                 payload = bind_resident_semantic_handoff(
                     state_dir=state_dir, config=config, events=events, payload=payload,
                 )
+            action = _action_from_agent_recommendation(event, payload)
+            if (_recommendation_route(payload) == "controlled_action"
+                    and action.get("action") == "repair-closeout-validate"):
+                from zf.runtime.repair_revalidation import prepare_revalidation
+
+                prepared = prepare_revalidation(state_dir=state_dir,
+                    events=writer.event_log.read_all(), config=config,
+                    payload=payload, request_event_id=event.id)
+                bound_request = next((item for item in reversed(events)
+                    if payload.get("request_id") and item.type == "run.manager.action.effect.pending"
+                    and item.payload.get("request_id") == payload["request_id"]
+                    and event.type in (item.payload.get("continuation_expected_events") or [])), None)
+                bindings = bound_request.payload if bound_request else {}
+                for key in ("workflow_run_id", "task_id"):
+                    if bindings.get(key) and prepared.get(key) and bindings[key] != prepared[key]:
+                        raise ValueError("repair_revalidation_request_mismatch:" + key)
+                    if bindings.get(key):
+                        prepared[key] = bindings[key]
+                if bindings.get("recovery_case_id"):
+                    prepared["recovery_case_id"] = bindings["recovery_case_id"]
+                action.update(prepared)
         except ValueError as exc:
             writer.emit(RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED, actor="run-manager",
                 causation_id=event.id, payload={"source_event_id": event.id,
@@ -4822,7 +4856,6 @@ def _consume_agent_recommendations(
             consumed += 1
             actions_blocked += 1
             continue
-        action = _action_from_agent_recommendation(event, payload)
         route = _recommendation_route(payload)
         from zf.runtime.recovery_step import recommendation_target_current
         if route in {"human", "autoresearch", "reflect", "repair"} and (
@@ -11540,6 +11573,8 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "repair_commit": str(action.get("repair_commit") or ""),
         "applied_commit": str(action.get("applied_commit") or ""),
         "validation_event_id": str(action.get("validation_event_id") or ""),
+        "previous_validation_event_id": str(action.get("previous_validation_event_id") or ""),
+        "validator_digest": str(action.get("validator_digest") or ""),
         "continuation_checkpoint_id": str(
             action.get("continuation_checkpoint_id") or ""
         ),
@@ -11637,6 +11672,7 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "branch": str(action.get("branch") or ""),
         "worktree_path": str(action.get("worktree_path") or action.get("worktree") or ""),
         "source_title": str(action.get("source_title") or ""),
+        "changed_files": _string_list(action.get("changed_files")),
         "verification_plan": action.get("verification_plan")
         if isinstance(action.get("verification_plan"), list) else [],
         "repair_contract_ref": action.get("repair_contract_ref")

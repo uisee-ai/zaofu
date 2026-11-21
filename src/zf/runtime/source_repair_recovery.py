@@ -34,7 +34,9 @@ def pending_validation_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
         "expected_output": ["run.manager.agent.recommendation"],
         "reason": "Repair validation failed: " + str(validation.get("reason") or "unknown")
             + "; inspect the frozen candidate and retained validation result before choosing recovery. "
-              "A diagnosis does not authorize retry, rebase, apply, or replacement of failed evidence.",
+              "Choose a controlled recovery under the existing source-repair authorization. "
+              "Revalidation accepts queue_id, previous_validation_event_id and repair_contract_digest; "
+              "the kernel reconstructs the frozen plan. Preserve failed evidence and scope gates.",
     }
 
 
