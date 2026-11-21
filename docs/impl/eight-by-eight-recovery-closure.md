@@ -81,7 +81,7 @@ Candidate 继续校验当前合同与整条不可变链。破损引用、变更�
 列出新增义务，受控动作还要求逐 Task 的 `candidate_evidence_review`，与精确 manifest
 摘要、批准引用及复用理由一同持久化。此范围不覆盖只读审计、Task 本地验收、命令或
 权限变化，也不允许删除既有证据。追加的产物仍必须由新 Candidate 阶段验证，旧 Task
-完成证明不构成该项通过。见[连续恢复任务](../../tasks/active/2026-11-21-0010-repeated-plan-completion-reuse.md)。
+完成证明不构成该项通过。见[连续恢复任务](../../tasks/done/2026-11-21-0010-repeated-plan-completion-reuse.md)。
 
 真实实验的新 Plan 更新恢复基线与来源边界说明，原 16 项已完成，但完整 Task Map 的新代际令 runtime 全部重开。OA 的文字要求“保留完成证据”没有执行效力；pre_impl 为 shadow，所以不是 blocking gate 被绕过。
 

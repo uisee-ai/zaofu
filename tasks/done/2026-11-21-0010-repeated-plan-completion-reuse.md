@@ -1,6 +1,6 @@
 # 连续 Plan 修订后的已完成任务证据恢复
 
-> 状态: active
+> 状态: done
 
 用户已授权 8×8 真实验证中发现问题后修复、记录并断点恢复。本项只修改隔离 harness 工作分支，不合并 dev、不 push。
 
@@ -29,3 +29,6 @@ Task Verify 的行为、命令、范围均未变，不能默默忽略新最终�
 ## 实现验证
 
 基线真实预览失败；回归最初2 failed/1 passed，其中连续复用为行为RED，新增helper缺失为开发阶段导入失败，不算产品行为RED。修复后100项定向通过（含8槽mock E2E），以已验证5823c009为增量基线的自动闭包94 passed，sentinel53 passed、flow smoke10 passed。最后两处复核类型/链条检查后32项相关回归通过；未宣称全量pytest。真实暂停现场新代码预览16项成功，manifest 47ed5cdc，10个重派工作区均clean，尚待部署后的正式受控恢复签收。
+
+实现：4d2d81d7 fix: preserve native evidence across repeated plan recovery。
+真实签收：受控复用evt-2e58ec1dd71c，原生冻结evt-62cd367e1e56 / fanout evt-37b17d55d247，16/16原生验收与集成证据保持；7个当前Reader实际派发且Luna输入绑定有效。未增加业务task.done，候选09094c2d保持。旧lane1占用和首次派发等待属于独立后续修复，不代表本项最终Candidate通过。证据：second-completion-reuse-{applied,freeze-proof}.json、current-candidate-input-bindings.json。
