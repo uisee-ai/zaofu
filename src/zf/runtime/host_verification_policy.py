@@ -1,19 +1,40 @@
-"""Compatibility for receipts predating configurable capture bounds."""
+"""Preserve execution facts across an authorized allowance increase."""
 import base64
 from dataclasses import asdict
 from pathlib import Path
 
+from zf.core.config.host_verification import parse_host_verification
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_host_manifest import digest
 
 
 def policy_receipt_matches(state_dir: Path, policy, receipt: dict) -> bool:
     current = asdict(policy)
+    if 'policy_snapshot' in receipt:
+        previous = receipt['policy_snapshot']
+        try:
+            if not isinstance(previous, dict) or digest(previous) != receipt.get('policy_digest'):
+                return False
+            parsed = asdict(parse_host_verification(previous))
+            return (parsed == previous
+                and 0 < previous['max_executions_per_run'] <= current['max_executions_per_run']
+                and {k:v for k,v in previous.items() if k != 'max_executions_per_run'}
+                    == {k:v for k,v in current.items() if k != 'max_executions_per_run'})
+        except (ValueError, TypeError, KeyError):
+            return False
     if receipt.get('policy_digest') == digest(current):
         return True
-    legacy = {k:v for k,v in current.items()
-        if k not in {'max_artifact_bytes','max_total_evidence_bytes'}}
-    if receipt.get('policy_digest') != digest(legacy):
+    # The prior parser admitted at most 100 executions. Match those finite
+    # historical digests exactly; never infer a previous arbitrary policy.
+    legacy_match = False
+    for limit in range(1, min(current['max_executions_per_run'], 100) + 1):
+        previous = {**current, 'max_executions_per_run': limit}
+        if receipt.get('policy_digest') == digest(previous):
+            return True
+        legacy = {k:v for k,v in previous.items()
+                  if k not in {'max_artifact_bytes','max_total_evidence_bytes'}}
+        legacy_match = legacy_match or receipt.get('policy_digest') == digest(legacy)
+    if not legacy_match:
         return False
     # Old capture had only a per-file bound. Prove actual retained bytes fit
     # today's policy; do not assume a historical aggregate size bound existed.

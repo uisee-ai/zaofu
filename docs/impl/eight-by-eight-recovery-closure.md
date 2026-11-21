@@ -361,3 +361,19 @@ Run/Map身份完整且不同的operation视为历史；当前范围的更高代�
 重试入口同时接受它和旧式`dev.blocked`，但必须仍是当前已settled且已准入的
 blocked/failed Impl，且canonical source精确属于该operation。宿主发布只生成一次
 Git effect及其回执，后续仍由Worker复核提交和独立Verify裁决；不把发布当作验收通过。
+
+
+### Owner 上调宿主采证额度后的接续
+
+`runtime.host_verification.max_executions_per_run`接受显式非负整数；启用时必须大于0。
+额度仍由Owner配置授权，Runtime不自动增额、不更换approval_ref重置计数。
+既有`preauthorized_probe_budget_exhausted`仅是可按当前额度重判的等待事实；其他
+escalation、未结算effect继续阻断。额度等待解除后产生的新失败必须独立记账。
+
+容器回执保存完整policy_snapshot及其摘要。消费者只兼容额度增加且其他策略字段
+全等的旧执行事实，缺字段/多字段/摘要不符拒绝。没有snapshot的历史回执最多匹配
+旧parser允许的1..100；更早无采集上限字段的回执仍须证明留存字节满足当前上限。
+所有Run、operation、冻结目标、命令和事件身份校验沿用原消费者，不由策略兼容替代。
+宿主证据准备完成后仍经受控Reader恢复与独立语义验证，不能由执行器宣告产品通过。
+
+现场记录与验证见[局部恢复实施任务](../../tasks/active/2026-11-21-0514-scoped-recovery-p0-p1.md)。

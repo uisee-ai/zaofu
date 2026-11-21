@@ -40,9 +40,9 @@ def parse_host_verification(raw) -> HostVerificationConfig:
         raise ValueError('runtime.host_verification.enabled must be boolean')
     if not isinstance(policy.commands, list) or any(not isinstance(c, str) or not c.strip() for c in policy.commands):
         raise ValueError('host verification commands must be nonempty exact command strings')
-    if (type(policy.max_executions_per_run) is not int or not 0 <= policy.max_executions_per_run <= 100
+    if (type(policy.max_executions_per_run) is not int or policy.max_executions_per_run < 0
             or type(policy.timeout_seconds) is not int or not 1 <= policy.timeout_seconds <= 900):
-        raise ValueError('host verification requires bounded executions (0..100) and timeout (1..900)')
+        raise ValueError('host verification requires a nonnegative execution budget and timeout (1..900)')
     if policy.enabled and (not isinstance(policy.approval_ref, str) or not policy.approval_ref.strip()
             or not isinstance(policy.image, str) or not re.fullmatch(r'(?:[^\s]+@)?sha256:[a-f0-9]{64}', policy.image)
             or not policy.commands or not policy.max_executions_per_run):

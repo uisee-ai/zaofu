@@ -122,7 +122,8 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
         'exit_code': code, 'source_stable': stable, 'target_commit': manifest['head'],
         'command_id': command['command_id'], 'command': command['command'],
         'command_digest': command['command_digest'], 'execution_origin': 'preauthorized_container',
-        'image': policy.image, 'policy_digest': digest(asdict(policy)), 'evidence_ref': evidence_ref}, text
+        'image': policy.image, 'policy_digest': digest(asdict(policy)),
+        'policy_snapshot': asdict(policy), 'evidence_ref': evidence_ref}, text
 
 
 def reconcile_host_verification(service) -> int:
@@ -203,13 +204,16 @@ def reconcile_host_verification(service) -> int:
                     if not any(e.type == 'runtime.action.attempt.completed' for e in prior):
                         _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
                     continue
-                if any(e.type == 'human.escalate' and e.payload.get('host_manifest_digest') == manifest['manifest_digest']
-                       for e in events):
-                    continue
                 run = operation['workflow_run_id']
                 used = sum(e.type == 'runtime.action.attempt.started'
                     and e.payload.get('workflow_run_id') == run and e.payload.get('approval_ref') == policy.approval_ref
                     for e in events)
+                escalations = [e for e in events if e.type == 'human.escalate'
+                    and e.payload.get('host_manifest_digest') == manifest['manifest_digest']]
+                # An exhausted allowance is rechecked against the current owner
+                # config. Unknown effects and other escalation reasons stay held.
+                if any(e.payload.get('reason') != 'preauthorized_probe_budget_exhausted' for e in escalations):
+                    continue
                 if used >= policy.max_executions_per_run:
                     _escalate_once(service, events, manifest, 'preauthorized_probe_budget_exhausted')
                     return 0
@@ -227,6 +231,7 @@ def reconcile_host_verification(service) -> int:
 
 def _escalate_once(service, events, manifest, reason):
     if any(e.type == 'human.escalate' and e.payload.get('host_manifest_digest') == manifest['manifest_digest']
+           and e.payload.get('reason') == reason
            for e in events):
         return
     service.writer.emit('human.escalate', actor='run-manager',

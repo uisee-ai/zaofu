@@ -7,11 +7,12 @@ from zf.runtime.task_host_manifest import digest
 from zf.runtime.host_verification_handoff import resume_reader_after_probes
 
 
+@pytest.mark.parametrize('increase_budget', [False, True])
 @pytest.mark.parametrize(('status', 'exit_code', 'stable', 'expected'), [
     ('completed', 0, True, True), ('failed', 1, True, True), ('failed', 125, True, True),
     ('failed', 1, False, False), ('started', None, True, False), ('failed', None, True, False),
 ])
-def test_completed_probe_routes_through_controlled_retry_once(recovery, status, exit_code, stable, expected):
+def test_completed_probe_routes_through_controlled_retry_once(recovery, status, exit_code, stable, expected, increase_budget):
     service, failure, original = recovery
     p = policy()
     operation={'operation_id':'op-reader','workflow_run_id':'run-1'}
@@ -25,6 +26,8 @@ def test_completed_probe_routes_through_controlled_retry_once(recovery, status, 
     service.writer.emit('runtime.action.attempt.completed',payload={**operation,'approval_ref':p.approval_ref,
         'kind':'verify','receipt_ref':ref})
     contract={'verification_commands':[{'command_id':'probe','command':'python3 probe.py'}]}
+    if increase_budget:
+        p.max_executions_per_run = 120
     assert resume_reader_after_probes(service,operation,contract,p,service.writer.event_log.read_all()) is expected
     if not expected:
         assert not any(e.payload.get('repaired_failure_event_id') == failure.id for e in service.writer.event_log.read_all())

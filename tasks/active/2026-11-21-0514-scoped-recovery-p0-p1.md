@@ -8,7 +8,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 |---|---|---|---|
 | P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实同operation先拦截14项漂移、修复后正式准入，14项保留行未变 |
 | P0-2 | P0 | 故障类型与最小恢复动作 -> verify: 输入/执行故障进入技术恢复；Agent判断合同不变的产品缺陷进入Task返工；明确义务变化才进入Plan；实际决策提交/应用测试，不靠关键词推断。 | 已实现并通过准入/受控动作/输入消费测试；真实生产行只读编译通过 |
-| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，完整采证额度待Owner确认 |
+| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，Owner已批准采证上限100→120，正在修复额度接续 |
 | P1-1 | P1 | Autoresearch子退出事实 -> verify: 自定义state_dir、同Run绑定；预算、Owner wait、未知退出分别保留原事件ref和检查点；父流程不误判源码缺陷，不擅自恢复。 | 已实现并通过回归；历史真实子Run已准确回放为wall_clock预算停止 |
 | P1-2 | P1 | 恢复纵向回归与活性 -> verify: 失败→RM/OA→修复→独立验证→受控应用→恢复→最终签收；未完成且无执行/队列/明确阻塞必须产出诊断请求，重放幂等，不重新实现已有机制。 | 确定性验证通过；补齐Candidate infra诊断Owner与发布崩溃幂等；真实最终签收归P0-3 |
 
@@ -261,3 +261,36 @@ sentinel53 passed。真实账本只读探针确认当前MEDIAN的binding及typed
 仍需此前提出的100→120授权答复。证据`p0-candidate-authorization-preflight.json`。
 此时尚未发生runtime budget exhaustion，八路仍执行；不标Run paused/blocked，不停止
 已授权工作，不自改policy或approval_ref，也不将原无人监工失败改成通过。
+
+
+## Owner 上调采证额度与 Reader 执行失败（2026-11-21）
+
+Owner明确要求“提高的120”，授权本Run的host verification上限100→120，保持
+approval_ref及累计用量。09:30:56事件evt-59a85bdf1f67已报额度耗尽；不是运行时间
+上限，也不是新的产品缺陷。此时当前8路Reader均settled/abstained，准入结果均为
+verifier_execution_failure，无法完成Docker浏览器路径；本Run没有Judge operation，
+不把Reader执行失败称作Judge拒绝。研究已交给既有cdd-1 pane1原生session，仅读
+LoopForge/loopx及事件证据，不替代Reader裁决或修改Run。
+
+本次复现三处阻塞：配置解析硬限100；同manifest的历史budget escalation永久阻止
+重判；policy_digest包含额度，导致上调后已有成功采证回执全部失配。新增RED四项
+失败、九项通过，日志host-budget-continuation-red.log；初轮修复回归136 passed。
+修复仅解除硬编码100天花板，保留显式整数额度；同Run/approval_ref计数不归零。
+只有明确budget原因在当前配置下重判，未知effect及其他原因仍阻断；解除额度后若
+出现新原因，单独记录该原因，旧budget告警不能隐藏它。
+
+新回执保存完整policy_snapshot并校验原摘要，只有额度单调增加且其余字段完全相同
+才保持有效；旧无snapshot回执只匹配旧parser实际可接受的1..100有限历史值。更旧
+无采集大小字段的格式仍核验留存字节上限。命令、镜像、网络、保护文件、授权身份
+或超时变化不会借额度兼容获得放行；不改写历史回执，不把采证当作语义通过。
+
+补充实际Reader受控恢复入口在额度增加后消费旧回执、一次恢复及失败回执交回验证；
+实际容器执行器测试校验新snapshot产出。P0-3仍待正式Candidate/Judge/Goal/local
+交付，不把这次人工修复后的进展写成原无监工窗口通过。
+
+额度接续最终验证：相对a1c471d5自动影响闭包8810 passed、10 skipped；sentinel53
+passed、flow mock10 passed。追加定向与Candidate恢复mock86 passed。一次错误测试
+路径未执行测试；一次误用系统解释器的启动已终止，均不计成功，最终receipt来自
+SOURCE完整venv。全分支plan、最终自动验证receipt、日志保存为host-budget-*。
+真实只读预检确认旧额度100/已用100，当前候选9份采证回执在120配置下均保持有效。
+独立research源码复核未发现确定剩余阻塞，未独立执行测试；真实部署接续另行记录。
