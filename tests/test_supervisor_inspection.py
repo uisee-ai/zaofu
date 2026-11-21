@@ -844,6 +844,54 @@ def test_supervisor_requests_autoresearch_for_human_escalate(
     assert invocations == []
 
 
+def test_supervisor_resolves_attention_after_applied_human_dismissals(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "feature_list.json").write_text("[]\n", encoding="utf-8")
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    for escalation_id, token in (
+        ("evt-escalate-one", "token-1"),
+        ("evt-escalate-two", "token-2"),
+    ):
+        log.append(ZfEvent(
+            type="human.escalate",
+            id=escalation_id,
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={"decision_token": token, "run_id": "run-1"},
+        ))
+        log.append(ZfEvent(
+            type="run.manager.human_decision.applied",
+            id=f"evt-applied-{token}",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={
+                "source_escalation_event_id": escalation_id,
+                "decision_token": token,
+                "decision": "dismissed",
+                "next_route": "none",
+            },
+        ))
+
+    snapshot = build_supervisor_snapshot(
+        state_dir,
+        project_root=tmp_path,
+        project_id="proj-test",
+    )
+
+    escalation_attention = [
+        item for item in snapshot["attention_items"]
+        if item.get("source") in {"run_manager_decision", "runtime_failure"}
+        and any(event_id in {"evt-escalate-one", "evt-escalate-two"}
+                for event_id in item.get("source_event_ids", []))
+    ]
+    assert escalation_attention
+    assert all(item["status"] == "resolved" for item in escalation_attention)
+
+
 def test_supervisor_requests_autoresearch_for_dispatch_failed_signal(
     tmp_path: Path,
 ) -> None:
