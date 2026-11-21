@@ -9,16 +9,17 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 原生候选已验证、应用、重启；恢复Plan需owner审批，已执行并进入新一轮Plan返工；五步无人闭环未通过 |
-| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务任务、8/8 Reader与discovery通过；最终Judge正式blocked（19 closed/1 blocked，准确16项Plan审批缺失），原无人窗口失败保留 |
-| SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 本地修复及独立review通过；236项直接闭包、6149项自动闭包、sentinel53、flow10通过；待部署 |
-| SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数修复及独立review通过；显式disposition入口仍待实施 |
-| SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已提交，341直接闭包、7143自动闭包通过；独立review问题已修，待部署 |
-| SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | c7e403ac已验证提交，实际gate未改，待部署 |
-| SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证提交，当前不匹配仍拒绝resume，待部署 |
-| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已部署；17:15真实Planner manifest含两份原始正文且必读，正式Plan结果待收取 |
+| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；准确Plan已审批，聚合恢复后19:54最终Judge retry-3执行中，Goal/本地交付尚未通过；原无人窗口失败保留 |
+| SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 已验证并随f2e927da部署；236项直接闭包、6149项自动闭包、sentinel53、flow10通过 |
+| SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数及显式disposition入口已验证部署；受控处理仅关闭有有效替代的旧候选 |
+| SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已验证部署；341直接闭包、7143自动闭包通过，真实受控disposition保留旧失败 |
+| SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | c7e403ac已验证部署，实际gate未改 |
+| SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证部署；原生源码修复有匹配boot证据，当前不匹配仍拒绝resume |
+| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d已部署；真实Planner必读包含两份原文；20:02新代际纠正操作员附加约束，正式Plan仍待审核 |
 | SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7/1a9e8667 已部署，1852项影响闭包通过；可信检查点恢复，17:15重新派发原Plan |
-| SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 已实现两个真实入口的私有subreaper治理；正常/超时/脱离会话/双fork/调用Worker死亡97项直接闭包通过，待最终验证部署 |
-| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | 防复发6b9d72e3已提交；补偿实现及独立review通过，待受控部署/14项补偿与真实Judge恢复 |
+| SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 24420dc0已验证部署，真实入口/独立review与最终34项边界通过；全资格故障实验仍待完成 |
+| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | 6b9d72e3防复发及14项受控补偿已部署执行，22e6e1f0补齐Goal证明消费；原Judge正式结果仍待收取 |
+| READER-TERMINAL | 协议耗尽有明确fanout终态与合法恢复入口 -> verify: 当前精确失败投影、崩溃重放、暂停门禁及受控重试，不制造语义结论。 | 7becfc7b已部署；2380项自动闭包、sentinel53、flow10通过，真实历史前缀只读匹配通过；OLD正常child-rebuild已派发 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -549,3 +550,20 @@ transport binding，保留语义未知与原失败。独立研究确认该链路
 现场19:45 native idle timeout另产生evt-fb2f1e2c6418；补丁保留该历史失败，恢复使用正常
 child-rebuild。NEW 19:50前后Planner passed并进入Synth；发现product_acceptance_spec
 仍漏改文本工具数字恢复要求，已通过精确worker.reply反馈evt-a373749f4cab，仍不批准。
+
+
+19:52–19:55 UTC：22e6e1f0及7becfc7b部署OLD/NEW隔离控制面，HEAD 7becfc7b、
+PID1207168/1208223，配置及Worker panes保持。OLD受控child-rebuild生成
+wop-prd-lanes-final-judge-prd-trig-evt-5640085e-retr-ebb5314aa35b，19:54正式派发；
+按用户既有授权仅在tmux切Judge到6.1-sol high。20:06只读必读进度42/70，尚无
+正式Judge结果；不将协议修复的确定性测试当业务或无人验收。未合dev、未push。
+
+20:02 UTC 新Plan返修：19:55 Synth正式rejected，其中八项文本工具仍继承数字错误
+恢复断言是真实遗漏；另一生命周期mandatory冲突追溯至监工18:26反馈。原始TODO
+及SOURCE-PROMPT要求外部本session只读采证、交付后分四维评估，并明确不得要求
+未来Judge/交付收据。监工曾额外指定RM为资格收据生产者、将完整窗口判定挂产品
+验收，形成循环依赖；此工程假设无原文/实现依据，不能继续要求Agent照错返工。
+受控intent evt-d88df0cd62f8明确取代evt-4102a74d1a4b的错误分配，trigger
+ evt-5c65ca2533c5派发新Planner；16业务Task、19命令、全部独立资格标准和权限
+保持。生命周期义务映射到交付后外部资格判定，不隐藏、降级或伪造通过。
+本轮仍为准备期，资格窗口未开始；报告plan-qualification-boundary-recovery.json。

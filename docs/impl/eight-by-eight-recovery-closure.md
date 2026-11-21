@@ -853,3 +853,19 @@ manifest、Owner intent、原 mutation、当前 replacement 和同一 Candidate 
 attempt/role 必须一致；原 CLI 空 origin 的 invalid 仅在精确内核因果及不可变
 attempt envelope 同时存在时兼容。新 invalid 明确写 kernel origin。失配、过期、
 暂停/终止 Run 不恢复；不发布产品 verdict，不重开 failed operation，也不增加额度。
+
+
+### 产品闭环与实验资格的时间边界
+
+本次8×8原始要求将四项结论分别评估：产品交付、真实8 Impl与8 Task Verify重叠、
+预声明故障的原生恢复、批准后零人工恢复。完整窗口在同Run本地交付后结束，外部
+验证session只读采集原始事件与Provider证据；RM/OA仍是恢复行动参与者，不因此
+成为新增资格收据生产者。产品Candidate/Judge/Goal只能要求当时已存在的证据，
+不能把未来交付或完整零介入窗口作为自身前置条件。产品通过不代表实验通过；
+缺少任何独立资格证明仍为未证明或失败。所有原始标准及来源映射必须在Plan和
+资格协议保留，不能仅以mandatory=false隐藏义务。
+
+20:02 UTC记录了监工反馈自身造成的反例：先前额外指定RM生产生命周期收据，
+并将完整资格挂到业务验收，引发反复规划与循环前置。受控新代际明确纠正这条
+工程假设而未改变用户要求；计划尚未批准，无人窗口未开始。后续审核必须逐项
+对照原文及实际入口，不能把人工建议、配置项或未来产物视为已有履约证明。
