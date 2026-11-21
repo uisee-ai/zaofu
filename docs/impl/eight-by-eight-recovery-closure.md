@@ -561,3 +561,18 @@ PYTHONPATH=src；只接受既有固定环境值，不执行候选venv入口、�
 命令兼容最终自动影响闭包（dev-verify基线23782907）：1831 passed/7 skipped，
 sentinel 53 passed，flow mock 10 passed。没有全仓或真实Provider验收冒充。
 原生候选独立影响闭包539 passed；仍没有原生重验/应用receipt。
+
+
+SR-FAIL-FEEDBACK最小修复：`needs_review + validation.failed`现在派生一次只读RM诊断，
+checkpoint按失败验证event ID去重，携带原Run、queue/candidate、Git base/commit和合同
+摘要。保持失败队列、候选与原验证结果，不自动改成通过，不盲重试或自动rebase。
+已合并/丢弃候选不再开案。真实账本回放从0动作变成一个可派发diagnose-attention，
+精确绑定evt-77004db6fefb；该回放不写业务事件。1项RED后251项直接调用闭包通过，
+包含实际run_manager_tick派发诊断、重放去重和不产生apply/restart的断言。
+独立只读研究确认部署后旧候选会base漂移，必须保留旧失败，通过Agent新合同产生
+新候选；不将旧候选强行应用到新基线。controlled重验尚未从Agent输入完整接通，
+属于已记录后续缺口，不能把当前转诊修复称作完整自动修复闭环。
+
+SR-FAIL-FEEDBACK最终自动影响闭包：5931 passed/7 skipped（184秒），sentinel53、
+flow mock10通过；resident实际二次准入形态另3项通过。准备部署新隔离harness，
+保留旧候选及其失败，不动dev、不push。当前任务仍active，真实自动应用/恢复未证明。

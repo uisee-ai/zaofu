@@ -8987,11 +8987,18 @@ def _pending_repair_validation_actions(
     repair_merge_queue: dict[str, Any],
     events: list[ZfEvent],
 ) -> list[dict[str, Any]]:
+    from zf.runtime.source_repair_recovery import pending_validation_diagnosis
+
     items = repair_merge_queue.get("items") if isinstance(repair_merge_queue, dict) else []
     out: list[dict[str, Any]] = []
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
             continue
+        diagnosis = pending_validation_diagnosis(item)
+        if diagnosis and not _action_seen(events, diagnosis):
+            diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
+            diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
+            out.append(diagnosis)
         if str(item.get("status") or "") != "closeout_required":
             continue
         validation = item.get("validation") if isinstance(item.get("validation"), dict) else {}

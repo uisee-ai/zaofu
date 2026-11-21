@@ -7,6 +7,36 @@ from zf.core.events.model import ZfEvent
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
+def pending_validation_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Route a retained validation failure to an agent, without retrying it."""
+    validation = item.get("validation") or {}
+    failed_id = str(validation.get("event_id") or "")
+    if (item.get("status") != "needs_review" or validation.get("status") != "failed"
+            or not failed_id or item.get("next_allowed_action") != "repair_validation_failed"):
+        return None
+    continuation = item.get("continuation") or {}
+    return {
+        "schema_version": "run-manager.pending-action.v1", "action": "diagnose-attention",
+        "checkpoint_id": "repair-validation-diagnosis-" + failed_id,
+        "safe_resume_action": "diagnose_attention", "fingerprint": "repair-validation:" + failed_id,
+        "queue_id": item.get("queue_id"), "candidate_id": item.get("candidate_id"),
+        "source_event_ids": [failed_id], "continuation": continuation,
+        "source_commit": item.get("source_commit"), "base_commit": item.get("base_commit"),
+        "worktree_path": item.get("worktree_path"),
+        "repair_contract_digest": item.get("repair_contract_digest"),
+        "workflow_run_id": continuation.get("workflow_run_id", ""),
+        "task_id": continuation.get("task_id", ""),
+        "failure_class": "repair_validation_failed", "owner_route": "run_manager",
+        "suggested_route": "run_manager_resident_agent", "action_policy": "needs_diagnosis",
+        "intervention_class": "diagnose",
+        "expected_downstream_events": ["run.manager.resident.prompted", "run.manager.autoresearch.requested"],
+        "expected_output": ["run.manager.agent.recommendation"],
+        "reason": "Repair validation failed: " + str(validation.get("reason") or "unknown")
+            + "; inspect the frozen candidate and retained validation result before choosing recovery. "
+              "A diagnosis does not authorize retry, rebase, apply, or replacement of failed evidence.",
+    }
+
+
 def pending_restart_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
     """An unobserved apply/restart needs a bounded diagnosis, never blind reapply."""
     progress = next((row for row in reversed(item.get("events") or []) if row.get("event_type") in {
