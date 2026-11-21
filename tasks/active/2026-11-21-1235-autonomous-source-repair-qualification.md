@@ -6,10 +6,10 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 
 | ID | 工作与验收 | 当前状态 |
 |---|---|---|
-| SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 核验中 |
-| SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 核验中 |
+| SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
+| SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 待 SR1/SR2 |
-| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 8 路 Reader 运行中，19/19 原采证可用，恢复后无新采证 |
+| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 本轮6/8通过，2项执行失败；19/19原采证可用，未增加宿主执行 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -48,3 +48,26 @@ Reader修复提交：`01acdbdb fix: keep artifact reads live during concurrent e
 源码修复按独立提交保留，整批在真实签收前继续active。最后skill/CLI闭包65通过、
 1跳过。范围审查：变更超过25文件，含调用者、回归、方法副本与记录；采用Reader/
 source-repair两提交，前半链独立只读复核及影响闭包，没有runtime状态/秘密文件入库。
+
+
+13:00 UTC：`f3dbea84 fix: bind autonomous repair validation and checkpoint recovery`
+与Reader提交已部署隔离控制面。runtime-load确认PID2795180、f3dbea84及源码摘要；
+所有既有worker pane保留，配置sha与120额度不变。前文“未部署”为部署前观察。
+
+13:10后核查：12:45 lane3自动retry-1并非再次游标错误，而是新consumer清单已更新，
+required_reads仍同时保留祖先c8354…与当前fe573…两个摘要，前者在新manifest中不可解析。
+19份回执均存在且可用；精确摘要拒绝正确，不能修改原冻结请求或放宽读取校验。
+新增修复：新Reader派发前只移除经不可变祖先请求/清单证明的、完全相同的candidate-host-execution派生
+必读条目，再由新清单重建；自定义选段/约束保留，已存在的坏retry祖先同样可恢复。
+真实prepare调用链回归先2失败（首轮fixture API误用不计RED），修复后18通过。
+
+RM在12:52已准确诊断上述故障（evt-d8e74e6c5787），不是未发现；随后runtime把建议
+标记superseded。只读核查证实target_current=true、全Run progress_digest前置=false，
+其他Reader进展使仍有效的本案诊断过期。聚合失败仍可生成诊断，但完整RM投影为空；
+其过滤/案卷准入仍待核验，不能宣称自主恢复闭环已完成。
+
+调用闭包第一轮638通过/7跳过、4失败，发现初版泛化清理过宽，会干扰已有critical
+修复输入的校验；已收窄为仅刷新candidate-host-execution派生绑定，其余必读完整
+保留。33项直接回归（含原四项安全回归）全部通过，完整闭包重新验证中。
+
+收窄后的Reader调用闭包650 passed/7 skipped；sentinel53、flow mock10通过。

@@ -37,6 +37,10 @@ def prepare_fresh_reader_retry(
             "source_event_id": previous_dispatch.id})
         if error:
             return None
+    elif payload.get('required_reads'):
+        from zf.runtime.reader_retry_reads import explicit_retry_reads
+
+        payload['required_reads'] = explicit_retry_reads(runtime, payload, old_operation_id)
     for key in _READER_RETRY_CALL_IDENTITY_KEYS:
         payload.pop(key, None)
         child.pop(key, None)
