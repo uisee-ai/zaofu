@@ -70,3 +70,18 @@ CR4/CR5验证：自动影响闭包（base643347e8）3529 passed、8 skipped、8 
 两个Plan synth测试替身缺少新增退役接口，补齐替身后相关文件与全部新回归28 passed。
 新增实际ControlledActionService重试测试确认范围及stage代次原样保留。最终sentinel
 53 passed，flow mock 10 passed；不称为全量测试或真实产品验收。
+
+CR4/CR5实现提交：`55479d4a fix: retire stale writer recovery before plan redispatch`；此前
+`824556e7`（依赖身份）与`643347e8`（生产回执恢复）也已部署。隔离控制面快进至55479d4a，
+06:41 UTC受控`stage-retrigger`产生evt-59cfee3d270c，沿用stage-replan-69ddde1757e436c74465。
+新控制器PID1105899；实际产生evt-a7ea1e0dd7b5取消046错误分支，原因准确为
+plan_branch_descends_from_retired_writer_trigger；evt-422d5045c127派发新的局部Planner。
+19个既有pane中18个PID保持，Planner按新派发替换；未重启其他项目控制器。
+
+保留被退役Critic的两项语义意见作为重试反馈：八个只读审计的验收责任表需一致，
+MEDIAN输入必须保留全部已批准验收义务，不能缩成单个回归例。取消旧分支不丢弃意见。
+真实入口证据：reports/p0-frontier-live-entry-proof.json；受控动作：
+reports/p0-frontier-controlled-retry.json。仍无新的Candidate/Judge/Goal/local delivery签收。
+
+复核边界：此前独立复核关闭CR1–CR3；CR4/CR5的独立研究会话遇到Astra容量不足，
+没有最终复核结果。本批有主会话源码审查、确定性回归与上述真实入口证据，不将其冒充独立通过。
