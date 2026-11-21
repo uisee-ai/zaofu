@@ -871,6 +871,9 @@ class PlanSynthRuntimeMixin:
 
     def _handle_fanout_synth_completed(self, event: ZfEvent) -> None:
         payload = event.payload if isinstance(event.payload, dict) else {}
+        manifest = self._fanout_manifest(str(payload.get("fanout_id") or ""))
+        if manifest and self._cancel_candidate_superseded_replan_fanout(manifest):
+            return
         if str(payload.get("output_profile_id") or "") == "plan-synth":
             fanout_id = str(payload.get("fanout_id") or "")
             stale_reason, _superseded_by = self._fanout_identity_stale_reason(fanout_id)

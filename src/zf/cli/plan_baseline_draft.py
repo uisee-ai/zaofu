@@ -78,15 +78,22 @@ def draft_files(state, manifest, identity, names, *, seed_goals=False):
         raw = assigned_bytes(name)
         if seed_goals and name == "task_map":
             from zf.runtime.goal_claim_set import validate_goal_claim_set
+            from zf.runtime.task_map_goal_coverage import validate_goal_coverage
 
-            goals = validate_goal_claim_set(json.loads(assigned_bytes("goal_claim_set")),
+            goal_bytes = assigned_bytes("goal_claim_set")
+            goals = validate_goal_claim_set(json.loads(goal_bytes),
                 workflow_run_id=package["workflow_run_id"], task_map_generation=package["task_map_generation"])
             task_map = json.loads(raw)
-            # Keep explicit mapping and verification fields intact. A legacy map
-            # can derive its contracts from criteria that the revision will edit.
             if not task_map.get("goal_claims"):
-                task_map["goal_claims"] = goals["claims"]
-                raw = json.dumps(task_map, ensure_ascii=False, indent=2).encode() + b"\n"
+                candidate = {**task_map, "goal_claims": goals["claims"]}
+                coverage, errors = validate_goal_coverage(candidate, task_map.get("tasks", []))
+                if not errors and not coverage["diagnostics"]:
+                    raw = json.dumps(candidate, ensure_ascii=False, indent=2).encode() + b"\n"
+                else:
+                    # A legacy map may contain inert labels while its admitted
+                    # claims derive from ACs. Do not force a mapping migration
+                    # that changes completed Task rows merely to make a draft.
+                    yield "baseline-goal-claims.json", goal_bytes
         yield f"{name}.json", raw
 
 
@@ -122,7 +129,15 @@ def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
     except BaseException:
         shutil.rmtree(draft)
         raise
-    return {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+    result = {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+    if "baseline-goal-claims.json" in result["files"]:
+        result["goal_seeding"] = {
+            "status": "legacy_derived_preserved",
+            "reference_only": "baseline-goal-claims.json",
+            "reason": "Explicit seeding would change Task bindings. Keep completed rows intact; "
+                      "the normal derived-claim continuity checks still apply. This reference is not a Plan output port.",
+        }
+    return result
 
 
 def run(args):

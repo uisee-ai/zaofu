@@ -280,7 +280,13 @@ For an execution replan, start from the files bound to this Planner attempt.
 After the required reads, use the literal `zf plan draft-baseline --workspace`
 command in the Controlled Artifact Inputs briefing. It creates editable files
 in a new private directory under your own `artifacts/plan` and prints their
-paths. With `--seed-goals`, a legacy task map starts with the bound Goal Claim Set made explicit. Keep its historical obligations. Edit the current behavior, affected consumers and evidence in this draft; use the failure report to identify the observed change. Select the assigned ports you need. For a pending Plan rejected by the
+paths. With `--seed-goals`, the tool makes the bound claims explicit only when
+the existing Task bindings already cover them. Otherwise it preserves the legacy
+map and adds `baseline-goal-claims.json` as a reference, not an output port.
+Do not rename retained Task goal IDs to force this format migration; normal
+derived-claim continuity still protects the approved obligations. Keep historical
+obligations and edit only the affected behavior, consumers and evidence in this
+draft. Select the assigned ports you need. For a pending Plan rejected by the
 Owner, carry the rejection forward when reusing its files.
 
 Edit stable Task/AC/scenario rows and update all consumers of the changed

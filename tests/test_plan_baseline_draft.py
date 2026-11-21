@@ -103,7 +103,7 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
     assert not list((state / "artifacts/attempts/a1").glob("read-ledger*.jsonl"))
 
 
-@pytest.mark.parametrize("case", ["legacy", "explicit", "denied", "wrong_generation", "changed_bytes"])
+@pytest.mark.parametrize("case", ["legacy", "legacy_refs", "seedable", "explicit", "denied", "wrong_generation", "changed_bytes"])
 def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
     from zf.cli.plan_baseline_draft import draft_files
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
@@ -115,6 +115,10 @@ def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
         task_map["goal_claims"] = [{"goal_claim_id": "A", "text": "保留验收", "mandatory": True}]
     goals = build_goal_claim_set(task_map, workflow_run_id="run-1", goal_id="goal-1",
                                 task_map_generation="other" if case == "wrong_generation" else "g1")
+    if case == "legacy_refs":
+        task_map["tasks"][0]["goal_claim_ids"] = ["GOAL-LEGACY"]
+    elif case == "seedable":
+        task_map["tasks"][0]["goal_claim_ids"] = [goals["claims"][0]["goal_claim_id"]]
     for name, body in (("task_map", task_map), ("goal_claim_set", goals)):
         port = next(item for item in package["produced"] if item["logical_name"] == name)
         descriptor = write_immutable_json_sidecar(tmp_path, body, root="fixtures/seed",
@@ -136,8 +140,15 @@ def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
         with pytest.raises(ValueError):
             list(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))
         return
-    seeded = dict(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))["task_map.json"]
-    if case == "explicit":
+    files = dict(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))
+    seeded = files["task_map.json"]
+    if case in {"legacy", "legacy_refs"}:
+        assert seeded == raw
+        assert json.loads(files["baseline-goal-claims.json"]) == goals
+        from zf.runtime.task_map_goal_coverage import validate_goal_coverage
+        coverage, errors = validate_goal_coverage(json.loads(seeded), task_map["tasks"])
+        assert not errors and not coverage["diagnostics"]
+    elif case == "explicit":
         assert seeded == raw
     else:
         assert json.loads(seeded) == {**task_map, "goal_claims": goals["claims"]}

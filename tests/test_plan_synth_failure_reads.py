@@ -85,6 +85,7 @@ def test_failed_critic_preserves_checkpoint_without_passing(tmp_path, mode, monk
                 'aggregate_config': {'success_event': 'task_map.ready',
                                      'failure_event': 'prd.plan.failed'}}
     monkeypatch.setattr(runtime, '_fanout_manifest', lambda _: manifest, raising=False)
+    monkeypatch.setattr(runtime, '_cancel_candidate_superseded_replan_fanout', lambda _: False, raising=False)
     monkeypatch.setattr(runtime, '_fanout_identity_stale_reason', lambda _: ('', ''), raising=False)
     monkeypatch.setattr(runtime, '_fanout_flow_identity_payload', lambda *a, **k: {}, raising=False)
     monkeypatch.setattr(runtime, '_fanout_aggregate_started', lambda _: True, raising=False)

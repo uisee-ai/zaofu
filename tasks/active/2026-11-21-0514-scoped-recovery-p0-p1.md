@@ -47,3 +47,26 @@ CR3增量验证：生产origin的崩溃与边界21 passed，OA/恢复直接调�
 06:00 UTC已将`adf18198`及`824556e7`快进到隔离控制面。记录本轮用户授权，通过既有Owner控制动作恢复一次stage代次，触发`evt-b662f50bca09`；不修改预算、权限或历史失败。控制器PID958768，既有tmux会话保留。Planner于06:01继续运行，新operation为`wop-prd-plan-planner-trig-evt-046dea37-rework-57e95e5770d3`；采用批准Plan的draft-baseline。最终Candidate/Judge/Goal/local delivery仍待签收。
 
 最终自动验证（base 824556e7，显式tests/test_candidate_task_repair_decision.py绑定新模块）：380 passed、7 skipped；sentinel 53 passed、flow mock 10 passed。独立只读复核确认CR1/CR2/CR3无剩余阻塞，复核本身不构成真实8×8通过。
+
+## 真实恢复新增缺陷 CR4 / CR5
+
+上面的06:01 Planner后来核实属于错误分支，不能算作正确局部恢复：03:50的旧
+`task_map.ready`（evt-6b0f0b7e6cb7）在06:00重新消费，package admission失败产生
+evt-7b0c97b15e15，再自动生成全范围Plan触发evt-046dea37ddd3，覆盖原授权的
+evt-b662f50bca09。旧事件不是06:00新作出的RM决策。控制器06:22暂停；Critic在
+06:25以rejected结束，证据留存，不批准或派发这个全范围Plan。
+
+- CR4：Goal草稿兼容。真实16行旧式Map的Goal由AC派生，直接seed会造成71项校验错误，
+  Planner改14项保留行的Goal引用。修复为条件seed/原字节保持/参考Goal侧车；不放宽preflight。
+- CR5：旧writer回放覆盖新Owner恢复。在package admission之前核已完成受控Plan恢复；
+  早于它的同Run/PDD writer意图抑制。已存在的原生因果Plan后代通过既有取消Owner退役，
+  reader起点、聚合和synth结果均检查，避免消费旧拒绝再触发重规划。
+- 定向回归13 passed。真实只读探针`p0-frontier-real-probe.json`确认旧writer及046分支
+  都退役到b662，而b662本身不被拦；Goal草稿保持原始字节、16行完整。
+- 计划沿同一stage代次用既有`stage-retrigger`恢复b662；不新开预算、不修改16个done历史事实。
+  P0-3继续active，必须等真实Candidate/Judge/Goal/local delivery结果。
+
+CR4/CR5验证：自动影响闭包（base643347e8）3529 passed、8 skipped、8 failed；8项均为
+两个Plan synth测试替身缺少新增退役接口，补齐替身后相关文件与全部新回归28 passed。
+新增实际ControlledActionService重试测试确认范围及stage代次原样保留。最终sentinel
+53 passed，flow mock 10 passed；不称为全量测试或真实产品验收。

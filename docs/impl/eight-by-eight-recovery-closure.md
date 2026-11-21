@@ -304,3 +304,25 @@ Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命
 Owner 明确批准已修输入 → 受控恢复 → 新控制器实例 → Reader → Thin Judge → Goal 收据。
 Provider 输出和 Owner 批准是测试 actor；测试通过不代表真实 Provider 的自主诊断质量，
 也不把最初失败的无监工 8×8 窗口改成通过。真实 Candidate/Judge/交付另记验收状态。
+
+### 真实恢复补充：旧触发退役与旧式 Goal 草稿（2026-11-21）
+
+真实恢复又复现两处缺口，不能仅凭上述隔离回归宣告恢复成功：
+
+- `draft-baseline --seed-goals` 原来把显式 Goal 定义加入旧式 Task Map，
+  但保留任务中的旧标签。派生 AC Goal 与旧标签不匹配，Planner 为通过校验而修改
+  保留行。现在仅在不改变任何 Task 绑定、Goal coverage 合法时注入显式定义；
+  否则保留 Task Map 原始字节，另提供只读参考 `baseline-goal-claims.json`。
+  该参考不是 Plan 输出端口，原派生 Goal 连续性检查继续执行，不放宽合同保持规则。
+- 已完成的 Owner Plan 新代次恢复，使同 Run/PDD 的更早 writer 意图失效。
+  以前这类旧队列会先执行 package admission，失败后自动产生新的全范围 Plan，
+  覆盖已经启动的局部恢复。现在在 writer admission 前核验既有受控恢复完整链，
+  抑制旧触发并记 `fanout.retrigger.suppressed`，不制造新的产品失败。
+  对已产生的错误 Plan，只沿同 Run/PDD 的原生 causation 追溯到旧 writer；
+  reader 启动、聚合和 synth 结果入口均使用该事实。已启动分支通过现有 fanout
+  cancellation 和 WorkflowOperationService 退役，历史结果仍保留，不成为新交付权限。
+  其他 Run/PDD、未完成或外部伪造的恢复、恢复之后的新 writer 不因本规则失效。
+
+恢复重试使用既有 `stage-retrigger` 重新发出被错误覆盖的原授权触发，保留其选择、
+Plan 输入和 stage 代次；不重新授予预算或扩大任务集合。真实旧事件、后代和正确恢复
+触发的只读回放分别验证“退役、退役、保持有效”；完整产品签收仍由后续正式结果证明。

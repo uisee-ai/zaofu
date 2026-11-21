@@ -2345,6 +2345,9 @@ class FanoutCoordinationMixin(
         stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
+        from zf.runtime.writer_replan_frontier import suppress_retired_plan_branch
+        if suppress_retired_plan_branch(self, event):
+            return False
         if suppress_stale_task_pipeline_generation(
             self,
             trigger_event=event,
@@ -3287,6 +3290,9 @@ class FanoutCoordinationMixin(
         if self._run_fanout_dispatch_blocked(event):
             return
         if stage_barrier_blocks_dispatch(self, event):
+            return
+        from zf.runtime.writer_replan_frontier import suppress_retired_writer_trigger
+        if suppress_retired_writer_trigger(self, event):
             return
         from zf.runtime.plan_artifact_package_runtime import admit_task_map_trigger_package
         event = admit_task_map_trigger_package(self, event, stages)
@@ -6431,6 +6437,18 @@ class FanoutCoordinationMixin(
             except Exception:
                 return False
         from zf.runtime.reader_failure_supersession import reader_manifest_replacement_admission
+
+        from zf.runtime.writer_replan_frontier import retired_plan_branch
+        trigger_event = next((event for event in events
+                              if event.id == manifest.get("trigger_event_id")), None)
+        retired_by = retired_plan_branch(events, trigger_event, self.config) if trigger_event else None
+        if retired_by is not None:
+            self._cancel_superseded_fanout_manifest(
+                fanout_id=str(manifest.get("fanout_id") or ""), manifest=manifest,
+                reason="plan_branch_descends_from_retired_writer_trigger",
+                superseded_by=retired_by.id, source="authorized_plan_recovery_frontier",
+            )
+            return True
 
         replacement = reader_manifest_replacement_admission(events, manifest)
         if replacement is not None:
