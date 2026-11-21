@@ -1040,6 +1040,13 @@ class LifecycleManagerMixin(
                     "worker.respawn cooldown active; operator escalation required"
                 ),
             )
+        if recovery_reason == "reader_stuck":
+            from zf.runtime.reader_stuck_recovery import reader_stuck_block_reason
+
+            blocker = reader_stuck_block_reason(self, role)
+            if blocker:
+                return WorkflowRuntimeDecision(action="wait", role=role.instance_id,
+                                               reason=blocker)
         active_task = self._active_task_for_instance(role.instance_id)
         active_fanout = self._active_fanout_child_for_instance(role.instance_id)
         recovery_task_id = (
@@ -1061,6 +1068,8 @@ class LifecycleManagerMixin(
                     continue
                 if prior.type not in {"workflow.operation.requested", "workflow.operation.started"}:
                     continue
+                if prior_payload.get("role_instance") not in (None, "", role.instance_id):
+                    continue
                 recovery_operation_id = str(prior_payload.get("operation_id") or "")
                 recovery_attempt_id = str(
                     prior_payload.get("active_attempt_id")
@@ -1074,6 +1083,12 @@ class LifecycleManagerMixin(
                     break
         except Exception:
             pass
+        if active_fanout is not None:
+            # Shared candidate tasks have multiple independent Reader attempts.
+            recovery_operation_id = str(active_fanout.get("operation_id") or "")
+            recovery_attempt_id = str(active_fanout.get("attempt_id") or active_fanout.get("run_id") or "")
+            recovery_dispatch_id = str(active_fanout.get("run_id") or "")
+            recovery_lease_id = ""
         # B3: watchdog has tripped — worker is currently stuck/dead and
         # we're now starting the respawn flow.
         self._set_worker_state(
@@ -2192,6 +2207,12 @@ class LifecycleManagerMixin(
         )
         reason, task = signal.reason, signal.task
         dispatch_id, stuck_event = signal.dispatch_id, signal.event
+
+        active_reader = (self._active_fanout_child_for_instance(role.instance_id)
+                         if role.role_kind == "reader" else None)
+        if active_reader and active_reader.get("operation_id"):
+            return self._respawn_instance(role, recovery_reason="reader_stuck",
+                                          inject_idle_prompt=False)
 
         latest_dispatch = (
             self._latest_dispatch_event_for_task(task.id) if task is not None else None

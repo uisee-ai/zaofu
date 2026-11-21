@@ -193,3 +193,13 @@ RM建议、控制入口、执行及效果观察使用相同绑定；见
 通用activity兜底不抢先刷新该来源。计费记录保留，普通工具/实时usage不受此检查影响。
 这修复重放延期，不缩短既有失联阈值或长turn宽限。见
 [磁盘用量活性任务](../../tasks/active/2026-11-21-0051-disk-usage-liveness-replay.md)。
+
+### 同父任务 Reader 的失活恢复身份
+
+多个 Candidate Reader 可以绑定同一父 Task。失活信号和恢复不能从父任务最后一次
+派发推断当前 Reader 身份，否则较晚启动的 sibling 会让旧 Reader 永久 wait。
+已具备 typed operation 的 Reader 按自身 fanout child/dispatch 绑定进入既有有限
+respawn；在角色恢复锁内重检 operation、attempt、request hash、已准入结果和 Run
+暂停/终态。恢复沿原 provider session、冻结输入和工作记录继续，不重排共享 Task，
+也不把重新投递认定为产品通过。失败收据同样保留自身身份。
+见[实施任务](../../tasks/active/2026-11-21-0108-reader-stuck-dispatch-identity.md)。
