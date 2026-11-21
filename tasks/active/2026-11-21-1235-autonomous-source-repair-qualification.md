@@ -153,3 +153,25 @@ RM在13:54自动诊断并接受修复evt-5fba52d8c454，已派发Luna隔离源�
 （/tmp/zf-self-repair/self-repair_recommendation-evt-1d0ac4bd0779-e890eeeb6f07e70a-a0），
 同时在原Run下发起缺失Plan语义诊断。当前只观察，不与其并发改动新harness HEAD；
 独立验证、应用与恢复仍待真实结果。Plan尚未批准，8×8资格窗口仍未开始。
+
+
+### 独立源码验证命令兼容修复（2026-11-21）
+
+新Run的原生Luna修复在14:02:37完成，14:04:19由受控publisher发布候选1d39f418；
+独立验证evt-77004db6fefb失败于command_not_allowlisted。冻结合同中的
+`PYTHONPATH=src uv run pytest ...`未被验证器接受，未运行合同测试，未应用候选。
+仅将已知pytest写法归一为可信解释器`sys.executable -m pytest`，保持候选cwd与
+PYTHONPATH=src；只接受既有固定环境值，不执行候选venv入口、不扩大shell/任意环境权限。
+冻结合同原文和原失败记录保留。非法引号也返回拒绝，不使验证器异常退出。
+3项真实RED后，252项影响闭包、53项sentinel、3项flow smoke测试通过；
+原生候选另由监工独立运行原合同96项通过，不等同正式自动验证receipt或自动应用。
+
+新发现SR-FAIL-FEEDBACK：失败队列进入needs_review后没有待执行动作，RM observing；
+14:16投影pending_actions=0、repair_closeout_pending。medium风险旧展示并非实际权限
+阻断：router在显式verified_checkpoint_apply授权及绑定满足时允许medium。
+下一步补失败到只读诊断路径并重新验证，不能用解析兼容修复声称运行已恢复。
+旧Run仍在post-verify discovery；新Run Plan未批准，资格窗口未开始。
+
+命令兼容最终自动影响闭包（dev-verify基线23782907）：1831 passed/7 skipped，
+sentinel 53 passed，flow mock 10 passed。没有全仓或真实Provider验收冒充。
+原生候选独立影响闭包539 passed；仍没有原生重验/应用receipt。

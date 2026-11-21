@@ -153,6 +153,11 @@ def execute_repair_verification_plan(
 
 
 def _trusted_invocation(command: str) -> dict[str, Any] | None:
+    from zf.runtime.repair_checkout_contract import trusted_pytest_invocation
+
+    pytest_invocation = trusted_pytest_invocation(command)
+    if pytest_invocation is not None:
+        return pytest_invocation
     if command == "git diff --check":
         return {"argv": ["git", "diff", "--check"], "env": {}}
     if command == "npm --prefix web run build":
@@ -162,20 +167,10 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
     if command.startswith(prefix):
         env["PYTEST_ADDOPTS"] = "--no-cov"
         command = command[len(prefix):].strip()
-    argv = shlex.split(command)
-    # The frozen checkout contract reuses this interpreter's dependencies,
-    # while importing the isolated candidate. Do not admit arbitrary env or
-    # executable paths from an agent's verification instruction.
-    if (len(argv) >= 5 and argv[:3] == ["env", "PYTHONPATH=src", sys.executable]
-            and argv[3:5] == ["-m", "pytest"]):
-        return {"argv": argv[2:], "env": {**env, "PYTHONPATH": "src"}}
-    # Older frozen contracts retain this spelling. Bind it to our interpreter;
-    # never execute a candidate-controlled virtualenv entrypoint.
-    if argv and argv[0] == ".venv/bin/pytest":
-        return {"argv": [sys.executable, "-m", "pytest", *argv[1:]],
-                "env": {**env, "PYTHONPATH": "src"}}
-    if len(argv) >= 4 and argv[:3] == ["uv", "run", "pytest"]:
-        return {"argv": argv, "env": env}
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
     if (
         len(argv) == 5
         and argv[0] in {"python", "python3"}
