@@ -1597,12 +1597,19 @@ def _emit_cost_blackout_if_needed(
         return False
     last_dispatch_ts = last_dispatch.ts
     last_usage_ts = None
-    for event in events:
+    dispatch_index = next(
+        (index for index, event in enumerate(events) if event is last_dispatch),
+        -1,
+    )
+    has_usage_after_dispatch = False
+    for index, event in enumerate(events):
         if event.type != "agent.usage":
             continue
         if dispatch_scope and _scope(event) != dispatch_scope:
             continue
         last_usage_ts = event.ts
+        if index > dispatch_index:
+            has_usage_after_dispatch = True
 
     def _epoch(ts: str | None) -> float | None:
         if not ts:
@@ -1617,7 +1624,7 @@ def _emit_cost_blackout_if_needed(
     if dispatch_epoch is None:
         return False  # 本窗无派发,无成本可盲
     if (
-        usage_epoch is None
+        not has_usage_after_dispatch
         and now_wall - dispatch_epoch < intervals.cost_blackout_startup_grace_s
     ):
         return False  # 新 worker 启动早期 session/usage 文件可能尚未落盘
