@@ -103,6 +103,30 @@ def test_invalid_explicit_parent_cannot_fall_back_to_matching_freeze(mixed):
         payload={'candidate_snapshot_event_id':'missing', 'freeze_id':native.payload['freeze_id']}) is None
 
 
+@pytest.mark.parametrize('legacy', [False, True])
+def test_aggregate_rebuild_validates_later_receipt_for_exact_historical_repair(mixed, monkeypatch, legacy):
+    from zf.runtime import candidate_continuation
+    from zf.runtime.fanout_aggregate_recovery import candidate_binding_current
+    native, retry, _ = recover(mixed)
+    if legacy:
+        events, retry = legacy_view(mixed, native, retry)
+    else:
+        events = mixed.event_log.read_all()
+    body = {**native.payload, 'fanout_id':'discovery-repair'}
+    trigger = {**body, 'source_event_id':retry.id}
+    events.append(ZfEvent(type='fanout.started', origin='kernel', payload={
+        'fanout_id':'discovery-repair', 'trigger_payload':trigger}))
+    source = ZfEvent(type='flow.discovery.completed', origin='kernel', payload=body)
+    events.append(source)
+    mixed._fanout_manifest = lambda _: {'trigger_payload':trigger}
+    monkeypatch.setattr(candidate_continuation, '_git_commit', lambda *args: body['candidate_head_commit'])
+    assert candidate_binding_current(mixed,events,source,native.payload['workflow_run_id'])
+    replacement = deepcopy(native)
+    replacement.id = 'new-native-after-repair'
+    events.append(replacement)
+    assert not candidate_binding_current(mixed,events,source,native.payload['workflow_run_id'])
+
+
 def test_real_new_freeze_still_invalidates_previous_reader(mixed):
     before = prepare(mixed)
     native, retry, _ = recover(mixed)

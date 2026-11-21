@@ -179,6 +179,7 @@ class TestBlockingMode:
         )
         # Returned event is discriminator.failed, not arch.proposal.done
         assert result.type == "discriminator.failed"
+        assert result.origin == "kernel"
         events = _read_events(state_dir)
         types = [e["type"] for e in events]
         # original NOT written

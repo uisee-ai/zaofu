@@ -805,3 +805,26 @@ ZF_STATE_DIR、ZF_WORKSPACE_HOME等。16:46:52测试force-init清空NEW原账本
 清理收据随Worker结果或验证step持久化，unknown不能成为成功，optional step同样
 阻止验证通过及后续命令。该机制不是文件系统sandbox；supervisor自身丢失/超时保持
 unknown，不宣称强杀宿主或不可中断内核任务后仍能完全清理。
+
+聚合恢复请求不能只依赖首次事件消费。已准入的kernel-origin aggregate rebuild若因
+Run临时blocked被原reducer拒绝，idle replay及Run重新active/resumed时从账本重查
+未完成请求；项目暂停、未知Run、取消/最终终态仍不执行。继续复用原source/manifest/
+Candidate currentness/子项终态校验及完成去重，不再开Worker或发新审批。
+
+重建聚合的发布使用精确outbox：首次生成完整事件并冻结sidecar后，才追加引用它的
+aggregate.completed；正常发布、原reducer再次调用和周期恢复共用同一body、event ID与
+因果链。冻结后、aggregate后、publication后三断点均可恢复且不重复聚合/派发。校验器
+拒绝事件明确origin=kernel；只有精确ID/type/body的kernel拒绝能停止重发，不能当成功。
+取消fanout和失效Candidate继续拒绝；native还比较原冻结身份，不能仅以同head复用。
+partial_task_continuation明确绑定当前baseline事件及自身continuation ref/commit，不能
+误当已冻结Candidate，也不能跨baseline重放。旧complete缺outbox仍保持unknown。
+
+原请求带source_event_id时，恢复还必须核对该精确、更早、kernel同Run证据所绑定的
+冻结版本；不能用fanout启动时才出现的新freeze替换它。相同绑定上的后续test.passed
+不使原准入决定失效。最终199项直接调用及sentinel53/flow10通过；更早冻结版自动
+11697通过/10跳过、serial4，不等同真实无监工资格通过。
+
+历史前缀决定Candidate选择；受控repair副本的授权归一可使用完整账本中较晚的动作
+完成回执，但不能重新选择最新Candidate。真实controlled repair两种副本正例与新
+freeze反例通过。最终252直接调用/候选恢复mock、sentinel53、flow10通过，独立复核
+无剩余确定阻断。

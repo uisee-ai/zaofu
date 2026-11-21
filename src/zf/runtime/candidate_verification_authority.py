@@ -351,6 +351,8 @@ def prepare_candidate_verification_authority(
 def _latest_frozen_candidate(
     events: list[ZfEvent],
     workflow_run_id: str,
+    *,
+    authority_events: list[ZfEvent] | None = None,
 ) -> ZfEvent | None:
     for event in reversed(events):
         if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
@@ -364,7 +366,7 @@ def _latest_frozen_candidate(
         if event_run_id != workflow_run_id:
             continue
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
-            return native_freeze_for_recovery(events, event)
+            return native_freeze_for_recovery(events if authority_events is None else authority_events, event)
     return None
 
 
@@ -373,8 +375,9 @@ def frozen_candidate_for_payload(
     workflow_run_id: str,
     *,
     payload: Mapping[str, Any],
+    authority_events: list[ZfEvent] | None = None,
 ) -> ZfEvent | None:
-    """Resolve the exact triggering freeze before falling back to latest."""
+    """Select within events; later authority receipts may validate that exact copy."""
 
     trigger_payload = payload.get("trigger_payload")
     trigger_payload = (
@@ -393,7 +396,7 @@ def frozen_candidate_for_payload(
         or ""
     ).strip()
     if not candidate_event_id and not freeze_id:
-        return _latest_frozen_candidate(events, workflow_run_id)
+        return _latest_frozen_candidate(events, workflow_run_id, authority_events=authority_events)
     candidates = {
         event.id: event
         for event in events
@@ -415,7 +418,7 @@ def frozen_candidate_for_payload(
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
             if freeze_id and str(body.get("freeze_id") or "") != freeze_id:
                 return None
-            return native_freeze_for_recovery(events, current)
+            return native_freeze_for_recovery(events if authority_events is None else authority_events, current)
         parent_id = str(
             body.get("candidate_snapshot_event_id")
             or body.get("candidate_event_id")
@@ -438,7 +441,7 @@ def frozen_candidate_for_payload(
                 == "candidate-freeze-receipt.v1"
                 and str(body.get("freeze_id") or "") == freeze_id
             ):
-                return native_freeze_for_recovery(events, event)
+                return native_freeze_for_recovery(events if authority_events is None else authority_events, event)
     return None
 
 

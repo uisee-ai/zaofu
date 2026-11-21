@@ -5583,16 +5583,23 @@ class FanoutCoordinationMixin(
             )
         ):
             return
-        if any(
-            item.type == "fanout.aggregate.completed"
-            and isinstance(item.payload, dict)
-            and str(item.payload.get("fanout_id") or "") == fanout_id
-            and str(item.payload.get("rebuild_of") or "") == source_event_id
-            for item in events
-        ):
+        from zf.runtime.fanout_aggregate_recovery import candidate_binding_current
+        from zf.runtime.run_scope import resolve_run_for_event
+
+        if any(item.type == "fanout.cancelled" and item.origin in {"", "kernel"}
+               and item.payload.get("fanout_id") == fanout_id for item in events):
             return
         stale_reason, _superseded_by = self._fanout_identity_stale_reason(fanout_id)
-        if stale_reason:
+        if stale_reason or not candidate_binding_current(self, events, source, resolve_run_for_event(events, event)):
+            return
+        existing = next((item for item in events if item.type == "fanout.aggregate.completed"
+            and item.payload.get("fanout_id") == fanout_id
+            and item.payload.get("rebuild_of") == source_event_id), None)
+        if existing is not None:
+            if existing.payload.get("rebuild_publication_ref"):
+                from zf.runtime.reader_aggregate_publication import publish_prepared
+
+                publish_prepared(self, existing, events)
             return
         children = [
             child
@@ -5806,13 +5813,26 @@ class FanoutCoordinationMixin(
             if derived_failure_kind:
                 aggregate_payload.setdefault("failure_kind", derived_failure_kind)
                 failure_recovery.setdefault("failure_kind", derived_failure_kind)
-        aggregate_event = self.event_writer.append(ZfEvent(
-            type="fanout.aggregate.completed",
-            actor="zf-cli",
+        aggregate_event = ZfEvent(
+            type="fanout.aggregate.completed", actor="zf-cli", origin="kernel",
             payload=aggregate_payload,
             causation_id=rebuild_request.id if rebuild_request is not None else None,
             correlation_id=trace_id,
-        ))
+        )
+        if rebuild_request is not None and publish_event and publish_event not in {
+            LANE_STAGE_HANDOFF_SUCCESS_EVENT, LANE_STAGE_HANDOFF_FAILURE_EVENT,
+        }:
+            from zf.runtime.reader_aggregate_publication import freeze_publication, publication_payload
+
+            publication = ZfEvent(type=publish_event, actor="zf-cli", origin="kernel",
+                payload=publication_payload(manifest=manifest, artifact_payload=artifact_payload,
+                final_status=final_status, publish_event=publish_event, rebuild_request=rebuild_request,
+                rebuild_of=rebuild_of, recovery_generation=recovery_generation,
+                failure_recovery=failure_recovery, failure_findings=failure_findings,
+                aggregate_payload=aggregate_payload),
+                causation_id=aggregate_event.id, correlation_id=trace_id)
+            aggregate_event.payload['rebuild_publication_ref'] = freeze_publication(self, publication)
+        aggregate_event = self.event_writer.append(aggregate_event)
         from zf.runtime.research_delivery import settle_research_delivery
 
         settle_research_delivery(self, aggregate_event, manifest, artifact_payload, None)
@@ -5859,67 +5879,17 @@ class FanoutCoordinationMixin(
                         extra_payload=extra_payload,
                     )
                 return
-            publish_payload = {
-                "fanout_id": fanout_id,
-                "trace_id": trace_id,
-                "stage_id": stage_id,
-                "pdd_id": pdd_id,
-                "feature_id": feature_id,
-                "status": final_status,
-                "target_ref": manifest.get("target_ref", ""),
-                "child_count": len(children),
-                **artifact_payload,
-            }
-            if rebuild_request is not None:
-                publish_payload.update({
-                    "rebuild_of": rebuild_of,
-                    "rebuild_request_event_id": rebuild_request.id,
-                    "recovery_generation": recovery_generation,
-                })
-            if final_status == "failed":
-                publish_payload.update(failure_recovery)
-                publish_payload.setdefault("findings", failure_findings)
-                publish_payload.setdefault(
-                    "failed_children",
-                    aggregate_payload.get("failed_children", []),
-                )
-                # R5: judge.failed reached the operator with an empty reason.
-                # The aggregate knows which children failed and what they
-                # reported — say so instead of shipping "".
-                if not str(publish_payload.get("reason") or "").strip():
-                    failed_children = publish_payload.get("failed_children") or []
-                    first_message = ""
-                    if failure_findings and isinstance(failure_findings[0], dict):
-                        first_message = str(
-                            failure_findings[0].get("message") or "",
-                        )[:160]
-                    publish_payload["reason"] = (
-                        f"{len(failed_children)}/{len(children)} children failed"
-                        + (f": {first_message}" if first_message else "")
-                    )
-                # publish_event is config-driven (the stage's failure_event may
-                # name any contract event, e.g. lane.stage.failed). Forge the
-                # contract's required keys present — value may be empty, same
-                # rule as the lane-pipeline emitter — else a blocking
-                # discriminator replaces the failure with discriminator.failed
-                # and rework never sees it (R6: verify-timeout wedged 25min).
-                from zf.core.config.schema_profiles import union_required_keys
+            from zf.runtime.reader_aggregate_publication import publication_payload, publish_prepared
 
-                target_ref = str(publish_payload.get("target_ref") or "")
-                for key in union_required_keys(publish_event):
-                    if key == "task_id" and target_ref.startswith("task/"):
-                        publish_payload.setdefault(
-                            "task_id", target_ref.split("/", 1)[1],
-                        )
-                    else:
-                        publish_payload.setdefault(key, "")
-            published = self.event_writer.append(ZfEvent(
-                type=publish_event,
-                actor="zf-cli",
-                payload=publish_payload,
-                causation_id=aggregate_event.id,
-                correlation_id=trace_id,
-            ))
+            publish_payload = publication_payload(manifest=manifest, artifact_payload=artifact_payload,
+                final_status=final_status, publish_event=publish_event, rebuild_request=rebuild_request,
+                rebuild_of=rebuild_of, recovery_generation=recovery_generation,
+                failure_recovery=failure_recovery, failure_findings=failure_findings,
+                aggregate_payload=aggregate_payload)
+            published = (publish_prepared(self, aggregate_event) if rebuild_request is not None
+                else self.event_writer.append(ZfEvent(
+                    type=publish_event, actor="zf-cli", payload=publish_payload,
+                    causation_id=aggregate_event.id, correlation_id=trace_id)))
             if final_status == "completed" and publish_event == "verify.passed":
                 self._bridge_verify_passed_to_parity_scan(published)
             elif (

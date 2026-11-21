@@ -477,3 +477,36 @@ SR-PROCESS最终：首版自动闭包1870 passed/7 skipped、sentinel53、flow10
 指出全局PID祖先快照复用风险；改为只枚举直接子进程、pidfd打开后复核PPid/birth，
 逐轮收养后代，增加拒绝过期归属负例。最终34个真实边界/直接测试、sentinel53、flow10
 通过，独立复核无剩余确定阻断。上轮1870是此前冻结版，不称最终全量或无人E2E。
+
+18:33 UTC：24420dc0进程治理部署NEW，PID756777，所有Worker pane保持，配置SHA
+fadd068e…不变；部署前没有活跃源码修复Worker，属于准备期人工介入。
+
+AGG-RESUME：OLD受控聚合请求evt-7fc60ea3f3c2在Run仍blocked时被消费，原reducer
+返回workflow_run_terminal，随后active并没有重试。实账本只读比较证明请求时terminal、
+当前无currentness阻塞。首次两版回归没有真实SessionStore，重启从0重放造成假GREEN；
+补齐真实持久游标后RED。新增kernel已准入请求的idle/解除阻塞重放，继续由原reducer
+校验Candidate/source/子项/去重，177直接调用通过；待独立复核与最终闭包。
+
+AGG-RESUME首版自动3322 passed/7 skipped、sentinel53、flow10。独立review发现
+fanout取消未拦截、completed→publish崩溃永久缺驱动。补精确publication sidecar并复用
+原generic payload builder，首次/直接重试/周期重试共用，lane分支保持。增加原生冻结
+身份、真实Git移动、取消以及三持久边界恢复回归。校验器原机械拒绝事件缺origin，
+补kernel来源，避免把worker仿造的blocked ID当核验拒绝。
+直接210passed/2failed定位legacy partial continuation重扫，不是冻结Candidate：原fixture
+目标partial456、baseline candidate123。恢复显式continuation身份检查，仍要求baseline
+事件当前及Git ref不移动；测试Git seam返回既有partial456，正文准入未放宽。最终36项
+直接边界通过（含同head新freeze、无关worker拒绝事件、重启三断点），待最终闭包/review。
+
+AGG-RESUME最终：冻结版自动影响闭包11697 passed/10 skipped、serial4、sentinel53、
+flow10。最后独立复核发现source证据在freeze A、fanout在同head新freeze B启动时可能
+错用B；现沿原trigger.source_event_id精确核验更早kernel同Run证据的冻结绑定，不要求
+latest test.passed。新增跨freeze/跨Run/worker来源/缺失/未来证据负例及合法后续pass复用。
+最后199项直接调用、sentinel53、flow10通过；实OLD只读检查原evt-059b07206036绑定仍
+有效，可消费原rebuild请求。全自动11697为此前冻结版，未宣称最终全量或无人E2E。
+
+最终兼容复核：repair副本的action完成回执晚于副本事件，历史截断不能丢掉其授权链。
+选择仍固定历史前缀，仅以完整账本验证选中的精确副本；现有调用默认不变。真实
+controlled repair fixture覆盖两种副本及新freeze拒绝。首次250通过/2失败为fixture
+缺manifest accessor，补齐后252直接调用/候选恢复mock、sentinel53、flow10通过。
+独立静态复核无剩余确定阻断；准备部署。新Plan18:56 Planner passed、18:57 Synth
+运行；资格协议更新并保留原版/原生修复证据，qualification_started=false。
