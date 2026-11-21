@@ -7,9 +7,11 @@ import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from zf.core.state.atomic_io import atomic_write_text
+from zf.runtime.repair_process_environment import isolated_repair_environment
 
 
 LAUNCH_SCHEMA = "self-repair.process-launch.v1"
@@ -58,14 +60,16 @@ def run_launch(launch_path: Path, result_path: Path) -> dict[str, Any]:
         ))
     timeout_seconds = max(1, int(launch.get("timeout_seconds") or 1800))
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout_seconds,
-            check=False,
-        )
+        with TemporaryDirectory(prefix='zf-repair-worker-') as workspace:
+            completed = subprocess.run(
+                argv,
+                cwd=str(cwd),
+                env=isolated_repair_environment(workspace),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout_seconds,
+                check=False,
+            )
         return _write_result(result_path, _result(
             launch,
             status="completed" if completed.returncode == 0 else "failed",

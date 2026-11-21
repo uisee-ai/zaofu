@@ -1,5 +1,16 @@
 # 8×8 执行与恢复链路修复
 
+2026-11-21 环境污染补充：源码修复有两个执行边界——Worker 自行测试，以及 RM 的
+独立验收。两者均经 `repair_process_environment.isolated_repair_environment` 剥离
+父控制面的 `ZF_*`、Git/tmux 和 Python/pytest 定位，显式注入可信解释器、本地 `src`
+与一次性 workspace。Provider 的现有 sandbox 和凭据配置保持。真实子进程回归证明
+项目事件文件不被污染；该证明不覆盖 Provider 退出后全部后代的清理。
+
+NEW 验证准备期曾被测试 `zf init --force` 重置运行状态。17:09 UTC 恢复可信检查点
+（2818 条，截至16:22:19），保留原 session ID、六个已终结 TaskAttempt、引用 sidecar，
+隔离污染投影和后续进程结果，绑定安装后的消费游标并保持维护暂停。未从索引或其他
+Run 拼造账本，检查点后的原始差量完整性保持 unknown；不计入无监工通过。
+
 本说明对应 [实施任务](../../tasks/active/2026-11-18-0001-eight-by-eight-recovery-closure.md)。基于 dev dda38a25 的隔离实验发现；原实验仅证明 Impl 峰值 8、Verify 峰值 5、总同时峰值 11，1/16 完成，未证明真实同时 8+8 或最终产品交付。
 
 ## 修复边界

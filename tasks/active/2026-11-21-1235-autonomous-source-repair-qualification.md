@@ -15,8 +15,9 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已提交，341直接闭包、7143自动闭包通过；独立review问题已修，待部署 |
 | SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | c7e403ac已验证提交，实际gate未改，待部署 |
 | SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证提交，当前不匹配仍拒绝resume，待部署 |
-| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | 真实缺口已复现；本地实现及验证中 |
-| SR-ENV | 独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及workspace registry不被测试指向，旧失败保留。 | 原生验证出现真实环境污染，待修复 |
+| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已提交，回归通过；待部署后实 Run 验证 |
+| SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7 修复独立验收；本轮补 Worker 入口，1852 项影响闭包通过；可信检查点已恢复，维护暂停 |
+| SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 发现 provider 终态后仍有孤儿测试进程，已定向停止；进程治理尚待验证修复 |
 | RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | OLD已受控暂停；已复现14项重开副作用，待修复恢复 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
@@ -50,6 +51,21 @@ flow10通过。完整受控redrive→Plan→必读回归已覆盖，旧manifest�
 2818条截至16:22:19，可恢复该点，之后差量完整性未知，不能以索引补造权威账本。
 Plan输入修复已提交ae125f6d（尚未部署）。SR-ENV实际子进程隔离修复42直接、1823自动
 影响闭包/7skip、sentinel53、flow10通过；待提交部署和检查点恢复，整批继续active。
+
+17:09 UTC：检查点安装完成。通过 EventLog/TaskStore/SessionStore 重建可信2818条前缀，
+保留6个有原账本绑定的终结TaskAttempt、原sess-6aa27f13及701个可校验ref描述符。
+完整取证副本保存（活跃候选worktree原地保留），隔离污染投影、过期消费游标、pane/
+process登记、检查点后repair结果与provider session绑定。实际安装后以dev/inode绑定
+新消费位置，追加受控run-pause及maintenance-prepare，不从0重放。16:22:19之后原差量
+完整性未知；旧enum候选disposition需重新受控决定，不能凭遗留投影宣称已关闭。
+
+追加发现：修复Worker的三个孤儿测试进程也继承NEW项目环境。已核验PID、cwd、
+ZF_PROJECT_ROOT后定向TERM；原独立验收隔离不足以覆盖Worker内自行测试。
+共享环境工厂现接入self_repair_process真实启动及RM独立验证，保留provider凭据与
+既有sandbox，仅剥离运行项目/控制面/Git/tmux/pytest环境并使用临时workspace。
+实际provider替身及其测试子进程证明真实账本不变、临时workspace清理；51直接通过，
+1852自动影响闭包/7skip、sentinel53、flow10通过。首条测试命令有不存在的文件路径，
+未运行测试，纠正后重跑；不计产品缺陷。环境隔离不是进程树终止证明，SR-PROCESS仍待完成。
 
 12:32–12:33 UTC真实Reader新增两项执行失败（lane3/4，19/40必读）：lane3提交的cursor解码后摘要缺少`c9b`，与实际已交付bundle不符，现有拒绝正确；lane4遇到事件日志持续追加，前缀复核期间签名变化导致两次读取拒绝。两项均不是产品失败，也不是宿主媒体缺失。先补此运行前置：证明正常并发append不会饿死读取且仍拒绝改写/旋转漏终态；提供基于已交付页面的恢复方法，不允许猜游标或绕过必读。
 

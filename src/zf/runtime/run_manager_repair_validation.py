@@ -7,7 +7,6 @@ or mutating the main worktree.
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
 import subprocess
@@ -15,6 +14,8 @@ import sys
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Any
+
+from zf.runtime.repair_process_environment import isolated_repair_environment
 
 
 def execute_repair_verification_plan(
@@ -46,10 +47,7 @@ def execute_repair_verification_plan(
         }
 
     with TemporaryDirectory(prefix='zf-repair-verification-') as workspace:
-        environment = {key: value for key, value in os.environ.items()
-                       if not key.startswith(('ZF_', 'GIT_', 'TMUX'))
-                       and key not in {'PYTHONPATH', 'PYTHONHOME', 'PYTEST_ADDOPTS', 'PYTEST_CURRENT_TEST'}}
-        environment.update(ZF_WORKSPACE_HOME=workspace, ZF_PYTHON=sys.executable, PYTHONPATH='src')
+        environment = isolated_repair_environment(workspace)
         return _execute_steps(root, verification_plan, timeout_seconds, environment)
 
 
