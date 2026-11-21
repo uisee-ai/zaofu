@@ -51,6 +51,24 @@ def test_structured_known_environment_failure_preserves_policy(config):
     assert not result.should_increment_retry
 
 
+def test_candidate_diagnosis_survives_a_blocked_batch_projection(tmp_path, config, monkeypatch):
+    from zf.runtime import run_manager as manager
+    state, log, writer = _state(tmp_path)
+    failure = writer.append(ZfEvent(type='test.failed', origin='kernel', task_id='ANCHOR',
+        correlation_id='run-1', payload={'workflow_run_id': 'run-1', 'failure_scope': 'candidate',
+        'fanout_id': 'candidate-1', 'failure_kind': 'infra', 'reason': 'input unavailable'}))
+    monkeypatch.setattr(manager, '_pending_workflow_batch_actions', lambda *a, **kw: [{
+        'action': 'workflow-batch-resume', 'checkpoint_id': 'blocked-batch',
+        'safe_resume_action': 'blocked_external_gate', 'workflow_run_id': 'run-1',
+        'preflight': {'status': 'blocked'}, 'policy_decision': {'decision': 'requires_human'},
+    }])
+    projection = manager.build_run_manager_projection(state, events=log.read_all(), config=config)
+    actions = [a for a in projection['pending_actions'] if failure.id in a.get('source_event_ids', [])]
+    assert len(actions) == 1
+    assert actions[0]['action'] == 'diagnose-attention'
+    assert actions[0]['suggested_route'] == 'run_manager_resident_agent'
+
+
 @pytest.mark.parametrize("authorized", [True, False])
 def test_publication_has_one_recovery_owner(tmp_path, config, authorized):
     from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
@@ -65,8 +83,8 @@ def test_publication_has_one_recovery_owner(tmp_path, config, authorized):
         assert actions[0]["target_operation_id"] == "op-1"
 
 
-@pytest.mark.parametrize('background_diagnosis', [False, True, 'busy', 'unavailable', 'human'])
-@pytest.mark.parametrize('reader_failure', [False, True])
+@pytest.mark.parametrize('background_diagnosis', [False, True, 'busy', 'unavailable', 'human', 'host_budget'])
+@pytest.mark.parametrize('reader_failure', [False, True, 'candidate'])
 def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tmp_path, config, monkeypatch, background_diagnosis, reader_failure):
     from zf.runtime.run_manager import run_manager_tick
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -75,8 +93,11 @@ def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tm
     TaskStore(state / "kanban.json").add(Task(id="T1", title="CSV", status="blocked"))
     if reader_failure:
         config.workflow.orchestration.normal_frontier_owner = "run_manager"
-    failure = writer.append(ZfEvent(type="dev.failed", origin="kernel", task_id="T1", correlation_id="run-1",
+    failure = writer.append(ZfEvent(type="test.failed" if reader_failure == 'candidate' else "dev.failed",
+        origin="kernel", task_id="T1", correlation_id="run-1",
         payload={"failure_class": "reader_execution_failure" if reader_failure else "unknown",
+                 **({'failure_scope': 'candidate', 'failure_kind': 'infra', 'fanout_id': 'f1'}
+                    if reader_failure == 'candidate' else {}),
                  "workflow_run_id": "run-1", "reason": "required input or evidence missing"}))
     briefing = state / "briefings" / "run-manager.md"
     briefing.parent.mkdir()
@@ -94,6 +115,10 @@ def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tm
     elif background_diagnosis == 'human':
         writer.append(ZfEvent(type='human.escalate', task_id='T1', correlation_id='run-1',
             payload={'blocking_scope': 'task', 'decision_token': 'owner-T1', 'reason': 'owner decision'}))
+    elif background_diagnosis == 'host_budget':
+        writer.append(ZfEvent(type='human.escalate', actor='run-manager', origin='kernel',
+            correlation_id='run-1', payload={'blocking_scope': 'verification',
+                'reason': 'preauthorized_probe_budget_exhausted', 'host_manifest_digest': 'a' * 64}))
     sent = []
     monkeypatch.setattr("zf.runtime.run_manager._send_tmux_prompt", lambda target, prompt, **kw: sent.append(prompt) or {"ok": True})
     if background_diagnosis:
@@ -104,7 +129,8 @@ def test_current_unknown_failure_is_delivered_to_resident_with_fixed_evidence(tm
         monkeypatch.setattr("zf.runtime.run_manager._run_manager_reflect_enabled", lambda *a: False)
     run_manager_tick(state_dir=state, writer=writer, config=config, event_log=log, project_root=tmp_path, spawn_repairs=False)
     events = log.read_all()
-    if background_diagnosis in ('busy', 'unavailable', 'human'):
+    if (background_diagnosis in ('busy', 'unavailable', 'human')
+            or background_diagnosis == 'host_budget' and reader_failure != 'candidate'):
         assert not sent
         return
     assert len(sent) == 1 and "expected_output" in sent[0]

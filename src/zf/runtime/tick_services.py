@@ -324,6 +324,13 @@ def run_standard_tick_services(
         )
         mark_quiescent_transition(event_writer, _q_events, status=_q_status)
         if _q_status.quiescent:
+            from zf.runtime.quiescent_reader_recovery import reconcile_quiescent_reader_handoff
+
+            handed_off = reconcile_quiescent_reader_handoff(
+                state_dir=state_dir, config=config, writer=event_writer,
+                project_root=project_root, events=_q_events,
+                escalation_id=_q_status.escalate_event_id,
+            )
             from zf.runtime.escalation_terminal import (
                 converge_unrecoverable_escalations,
             )
@@ -334,7 +341,7 @@ def run_standard_tick_services(
                 task_store=getattr(orchestrator, "task_store", None),
                 request_autoresearch=True,
             )
-            if not terminalized:
+            if not terminalized and not handed_off:
                 observability_result = _run_observability_tick()
                 return TickServiceResult(
                     goal_dossier_delivery=goal_dossier_delivery,

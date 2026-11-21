@@ -9780,6 +9780,7 @@ def _pending_semantic_event_actions(
     events: list[ZfEvent],
     *,
     triage_threshold: int = 0,
+    candidate_infra_only: bool = False,
 ) -> list[dict[str, Any]]:
     from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
     from zf.runtime.candidate_infrastructure_recovery import candidate_infrastructure_failure
@@ -9795,6 +9796,8 @@ def _pending_semantic_event_actions(
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for idx, event in enumerate(events):
+        if candidate_infra_only and not candidate_infrastructure_failure(event):
+            continue
         event_payload = event.payload if isinstance(event.payload, dict) else {}
         if event.id in superseded_reader_failures:
             continue

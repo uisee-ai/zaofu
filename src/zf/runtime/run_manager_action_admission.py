@@ -37,7 +37,7 @@ def action_gate_reason(
     gates = [gate for gate in pending_human
              if not approved_decision_token or gate.get("decision_token") != approved_decision_token]
     scoped = bind_action_dependencies([action], TaskStore(state_dir / "kanban.json").list_all())[0]
-    if human_decisions_block_action(gates, scoped):
+    if human_decisions_block_action(gates, scoped, events=events):
         return "human_decision_pending"
     admission = recovery_action_admission(events, action)
     if admission["status"] != "admitted":

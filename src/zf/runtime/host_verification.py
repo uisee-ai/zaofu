@@ -126,7 +126,8 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
         'policy_snapshot': asdict(policy), 'evidence_ref': evidence_ref}, text
 
 
-def reconcile_host_verification(service) -> int:
+def reconcile_host_verification(service, *, allow_execution: bool = True,
+                                workflow_run_id: str | None = None) -> int:
     policy = getattr(service.config.runtime, 'host_verification', None)
     if not policy or not policy.enabled:
         return 0
@@ -139,6 +140,8 @@ def reconcile_host_verification(service) -> int:
         eligible = []
         candidate_probe_owners = {}
         for operation_id, operation in operations.items():
+            if workflow_run_id and operation.get('workflow_run_id') != workflow_run_id:
+                continue
             if operation.get('status') != 'settled' or operation.get('semantic_verdict') not in {'blocked', 'failed', 'abstained'}:
                 continue
             from zf.runtime.host_verification_handoff import reader_probe_handoff_complete
@@ -146,6 +149,8 @@ def reconcile_host_verification(service) -> int:
                 continue
             try:
                 _, request, contract, _ = binding(service, operation_id)
+                if not allow_execution and contract.get('authority_scope') != 'candidate':
+                    continue
                 if contract.get('authority_scope') == 'candidate':
                     result = hydrate_sidecar_ref(service.state_dir,
                         operation.get('admitted_control_result_ref') or {}).payload
@@ -163,7 +168,7 @@ def reconcile_host_verification(service) -> int:
                 if not all(group):
                     group = ()
             _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
-            eligible.append((operation_id, operation, contract, group, failed_probe))
+            eligible.append((operation_id, operation, contract, group, failed_probe, receipts))
             # Choose from the complete cohort before processing any sibling.
             # A later failure can precede the existing owner in operation order.
             starts = [index for index, event in enumerate(events)
@@ -178,7 +183,7 @@ def reconcile_host_verification(service) -> int:
                 if group not in candidate_probe_owners or rank < candidate_probe_owners[group]:
                     candidate_probe_owners[group] = rank
 
-        for operation_id, operation, contract, group, failed_probe in eligible:
+        for operation_id, operation, contract, group, failed_probe, receipts in eligible:
             owner = candidate_probe_owners.get(group)
             if owner and owner[-1] != operation_id:
                 continue
@@ -187,11 +192,15 @@ def reconcile_host_verification(service) -> int:
                 return 1
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
+            if not allow_execution:
+                continue
             if failed_probe:
                 # The aggregate failure may still await a sibling Reader. Keep
                 # this failure for handoff; do not spend its remaining probes.
                 continue
             for command in contract['verification_commands']:
+                if command['command_id'] in receipts:
+                    continue
                 if command.get('command') not in policy.commands:
                     continue
                 try:

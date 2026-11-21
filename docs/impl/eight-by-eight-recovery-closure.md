@@ -398,3 +398,55 @@ escalation、未结算effect继续阻断。额度等待解除后产生的新失�
 恢复投影必须用完整账本核授权因果，不能用仅筛选失败的事件视图作为证明。
 Reader operation注册前已知执行失败记录infra，避免无依据进入产品质量返工。
 新Reader独立消费现有采证，原request不修改；主机命令成功仍不是Reader/Judge通过。
+
+## 2026-11-21：RM/OA 未完成监工闭环的实证复盘
+
+11:19 `evt-b789c87eae0b`聚合为2路passed、6路blocked；全部Reader执行已完成，
+失败分类dependency_blocked。浏览器命令已成功、7项原始产物齐全，但合同声明
+`ZF_EVIDENCE_DIR/desktop.png`与索引`desktop.png`直接比较，被标为不可消费。
+执行器只按当前operation查询完成回执，新Reader已绑定的19份事实未用于去重；
+11:03–11:10重复10条命令，实际用量110→120，随后预算告警`evt-dbb5bc038b70`。
+
+研究快照证明，11:19:44 RM已经有一个正式诊断待办，而非完全没有发现失败。
+continuation选择器把采证预算告警作为整个Run的等待门，实际动作准入又重复拦截；
+待办的workflow_rework路线也不符合resident RM诊断投递条件。11:21静默闸门进一步
+停止tick。Candidate诊断另有低优先fallback隐患，但本次并非被其他workflow待办
+遮蔽；修复/报告必须区分实际原因与额外回归覆盖。
+
+```text
+原链路：Reader blocked -> runtime重复采证 -> 额度耗尽
+                          -> RM诊断在队列 -> 整Run等待门 -> 静默
+修复后：Reader blocked -> 对账原效果 -> 输入改善证明 -> 受控Reader接续
+                          | 无改善/未知原因
+                          +-> 当前失败绑定的RM诊断 -> 有证据的修复建议
+                                -> 原修复/验证/应用权限门 -> 原断点接续
+```
+
+实现约束：
+
+- 声明输出根仅映射已知`ZF_EVIDENCE_DIR/`前缀；冻结和结果准入共用语义。
+  不做任意环境展开或basename模糊匹配，原始合同、receipt和request保持不可变。
+- 执行去重沿consumer冻结授权→原operation/request→完整effect/receipt验证，核
+  Run/Task Map/目标/合同/ACL/policy/source/dependency；不以同命令字符串替代证明。
+  已执行与媒体可消费分别判断；媒体交付错误不能驱动重新执行。
+- 交接要求新回执或原来不可消费的输入确实修复。无变化时不再开新一轮Reader；
+  未覆盖命令仍留下原升级记录，混合/语义失败仍留给语义Owner。
+- 同Run原生宿主预算告警只限制新宿主执行。选择器和动作准入共用同一窄例外：
+  核账本中的原生告警和当前Candidate infra失败，仅允许既有RM只读诊断。
+  任意文字reason、Agent自报Owner、其他人工gate、暂停或变更动作都不能据此放行。
+- 静默时只允许同Run、已证明输入改善、`allow_execution=False`的候选交接；
+  当前诊断请求及其既有deadline/响应消费保持可达。不改预算、不清旧告警。
+
+OA负责产品语义、合同范围及修复方案判断；本次应先由RM处理执行/输入交付故障。
+不能把OA改为绕过所有门的第二状态机。当前source_repair仍为disabled、proposal_only、
+never_during_active_run：即使诊断正确也没有自动源码发布权限，这是配置能力边界，
+与此次诊断队列被挡分开记录。真正无人闭环仍需受控修复发布配置及独立零人工窗口证明。
+
+实际只读预检：5路阻塞Reader可复用19/19原回执；lane1单独因dispatch retry身份
+校验拒绝，未降级放行。当前聚合诊断可进入选择器与动作准入，原预算告警仍保留。
+不得把这些预检、命令exit0或本轮人工补丁当作Reader/Judge/Goal正式签收。
+
+监工验证也有遗漏：此前只检查了19份回执被绑定及摘要不变，没有检查每份
+consumption_status，也没有覆盖“新Reader再次blocked后的真实reconcile”。本轮回归
+增加请求冻结→结果准入→blocked后对账→输入变化才交接，并核实际tick和动作准入。
+这比只增加监工角色或调高模型更直接地覆盖了此次故障。

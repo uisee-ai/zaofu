@@ -254,7 +254,7 @@ def build_run_continuation_projection(
             preflight.get("status") == "blocked" and decision != "needs_diagnosis"
         ):
             continue
-        if not human_decisions_block_action(pending_human, candidate):
+        if not human_decisions_block_action(pending_human, candidate, events=events):
             selected = candidate
             break
     if not terminal_status and selected is not None:
@@ -329,8 +329,8 @@ def escalation_blocking_scope(action: dict[str, Any]) -> str:
     )) else "side"
 
 
-def human_decisions_block_action(value: Any, action: dict[str, Any]) -> bool:
-    blockers = blocking_decisions_for_action(value, action)
+def human_decisions_block_action(value: Any, action: dict[str, Any], *, events=None) -> bool:
+    blockers = blocking_decisions_for_action(value, action, events=events)
     return bool(blockers) and not (
         _materializes_legacy_human_gate(action)
         and not any(_is_actionable_human_contract(item) for item in blockers)
@@ -338,7 +338,7 @@ def human_decisions_block_action(value: Any, action: dict[str, Any]) -> bool:
 
 
 def blocking_decisions_for_action(
-    value: Any, action: dict[str, Any],
+    value: Any, action: dict[str, Any], *, events=None,
 ) -> list[dict[str, Any]]:
     """Narrow explicit task gates; ambiguous and run-wide gates stay closed.
 
@@ -349,12 +349,40 @@ def blocking_decisions_for_action(
     related = {task_id, *map(str, action.get("blocked_by") or [])}
     blockers = []
     for decision in _blocking_human_decisions(value):
+        if _probe_budget_allows_diagnosis(decision, action, events):
+            continue
         scope = str(decision.get("blocking_scope") or "run").strip().lower()
         owner = str(decision.get("task_id") or "")
         if scope == "task" and owner and task_id and owner not in related:
             continue
         blockers.append(decision)
     return blockers
+
+
+def _probe_budget_allows_diagnosis(decision: dict, action: dict, events) -> bool:
+    """An execution allowance cannot authorize effects or suppress its diagnosis."""
+    diagnosis = (action.get('action') == 'diagnose-attention' or (
+        action.get('action') == 'resident-agent-reprompt'
+        and action.get('diagnosis_source_action') == 'diagnose-attention'
+        and action.get('request_kind') == 'recovery_diagnosis'))
+    if (not diagnosis or not events or action.get('owner_route') != 'run_manager'
+            or action.get('suggested_route') != 'run_manager_resident_agent'
+            or not action.get('workflow_run_id')):
+        return False
+    alert = next((event for event in events if event.id == decision.get('event_id')), None)
+    if (alert is None or alert.origin != 'kernel' or alert.actor != 'run-manager'
+            or alert.correlation_id != action['workflow_run_id']
+            or alert.payload.get('reason') != 'preauthorized_probe_budget_exhausted'
+            or alert.payload.get('blocking_scope') != 'verification'
+            or not alert.payload.get('host_manifest_digest')):
+        return False
+    from zf.runtime.candidate_infrastructure_recovery import candidate_infrastructure_failure
+    from zf.runtime.run_manager import _event_superseded_by_later_progress
+    sources = set(action.get('source_event_ids') or [])
+    return any(event.id in sources and event.origin == 'kernel'
+        and (event.payload.get('workflow_run_id') or event.correlation_id) == alert.correlation_id
+        and candidate_infrastructure_failure(event)
+        and not _event_superseded_by_later_progress(events, event) for event in events)
 
 
 def bind_action_dependencies(

@@ -68,8 +68,8 @@ def _enabled(config: Any) -> bool:
     )
 
 
-def _host_probe_budget_available(config: Any, rows: list[ZfEvent], alert: ZfEvent) -> bool:
-    """Allow RM to revalidate a known budget hold; grant no execution authority."""
+def host_probe_budget_hold(config: Any, rows: list[ZfEvent], alert: ZfEvent) -> bool:
+    """Recognize only the exact budget hold, never an unknown external effect."""
     payload = alert.payload
     policy = getattr(getattr(config, "runtime", None), "host_verification", None)
     manifest = payload.get("host_manifest_digest")
@@ -90,6 +90,15 @@ def _host_probe_budget_available(config: Any, rows: list[ZfEvent], alert: ZfEven
     if ("runtime.action.attempt.started" in attempts
             and "runtime.action.attempt.completed" not in attempts):
         return False  # More allowance cannot resolve an unknown external effect.
+    return True
+
+
+def _host_probe_budget_available(config: Any, rows: list[ZfEvent], alert: ZfEvent) -> bool:
+    """Allow RM to revalidate a known budget hold; grant no execution authority."""
+    if not host_probe_budget_hold(config, rows, alert):
+        return False
+    policy = config.runtime.host_verification
+    run = alert.correlation_id
     used = sum(event.type == "runtime.action.attempt.started"
                and event.payload.get("workflow_run_id") == run
                and event.payload.get("approval_ref") == policy.approval_ref for event in rows)
@@ -156,6 +165,12 @@ def quiescent_now(
         # The executor still checks the exact operation, target, commands,
         # retained effects and current Owner policy before doing any work.
         return QuiescentStatus(quiescent=False, reason="host_verification_budget_available")
+    if host_probe_budget_hold(config, rows, escalate):
+        from zf.runtime.candidate_infrastructure_recovery import candidate_diagnosis_needs_tick
+
+        if candidate_diagnosis_needs_tick(rows, config=config, run_id=escalate.correlation_id,
+                                          now_epoch=now_epoch):
+            return QuiescentStatus(quiescent=False, reason="candidate_infrastructure_diagnosis")
     if inflight_fanouts:
         # E8(prd-goal e2e finding-18):escalate 后仍有未终局 fanout
         # (含待派发 child)→ 静默会暂停派发扫描,潜在互锁。有活干

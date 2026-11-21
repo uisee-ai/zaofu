@@ -89,8 +89,10 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
                 if c.get('command') in policy.commands}
     if not required:
         return required, {}, False
-    receipts = {}
-    failed_probe = False
+    from zf.runtime.host_verification_retained import retained_reader_probes
+    receipts = retained_reader_probes(service, operation, contract, policy, events)
+    failed_probe = any(hydrate_sidecar_ref(service.state_dir, ref).payload['exit_code'] != 0
+                       for ref in receipts.values())
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
@@ -151,6 +153,13 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                         'unverified_command_ids': sorted(unverified),
                         'owner_route': 'run_manager', 'blocking_scope': 'verification',
                         'resume_condition': 'bound execution receipts for the complete frozen command contract'}))
+            return False
+        from zf.runtime.host_verification_retained import reader_probe_inputs_improved
+        try:
+            improved = reader_probe_inputs_improved(service, operation, contract, policy, receipts)
+        except (ValueError, OSError, KeyError, TypeError):
+            improved = False  # Keep the failure visible to its diagnosis owner.
+        if not improved:
             return False
         from zf.runtime.host_evidence_media import materialize_container_media
         indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image,

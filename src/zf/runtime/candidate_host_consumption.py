@@ -7,7 +7,7 @@ from typing import Any
 from zf.runtime.artifact_access import require_artifact_access
 from zf.runtime.artifact_query.extractors import _intersect_access_scopes
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
-from zf.runtime.host_evidence_media import materialize_container_media
+from zf.runtime.host_evidence_media import materialize_container_media, required_media_paths
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, verify_sidecar_ref
 from zf.runtime.task_host_evidence import host_execution_facts
 from zf.runtime.workflow_operation import load_workflow_operation, reduce_workflow_operations
@@ -141,7 +141,7 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
                             'access_scope': scope, 'source_id': f'{PREFIX}file-{suffix}-{i}',
                             'artifact_id': f['path'], 'allowed_paths': ['$']}
                            for i, f in enumerate(body['files']))
-        if not set(command.get('producer_paths') or []) <= produced:
+        if not required_media_paths(command) <= produced:
             raise ValueError('required host media is missing')
     except (ValueError, OSError, KeyError, TypeError) as exc:
         item.update(status='unavailable', reason=str(exc))
@@ -227,7 +227,7 @@ def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | N
                 verify_sidecar_ref(state_dir, file)
                 produced.add(file['path'])
         spec = specs[fact['command_id']]
-        if not set(spec.get('producer_paths') or []) <= produced:
+        if not required_media_paths(spec) <= produced:
             raise ValueError('required host media is missing')
         if result.get('verdict') == 'passed' and (receipt['status'] != 'completed' or fact['exit_code'] != 0):
             raise ValueError('failed host execution cannot support a passed verdict')

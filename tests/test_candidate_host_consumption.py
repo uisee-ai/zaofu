@@ -32,7 +32,8 @@ def prepare(runtime, seeded, role):
 def evidence(tmp_path, request):
     fault = getattr(request, 'param', '')
     runtime = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(runtime)
+    seeded = _seed_frozen_candidate(runtime, producer_paths=(
+        ['ZF_EVIDENCE_DIR/artifacts/probe.json'] if fault == 'output-root' else None))
     configured = policy()
     configured.commands = [seeded['command']]
     runtime.config.runtime = SimpleNamespace(host_verification=configured)
@@ -166,6 +167,7 @@ def consumer_result(evidence, role='consumer-submit', *, read_host=True):
     return prepared, payload, service, kwargs
 
 
+@pytest.mark.parametrize('evidence', ['', 'output-root'], indirect=True)
 def test_actual_preflight_and_admission_consume_same_receipt_independently(evidence):
     runtime, _, source_op, _, receipt, _ = evidence
     for role in ('consumer-one', 'consumer-two'):

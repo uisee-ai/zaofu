@@ -13,6 +13,23 @@ from zf.runtime.sidecar_refs import (
 )
 
 
+def required_media_paths(command: dict) -> set[str]:
+    """Map the declared container output root to its retained relative paths."""
+    paths = set()
+    for declared in command.get('producer_paths') or []:
+        if not isinstance(declared, str):
+            raise ValueError('invalid host producer path')
+        # This is the explicit output root mounted by container_command, not
+        # general environment expansion or basename matching.
+        relative = declared.removeprefix('ZF_EVIDENCE_DIR/')
+        if (not relative or '\\' in relative or relative.startswith('/')
+                or any(part in {'', '.', '..'} for part in relative.split('/'))
+                or '$' in relative):
+            raise ValueError('invalid host producer path')
+        paths.add(relative)
+    return paths
+
+
 def materialize_container_media(state_dir: Path, receipt_refs: list[dict], *, image: str,
                                 policy: HostVerificationConfig | None = None) -> list[dict]:
     """No command execution or verdict; originals remain the required evidence."""

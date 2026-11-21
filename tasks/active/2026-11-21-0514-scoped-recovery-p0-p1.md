@@ -2,6 +2,35 @@
 
 > 状态: active
 
+## 11:19 Reader 阻塞后的继续修复（Owner 已批准）
+
+真实8路结果2 passed、6 blocked，Judge尚未派发。浏览器原始7项媒体完整，但声明
+`ZF_EVIDENCE_DIR/…`与索引相对路径比较产生假缺失；新operation绑定的19份回执未参与
+执行器去重，重复10次命令后用量120/120。原用量和无监工失败保留。
+
+- HV1：共享声明输出根的安全路径语义 -> verify: 实际请求冻结与结果准入均消费原媒体；
+  真缺失、非法路径、篡改摘要仍拒绝，旧request/receipt不改写。
+- HV2：从冻结consumer授权复用原执行事实 -> verify: blocked后调用真实reconcile不重做
+  已完成命令；异目标/合同/权限/policy/输入不可借用；无新增可消费输入不反复重派。
+- HV3：诊断和交接不被采证预算吞掉 -> verify: 实际tick仍可派一次有Owner的诊断或
+  已证明就绪的Reader恢复；没有修复依据、其他hold和未知外部效果仍保持阻塞。
+- 真实签收：部署后同候选恢复并核Reader/Judge/Goal；各阶段以正式结果单独记录。
+  source_repair disabled/proposal_only属于当前授权配置，不冒充已启用无人源码发布。
+
+本轮根因复核纠正：11:19:44诊断已经在pending，实际挡在continuation/动作准入的
+host budget gate，且workflow_rework路线未进入resident RM。低优先fallback遮蔽
+是附加覆盖，不冒充此次原因。选择器与动作准入现在共用原生告警/当前正式失败的
+同Run只读诊断例外；其他Owner gate、暂停、变更动作不获得放行。
+
+验证：首轮定向95通过；自动闭包首轮1失败/7065通过，暴露新输入改善检查过早返回
+漏发原覆盖不足升级，已修顺序。随后主修自动闭包7107通过/7跳过，sentinel53、flow
+mock10通过。最后补其他gate保留和request_id响应绑定的直接调用闭包136通过。
+尝试跨worktree运行旧实现的RED被仓库解释器路径守卫拒绝，未计为缺陷复现或成功。
+真实只读预检证明当前诊断选择/动作准入/静默入口均可达，budget事件原样保留；
+5路blocked可复用19/19原回执，lane1另有dispatch retry身份拒绝，未放宽该门。
+修复、测试输出和人工介入保存在reader-repair-*与reader-diagnosis-* reports。
+本轮代码验证不等于真实Reader/Judge通过，P0-3仍active；后续部署与签收另记。
+
 Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0实施已讨论的五项；先复现、最小修复、影响闭包、提交，随后在既有授权范围内受控真实复测。原无监工窗口失败保持；不合ZaoFu dev、不push、不修改canonical JSON、不代Worker提交结果。
 
 | ID | 优先级 | 工作与验收 | 状态 |
