@@ -289,6 +289,13 @@ obligations and edit only the affected behavior, consumers and evidence in this
 draft. Select the assigned ports you need. For a pending Plan rejected by the
 Owner, carry the rejection forward when reusing its files.
 
+Use the paths returned by this invocation for editing and result output refs.
+Exporting a draft does not replace an existing `artifacts/plan/task_map.json`:
+that file may still contain a rejected prior attempt. Either point the result
+refs at the new draft or explicitly copy its selected files to your owned output
+paths before editing. Compare unselected Task rows with the pinned draft before
+authoring the remaining Plan; restore exact rows instead of normalizing them.
+
 Edit stable Task/AC/scenario rows and update all consumers of the changed
 contract, including downstream CLI/API assertions, command owners and evidence
 refs. Keep unchanged bodies or descriptors intact. Rebind any candidate-local

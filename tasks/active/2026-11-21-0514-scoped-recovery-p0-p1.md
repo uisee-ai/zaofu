@@ -97,3 +97,17 @@ CR5补充回归用实际`stall_redispatch_event`复现：晚于Owner恢复的新
 
 晚到副本验证：writer/reader/fanout/synth/Event及恢复mock调用闭包439 passed；最后补producer
 task_id回填后的定向61 passed；sentinel53 passed、flow mock10 passed。没有降低cap或删改事件。
+
+晚到副本实现提交：`39ae69ca fix: keep late stall retries bound to retired writer intents`。
+控制器更新到PID1172300；`reports/p0-late-stall-deploy.json`证明所有pane PID、Planner
+operation/attempt均与重启前一致，没有新stage触发。
+
+07:04真实Planner调用`result validate --scratch --summary`拒绝14项preserved_task_changed，
+未派发Critic；证据`reports/p0-preservation-live-validate.txt`。Planner随后读取完整结构化
+反馈并声明原地恢复保留行。当前正确的baseline导出已存在，但实际输出仍沿用了旧工作区
+文件；补充skill要求使用本次返回的路径/明确复制基线并绑定result refs，避免导出成功后
+继续编辑历史失败草稿。该方法修正不放宽预检，也不代Worker提交。P0-3仍等待正式签收。
+
+skill补充自动验证41 passed、1 skipped；canonical与两份分发副本逐字节一致。
+07:07同一真实Planner已恢复14项保留行，预检仅剩AC-MEDIAN的mandatory_claim_rewritten，
+正原地恢复强制Goal原文。没有因此消耗新的Plan/Critic派发；待零错误正式提交后再签收。
