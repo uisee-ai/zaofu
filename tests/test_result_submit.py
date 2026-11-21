@@ -225,7 +225,7 @@ def _plan_candidate() -> dict:
     }
 
 
-def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str = ""):
+def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str = "", validation_setup=None):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"][
         "semantic_submit_profiles"
@@ -255,6 +255,8 @@ def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str =
             "metadata": {"flow_kind": "issue"},
         },
     }
+    if validation_setup is not None:
+        payload["plan_candidate_validation"]["manifest"]["trigger_payload"].update(validation_setup(runtime))
     prepared = prepare_call_operation(
         runtime,
         payload=payload,

@@ -178,7 +178,12 @@ def request_semantic_failure_checkpoint(
     if candidate:
         failure_body["candidate_verify"] = {
             **candidate, "failure_event_id": failures[-1].id, "operation_id": operation_id,
-            "permitted_recovery_action": "return_to_plan",
+            "permitted_recovery_actions": ["return_to_plan", "rework"],
+            "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "
+            "exact-target directive: classification=product_defect, contract_changed=false, rationale, "
+            "and gap_tasks copied exactly from the pinned Task Map for all implicated Tasks. Only task_id, "
+            "base_commit (frozen Candidate head), and supersedes_task_ids (one predecessor) may change. "
+            "Unknown/input/blocked outcomes require diagnosis; changed obligations require return_to_plan.",
         }
     media_refs = []
     if aggregate_candidate:

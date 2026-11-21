@@ -55,3 +55,26 @@ def test_missing_diagnosis_owner_and_unchanged_semantic_input_keep_owner_gate(tm
         registered=change != "unregistered", kind="quality" if change == "semantic" else "infra")
     EventReactorMixin._on_reader_stage_failure_replan(runtime, failure)
     runtime.escalation.escalate.assert_called_once()
+
+
+def test_candidate_infra_failure_with_anchor_task_keeps_run_manager_owner(tmp_path):
+    from zf.core.events import ZfEvent
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    event = ZfEvent(type="test.failed", task_id="ANCHOR", origin="kernel", correlation_id="run-1",
+        payload={"workflow_run_id": "run-1", "pdd_id": "PRD-1", "fanout_id": "candidate-verify",
+                 "candidate_ref": "candidate/PRD-1",
+                 "failure_kind": "infra", "reason": "Reader input unavailable"})
+    actions = _pending_semantic_event_actions([event])
+    assert any(a["action"] == "diagnose-attention" and event.id in a.get("source_event_ids", []) for a in actions)
+
+
+@pytest.mark.parametrize("change", ["task_scope", "quality", "unknown", "no_fanout"])
+def test_candidate_diagnosis_does_not_capture_task_or_product_rework(change):
+    from zf.core.events import ZfEvent
+    from zf.runtime.candidate_infrastructure_recovery import candidate_infrastructure_failure
+    event = ZfEvent(type="test.failed", payload={"failure_kind": "infra", "fanout_id": "f", "failure_scope": "candidate"})
+    if change == "task_scope": event.payload["failure_scope"] = "task"
+    elif change == "no_fanout": event.payload.pop("fanout_id")
+    else: event.payload["failure_kind"] = change
+    assert not candidate_infrastructure_failure(event)

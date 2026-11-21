@@ -9782,6 +9782,7 @@ def _pending_semantic_event_actions(
     triage_threshold: int = 0,
 ) -> list[dict[str, Any]]:
     from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
+    from zf.runtime.candidate_infrastructure_recovery import candidate_infrastructure_failure
     from zf.runtime.run_manager_integration_review import (
         bind_integration_review_action, integration_review_sources,
     )
@@ -9838,6 +9839,7 @@ def _pending_semantic_event_actions(
             event.task_id
             and event.type in REWORK_TRIAGE_TRIGGER_EVENTS
             and event.type != "task.rework.capped"
+            and not candidate_infrastructure_failure(event)
         ):
             # Task-scoped failures are L1-owned until the configured semantic
             # threshold emits task.rework.capped. Candidate scope uses its
@@ -9912,7 +9914,7 @@ def _pending_semantic_event_actions(
                     "scope": _semantic_event_scope(event, event_payload),
                 },
             })
-        elif event.type in RUN_MANAGER_PENDING_EVENT_TYPES:
+        elif event.type in RUN_MANAGER_PENDING_EVENT_TYPES or candidate_infrastructure_failure(event):
             if spec is None or spec.event_class != "expected_negative":
                 continue
             action = _semantic_event_diagnostic_action(event, spec)

@@ -232,7 +232,8 @@ def test_candidate_checkpoint_includes_scoped_new_host_facts(tmp_path, size_allo
     assert effects[0]['command_id'] == 'browser'
     assert effects[0]['target_commit'] == 'c' * 40
     assert effects[0]['receipt_status'] == 'observed'
-    assert body['candidate_verify']['permitted_recovery_action'] == 'return_to_plan'
+    assert body['candidate_verify']['permitted_recovery_actions'] == ['return_to_plan', 'rework']
+    assert 'candidate_repair' in body['candidate_verify']['rework_contract']
     media = [s for s in prepared.context.input_body['sources']
              if s['source_id'].startswith('candidate-host-media-')]
     if size_allowed:

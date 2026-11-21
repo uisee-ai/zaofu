@@ -267,3 +267,37 @@ TaskRef index、Git ref、rolling smoke 侧车与集成祖先；比较新候选�
 Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命令拒绝、真实 Git ref
 变化、多轮复用链和只读输入；现场因 stage replan cap 等待 Owner，不能把隔离通过
 写成真实恢复通过。见[实施任务](../../tasks/active/2026-11-21-0346-retained-candidate-task-authority.md)。
+
+### 局部恢复 P0–P1 的入口修复（2026-11-21）
+
+实施清单：[局部恢复收敛与诊断闭环](../../tasks/active/2026-11-21-0514-scoped-recovery-p0-p1.md)。
+
+- 原 Planner 方法已要求保持范围外合同，但 preflight 没有对应拒绝项；Critic 才发现漂移。
+  现在 validate、submit 和聚合共用的 preflight 从绑定的原 Plan 及请求选择计算保留集合，
+  对同 Run、done、未刷新任务比较完整 Task Map 行。候选自行改 amend/选择不能豁免它们。
+  这是完成证据一致性检查，不把执行选择当作编辑授权；全局输入变化仍走原审查。
+  `previous_plan_candidate_refs` 中的被拒草稿不是权威基线。提交拒绝仍为 protocol repair，
+  不消耗语义返工轮次。
+- 原 OA Candidate 失败入口强制 `return_to_plan`，与 skill 的“普通缺陷走产品返工”不一致。
+  现在已准入 OA 可在精确 Reader target 下提交 `rework` + `candidate_repair`，显式判断
+  product_defect/合同不变，并提交标准 gap Tasks。窄路由只允许逐项复制原合同，改变新 ID、
+  冻结 head 的 base 和单一前任关系，经已有 ControlledActionService/amend 派发后继；
+  不重开 done Task、不授予 Reader 写权。blocked/unknown、错代次、改 AC/命令/范围、
+  缺少全部受影响任务或次数耗尽均拒绝。语义义务改变继续使用有范围的 Plan 修订。
+  canonical 行模式保留输入端口、entry、AC、命令及排除项；编译器只派生既有来源的复数别名、
+  successor lineage 和命令 producer 身份，不通过 legacy 默认值改写合同。
+  amendment/ready 以 checkpoint、Run、事件类型锁定，重放需完整 payload 和因果身份相等；
+  在发布后、OA 回执前退出时复用既有事件，不重复派发，也不重复消耗同一修复的次数。
+- 完整恢复测试发现 `test.failed` 的 registry 只把质量失败交给产品返工，技术失败没有
+  RM pending action。现根据明确 `failure_kind=infra`、Candidate scope 和 fanout 身份
+  生成诊断请求；Task 局部、产品拒绝和未知类型不据此生成技术重试或通过结论。
+- Autoresearch 快速非零退出和轮询停止均读取所属子 Run 的事实；预算需要同 Run 的
+  kernel budget 因果事件，保留停止事件、原因、WRC、下一 Owner 和退出码。其他停止保留
+  unknown/child_run_stopped，不再统一丢成 runner_failed，也不擅自扩大预算/回答 Owner。
+
+验证分层：定向测试覆盖实际 Plan validate/submit、OA 结果准入/受控应用与拒绝、历史
+子退出观察；既有 Goal idle tick 验证仍有效，不另造监工循环。新增单账本 mock E2E
+使用真实 Git 探测和结果准入，经过 post-verify Reader 执行失败 → RM 诊断动作 → 测试
+Owner 明确批准已修输入 → 受控恢复 → 新控制器实例 → Reader → Thin Judge → Goal 收据。
+Provider 输出和 Owner 批准是测试 actor；测试通过不代表真实 Provider 的自主诊断质量，
+也不把最初失败的无监工 8×8 窗口改成通过。真实 Candidate/Judge/交付另记验收状态。

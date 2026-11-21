@@ -261,7 +261,7 @@ def _apply_semantic_failure(
     if expected.get("candidate_operation_id"):
         from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding
 
-        if action != "return_to_plan":
+        if action not in {"return_to_plan", "rework"}:
             return _reject_semantic_directive(runtime, event, outcome, "candidate_reader_plan_only")
         try:
             candidate = candidate_checkpoint_binding(
@@ -299,6 +299,20 @@ def _apply_semantic_failure(
                 rejection,
                 directive_id=str(directive.get("directive_id") or ""),
             )
+        if candidate and action == "rework":
+            from zf.runtime.candidate_task_repair_decision import apply_candidate_task_repair
+
+            if len(action_directives) != 1:
+                return _reject_semantic_directive(runtime, event, outcome, "candidate repair requires one scoped directive")
+            try:
+                repaired = apply_candidate_task_repair(runtime, event=event, decision=decision,
+                    directive=directive, expected=expected, candidate=candidate)
+            except (ValueError, OSError, KeyError) as exc:
+                return _reject_semantic_directive(runtime, event, outcome, str(exc))
+            if not repaired.get("ok"):
+                return _reject_semantic_directive(runtime, event, outcome,
+                    str(repaired.get("reason") or "candidate repair action rejected"))
+            return {**outcome, "candidate_repair_event_ids": repaired["emitted_event_ids"]}
         if action == "return_to_plan":
             return _apply_return_to_plan(
                 runtime,
@@ -629,7 +643,7 @@ def _target_rejection(
     if role is None:
         return "target_role_missing"
     if candidate:
-        if action != "return_to_plan" or any(target[key] != candidate[key] for key in (
+        if action not in {"return_to_plan", "rework"} or any(target[key] != candidate[key] for key in (
             "attempt_id", "stage_id", "role_instance",
         )):
             return "candidate_target_mismatch"

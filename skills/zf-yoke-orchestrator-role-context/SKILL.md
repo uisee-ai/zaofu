@@ -55,6 +55,13 @@ Run 内 OA 消费已确认需求，提出路线、任务映射或有界修订；
   若当前批准内容妨碍修复，可将 `return_to_plan` 的目标原样绑定为 checkpoint 所列的
   reader、attempt、stage 和锚点 Task，向 Planner 说明受影响子任务及保留的提交。
   该动作只请求新 Plan。普通实现缺陷继续走已有产品返工，证据不足时提交待核实项。
+  checkpoint 明示允许 `rework` 时，保持原 Reader target 作为失败身份锚点，在 directive
+  提供 `candidate_repair`：`classification=product_defect`、`contract_changed=false`、
+  `rationale` 和标准 Task Map `gap_tasks`。逐项复制冻结 Plan 中全部受影响任务，只更换
+  新 `task_id`、冻结 Candidate head 的 `base_commit` 和单一前任的 `supersedes_task_ids`。
+  Runtime 经现有 gap 受控动作派发后继，不重开旧 done Task；这不授予 Reader 写权限。
+  若合同、命令、输入消费声明需要改变，走有范围的 `return_to_plan`；未知或 blocked
+  结果先交诊断 Owner，不能靠声明“合同不变”绕过证据、重试上限或审批。
 - 绑定模板 ID、输入 refs/digests、generation 和精确 target；解释选择理由。
   不存在匹配能力时提交能力缺口，不静默降低 Verify/Critic 或完成要求。
 - typed delta 的 `basis_refs`、`reuse_refs`、`invalidate_refs` 必须逐项匹配本 operation

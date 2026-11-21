@@ -262,6 +262,7 @@ def _submit_rework(
     *,
     action: str = "rework",
     outside_ref: bool = False,
+    directive_fields: dict | None = None,
 ) -> ZfEvent:
     activate_orchestrator_agent_operation(
         runtime,
@@ -311,6 +312,7 @@ def _submit_rework(
             },
             "directives": [{
                 "directive_id": "directive-task-1",
+                **(directive_fields or {}),
                 "action": action,
                 "target": {
                     "task_id": target["target_task_id"],
