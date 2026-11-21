@@ -717,3 +717,9 @@ SR-BOOT：原生3d9b917f在15:27有精确boot证明；root升级604b25ab后15:46
 SR-FREEZE：原生CLI候选续作evt-3e61598caa20多次因repair_contract_freeze_failed拒绝，原因是当前可信sys.executable位于harness目录，被字符串检查误当旧工作区测试目标。保留全部失败，先识别受控pytest命令，仅豁免可信解释器argv[0]，其余测试/config参数仍拒绝原目录，未知解释器与shell形式保持原安全检查。真实冻结入口RED1失败/1通过，修复后直接闭包包含此项。
 
 NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应用为f5eb24e7并重启，根会话未代替该项应用；待核对独立收据、保留到根修复分支。Planner首轮重触发passed后，合成评审16:07 rejected：必读bundle缺精确docs/prd/TODO.md与SOURCE-PROMPT.md，不能凭Planner摘要独立审阅。运行时已自动派发下一Planner代际，尚未解决此authority-input缺口，不能批准Plan或宣称无人8×8开始。
+
+16:22 UTC：冻结提交c7e403ac加原生f5eb24e7整合为4ab2e751，自动影响闭包7143 passed/9 skipped。随后sentinel52通过/1失败，定位原生Supervisor修复使supervisor_attention.py超过1000行；未绕过哨兵、未将失败当通过。沿同一职责提取supervisor_human_decisions.py（79行），原文件990行，行为不变。最终增量自动闭包111 passed、sentinel53、flow mock10通过。7143是在提取前的冻结候选运行，提取后的证据是111+53+10，不称为全pytest或真实无人E2E。
+
+旧Run最终Judge15:57:15正式settled/blocked，准入evt-7bf557eee79e、结果bf040c32…，69必读全部完成。产品验收passed，19目标声明closed、1 blocked；明确未获得16任务Plan的准确审批（evt-1695fe7d4282）。此外监工仍保留原无人窗口失败、真实8+8重叠和故障恢复未证明，不能因后来审批或本次机械门修复宣称原轮无人通过。旧Run尚无Goal完成或本地交付通过。
+
+新Plan第二轮16:17:08正式abstained，missing primary authority bodies仍在；RM16:17:13自行进入语义诊断rmd-ffb913102f3bd820。只读研究确认：trigger artifact_refs与Task spec已声明TODO但plan handoff未消费；SOURCE-PROMPT只在正文引用中，未显式声明为原文输入。应由上游声明并冻结两份正文再进入新审阅输入；不递归猜链接，不靠重复Planner改文案掩盖输入缺失。此后续项尚未修复。
