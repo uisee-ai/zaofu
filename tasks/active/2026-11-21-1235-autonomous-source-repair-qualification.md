@@ -8,10 +8,13 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 |---|---|---|
 | SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
-| SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 新隔离实验已启动；原生修复候选完成后验证失败，受控重验明确拒绝旧基线，待RM按新基线恢复 |
+| SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 原生候选已验证、应用、重启；恢复Plan需owner审批，已执行并进入新一轮Plan返工；五步无人闭环未通过 |
 | LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务任务、8/8 Reader与post-verify discovery通过；Judge校验修复已部署并精确重试，完整Goal仍缺无监工资格证据 |
 | SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 本地修复及独立review通过；236项直接闭包、6149项自动闭包、sentinel53、flow10通过；待部署 |
 | SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数修复及独立review通过；显式disposition入口仍待实施 |
+| SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | 已实施，直接回归和独立review进行中 |
+| SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | 已实施，等待整批验证 |
+| SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | 已复现RED并修复，待整批验证 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -317,3 +320,19 @@ SR-STRICT：strict repair_contract_required队列原来可因human确认/普通�
 当前还存在活跃原生repair worker，暂不部署根会话更新去改变其冻结基线。
 
 15:40 UTC：SR-WAKE/SR-STRICT 自动影响闭包6149 passed/7 skipped，sentinel53、flow mock10通过；独立只读review未发现阻断项，确认cursor取执行前快照，不吞掉执行中产生的后继回执。仍不代表原业务恢复或无监工资格通过。原生第三个repair worker已终结，候选6aea45e2同样因live_base_changed被拒绝，尚未应用。
+
+
+15:41–15:56 UTC增量：559f9f00提交SR-WAKE/STRICT；将原生应用3d9b917f并入本隔离修复分支，合并提交604b25ab（未合dev/未push），38项交叉测试通过。NEW于15:41:14受控部署604b25ab，停前/停后均无活跃源码repair worker，全部Worker pane/PID保持，配置摘要fadd068e…与120额度不变；备份before-repair-wake-deploy。此部署是准备期人工介入。
+
+RM原生建议evt-3ecdc71f434a选择精确从已完成Scan evt-35aeed9fff80重触发缺失prd-plan。原恢复尚需owner审批，不宣称五步无人闭环。按既有授权经共享审批服务提交evt-a36f394ab063，仅批准hdec-049cf7fbfe66；未批准尚未生成的Plan，另一个side failure-closeout审批不动。15:46:24内核stage-retrigger applied evt-ba56da6bcd1d，15:46:29请求新Planner wop-prd-plan-planner-trig-evt-3ca27989-rework-af2db023aeda，实际running。8×8资格仍未开始。
+
+SR-WAKE补充：上述审批15:42:04→15:46:24才消费，真实入口RED证明human.escalation.acknowledged不在快速输入集合。将其作为唤醒输入，审批自身的token/当前性/授权准入不变。
+SR-DISPOSITION：新增受控动作repair-closeout-dispose，仅允许严格failed旧候选由已admitted、验证且应用的明确关联替代候选接替。CAS queue/合同/当前失败，核对替代请求原失败链、合同、验证、apply及Run/Task范围。只发append-only处置，不改Git、不删除旧证据、不恢复业务。原请求case准入后另查独立处置case，处置回执不改变原案卷。无此入口RED7失败/11通过；直接回归287通过后，独立review指出resident案卷覆盖，已收窄并强化不变性断言。兼容旧operator验证未设origin只允许完整external intent→同绑定RM planned→failed链，worker仍拒绝；实际旧evt-131cc16f41e8只读预检可通过，未执行收尾。
+SR-POLICY：medium路径风险只给policy_evaluation_required，审批需求未知；high原审批提示保持，实际source-repair准入未改。
+SR-BOOT：原生3d9b917f在15:27有精确boot证明；root升级604b25ab后15:46又误报原repair_restart_outcome_unknown。历史证明与当前resume门分离，历史精确证明只用于分类repair_runtime_binding_changed，不放行当前未知版本。RED1失败/3通过。未篡改旧事件或把根会话升级算作原生自恢复。
+
+16:10 UTC：补齐SR-DISPOSITION历史链的前次失败/source commit绑定与双case拒绝回归；测试fixture曾把首次失败误标为重验，现通过真实ControlledActionService生成合法失败重验链，不把fixture错误记为生产缺陷。最终直接调用闭包341 passed。首轮自动闭包在补用例时出现xdist收集不一致，7个collection error，该轮无效；冻结候选后重跑，禁止以此宣称验证通过。
+
+SR-FREEZE：原生CLI候选续作evt-3e61598caa20多次因repair_contract_freeze_failed拒绝，原因是当前可信sys.executable位于harness目录，被字符串检查误当旧工作区测试目标。保留全部失败，先识别受控pytest命令，仅豁免可信解释器argv[0]，其余测试/config参数仍拒绝原目录，未知解释器与shell形式保持原安全检查。真实冻结入口RED1失败/1通过，修复后直接闭包包含此项。
+
+NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应用为f5eb24e7并重启，根会话未代替该项应用；待核对独立收据、保留到根修复分支。Planner首轮重触发passed后，合成评审16:07 rejected：必读bundle缺精确docs/prd/TODO.md与SOURCE-PROMPT.md，不能凭Planner摘要独立审阅。运行时已自动派发下一Planner代际，尚未解决此authority-input缺口，不能批准Plan或宣称无人8×8开始。

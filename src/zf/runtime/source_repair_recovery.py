@@ -68,7 +68,7 @@ def post_repair_diagnosis(
     }
 
 
-def pending_restart_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
+def pending_restart_diagnosis(item: dict[str, Any], *, previously_observed: bool = False) -> dict[str, Any] | None:
     """An unobserved apply/restart needs a bounded diagnosis, never blind reapply."""
     progress = next((row for row in reversed(item.get("events") or []) if row.get("event_type") in {
         "run.manager.repair.merge.merging", "run.manager.repair.merge.merged",
@@ -84,15 +84,20 @@ def pending_restart_diagnosis(item: dict[str, Any]) -> dict[str, Any] | None:
     continuation = item.get("continuation") or {}
     return {
         "schema_version": "run-manager.pending-action.v1", "action": "diagnose-attention",
-        "checkpoint_id": "repair-restart-diagnosis-" + progress["event_id"],
+        "checkpoint_id": ("repair-runtime-binding-diagnosis-" if previously_observed else
+                          "repair-restart-diagnosis-") + progress["event_id"],
         "safe_resume_action": "diagnose_attention", "fingerprint": str(item.get("fingerprint") or item.get("queue_id")),
         "queue_id": item.get("queue_id"), "source_event_ids": [progress["event_id"]],
         "workflow_run_id": continuation.get("workflow_run_id", ""),
-        "failure_class": "repair_restart_outcome_unknown", "owner_route": "run_manager",
+        "failure_class": "repair_runtime_binding_changed" if previously_observed else "repair_restart_outcome_unknown",
+        "owner_route": "run_manager",
         "suggested_route": "run_manager_resident_agent", "action_policy": "needs_diagnosis",
         "intervention_class": "diagnose", "expected_downstream_events": ["run.manager.resident.prompted", "run.manager.autoresearch.requested"],
         "expected_output": ["run.manager.agent.recommendation"],
-        "reason": "Repair apply/restart has no matching reactor load receipt after 120s; inspect retained effects and host supervision before choosing recovery.",
+        "reason": ("Repair restart was proven by a bound historical boot; the latest reactor binding differs. "
+                   "Reconcile the current deployment and continuation; do not retry the completed restart."
+                   if previously_observed else
+                   "Repair apply/restart has no matching reactor load receipt after 120s; inspect retained effects and host supervision before choosing recovery."),
     }
 
 
@@ -137,6 +142,20 @@ def repaired_runtime_observed(
                       if e.type in {"loop.started", "loop.stopped"}), None)
     if lifecycle is None or lifecycle.type != "loop.started" or lifecycle.origin != "kernel":
         return False
+    return _boot_matches(state_dir, lifecycle, receipt)
+
+
+def repair_restart_previously_observed(state_dir: Path | None, events: list[ZfEvent], receipt: dict[str, Any]) -> bool:
+    """A historical restart fact is not authorization to resume the current runtime."""
+    if state_dir is None or not all(receipt.get(key) for key in (
+        "applied_commit", "source_root", "source_tree_sha256",
+    )):
+        return False
+    return any(e.type == "loop.started" and e.origin == "kernel" and _boot_matches(state_dir, e, receipt)
+               for e in reversed(events))
+
+
+def _boot_matches(state_dir: Path, lifecycle: ZfEvent, receipt: dict[str, Any]) -> bool:
     ref = lifecycle.payload.get("runtime_load_ref")
     if not isinstance(ref, dict) or ref.get("kind") != "runtime-load":
         return False

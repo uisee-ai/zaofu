@@ -268,7 +268,7 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             "run.manager.action.verify.passed",
             "run.manager.action.effect.passed",
         }:
-            if payload.get("action") in {"repair-closeout-validate", "repair-closeout-apply"}:
+            if payload.get("action") in {"repair-closeout-validate", "repair-closeout-apply", "repair-closeout-dispose"}:
                 # Validation/apply completes a repair step, not the original
                 # workflow. Its scoped continuation effect must still arrive.
                 if case["status"] not in {"waiting", "blocked", "superseded"}:

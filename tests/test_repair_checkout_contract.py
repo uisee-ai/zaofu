@@ -77,3 +77,20 @@ def test_verification_prose_is_not_promoted_to_executable_commands(tmp_path, ins
         created_by='test', source_root=tmp_path / 'source')
     assert contract['verification_commands'] == ['git diff --check']
     assert contract['verification_instruction']
+
+
+@pytest.mark.parametrize('target', ['isolated', 'original'])
+def test_absolute_trusted_interpreter_is_not_a_source_checkout_target(tmp_path, monkeypatch, target):
+    source = tmp_path / 'live harness'
+    python = str(source / '.venv/bin/python')
+    monkeypatch.setattr(sys, 'executable', python)
+    path = 'tests/test_fix.py' if target == 'isolated' else str(source / 'tests/test_fix.py')
+    command = shlex.join(['env', 'PYTHONPATH=src', python, '-m', 'pytest', path, '-q', '--no-cov'])
+    req = RepairRequest(fingerprint='f', attempt=0, candidate_id='c', candidate_path='evidence',
+        repair_task_payload={'contract': {'scope': ['src/**'], 'verification_commands': [command]}})
+    if target == 'original':
+        with pytest.raises(ValueError, match='isolated checkout'):
+            write_repair_contract(tmp_path / 'state', req, base_commit='base', created_by='test', source_root=source)
+    else:
+        contract, _ = write_repair_contract(tmp_path / 'state', req, base_commit='base', created_by='test', source_root=source)
+        assert shlex.split(contract['verification_commands'][0]) == shlex.split(command)

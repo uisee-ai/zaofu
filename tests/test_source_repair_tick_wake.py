@@ -10,7 +10,7 @@ from zf.runtime.tick_services import TickServiceIntervals, TickServiceState, run
 
 
 @pytest.mark.parametrize("kind", ["run.manager.action.applied", "run.manager.action.failed"])
-@pytest.mark.parametrize("action", ["repair-closeout-validate", "repair-closeout-apply"])
+@pytest.mark.parametrize("action", ["repair-closeout-validate", "repair-closeout-apply", "repair-closeout-dispose"])
 def test_repair_outcome_wakes_once_before_supervisor_inspection(tmp_path, kind, action):
     orch = _FakeOrchestrator(_state(tmp_path), ZfConfig())
     before = ZfEvent(type="runtime.attention.needed", origin="kernel")
@@ -25,6 +25,23 @@ def test_repair_outcome_wakes_once_before_supervisor_inspection(tmp_path, kind, 
                                    intervals=TickServiceIntervals(supervisor_inspection_s=300))
         manager.assert_called_once()
         orch.event_log.append(ZfEvent(type="run.manager.tick.completed", origin="kernel"))
+        run_standard_tick_services(orch, state=state, now=110,
+                                   intervals=TickServiceIntervals(supervisor_inspection_s=300))
+        manager.assert_called_once()
+
+
+def test_owner_decision_wakes_runtime_before_periodic_inspection(tmp_path):
+    orch = _FakeOrchestrator(_state(tmp_path), ZfConfig())
+    before = ZfEvent(type="human.escalate", origin="kernel", payload={"decision_token": "owner-1"})
+    orch.event_log.append(before)
+    state = TickServiceState(last_supervisor_inspection_at=100, last_run_manager_tick_at=100,
+                             last_run_manager_input_event_id=before.id)
+    orch.event_log.append(ZfEvent(type="human.escalation.acknowledged", origin="external",
+        payload={"decision_token": "owner-1", "decision": "approve_controlled_action"}))
+    with patch("zf.runtime.tick_services._run_run_manager", return_value=MagicMock(changed=True, repairs_dispatched=0)) as manager:
+        run_standard_tick_services(orch, state=state, now=105,
+                                   intervals=TickServiceIntervals(supervisor_inspection_s=300))
+        manager.assert_called_once()
         run_standard_tick_services(orch, state=state, now=110,
                                    intervals=TickServiceIntervals(supervisor_inspection_s=300))
         manager.assert_called_once()

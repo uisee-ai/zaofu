@@ -29,6 +29,10 @@ def dispatch_extension_action(
 ) -> dict[str, Any] | None:
     """Dispatch an isolated action family, or return None when unregistered."""
 
+    if action == "repair-closeout-dispose":
+        from zf.runtime.repair_disposition import execute_action
+        return execute_action(service, requested=requested, action=action,
+                              requested_action=requested_action, payload=payload)
     if action == "repair-closeout-validate":
         from zf.runtime.repair_revalidation import execute_action
         return execute_action(service, requested=requested, action=action,

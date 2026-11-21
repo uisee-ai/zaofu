@@ -59,12 +59,17 @@ def bind_checkout_contract(contract: dict, source_root: Path) -> dict:
             if text.startswith(prefix):
                 text = text[len(prefix):]
                 break
-        if str(root) in text:
-            raise ValueError("repair verification must run in its isolated checkout")
         invocation = trusted_pytest_invocation(text)
         if invocation is not None:
+            # The trusted interpreter may live under the harness checkout.
+            # Only its executable is exempt; test/config arguments still may
+            # not point back at that checkout instead of the repair worktree.
+            if any(str(root) in argument for argument in invocation['argv'][1:]):
+                raise ValueError("repair verification must run in its isolated checkout")
             return shlex.join(['env', *(f'{k}={v}' for k, v in invocation['env'].items()),
                                *invocation['argv']])
+        if str(root) in text:
+            raise ValueError("repair verification must run in its isolated checkout")
         return text
 
     instruction = command(contract["verification_instruction"])

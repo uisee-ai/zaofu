@@ -701,3 +701,19 @@ SR-STRICT：strict repair_contract_required队列原来可因human确认/普通�
 当前还存在活跃原生repair worker，暂不部署根会话更新去改变其冻结基线。
 
 15:40 UTC：SR-WAKE/SR-STRICT 自动影响闭包6149 passed/7 skipped，sentinel53、flow mock10通过；独立只读review未发现阻断项，确认cursor取执行前快照，不吞掉执行中产生的后继回执。仍不代表原业务恢复或无监工资格通过。原生第三个repair worker已终结，候选6aea45e2同样因live_base_changed被拒绝，尚未应用。
+
+
+15:41–15:56 UTC增量：559f9f00提交SR-WAKE/STRICT；将原生应用3d9b917f并入本隔离修复分支，合并提交604b25ab（未合dev/未push），38项交叉测试通过。NEW于15:41:14受控部署604b25ab，停前/停后均无活跃源码repair worker，全部Worker pane/PID保持，配置摘要fadd068e…与120额度不变；备份before-repair-wake-deploy。此部署是准备期人工介入。
+
+RM原生建议evt-3ecdc71f434a选择精确从已完成Scan evt-35aeed9fff80重触发缺失prd-plan。原恢复尚需owner审批，不宣称五步无人闭环。按既有授权经共享审批服务提交evt-a36f394ab063，仅批准hdec-049cf7fbfe66；未批准尚未生成的Plan，另一个side failure-closeout审批不动。15:46:24内核stage-retrigger applied evt-ba56da6bcd1d，15:46:29请求新Planner wop-prd-plan-planner-trig-evt-3ca27989-rework-af2db023aeda，实际running。8×8资格仍未开始。
+
+SR-WAKE补充：上述审批15:42:04→15:46:24才消费，真实入口RED证明human.escalation.acknowledged不在快速输入集合。将其作为唤醒输入，审批自身的token/当前性/授权准入不变。
+SR-DISPOSITION：新增受控动作repair-closeout-dispose，仅允许严格failed旧候选由已admitted、验证且应用的明确关联替代候选接替。CAS queue/合同/当前失败，核对替代请求原失败链、合同、验证、apply及Run/Task范围。只发append-only处置，不改Git、不删除旧证据、不恢复业务。原请求case准入后另查独立处置case，处置回执不改变原案卷。无此入口RED7失败/11通过；直接回归287通过后，独立review指出resident案卷覆盖，已收窄并强化不变性断言。兼容旧operator验证未设origin只允许完整external intent→同绑定RM planned→failed链，worker仍拒绝；实际旧evt-131cc16f41e8只读预检可通过，未执行收尾。
+SR-POLICY：medium路径风险只给policy_evaluation_required，审批需求未知；high原审批提示保持，实际source-repair准入未改。
+SR-BOOT：原生3d9b917f在15:27有精确boot证明；root升级604b25ab后15:46又误报原repair_restart_outcome_unknown。历史证明与当前resume门分离，历史精确证明只用于分类repair_runtime_binding_changed，不放行当前未知版本。RED1失败/3通过。未篡改旧事件或把根会话升级算作原生自恢复。
+
+16:10 UTC：补齐SR-DISPOSITION历史链的前次失败/source commit绑定与双case拒绝回归；测试fixture曾把首次失败误标为重验，现通过真实ControlledActionService生成合法失败重验链，不把fixture错误记为生产缺陷。最终直接调用闭包341 passed。首轮自动闭包在补用例时出现xdist收集不一致，7个collection error，该轮无效；冻结候选后重跑，禁止以此宣称验证通过。
+
+SR-FREEZE：原生CLI候选续作evt-3e61598caa20多次因repair_contract_freeze_failed拒绝，原因是当前可信sys.executable位于harness目录，被字符串检查误当旧工作区测试目标。保留全部失败，先识别受控pytest命令，仅豁免可信解释器argv[0]，其余测试/config参数仍拒绝原目录，未知解释器与shell形式保持原安全检查。真实冻结入口RED1失败/1通过，修复后直接闭包包含此项。
+
+NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应用为f5eb24e7并重启，根会话未代替该项应用；待核对独立收据、保留到根修复分支。Planner首轮重触发passed后，合成评审16:07 rejected：必读bundle缺精确docs/prd/TODO.md与SOURCE-PROMPT.md，不能凭Planner摘要独立审阅。运行时已自动派发下一Planner代际，尚未解决此authority-input缺口，不能批准Plan或宣称无人8×8开始。

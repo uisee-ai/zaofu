@@ -170,3 +170,33 @@ def test_agent_repair_without_workflow_checkpoint_resumes_through_bound_diagnosi
             "source_action_checkpoint_id": diagnosis["checkpoint_id"],
         })
         assert not any(a.get("failure_class") == diagnosis["failure_class"] for a in actions())
+
+
+@pytest.mark.parametrize("history", ["proven", "missing", "before_merge", "tampered"])
+def test_newer_boot_does_not_turn_proven_restart_into_unknown(tmp_path, history):
+    from datetime import datetime, timedelta, timezone
+    from zf.core.events import ZfEvent
+    from zf.runtime.run_manager import _pending_post_repair_continuation_actions, build_repair_merge_queue
+
+    state, _, _ = _state(tmp_path)
+    receipt = {"source_root": str(tmp_path / "harness"), "applied_commit": "repair-sha", "source_tree_sha256": "tree-sha"}
+    ref = write_sidecar_json(state, "diagnostics/runtime-load/prior.json", {
+        "schema_version": "runtime-load.v1", "state_dir": str(state.resolve()),
+        "source_root": receipt["source_root"], "source_revision": receipt["applied_commit"],
+        "source_tree_sha256": receipt["source_tree_sha256"],
+    }, kind="runtime-load", schema_version="runtime-load.v1", created_by="zf-cli", required=True)
+    prior = ZfEvent(type="loop.started", origin="kernel", payload={"runtime_load_ref": ref})
+    merged = ZfEvent(type="run.manager.repair.merge.merged", origin="kernel",
+        ts=(datetime.now(timezone.utc) - timedelta(seconds=300)).isoformat(), payload={
+            "queue_id": "repair", "apply_receipt": receipt, "control_plane_restart_required": True,
+            "continuation": {"resume_original_workflow": True, "checkpoint_id": "original", "safe_resume_action": "needs_stage_dispatch"},
+        })
+    events = [merged, prior]
+    if history == "missing": events = [merged]
+    elif history == "before_merge": events = [prior, merged]
+    elif history == "tampered": (state / ref["ref"]).write_text("{}")
+    events.append(ZfEvent(type="loop.started", origin="kernel", payload={}))
+    actions = _pending_post_repair_continuation_actions(build_repair_merge_queue(events), events, state_dir=state)
+    assert not any(a["action"] == "workflow-batch-resume" for a in actions)
+    assert len(actions) == 1
+    assert actions[0]["failure_class"] == ("repair_runtime_binding_changed" if history == "proven" else "repair_restart_outcome_unknown")

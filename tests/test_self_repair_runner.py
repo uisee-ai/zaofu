@@ -330,6 +330,7 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
     assert closeout.payload["auto_merge"] is False
     assert closeout.payload["risk_classification"]["risk"] == "high"
     assert closeout.payload["risk_classification"]["human_approval_required"] is True
+    assert closeout.payload["risk_classification"]["authority"].startswith("advisory")
     assert closeout.payload["changed_files"] == ["fix.txt"]
     assert closeout.payload["verification_plan"][0]["command"] == "git diff --check"
     assert closeout.payload["verification_plan"][1]["command"] == "pytest x"

@@ -4088,8 +4088,14 @@ def build_repair_merge_queue(events: list[ZfEvent]) -> dict[str, Any]:
             row["status"] = "needs_review"
             row["next_allowed_action"] = "operator_review"
         elif event.type == RUN_MANAGER_REPAIR_MERGE_DISCARDED:
+            if row.get("repair_contract_required"):
+                from zf.runtime.repair_disposition import receipt_matches
+
+                if event.origin != "kernel" or not receipt_matches(row, payload):
+                    continue
             row["status"] = "discarded"
             row["next_allowed_action"] = "none"
+            row["disposition"] = payload
         elif event.type in {RUN_MANAGER_ACTION_APPLIED, RUN_MANAGER_ACTION_FAILED}:
             action_name = str(payload.get("action") or "")
             if action_name == "repair-closeout-validate":
@@ -4173,10 +4179,12 @@ def _repair_closeout_apply_candidate(payload: dict[str, Any]) -> dict[str, Any]:
     verification_plan = verification_plan if isinstance(verification_plan, list) else []
     risk_value = str(risk.get("risk") or "unknown")
     allowed = bool(risk.get("controlled_apply_allowed")) and risk_value == "low"
-    decision = "controlled_apply_candidate" if allowed else "human_approval_required"
+    decision = ("controlled_apply_candidate" if allowed else
+                "human_approval_required" if risk_value == "high" else "policy_evaluation_required")
     return {
         "schema_version": "run-manager.repair-closeout-apply-candidate.v1",
         "decision": decision,
+        "authority": "advisory; configured controlled apply policy decides",
         "risk": risk_value,
         "verification_required": True,
         "verification_plan_count": len(verification_plan),
@@ -4832,10 +4840,12 @@ def _consume_agent_recommendations(
                 )
             action = _action_from_agent_recommendation(event, payload)
             if (_recommendation_route(payload) == "controlled_action"
-                    and action.get("action") == "repair-closeout-validate"):
+                    and action.get("action") in {"repair-closeout-validate", "repair-closeout-dispose"}):
                 from zf.runtime.repair_revalidation import prepare_revalidation
+                from zf.runtime.repair_disposition import prepare_disposition
 
-                prepared = prepare_revalidation(state_dir=state_dir,
+                prepare = prepare_disposition if action["action"] == "repair-closeout-dispose" else prepare_revalidation
+                prepared = prepare(state_dir=state_dir,
                     events=writer.event_log.read_all(), config=config,
                     payload=payload, request_event_id=event.id)
                 bound_request = next((item for item in reversed(events)
@@ -5204,6 +5214,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         "workflow-batch-resume",
         "worker-lifecycle-recover",
         "repair-closeout-validate",
+        "repair-closeout-dispose",
         "fanout-aggregate-rebuild",
         "resident-agent-reprompt",
         "candidate-rework-apply",
@@ -5226,6 +5237,7 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         "request_orchestrator_triage": TRIAGE_REQUEST_ACTION,
         "worker_lifecycle_recover": "worker-lifecycle-recover",
         "repair_closeout_validate": "repair-closeout-validate",
+        "repair_closeout_dispose": "repair-closeout-dispose",
         "fanout_aggregate_rebuild": "fanout-aggregate-rebuild",
         "resident_agent_reprompt": "resident-agent-reprompt",
         "failure_closeout_activate": "failure-closeout-activate",
@@ -6036,6 +6048,11 @@ def _execute_controlled_run_action(
             action=action,
             causation_id=causation_id,
         )
+    if action_name == "repair-closeout-dispose":
+        from zf.runtime.repair_disposition import execute_disposition
+
+        return execute_disposition(state_dir=state_dir, writer=writer, config=config,
+                                   action=action, causation_id=causation_id)
     if action_name == "repair-closeout-validate":
         return _execute_repair_closeout_validate(
             state_dir=state_dir,
@@ -9439,7 +9456,9 @@ def _pending_post_repair_continuation_actions(
         )):
             from zf.runtime.source_repair_recovery import pending_restart_diagnosis
 
-            diagnosis = pending_restart_diagnosis(item)
+            diagnosis = pending_restart_diagnosis(item, previously_observed=(
+                item.get("status") == "merged" and _control_plane_restart_observed(
+                    events, item, state_dir=state_dir, historical=True)))
             if diagnosis and not _action_seen(events, diagnosis):
                 diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
                 diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
@@ -9526,7 +9545,7 @@ def _pending_post_repair_continuation_actions(
 def _control_plane_restart_observed(
     events: list[ZfEvent],
     item: dict[str, Any],
-    *, state_dir: Path | None = None,
+    *, state_dir: Path | None = None, historical: bool = False,
 ) -> bool:
     queue_id = str(item.get("queue_id") or "")
     merged_index = -1
@@ -9538,9 +9557,10 @@ def _control_plane_restart_observed(
             merged_index = index
     if merged_index < 0:
         return False
-    from zf.runtime.source_repair_recovery import repaired_runtime_observed
+    from zf.runtime.source_repair_recovery import repaired_runtime_observed, repair_restart_previously_observed
 
-    return repaired_runtime_observed(
+    observe = repair_restart_previously_observed if historical else repaired_runtime_observed
+    return observe(
         state_dir, events[merged_index + 1:], item.get("apply_receipt") or {},
     )
 

@@ -188,7 +188,7 @@ def test_unbound_case_cannot_replace_original_failure_case(tmp_path, requested):
 
 
 @pytest.mark.parametrize("mutation", ["source_commit", "repair_contract_digest", "previous_validation_event_id",
-                                      "validator_digest", "missing_tested", "worker", "merged", "discarded"])
+                                      "validator_digest", "missing_tested", "worker", "merged"])
 def test_unbound_success_does_not_reopen_queue(tmp_path, mutation):
     from copy import deepcopy
     from zf.core.events import ZfEvent

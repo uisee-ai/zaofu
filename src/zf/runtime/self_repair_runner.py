@@ -677,7 +677,8 @@ def _classify_closeout_risk(
         "changed_file_count": len(files),
         "commits_ahead": commits_ahead,
         "controlled_apply_allowed": risk == "low",
-        "human_approval_required": risk != "low",
+        "human_approval_required": True if risk == "high" else False if risk == "low" else None,
+        "authority": "advisory; configured controlled apply policy decides",
     }
 
 

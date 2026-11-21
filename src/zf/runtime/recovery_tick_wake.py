@@ -9,6 +9,7 @@ RECOVERY_INPUTS = frozenset({
     "workflow.operation.settled",
     "provider.turn.closed",
     "worker.assistance.requested",
+    "human.escalation.acknowledged",
     "run.manager.agent.recommendation",
     "run.manager.reflect.completed",
     "autoresearch.loop.completed",
@@ -22,7 +23,7 @@ def is_recovery_input(event: ZfEvent) -> bool:
     body = event.payload
     return bool(event.origin == "kernel"
         and event.type in {"run.manager.action.applied", "run.manager.action.failed"}
-        and body.get("action") in {"repair-closeout-validate", "repair-closeout-apply"}
+        and body.get("action") in {"repair-closeout-validate", "repair-closeout-apply", "repair-closeout-dispose"}
         and body.get("queue_id") and body.get("repair_contract_digest"))
 
 
