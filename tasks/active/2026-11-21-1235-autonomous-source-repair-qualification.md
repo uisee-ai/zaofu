@@ -15,10 +15,10 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已提交，341直接闭包、7143自动闭包通过；独立review问题已修，待部署 |
 | SR-POLICY | 投影不把路径风险建议冒充审批门 -> verify: medium未知审批需求，实际受控apply策略保持。 | c7e403ac已验证提交，实际gate未改，待部署 |
 | SR-BOOT | 区分历史重启证明与当前版本可恢复性 -> verify: 后续升级不把已证明重启误判未知，失效/缺失/merge前证据不采信，当前不匹配仍不自动resume。 | c7e403ac已验证提交，当前不匹配仍拒绝resume，待部署 |
-| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已提交，回归通过；待部署后实 Run 验证 |
-| SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7 修复独立验收；本轮补 Worker 入口，1852 项影响闭包通过；可信检查点已恢复，维护暂停 |
+| PLAN-SOURCE | Plan/返工接收明确声明的原始正文，受控恢复可补充已冻结的证据 -> verify: Planner/Critic实际handoff与必读声明包含正文；摘要/缺文拒绝、原案卷不改、普通中间产物不全量升级为必读。 | ae125f6d 已部署；17:15真实Planner manifest含两份原始正文且必读，正式Plan结果待收取 |
+| SR-ENV | Worker 与独立验证进程不继承运行项目定位和控制面环境 -> verify: 实际子进程在隔离工作区执行，真实项目及 workspace registry 不被测试指向，旧失败保留。 | 1d1ba2d7/1a9e8667 已部署，1852项影响闭包通过；可信检查点恢复，17:15重新派发原Plan |
 | SR-PROCESS | 源码修复终态与子进程退出一致 -> verify: provider 结束/超时后测试后代不会继续写入；状态不确定保留诊断。 | 发现 provider 终态后仍有孤儿测试进程，已定向停止；进程治理尚待验证修复 |
-| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | OLD已受控暂停；已复现14项重开副作用，待修复恢复 |
+| RESUME-TERMINAL | 审批旧Plan不能重开已完成任务或把恢复冲突当规划缺陷 -> verify: 旧Run真实重放、Task合同/完成证据保持，准确受控恢复继续Judge/Goal，不重跑已完成产品任务。 | OLD保持暂停；防复发实现中，直接33通过；14项记录补偿与真实Judge恢复未完成 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
@@ -390,3 +390,39 @@ NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应
 旧Run最终Judge15:57:15正式settled/blocked，准入evt-7bf557eee79e、结果bf040c32…，69必读全部完成。产品验收passed，19目标声明closed、1 blocked；明确未获得16任务Plan的准确审批（evt-1695fe7d4282）。此外监工仍保留原无人窗口失败、真实8+8重叠和故障恢复未证明，不能因后来审批或本次机械门修复宣称原轮无人通过。旧Run尚无Goal完成或本地交付通过。
 
 新Plan第二轮16:17:08正式abstained，missing primary authority bodies仍在；RM16:17:13自行进入语义诊断rmd-ffb913102f3bd820。只读研究确认：trigger artifact_refs与Task spec已声明TODO但plan handoff未消费；SOURCE-PROMPT只在正文引用中，未显式声明为原文输入。应由上游声明并冻结两份正文再进入新审阅输入；不递归猜链接，不靠重复Planner改文案掩盖输入缺失。此后续项尚未修复。
+
+17:35 UTC 当前执行记录（先前时点记录保留）：NEW已部署1a9e8667，配置摘要不变。
+精确恢复Scan来源evt-59044df11201→evt-84bd357500c4，新Planner于17:15运行；
+真实manifest中TODO.md与SOURCE-PROMPT.md正文均以显式声明成为必读。首次operator_feedback
+类型错误被受控入口拒绝，修正后执行；控制面启动因私有transport已清理失败，完成
+transport bootstrap后启动。两项操作顺序/参数错误及全部人工介入留档，不计无人成功。
+原生RM另自行产出a51bb6c7候选，17:31验证并应用f3d42868；仍待核验重启及原任务延续。
+
+RESUME-TERMINAL：写Task前预演admission，capacity门前置；晚到的准确Owner批准只有
+相同package正文/显式ports、Candidate、当前子任务及完成复用证据全有效才抑制重复派发。
+integration捕获authority时核对语义revision，写Candidate前检查authority未变；terminal
+校验receipt绑定及后续revision/dispatch，再CAS，旧integration不能完成新合同。terminal_tasks
+仅产生机械冲突，首次即交RM诊断，不继承schema_gap；cancel与diagnosis之间崩溃可重放补派。
+独立review复现4条RED，修复后33直接测试通过。先前影响闭包4276 passed/7 skipped，
+sentinel因Supervisor超过1000行拒绝；已提取同职责helper，尚待最终闭包。
+不宣称跨多Task事务或14项历史完成记录已经修复；补偿仍需受控版本递增及原完成证明。
+
+最终检查补充：自动影响闭包11失败/4277通过/7skip，定位三处旧integration测试夹具
+使用假revision常量，已改用生产相同effective_contract_revision，未放宽门禁。
+独立review另发现相同合同/状态的新dispatch可被terminal CAS清除；RED复现后Store
+锁内增加expected_active_dispatch_id。相关61测试通过。cancel本身已足够生成稳定RM
+诊断，append间崩溃不依赖原trigger再次执行，15项路由回归通过；最终闭包重新运行。
+
+17:48 UTC：扩大到Store影响闭包10535 passed/9 skipped/1 failed。唯一失败为source-index
+旧fixture：两Task配置一个positional writer，原代码capacity拒绝后留下canonical backlog，
+普通scheduler漏派一项，测试只数send误认为成功。先给两role又暴露positional不提供依赖
+排队；最终使用该用途的affinity lane，并增加fanout.started及无cancel断言。不是放宽capacity，
+也不把遗漏的依赖执行算作正确结果。原1role capacity零落盘回归继续保留。
+诊断投影改从全history的kernel cancellation生成；reject不拥有诊断身份，窗口裁剪不改source。
+真实Planner17:40:29正式passed、synth17:40:35已派发。两份原文在Planner及synth端的字节数
+分别18366/7613，SHA与完整选段一致，报告plan-original-input-handoff-proof.json；评审结果待收取。
+
+防复发最终验证：修正后的直接调用闭包273 passed；sentinel53、flow mock10通过，
+独立只读review无确定阻断。扩大闭包10535通过/9skip是在最后fixture修正前，其唯一失败
+已由真实fanout入口回归修正并重验，不能把两组相加当唯一用例数或全pytest通过。
+14项历史补偿、源码修复进程树治理及新无监工资格仍未完成，整批保持active。

@@ -3605,7 +3605,7 @@ class WorkflowRuntimeCoordinator(
             return
 
 
-    def _ensure_writer_tasks_canonical(self, loaded) -> None:
+    def _ensure_writer_tasks_canonical(self, loaded, *, preview_only: bool = False):
         """Register writer task-map tasks and refresh replan refs."""
         from zf.core.task.schema import Task, TaskContract
         from zf.runtime.verification_commands import (
@@ -3839,6 +3839,9 @@ class WorkflowRuntimeCoordinator(
             if existing is None:
                 pending_new_tasks.append(refreshed_task)
             elif self._can_refresh_writer_task(existing, loaded):
+                if preview_only:
+                    pending_new_tasks.append(refreshed_task)
+                    continue
                 old_ref = self._task_contract_task_map_ref(existing.contract)
                 refresh_writer_task_contract(
                     task_store=self.task_store,
@@ -3852,6 +3855,8 @@ class WorkflowRuntimeCoordinator(
                     new_task_map_ref=loaded.task_map_ref,
                     is_replan=bool(getattr(loaded, "is_replan", False)),
                 )
+        if preview_only:
+            return {task.id: task for task in pending_new_tasks}
         from zf.runtime.writer_task_materialization import materialize_writer_tasks
         materialize_writer_tasks(self, pending_new_tasks, loaded)
         from zf.runtime.writer_task_map_supersede import (

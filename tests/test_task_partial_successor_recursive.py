@@ -1,3 +1,4 @@
+from zf.runtime.task_contract_snapshot import effective_contract_revision
 """Repeated partial deliveries must preserve all proven unpublished patches."""
 from copy import deepcopy
 from types import SimpleNamespace
@@ -191,7 +192,7 @@ def test_recursive_partial_candidate_integration_replays_both_rounds(tmp_path, c
                                   config=config, event_log=runtime.event_log)
     result = rebuilder.integrate_task_pipeline_task(task_id=task.id, workflow_run_id='run',
         task_map_generation='last-map', operation_generation=1, pipeline_key='last-pipeline',
-        dispatch_base_commit=second, contract_revision='next-contract', event_writer=writer,
+        dispatch_base_commit=second, contract_revision=effective_contract_revision(TaskStore(runtime.state_dir / "kanban.json").get(task.id)), event_writer=writer,
         causation_id='verify-admitted')
     if conflict:
         assert result.status != 'integrated'

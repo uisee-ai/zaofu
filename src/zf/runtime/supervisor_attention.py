@@ -16,6 +16,7 @@ from zf.runtime.problem_taxonomy import (
     problem_envelope_from_attention,
     problem_envelope_from_event,
 )
+from zf.runtime.plan_state_attention import task_state_admission_attention_items
 
 
 ATTENTION_SCHEMA_VERSION = "attention-items.v0"
@@ -53,6 +54,9 @@ def build_attention_items(
             if item:
                 items.append(item)
     from zf.runtime.task_pipeline_dispatch_attention import dispatch_failure_attention_items
+    items.extend(task_state_admission_attention_items(
+        history_events if history_events is not None else events, make_item=_attention_item,
+    ))
     items.extend(dispatch_failure_attention_items(
         history_events if history_events is not None else events, make_item=_attention_item,
     ))

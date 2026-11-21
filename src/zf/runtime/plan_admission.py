@@ -205,7 +205,15 @@ def emit_plan_admission_cancel(
         task_map_ref=task_map_ref,
         task_map_path=task_map_path,
     )
-    canonical_failure = emit_upstream_failure_for_bad_task_map(
+    task_state_conflict = reason == "terminal_tasks"
+    previous = None
+    if task_state_conflict:
+        previous = next((e for e in coordinator.event_log.read_all()
+                         if e.type == "fanout.cancelled" and e.payload.get("trigger_event_id") == trigger_event.id
+                         and e.payload.get("stage_id") == stage_id
+                         and e.payload.get("plan_admission_incident_id") == incident_id
+                         and e.payload.get("failure_scope") == "task_state_admission"), None)
+    canonical_failure = None if task_state_conflict else emit_upstream_failure_for_bad_task_map(
         coordinator,
         trigger_event=trigger_event,
         trace_id=trace_id,
@@ -222,9 +230,10 @@ def emit_plan_admission_cancel(
         "trace_id": trace_id,
         "pdd_id": pdd_id,
         "feature_id": feature_id or pdd_id,
+        **({"workflow_run_id": str(trigger_payload.get("workflow_run_id") or trace_id)} if task_state_conflict else {}),
         "source_index_ref": source_index_ref,
         "task_ids": [task_id for task_id in task_ids or [] if task_id],
-        "failure_scope": "plan_admission",
+        "failure_scope": "task_state_admission" if task_state_conflict else "plan_admission",
         "plan_admission_incident_id": incident_id,
         "canonical_failure_event_id": (
             canonical_failure.id if canonical_failure is not None else ""
@@ -240,15 +249,26 @@ def emit_plan_admission_cancel(
         payload["wave"] = wave
     if extra_payload:
         payload.update(extra_payload)
-    cancelled = ZfEvent(
+    cancelled = previous or ZfEvent(
         type="fanout.cancelled",
         actor="zf-cli",
+        origin="kernel" if task_state_conflict else "",
+        task_id=pdd_id or None,
         payload=payload,
         causation_id=trigger_event.id,
         correlation_id=trace_id or None,
     )
-    coordinator.event_writer.append(cancelled)
-    if canonical_failure is None:
+    if previous is None:
+        coordinator.event_writer.append(cancelled)
+    if task_state_conflict:
+        if not any(e.type == "task.fanout.rejected" and e.origin == "kernel"
+                   and e.causation_id == cancelled.id for e in coordinator.event_log.read_all()):
+            coordinator.event_writer.append(ZfEvent(type="task.fanout.rejected", origin="kernel", actor="zf-cli",
+                task_id=pdd_id or None, causation_id=cancelled.id, correlation_id=trace_id or None,
+                payload={**cancelled.payload, "workflow_run_id": str(trigger_payload.get("workflow_run_id") or trace_id),
+                         "recovery_owner": "run_manager", "diagnosis_status": "required",
+                         "reason": "terminal_tasks", "source_event_id": cancelled.id}))
+    elif canonical_failure is None:
         _emit_unroutable_plan_admission_escalation(
             coordinator,
             cancelled=cancelled,

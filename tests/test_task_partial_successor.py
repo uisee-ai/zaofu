@@ -1,3 +1,4 @@
+from zf.runtime.task_contract_snapshot import effective_contract_revision
 """A failed partial Task can continue while unrelated Candidate work advances."""
 
 from types import SimpleNamespace
@@ -275,7 +276,7 @@ def test_integration_preserves_candidate_partial_and_worker_delta(tmp_path, conf
         operation_generation=1,
         pipeline_key="next-pipeline",
         dispatch_base_commit=partial,
-        contract_revision="next-contract",
+        contract_revision=effective_contract_revision(TaskStore(runtime.state_dir / "kanban.json").get("NEXT")),
         event_writer=writer,
         causation_id="verify-admitted",
     )

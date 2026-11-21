@@ -11,6 +11,19 @@ NEW 验证准备期曾被测试 `zf init --force` 重置运行状态。17:09 UTC
 隔离污染投影和后续进程结果，绑定安装后的消费游标并保持维护暂停。未从索引或其他
 Run 拼造账本，检查点后的原始差量完整性保持 unknown；不计入无监工通过。
 
+2026-11-21 完成任务保护：Plan派发先用拟议Task视图执行admission，capacity在落盘前检查，
+已拒绝派发不得先重开done任务。准确晚到批准只有package正文与显式端口匹配、Candidate
+仍为原提交、所有相关Task与原生/复用完成证据当前有效时才抑制重复派发；不授予Goal或Judge通过。
+integration receipt绑定捕获时的合同语义版本与authority token，Candidate写入前重查token；
+terminal核对两者、检查integration后的合同/派发事件，再以TaskStore CAS绑定authority、status和active_dispatch_id完成。
+`terminal_tasks`归类为Task状态准入冲突，kernel-origin的`fanout.cancelled`自身即交RM诊断，后续`task.fanout.rejected`只作同incident审计，禁止继承
+旧schema_gap去重规划。两次事件追加间崩溃可补齐诊断，不因cancel已存在永久静默。
+这组改动防止复发；14项既有受影响完成记录尚待独立、可审计的受控补偿。
+
+NEW于17:15从可信检查点恢复后的原Plan阶段继续，真实Planner冻结输入已经含TODO与
+SOURCE-PROMPT完整必读正文。恢复步骤包含参数纠正和transport bootstrap，均为人工介入。
+本次准备Run及旧失败窗口不改判无监工通过，新资格窗口仍未开始。
+
 本说明对应 [实施任务](../../tasks/active/2026-11-18-0001-eight-by-eight-recovery-closure.md)。基于 dev dda38a25 的隔离实验发现；原实验仅证明 Impl 峰值 8、Verify 峰值 5、总同时峰值 11，1/16 完成，未证明真实同时 8+8 或最终产品交付。
 
 ## 修复边界

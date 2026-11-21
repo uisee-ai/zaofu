@@ -476,6 +476,16 @@ def _integrate_locked(
     contract_revision: str,
     source_event_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    from zf.core.task.store import TaskStore
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+
+    task_store = TaskStore(rebuilder.state_dir / "kanban.json")
+    integrated_task = task_store.get(task_id)
+    if integrated_task is None:
+        raise CandidateIncrementalError("integration Task authority is missing")
+    if effective_contract_revision(integrated_task) != contract_revision:
+        raise CandidateIncrementalError("integration Task contract changed before authority capture")
+    authority_revision = integrated_task.contract_authority_revision
     current_head, current_exists = _candidate_head(
         rebuilder.project_root,
         branch=branch,
@@ -573,6 +583,9 @@ def _integrate_locked(
     dirty = _git(rebuilder.project_root, "-C", str(worktree), "status", "--porcelain")
     if _candidate_reportable_status(dirty):
         raise CandidateIncrementalError("rolling smoke left candidate worktree dirty")
+    current_task = task_store.get(task_id)
+    if current_task is None or current_task.contract_authority_revision != authority_revision:
+        raise CandidateIncrementalError("Task authority changed during integration")
     _update_candidate_ref(
         rebuilder.project_root,
         branch=branch,
@@ -595,6 +608,7 @@ def _integrate_locked(
         "task_ref": task_ref.task_ref,
         "task_commit": task_ref.source_commit,
         "contract_revision": contract_revision,
+        "contract_authority_revision": authority_revision,
         "candidate_generation": candidate_generation,
         "candidate_branch": branch,
         "expected_candidate_head": expected_head,

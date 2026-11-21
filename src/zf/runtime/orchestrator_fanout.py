@@ -3412,6 +3412,10 @@ class FanoutCoordinationMixin(
                     reason=str(exc),
                 )
                 continue
+            from zf.runtime.plan_completed_approval import suppress_completed_plan_approval
+
+            if suppress_completed_plan_approval(self, trigger_event=event, loaded=loaded, stage_id=stage.id):
+                continue
             pre_impl = pre_impl_dispatch_fence(
                 self,
                 stage_id=stage.id,
@@ -3517,6 +3521,7 @@ class FanoutCoordinationMixin(
                 # the regular scheduler may dispatch them outside writer fanout.
                 source_gate_checked = False
                 source_gate = None
+                proposed_admission = None
                 if getattr(stage, "synthesize_canonical_tasks", False):
                     source_gate = self._writer_source_index_gate(
                         loaded=loaded,
@@ -3542,20 +3547,29 @@ class FanoutCoordinationMixin(
                         trace_id=trace_id,
                     ):
                         return
-                    self._ensure_writer_tasks_canonical(loaded)
-                if (
-                    not blocking_task_pipeline
-                    and not use_affinity
-                    and len(task_items) > len(roles)
-                ):
-                    raise RuntimeError(
-                        "writer fanout has more tasks than writer role instances"
+                    from types import SimpleNamespace
+
+                    proposed = self._ensure_writer_tasks_canonical(loaded, preview_only=True)
+                    proposed_admission = admit_writer_fanout(
+                        task_store=SimpleNamespace(get=lambda task_id: proposed.get(task_id)
+                                                   or self.task_store.get(task_id)),
+                        loaded=loaded,
                     )
-                admission = admit_writer_fanout(
-                    task_store=self.task_store,
-                    loaded=loaded,
-                )
+                    if proposed_admission.passed:
+                        if (not blocking_task_pipeline and not use_affinity
+                                and len(proposed_admission.task_items) > len(roles)):
+                            raise RuntimeError("writer fanout has more tasks than writer role instances")
+                        self._ensure_writer_tasks_canonical(loaded)
+                admission = proposed_admission
+                if admission is None or admission.passed:
+                    admission = admit_writer_fanout(
+                        task_store=self.task_store,
+                        loaded=loaded,
+                    )
                 if admission.passed:
+                    if (not blocking_task_pipeline and not use_affinity
+                            and len(admission.task_items) > len(roles)):
+                        raise RuntimeError("writer fanout has more tasks than writer role instances")
                     # B4 (doc 91 P1): source-index 双向锚门。普通
                     # product-delivery 路径在 admission 之后、孵化之前跑;
                     # synthesize_canonical_tasks 路径已在 canonical seed 之前跑。

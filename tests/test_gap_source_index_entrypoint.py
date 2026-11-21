@@ -2,6 +2,9 @@
 import json
 import subprocess
 import pytest
+from zf.core.config.schema import (
+    FanoutAssignmentConfig, WorkflowAffinityLaneConfig, WorkflowAffinityLaneProfileConfig,
+)
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.task_scoped_plan_inputs import task_input_paths
@@ -11,6 +14,13 @@ from tests.test_module_gap_plan_runtime import _state, _write_base_task_map
 @pytest.mark.parametrize("additive", [False, True])
 def test_gap_bridge_rebinds_source_index_and_keeps_original(tmp_path, additive):
     state, log, transport, orch = _state(tmp_path)
+    if additive:
+        # Dependency-queued work uses affinity lanes. A positional one-role
+        # fanout cannot admit two Tasks; its old scheduler leak was not success.
+        orch.config.workflow.stages[0].assignment = FanoutAssignmentConfig(
+            strategy='affinity_stage_slots', lane_profile='gap-lanes', stage_slot='impl')
+        orch.config.workflow.affinity_lanes = {'gap-lanes': WorkflowAffinityLaneProfileConfig(
+            affinity_key='affinity_tag', lanes=[WorkflowAffinityLaneConfig(id='lane0', impl='dev-lane-0')])}
     ref = _write_base_task_map(state)
     old = 'CANGJIE-WEB-001'
     new = 'CANGJIE-WEB-R2'
@@ -47,6 +57,8 @@ def test_gap_bridge_rebinds_source_index_and_keeps_original(tmp_path, additive):
     if additive:
         assert task_input_paths(updated, task_id='MODEL-BINDING') == ['$.schema_version', '$.tasks[0]']
     assert json.loads(source_path.read_text()) == source
+    assert any(e.type == 'fanout.started' for e in log.read_all())
+    assert not any(e.type == 'fanout.cancelled' for e in log.read_all())
     assert len(transport.sent) == 1
     if additive:
         assert 'MODEL-BINDING' in str(transport.sent[0][1])

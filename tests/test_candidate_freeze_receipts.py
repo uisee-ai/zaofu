@@ -1,3 +1,4 @@
+from zf.runtime.task_contract_snapshot import effective_contract_revision
 from types import SimpleNamespace
 import pytest
 from zf.core.events.model import ZfEvent
@@ -85,7 +86,7 @@ def mixed_generation_freeze_case(tmp_path, change="none"):
         operation_generation=1,
         pipeline_key="pipeline-B",
         dispatch_base_commit=base,
-        contract_revision="contract-r1",
+        contract_revision=effective_contract_revision(store.get(task.id)),
         event_writer=writer,
         causation_id="g2",
     )

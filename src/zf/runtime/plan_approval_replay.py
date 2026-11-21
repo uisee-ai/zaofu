@@ -64,6 +64,7 @@ def _state(events: Iterable[ZfEvent]) -> tuple[dict[str, ZfEvent], dict[str, ZfE
         for event in events
         if event.type == 'fanout.cancelled' and event.origin == 'kernel'
         and event.payload.get('failure_scope') == 'plan_admission'
+        and event.payload.get('reason') != 'terminal_tasks'
         and event.causation_id
         and event.causation_id == event.payload.get('trigger_event_id')
     }

@@ -452,6 +452,7 @@ class TaskStore:
         updates: dict,
         expected_status: str | None = None,
         expected_blocked_by: list[str] | None = None,
+        expected_active_dispatch_id: str | None = None,
     ) -> tuple[Task | None, bool]:
         """Patch non-authority Task fields only while the contract CAS token matches."""
 
@@ -475,6 +476,9 @@ class TaskStore:
                 if expected_status is not None and record.get("status") != expected_status:
                     return self._to_task(dict(record)), False
                 if expected_blocked_by is not None and record.get("blocked_by", []) != expected_blocked_by:
+                    return self._to_task(dict(record)), False
+                if (expected_active_dispatch_id is not None
+                        and str(record.get("active_dispatch_id") or "") != expected_active_dispatch_id):
                     return self._to_task(dict(record)), False
                 current = str(record.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):

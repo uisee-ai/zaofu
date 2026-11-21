@@ -20,6 +20,7 @@ from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.candidates import CandidateRebuilder
+from zf.runtime.task_contract_snapshot import effective_contract_revision
 from zf.runtime.candidate_incremental import (
     CandidateIncrementalError,
     _rolling_smoke_environment_error,
@@ -205,7 +206,7 @@ def _integrate(
         operation_generation=1,
         pipeline_key="pipeline-A",
         dispatch_base_commit=base,
-        contract_revision="contract-r1",
+        contract_revision=effective_contract_revision(TaskStore(state_dir / "kanban.json").get("TASK-A")),
         event_writer=writer,
         causation_id="generation-event",
     )
@@ -316,7 +317,7 @@ def test_incremental_redrive_reconciles_admitted_candidate_advancement(
         operation_generation=1,
         pipeline_key="pipeline-B",
         dispatch_base_commit=base,
-        contract_revision="contract-r1",
+        contract_revision=effective_contract_revision(TaskStore(state_dir / "kanban.json").get(task.id)),
         event_writer=writer,
         causation_id="generation-event",
     )
@@ -360,7 +361,7 @@ def test_incremental_redrive_reconciles_admitted_candidate_advancement(
         operation_generation=1,
         pipeline_key="pipeline-B",
         dispatch_base_commit=base,
-        contract_revision="contract-r1",
+        contract_revision=effective_contract_revision(TaskStore(state_dir / "kanban.json").get(task.id)),
         event_writer=writer,
         causation_id=repair.id,
     )
@@ -462,7 +463,7 @@ def test_incremental_integration_adopts_authorized_successor_base(
         operation_generation=1,
         pipeline_key="pipeline-B",
         dispatch_base_commit=replacement_base,
-        contract_revision="contract-r2",
+        contract_revision=effective_contract_revision(TaskStore(state_dir / "kanban.json").get(successor.id)),
         event_writer=writer,
         causation_id="generation-event-2",
     )

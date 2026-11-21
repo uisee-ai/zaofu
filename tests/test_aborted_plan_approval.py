@@ -55,3 +55,11 @@ def test_new_trigger_requires_fresh_review():
     request,cancel=events()
     new=ZfEvent(type=request.type,origin='kernel',payload={**request.payload,'plan_id':'ready-2'})
     assert pending_plan_requests([request,cancel,new])==[new]
+
+
+def test_terminal_task_conflict_does_not_revoke_plan_review():
+    request, cancel = events()
+    cancel.payload['reason'] = 'terminal_tasks'
+    approved = ZfEvent(type='plan.approved', actor='operator', payload={'plan_id': 'ready-1'})
+    assert approved_equivalent_plan_id([request, approved, cancel],
+                                      {**request.payload, 'plan_id': 'ready-2'}) == 'ready-1'
