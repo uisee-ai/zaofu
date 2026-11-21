@@ -8,7 +8,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 |---|---|---|---|
 | P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实同operation先拦截14项漂移、修复后正式准入，14项保留行未变 |
 | P0-2 | P0 | 故障类型与最小恢复动作 -> verify: 输入/执行故障进入技术恢复；Agent判断合同不变的产品缺陷进入Task返工；明确义务变化才进入Plan；实际决策提交/应用测试，不靠关键词推断。 | 已实现并通过准入/受控动作/输入消费测试；真实生产行只读编译通过 |
-| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，Owner已批准采证上限100→120且19/19宿主采证成功；正修复Reader重试冻结身份接续 |
+| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，Owner已批准采证上限100→120且19/19宿主采证成功；Reader重试冻结身份已修复并部署，正式语义验收继续 |
 | P1-1 | P1 | Autoresearch子退出事实 -> verify: 自定义state_dir、同Run绑定；预算、Owner wait、未知退出分别保留原事件ref和检查点；父流程不误判源码缺陷，不擅自恢复。 | 已实现并通过回归；历史真实子Run已准确回放为wall_clock预算停止 |
 | P1-2 | P1 | 恢复纵向回归与活性 -> verify: 失败→RM/OA→修复→独立验证→受控应用→恢复→最终签收；未完成且无执行/队列/明确阻塞必须产出诊断请求，重放幂等，不重新实现已有机制。 | 确定性验证通过；补齐Candidate infra诊断Owner与发布崩溃幂等；真实最终签收归P0-3 |
 
@@ -356,3 +356,17 @@ Reader preregistration失败按kernel已知的启动前阶段记录infra/reader_
 sentinel53 passed、flow smoke10 passed。完整命令输出retained-freeze-automatic.log；
 全分支plan与增量plan均已保存。独立research复核RR1在真实batch投影已关闭，未发现
 确定剩余阻塞；其未独立重跑pytest。仍需部署后确认8路Reader消费及正式Judge结果。
+
+身份接续实现提交`2af47d09 fix: preserve native candidate identity across reader recovery`。
+10:34:53 UTC隔离控制器PID2069908运行。配置及计数不变；部署脚本“全部pane保留”
+断言失败，未掩盖：启动生命周期正式suspend了8个没有活跃operation的Reader role，
+其余pane PID不变。保留原失败报告并追加retained-freeze-pane-reconciliation.json，
+不能宣称所有pane都保留。10:37:32通过既有stage-retrigger受控动作发evt-c538793be1e9，
+恢复未完成Reader；10:38:11首个新operation注册成功，19份回执仍有效、用量110/120。
+未合并dev或push；原无监工失败不变，P0-3继续active等待独立验收与交付。
+
+10:41:20 UTC现场确认8/8 Reader operation均running，已开始产生独立artifact阅读记录；
+每路冻结请求都合法绑定19份原始回执，contract/target currentness无错误，source
+operation保持原值，恢复以来无重复host effect。证明retained-freeze-eight-reader-binding-proof.json。
+Worker仍为GPT-6-Luna high；Judge尚未派发，既有6.1 Sol high原生切换watcher存活。
+本轮注册失败已解除，但Reader语义结论、Judge、Goal/local delivery尚未签收。
