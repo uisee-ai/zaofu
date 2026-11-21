@@ -510,3 +510,13 @@ controlled repair fixture覆盖两种副本及新freeze拒绝。首次250通过/
 缺manifest accessor，补齐后252直接调用/候选恢复mock、sentinel53、flow10通过。
 独立静态复核无剩余确定阻断；准备部署。新Plan18:56 Planner passed、18:57 Synth
 运行；资格协议更新并保留原版/原生修复证据，qualification_started=false。
+
+19:03–19:05 UTC：27309e93 `fix: resume admitted aggregate rebuilds with exact publication recovery`
+已提交并部署OLD/NEW隔离控制面，未merge dev或push。PID分别968795/974102，配置SHA
+cd98304a…/fadd068e…保持，所有Worker pane保留。OLD原请求evt-7fc60ea3f3c2自动消费，
+新aggregate evt-d271e7814187、Discovery evt-0c3009b2bda2、Goal evt-5640085ed8e4、
+Judge operation wop-prd-lanes-final-judge-prd-trig-evt-5640085e-a075a6f53872；没有新增
+操作员聚合请求。Judge新会话初始Luna，按用户授权tmux内切6.1-sol high，未重启。
+真实证据位于OLD reports/eight-qualification-20261120T122929Z/aggregate-replay-real-proof.json；
+Judge结论与最终交付仍待核验，原无人失败窗口保持。NEW Planner passed、Synth运行，
+资格尚未开始；故障注入工具仅准备，未执行。
