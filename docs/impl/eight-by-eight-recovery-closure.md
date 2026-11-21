@@ -233,3 +233,13 @@ Planner(workflow-read)和Critic(plan-synth)的新call装配对完整授权、已
 原件、派生摘要和usage明细均保留原access_scope，未授权角色/用途仍拒绝；导入描述符不能自行声明kernel专属plan_preflight_delivery。各旧candidate使用独立source身份，避免与当前review的usage来源混淆。
 
 任务：[历史preflight读取](../../tasks/active/2026-11-21-0244-previous-preflight-usage-delivery.md)。
+
+## Candidate对既有host事实的独立消费
+
+`reusable=false`限制Impl自检收据复用，不要求每个独立Reader重复已经合法完成的host命令。新Candidate call准备时，kernel从账本核验源operation完整身份、settled后执行的唯一因果链、审批、manifest、精确命令/合同/目标/世代、原收据和输出摘要，再冻结`candidate-host-evidence.v1`消费绑定。绑定包含新consumer身份和原source operation/attempt，纳入不可变request hash；已有call重放不补入事后事实。
+
+绑定、带输出的fact和媒体索引进入必读manifest，原收据、原输出及完整容器证据仍可按需查询。派生源保留源权限交集；部分授权不扩大成全文。缺输出、媒体或坏摘要保留不可用事实，不能支持通过。图片、ZIP和视频按字节/长度/SHA验证，不能当文本解码。
+
+独立Verify可在`host_execution_receipt_ids`引用本call冻结的receipt_id；既不填Impl的`reused_command_receipt_ids`，也不冒称自己的新probe。预检与正式准入重新核验原事件和证据，只有精确匹配且exit0的完整事实支持规范命令覆盖；AC矩阵、产品验收报告、读证明与Judge义务不变。新字段无合同、无consumer绑定、错身份或错目标均拒绝。读取事实不授予新命令、预算、镜像、网络或host权限。
+
+任务：[Candidate host证据消费](../../tasks/active/2026-11-21-0300-candidate-host-evidence-consumption.md)。真实新Candidate派发前，聚焦测试通过仅证明确定性链路，不代表本轮8×8最终成功。

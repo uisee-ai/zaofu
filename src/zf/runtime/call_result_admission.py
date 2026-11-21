@@ -211,7 +211,8 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 result=adapted.payload, ledger_descriptor=ledger_descriptor,
             ))
         issues.extend(provider_summary_issues)
-        issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit))
+        issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit,
+            operation=operation, events=self.event_log.read_all()))
         if require_semantic_submit and not semantic_submit:
             issues.append({
                 "field": "result_submit",

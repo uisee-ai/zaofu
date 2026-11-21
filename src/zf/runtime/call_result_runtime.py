@@ -226,6 +226,10 @@ def prepare_call_operation(
             runtime, payload=payload, workflow_run_id=workflow_run_id,
             task_id=task_id, source_event_id=causation_id,
         )
+        from zf.runtime.candidate_host_consumption import prepare_candidate_host_consumption
+
+        prepare_candidate_host_consumption(runtime, payload=payload,
+            operation_id=operation_id, attempt_id=attempt_id)
     payload["handoff_authority_contract"] = build_handoff_authority_contract(
         payload,
         output_profile_id=output_profile_id,
@@ -620,6 +624,8 @@ def prepare_call_operation(
             )
         },
     }
+    if payload.get("candidate_host_evidence_ref"):
+        request["candidate_host_evidence_ref"] = dict(payload["candidate_host_evidence_ref"])
     pinned_write_scopes = list(dict.fromkeys(
         str(scope).strip()
         for scope in (workdir_write_scopes or [])

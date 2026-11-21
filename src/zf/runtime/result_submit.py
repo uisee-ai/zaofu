@@ -382,6 +382,7 @@ class SemanticResultSubmitService:
                 profile_id=profile_id,
                 revision=_revision,
                 delivery=self._current_task_pipeline_delivery(_operation, request),
+                events=self.event_log.read_all(),
             )
         if profile_id == "orchestrator-semantic-decision":
             from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission

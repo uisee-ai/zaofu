@@ -327,6 +327,15 @@ def prepare_fanout_result_guidance(
         )
     if has_contract_snapshot:
         verification_prefix = "" if semantic_submit else "verification_result."
+        if child_payload.get("candidate_host_evidence_ref"):
+            guidance.append(
+                "Read candidate-host-execution and its bound fact/media sources. You may consume "
+                "only its receipt_id values in host_execution_receipt_ids, preserving the source "
+                "operation's identity. These are execution facts, not Impl reusable receipts or "
+                "your fresh probe_receipts. Do not repeat a command solely because reusable=false; "
+                "that flag governs Impl self-check reuse. Independently judge every required "
+                "acceptance criterion and product report; host exit 0 supplies no product verdict."
+            )
         guidance.extend([
             "If required input delivery fails, use execution_status=failed, "
             "verdict=abstained, failure_class=reader_execution_failure and durable "

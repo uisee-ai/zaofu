@@ -38,6 +38,8 @@ def typed_result_admission_issues(
     schema_version: str,
     result: Mapping[str, Any],
     semantic_submit: bool,
+    operation: Mapping[str, Any] | None = None,
+    events: list | None = None,
 ) -> list[dict[str, str]]:
     """Check secure submits and contract-bound Verify on every transport.
 
@@ -49,6 +51,11 @@ def typed_result_admission_issues(
         schema_version == "verification-result.v1"
         and bool(result.get("contract_snapshot_ref") or result.get("contract_snapshot_digest"))
     )
+    if (schema_version == "verification-result.v1" and result.get("host_execution_receipt_ids")
+            and not contract_bound_verification):
+        return [_issue(field="control_result.host_execution_receipt_ids",
+            code="verification_host_evidence_invalid", message="host facts require a bound contract",
+            owner="candidate_verify", action="result_repair")]
     # Contract-bound Verify evidence has the same obligations on the legacy
     # event transport as on the controlled result-submit transport.
     if not semantic_submit and not contract_bound_verification:
@@ -56,7 +63,7 @@ def typed_result_admission_issues(
     if schema_version == "implementation-result.v1":
         return _implementation_issues(Path(state_dir), result)
     if schema_version == "verification-result.v1":
-        return _verification_issues(Path(state_dir), result)
+        return _verification_issues(Path(state_dir), result, operation=operation, events=events)
     if schema_version == "task-integration-acceptance-result.v1":
         return _integration_acceptance_issues(Path(state_dir), result)
     return []
@@ -66,12 +73,17 @@ def typed_admission_issues_for(
     state_dir: Path,
     adapted: Any,
     semantic_submit: bool,
+    *,
+    operation: Mapping[str, Any] | None = None,
+    events: list | None = None,
 ) -> list[dict[str, str]]:
     return typed_result_admission_issues(
         state_dir,
         schema_version=str(getattr(adapted, "schema_version", "") or ""),
         result=getattr(adapted, "payload", {}) or {},
         semantic_submit=semantic_submit,
+        operation=operation,
+        events=events,
     )
 
 
@@ -187,6 +199,9 @@ def _implementation_placeholder(value: Any, path: str = "control_result") -> str
 def _verification_issues(
     state_dir: Path,
     result: Mapping[str, Any],
+    *,
+    operation: Mapping[str, Any] | None = None,
+    events: list | None = None,
 ) -> list[dict[str, str]]:
     descriptor, descriptor_issue = _contract_descriptor(result)
     if descriptor_issue:
@@ -278,6 +293,14 @@ def _verification_issues(
             action="result_repair",
         )]
 
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    try:
+        host_commands = admitted_host_commands(state_dir, result, operation=operation, events=events)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        return [_issue(field="control_result.host_execution_receipt_ids",
+            code="verification_host_evidence_invalid", message=str(exc),
+            owner=expected_owner, action="result_repair")]
     reused_ids = set(_strings(result.get("reused_command_receipt_ids")))
     reused_receipts: list[dict[str, Any]] = []
     if reused_ids:
@@ -337,6 +360,7 @@ def _verification_issues(
         contract=contract,
         target=target,
         reused_receipts=reused_receipts,
+        host_commands=host_commands,
         verification_owner=expected_owner,
     )
     return [command_issue] if command_issue else []
@@ -348,6 +372,7 @@ def _passed_verification_command_issue(
     contract: Mapping[str, Any],
     target: Mapping[str, Any],
     reused_receipts: list[dict[str, Any]],
+    host_commands: list[dict[str, Any]],
     verification_owner: str,
 ) -> dict[str, str] | None:
     specs = {
@@ -370,7 +395,7 @@ def _passed_verification_command_issue(
     }
     covered = {
         str(item.get("command_id") or "")
-        for item in reused_receipts
+        for item in [*reused_receipts, *host_commands]
         if str(item.get("command_id") or "")
     }
     probes = result.get("probe_receipts")
