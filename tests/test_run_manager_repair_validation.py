@@ -1,6 +1,7 @@
 """Independent repair verification consumes the frozen checkout command contract."""
 import shlex
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -72,3 +73,40 @@ def test_required_manual_review_is_not_a_pass_without_evidence(tmp_path):
         'kind': 'docs_review', 'command': 'review changed markdown', 'required': True}])
     assert not result['ok']
     assert result['reason'] == 'manual_review_evidence_required'
+
+
+def test_verification_subprocess_cannot_inherit_live_control_context(tmp_path, monkeypatch):
+    root = tmp_path / 'isolated-repair'
+    (root / 'tests').mkdir(parents=True)
+    live = tmp_path / 'live'
+    live.mkdir()
+    (live / 'sentinel').write_text('unchanged')
+    inherited = {
+        'ZF_PROJECT_ROOT': str(live), 'ZF_STATE_DIR': str(live / 'state'),
+        'ZF_WORKSPACE_HOME': str(live), 'ZF_WEB_ACTION_TOKEN': 'test-only-no-real-secret',
+        'ZF_ACTIVE_TASK_ID': 'live-task', 'ZF_CLI_CMD': 'wrong-cli',
+        'ZF_PYTHON': '/untrusted/python', 'TMUX_TMPDIR': str(live), 'TMUX': 'live-session',
+        'GIT_DIR': str(live / '.git'), 'GIT_WORK_TREE': str(live),
+        'PYTEST_ADDOPTS': '--deliberately-invalid-parent-option',
+    }
+    for key, value in inherited.items():
+        monkeypatch.setenv(key, value)
+    (root / 'tests/test_environment.py').write_text('''import os
+import sys
+from pathlib import Path
+def test_environment():
+    allowed = {'ZF_WORKSPACE_HOME', 'ZF_PYTHON'}
+    assert {k for k in os.environ if k.startswith('ZF_')} == allowed
+    assert all(k not in os.environ for k in ('TMUX', 'TMUX_TMPDIR', 'GIT_DIR', 'GIT_WORK_TREE'))
+    assert os.environ['ZF_PYTHON'] == sys.executable
+    home = Path(os.environ['ZF_WORKSPACE_HOME'])
+    assert home.is_dir()
+    (home / 'test-state').write_text('isolated')
+    Path('workspace-location').write_text(str(home))
+''')
+    result = execute_repair_verification_plan(worktree=str(root), verification_plan=[{
+        'command': 'python -m pytest -q -c /dev/null --no-cov tests/test_environment.py'}])
+    assert result['ok'], result
+    assert (live / 'sentinel').read_text() == 'unchanged'
+    assert list(live.iterdir()) == [live / 'sentinel']
+    assert not Path((root / 'workspace-location').read_text()).exists()

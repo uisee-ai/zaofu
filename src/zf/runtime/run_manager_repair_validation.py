@@ -12,6 +12,7 @@ import re
 import shlex
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,17 @@ def execute_repair_verification_plan(
             "results": [],
         }
 
+    with TemporaryDirectory(prefix='zf-repair-verification-') as workspace:
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith(('ZF_', 'GIT_', 'TMUX'))
+                       and key not in {'PYTHONPATH', 'PYTHONHOME', 'PYTEST_ADDOPTS', 'PYTEST_CURRENT_TEST'}}
+        environment.update(ZF_WORKSPACE_HOME=workspace, ZF_PYTHON=sys.executable, PYTHONPATH='src')
+        return _execute_steps(root, verification_plan, timeout_seconds, environment)
+
+
+def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: int,
+                   environment: dict[str, str]) -> dict[str, Any]:
+    """Test state is isolated from the resident controller and removed on exit."""
     results: list[dict[str, Any]] = []
     for index, step in enumerate(verification_plan):
         row = step if isinstance(step, dict) else {}
@@ -89,7 +101,7 @@ def execute_repair_verification_plan(
             if required:
                 break
             continue
-        env = os.environ.copy()
+        env = environment.copy()
         env.update(invocation["env"])
         try:
             completed = subprocess.run(

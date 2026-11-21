@@ -753,3 +753,16 @@ flow10通过。完整受控恢复到新Plan输入/必读的回归已覆盖；尚
 重开14个历史done Task，并把terminal_tasks拒绝错误路由为schema_gap重新规划。
 16:44:47受控暂停OLD evt-67ef2172796f，NEW继续。旧审批去重又被本次fanout.cancelled
 排除，旧同图trigger重新请求审批；需要修复完成状态保护及恢复路由，未重写历史。
+
+SR-ENV真实事故：原生候选b7f3334a/f507a4eb独立验证继承controller的ZF_PROJECT_ROOT、
+ZF_STATE_DIR、ZF_WORKSPACE_HOME等。16:46:52测试force-init清空NEW原账本及Kanban，
+16:51观察主账本从3067条降为66条、anchor被5个测试Task替代。配置摘要fadd068e保持。
+控制器、相关4个私有tmux会话及autoresearch sidecar已停止；事故文件保全到独立报告目录。
+16:22:19检查点含2818条原始事件；索引另124条覆盖前观察不等于完整权威账本，禁止
+直接把投影提升为恢复真相。后续恢复必须标明检查点和未证明的差量，不能声明无损或无人成功。
+
+验证器修复：实际子进程剥离继承的ZF_/GIT_/TMUX及Python/pytest上下文，为每份验证计划
+创建独立临时workspace，并固定可信解释器和候选src；计划结束自动清理。实际pytest子进程
+回归先RED后GREEN，证明运行项目定位/控制凭证不继承，写入隔离workspace且测试后删除。
+直接调用42、自动影响闭包1823 passed/7 skipped、sentinel53、flow mock10通过。
+一次人工focused命令含不存在的测试文件，未执行测试；已更正，不算产品失败或通过。
