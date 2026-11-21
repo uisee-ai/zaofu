@@ -8,7 +8,7 @@ Owner 已明确授权“好，执行p0-p1修复”。基于隔离分支49d343e0�
 |---|---|---|---|
 | P0-1 | P0 | 局部Planner返工基线及范围约束 -> verify: 实际提交预检在Critic前拒绝范围外合同/命令/责任漂移，合法局部变化通过；范围来自Agent已准入决定，Runtime只核绑定/差量。 | 已实现并通过确定性验证；真实同operation先拦截14项漂移、修复后正式准入，14项保留行未变 |
 | P0-2 | P0 | 故障类型与最小恢复动作 -> verify: 输入/执行故障进入技术恢复；Agent判断合同不变的产品缺陷进入Task返工；明确义务变化才进入Plan；实际决策提交/应用测试，不靠关键词推断。 | 已实现并通过准入/受控动作/输入消费测试；真实生产行只读编译通过 |
-| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 待真实验证 |
+| P0-3 | P0 | 已修证据接续真实闭环 -> verify: 关联0346保留Task证据任务；真实新候选不重开有效旧任务，旧证明精确绑定，Candidate/Judge/Goal/local delivery以正式结果签收。隔离通过不标真实完成。 | 真实16任务完成、新候选冻结、14份原回执接续已验证；候选/Judge/Goal/local delivery未完成，完整采证额度待Owner确认 |
 | P1-1 | P1 | Autoresearch子退出事实 -> verify: 自定义state_dir、同Run绑定；预算、Owner wait、未知退出分别保留原事件ref和检查点；父流程不误判源码缺陷，不擅自恢复。 | 已实现并通过回归；历史真实子Run已准确回放为wall_clock预算停止 |
 | P1-2 | P1 | 恢复纵向回归与活性 -> verify: 失败→RM/OA→修复→独立验证→受控应用→恢复→最终签收；未完成且无执行/队列/明确阻塞必须产出诊断请求，重放幂等，不重新实现已有机制。 | 确定性验证通过；补齐Candidate infra诊断Owner与发布崩溃幂等；真实最终签收归P0-3 |
 
@@ -233,3 +233,31 @@ sentinel53 passed。真实账本只读探针确认当前MEDIAN的binding及typed
 已可通过，不执行Git或发事件。证据`p0-publication-real-binding-probe.json`；其他日志
 为`p0-publication-*`。08:33 AVERAGE独立Verify通过并准入`evt-8783b3abbadb`，
 8条定向测试通过，候选级条款留给后续阶段。
+
+补修提交`8d385ad8 fix: resume task publication across plan generations`；独立研究源码
+复核未发现确定剩余问题，未独立执行测试。08:34控制器加载该提交（PID1543587），全部
+既有pane PID保留。08:35:05 Run Manager自动发布MEDIAN（receipt evt-913e70a3da26），
+提交`2621353213b6ef9a64e5fd6146febacd69350771`；随后自动宿主测试并保存回执。
+08:35:32 `evt-101798a9b802`请求复核，08:35:50运行时派发同Map的Impl generation2。
+无手工产品Git提交、无新Plan/Critic，无预算或权限变更。宿主采证累计因此增加一次，
+上限仍100；此前增加额度的Owner答复仍未收到。P0-3继续等待最终签收。
+
+09:05:18 MEDIAN独立Verify正式通过（evt-b4c0ec3294e2），09:05:41自动整合，
+09:05:44冻结新Candidate `bc0aebc8f53e91fb17a93dce1b0eef03aff76a03`
+（evt-c664a40dd257），16项当前Task均done，随后自动启动8路候选Verify。
+冻结包16份整合回执逐份hydrate/digest校验通过；与前候选evt-62cd367e1e56比较，
+14份原回执ref/digest原样保留，只有AVERAGE/MEDIAN为本轮新回执。证据分别为
+`p0-new-candidate-ready-proof.json`和`p0-new-candidate-retained-receipts.json`。
+此证明局部恢复和证据接续已生效，尚不证明候选验收、Judge/Goal/local delivery完成。
+
+耗时限制仍如实保留：MEDIAN复核Impl约13分34秒、独立Verify约15分37秒；
+两者输入交付分别19/19及20/20，期间有游标/分页参数自行纠正、一次上下文压缩及
+测试事件引用检索。未将这些额外耗时伪称完全解决，也不把Provider工具用法错误
+直接归因为源码缺陷。当前P0/P1范围内实际阻塞修复与上述候选签收分别记录。
+
+09:09只读授权预检：8路候选Verify全部running，同一目标bc0aebc8、同一合同
+`d841bd7019dacc6c6f89de7e913a89fbea21bb81e009ceaa19d2212b3fae6e73`，均绑定
+19条命令。宿主采证上限100、已用91、剩9；旧目标回执不能冒充新目标回执，完整闭环
+仍需此前提出的100→120授权答复。证据`p0-candidate-authorization-preflight.json`。
+此时尚未发生runtime budget exhaustion，八路仍执行；不标Run paused/blocked，不停止
+已授权工作，不自改policy或approval_ref，也不将原无人监工失败改成通过。
