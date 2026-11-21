@@ -4208,8 +4208,10 @@ def test_stale_task_pipeline_candidate_does_not_start_reader_fanout(
     assert suppressed[0].payload["current_generation_id"] == "generation-current"
 
 
+@pytest.mark.parametrize("aggregate_failed", [False, True])
 def test_stale_task_pipeline_candidate_manifest_is_cancelled_before_retry(
     tmp_path: Path,
+    aggregate_failed: bool,
 ) -> None:
     state_dir, log, transport, orch = _state(tmp_path)
     writer = EventWriter(log)
@@ -4283,6 +4285,14 @@ def test_stale_task_pipeline_candidate_manifest_is_cancelled_before_retry(
     )
     initial_dispatch_count = len(transport.sent)
 
+    if aggregate_failed:
+        writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel", correlation_id="run-1",
+            payload={"fanout_id": started.payload["fanout_id"], "child_id": "review-a",
+                     "role_instance": "review-a", "run_id": "old-reader-attempt", "stage_id": "review-candidate",
+                     "workflow_run_id": "run-1", "operation_id": operation_id, "request_hash": ensured.request_hash}))
+        writer.append(ZfEvent(type="fanout.aggregate.completed", origin="kernel", correlation_id="run-1",
+            payload={"fanout_id": started.payload["fanout_id"], "status": "failed", "reason": "mixed_failure"}))
+
     current = writer.append(ZfEvent(
         type="task.pipeline.generation.admitted",
         actor="zf-cli",
@@ -4317,15 +4327,16 @@ def test_stale_task_pipeline_candidate_manifest_is_cancelled_before_retry(
         if event.type == "fanout.child.dispatch_lost"
         and event.payload.get("fanout_id") == started.payload["fanout_id"]
     ]
-    cancelled = next(
+    cancellations = [
         event for event in events
         if event.type == "fanout.cancelled"
         and event.payload.get("fanout_id") == started.payload["fanout_id"]
-    )
-    assert cancelled.payload["reason"] == (
-        "candidate_ready_stale_task_pipeline_generation"
-    )
-    assert cancelled.payload["superseded_by"] == current.id
+    ]
+    if aggregate_failed:
+        assert not cancellations
+    else:
+        assert cancellations[0].payload["reason"] == "candidate_ready_stale_task_pipeline_generation"
+        assert cancellations[0].payload["superseded_by"] == current.id
     cancelled_operations = {
         str(event.payload.get("operation_id") or "")
         for event in events
@@ -4333,7 +4344,7 @@ def test_stale_task_pipeline_candidate_manifest_is_cancelled_before_retry(
     }
     assert cancelled_operations == {operation_id}
     assert _manifest(state_dir, started.payload["fanout_id"])["status"] == (
-        "cancelled"
+        "failed" if aggregate_failed else "cancelled"
     )
 
 

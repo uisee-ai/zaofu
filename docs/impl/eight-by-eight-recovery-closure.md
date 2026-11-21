@@ -65,6 +65,13 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ### 已完成任务在 Plan 恢复后重复实施（2026-11-20）
 
+已终结的 Candidate fanout 也可能遗留暂停的 Reader operation，不能把聚合失败等同于
+所有环境占用已经释放。周期派发扫描在跳过终结 fanout 前，检查其活跃 operation；
+只有同 Run 的 Kernel 准入证明确认过期，才沿既有取消/transport 所有权路径释放旧
+持有者。保留原聚合结果，不补写 `fanout.cancelled` 覆盖失败，不重试旧 Reader，也不
+重置其 attempt 上限。当前代际和其他 Run 的持有者仍受保护。
+见[终结 Reader 清理](../../tasks/active/2026-11-21-0027-terminal-reader-owner-closeout.md)。
+
 连续 Plan 修订还需追溯更早的原生 Task 验收。第二次恢复不能要求上一代重新产生
 `task.done`：上一代可能只保存已批准的完成复用。预览以该代归档 Task 建立历史读视图，
 验证完整复用引用链，再绑定最初的 Verify/集成事件和原始任务派发代际；新代际的
