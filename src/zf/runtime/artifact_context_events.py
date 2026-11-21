@@ -10,6 +10,7 @@ from typing import BinaryIO
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.core.state.locks import locked_path
 from zf.core.state.rotation import list_archives
 
 
@@ -155,6 +156,15 @@ class ArtifactContextEvents:
     def _matches_snapshot(self, path: Path, entry: _FileView, current: tuple[int, ...]) -> bool:
         if current == entry.signature:
             return True
+        if path == self.log.path:
+            # Readers must not require the live ledger to become idle. Hold
+            # its sanctioned append/rotation lock only for the prefix proof,
+            # never while decoding events or selecting artifact bodies.
+            with locked_path(self.log.path, timeout_seconds=5):
+                return self._matches_locked_prefix(path, entry, _signature(path.stat()))
+        return False
+
+    def _matches_locked_prefix(self, path: Path, entry: _FileView, current: tuple[int, ...]) -> bool:
         if (path != self.log.path or current[:2] != entry.signature[:2]
                 or current[-1] <= entry.signature[-1]
                 or entry.consumed < entry.signature[-1]):

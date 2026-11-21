@@ -171,7 +171,12 @@ def _position(
                 raise ValueError("stale cursor")
             index, offset = value[1:]
         except (ValueError, TypeError) as exc:
-            raise ValueError("invalid or stale required-read cursor") from exc
+            raise ValueError(
+                "invalid or stale required-read cursor; copy the exact next_cursor from the "
+                "last complete page. If it is lost and the earlier material remains in this "
+                "session, retry --required --resume without --cursor; otherwise reread the "
+                "missing material. Never reconstruct or guess a cursor."
+            ) from exc
     if (
         type(index) is not int or type(offset) is not int
         or not 0 <= index < len(groups) or offset < 0

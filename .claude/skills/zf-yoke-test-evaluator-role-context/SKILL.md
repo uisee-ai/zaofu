@@ -54,6 +54,14 @@ amendment are separate role capabilities supplied by the workflow profile.
   remaining work, not an execution failure. If an invalid page-size option is
   corrected and reads succeed, continue with the accepted size/default; the
   recovered error does not justify a terminal failed/abstained result.
+  Copy `next_cursor` exactly from the last completely delivered page; never
+  reconstruct its encoded digest. If the cursor is invalid, compare the failed
+  argument with that output and retry the exact value once. If the cursor was
+  lost but the earlier material remains usable in this session, use the same
+  authorized read command with `--required --resume` and no `--cursor`; consume
+  the returned body and continuation. If prior material is unavailable, reread
+  the missing content. Report an execution failure only if that bounded recovery
+  remains blocked, retaining both the first error and recovery result.
   Each page retains its own authorization,
   validation, and receipt.
   Avoid one model round trip for each tiny page and avoid restarting page one
