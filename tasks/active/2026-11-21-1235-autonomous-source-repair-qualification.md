@@ -596,3 +596,27 @@ retry-4。新pane %475初始仍Luna；仅重新选定未来turn设置，未再�
 turn证据报告模型。保留16完成业务、同Candidate和旧失败；不扩预算或改资格结论。
 详见OLD judge-model-interruption-incident.json。此人工操作失误不归因产品缺陷；
 真实最终Judge/Goal/local delivery仍待正式结果，整批继续active。
+
+2026-11-22 09:35 UTC：用户续额度并要求切换账号后继续。主登录已于09:19更新，
+两次隔离原生最小请求 Luna/6.1-sol high 均READY，未重复logout、未打印凭据。
+OLD retry-4仍保留failed；受控恢复intent evt-63af3b2f56ce、action evt-708fb466a6e2，
+新的Judge operation 4925cdb33587 running。原生新turn 01a2029c-9842-77d1-9287-bf528419125f
+确认6.1-sol/high。原配置Luna导致重试重建丢失tmux选型，现按既有授权仅持久化
+OLD Judge/RM的Sol模型并重载控制面；16已完成任务、Candidate、权限预算保持。
+真实资格窗口依然未开始，不把账号探针或人工恢复称为无人通过。
+
+新增恢复阻断 SYNTH-STRUCTURE：NEW evt-c4872cc07975 passed 携带旧a2b7b3fd task map，
+与当前5c65ca25矩阵不一致，evt-4e0ca745d0c7正确拒绝。直接修复纯Critic结构权限：
+运行时冻结verdict-only，清除PRD纯审核结构模板，validate/submit/准入共同拒绝越权
+结构输出，历史evidence引用保留。验收：实际dispatch冻结权限 -> verify: 调用方测试；
+旧/当前/任意ref和inline结构越权 -> verify: 不准入且同attempt可修正；正确审核delta
+-> verify: 正常提交，旧合同保持。71项直接测试通过；首次2项旧feedback兼容回归和
+1项fixture缺created_by、1项fixture未加载request identity均已定位修正，自动闭包进行中。
+
+SYNTH-STRUCTURE 验证完成：最终直接调用18 passed；自动影响闭包5200 passed/7 skipped，
+1项旧Refactor mock仍让Critic复制Planner全部结构而失败，按真实verdict-only职责修正
+fixture后该E2E与新边界合计20 passed。sentinel53、flow mock10通过。最初命令用了
+系统Python而无xdist，已仅中断该测试进程，改项目venv六进程运行；不涉及现场Worker。
+此为聚焦影响闭包，不声称全量或真实无人验收。恢复策略不扩大aggregate-rebuild权限：
+该入口仅限Discovery。当前已settled Synth不能复活；最新合法Plan断点需用受控阶段
+重触发，声明精确冻结Planner材料并复用，随后新Synth正常审批前审核。

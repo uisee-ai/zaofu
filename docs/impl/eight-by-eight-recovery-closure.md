@@ -869,3 +869,28 @@ attempt envelope 同时存在时兼容。新 invalid 明确写 kernel origin。�
 并将完整资格挂到业务验收，引发反复规划与循环前置。受控新代际明确纠正这条
 工程假设而未改变用户要求；计划尚未批准，无人窗口未开始。后续审核必须逐项
 对照原文及实际入口，不能把人工建议、配置项或未来产物视为已有履约证明。
+
+### 2026-11-22：账号恢复与纯 Plan Critic 的结构权限
+
+主 Codex 登录文件在 09:19 UTC 更新；Luna high 与 6.1-sol high 的隔离最小请求
+均返回 READY。该证据只证明这两个模型当前可调用，不证明所有旧进程自动更新登录。
+旧 Run 的 Judge 重试已受控派发；原生 turn_context 确认本轮实际模型为 6.1-sol/high。
+OLD 原配置仍将 Judge/RM 写为 Luna，dispatch 级会话轮换丢失此前 tmux 临时选择，
+因此持久化用户既有模型授权后仅重载控制面，保留完成任务与候选。新配置 SHA
+4bbe77ae…；原无人窗口仍失败。报告 `account-rotation-checkpoint-resume.json`。
+
+NEW 的 20:41 package 拒绝不是矩阵收集错误：Synth 的审核合同绑定当前 Planner，
+却在已通过结果中选择上一版 task_map_ref，导致新矩阵与旧 Task AC 不一致。矩阵门禁
+正确拒绝。纯 PRD Critic 的模板仍预填第二份计划结构，且提交预检只验证身份/裁决，
+没有执行「Critic 不生产结构」约束，是此次应修复的 Harness 缺口。
+
+新派发的 pure-aggregator Plan Synth 将 verdict-only 权限冻结在 operation request
+的 result_identity 中。PRD/Issue 模板与 Refactor 一致，不再预填结构产物；result
+validate、submit 与正式准入拒绝非空 task map、计划正文、结构 refs/ports 等输出。
+历史引用仍可用于 evidence_refs，语义裁决、风险、owner questions 和正文覆盖声明仍由
+Agent 决定。内核保留当前 Planner 的已准入结构；不替 Agent 选择通过意见。旧请求
+保持原冻结合同，不能篡改已 settled 结果，恢复需走合法的新尝试/代次。
+
+验证：直接调用18通过；自动闭包5200通过/7跳过，旧Refactor mock结构越权用例修正
+为Critic只裁决后，相关E2E与新边界20通过；sentinel53及flow mock10通过。仍须现场
+新派发证明request绑定和正常package产出；这些测试不代表新8×8无人资格通过。

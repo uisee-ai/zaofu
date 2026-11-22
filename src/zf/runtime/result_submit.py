@@ -439,6 +439,17 @@ class SemanticResultSubmitService:
                     "Plan Synth requires an authored review verdict",
                     details={"issues": verdict_errors},
                 )
+            from zf.runtime.plan_synth_output_binding import plan_synth_output_binding_issues
+
+            binding_errors = plan_synth_output_binding_issues(
+                request.get("result_identity") or {}, semantic,
+            )
+            if binding_errors:
+                raise ResultSubmitError(
+                    "plan_synth_result_not_admitted", "Plan Synth output binding failed",
+                    details={"status": "repair_required", "attempt_domain": "protocol_repair",
+                             "semantic_rework_cost": 0, "issues": binding_errors},
+                )
         candidate_validation = validate_plan_candidate_semantic(
             state_dir=self.state_dir,
             request=request,

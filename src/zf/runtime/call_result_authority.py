@@ -379,6 +379,18 @@ class CallResultAuthorityMixin:
                     code,
                     f"dispatch pinned {expected_value}, got {actual_value or '<missing>'}",
                 ))
+        if plan_synthesis_result and expected.get("plan_synth_verdict_only") is True:
+            from zf.runtime.plan_synth_output_binding import plan_synth_output_binding_issues
+            from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+            try:
+                body = hydrate_sidecar_ref(self.state_dir, dict(control_result)).payload
+            except (ValueError, OSError) as exc:
+                issues.append(_currentness_issue(
+                    "control_result", "plan_synth_output_binding_unavailable", str(exc),
+                ))
+            else:
+                issues.extend(plan_synth_output_binding_issues(expected, body))
         return issues
 
     def _latest_candidate_for_run(self, workflow_run_id: str) -> ZfEvent | None:

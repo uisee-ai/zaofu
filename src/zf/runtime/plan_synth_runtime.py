@@ -689,6 +689,9 @@ class PlanSynthRuntimeMixin:
                     run_id=run_id,
                     role_instance=role.instance_id,
                 )
+                call_payload["plan_synth_verdict_only"] = bool(
+                    pure_aggregator_policy_plan(self.config, role).get("applies")
+                )
                 if execution_review is not None:
                     from zf.runtime.plan_execution_review import attach_execution_review
 

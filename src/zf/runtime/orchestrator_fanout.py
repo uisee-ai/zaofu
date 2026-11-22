@@ -8207,6 +8207,13 @@ class FanoutCoordinationMixin(
                 "plan_ports": [],
                 "evidence_refs": [],
             })
+            if runner_policy.get("applies"):
+                # Pure PRD/Issue critics have the same verdict-only authority
+                # as Refactor critics; do not seed a second structural Plan.
+                for body in (completion_payload, completion_payload["report"]):
+                    for key in ("plan_artifact_ref", "artifact_refs", "plan_md",
+                                "task_map_ref", "backlog_ref", "source_index_ref", "plan_ports"):
+                        body.pop(key, None)
         if call_payload:
             # Bind identities in advance, but require the agent to author its verdict.
             for body in (completion_payload, completion_payload["report"]):

@@ -280,7 +280,7 @@ def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str =
     return runtime, prepared, service, token_path.read_text().strip()
 
 
-def _running_plan_synth_operation(tmp_path: Path):
+def _running_plan_synth_operation(tmp_path: Path, *, verdict_only: bool = False):
     runtime = _runtime(tmp_path)
     token_path = provision_role_submit_credential(
         runtime.state_dir,
@@ -299,6 +299,7 @@ def _running_plan_synth_operation(tmp_path: Path):
         "output_profile_id": "plan-synth",
         "output_profile_revision": "1",
         "plan_revision": "plan-r1",
+        "plan_synth_verdict_only": verdict_only,
         "plan_synth_contract_ref": "artifacts/contracts/plan-r1.json",
         "plan_synth_contract_digest": "a" * 64,
         "reviewed_plan_candidate_digest": "a" * 64,
