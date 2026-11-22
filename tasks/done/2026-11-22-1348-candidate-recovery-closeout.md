@@ -1,6 +1,6 @@
 # 8×8 最终审核恢复闭环修复
 
-> 状态: active — 按 Owner 已授权的遇错修复、评估后断点恢复执行；实际运行基线 1d6cb7f7，本批不修改业务验收标准、模型、权限或采证限额。
+> 状态: done — ec46ef3e fix: close candidate review and paused recovery handoffs。保持原无人窗口失败判定，完成的是本批修复与断点派发恢复。
 
 ## 实证与边界
 
@@ -45,4 +45,12 @@ Reader消费旧宿主收据串联26通过。计数存在重叠，不相加。最
 异常断言、收据success fixture错误及manifest恢复case吞并，均已修正并重跑。
 结构门的单模块越1000行已通过提取Candidate preflight至其责任模块解决。
 
-实现已达5/5；真实断点部署和观察后再归档。无人窗口仍失败，未宣称真实交付完成。
+实现5/5已完成部署和真实断点观察。无人窗口仍失败，未宣称真实交付完成。
+
+## 真实恢复观察
+
+14:45:20 UTC 原Run恢复evt-da31693004a0，16个完成Task保留。RM已发送完整宿主诊断，
+产生evt-59d8ad5cccc9并被evt-7516fe0ee1b6消费；原browser缺失事实仍unknown，
+原宿主门保留。随后发现的历史屏幕误判及OA未投递恢复另由
+[后续R6/R7](2026-11-22-1500-oa-unsent-checkpoint-recovery.md)完成；不能以本批完成
+替代产品Judge/交付或重开原无人资格窗口。

@@ -1,6 +1,6 @@
 # OA 历史登录提示与未投递 checkpoint 恢复
 
-> 状态: active — 按 Owner 持续监工、遇错修复后恢复的已有授权；承接 ec46ef3e 后真实恢复发现的问题，不改变模型、权限、预算或验收判决。
+> 状态: done — 0f04bf71 fix: recover unsent orchestrator checkpoints after provider gates。保持原无人窗口失败判定，完成的是本批修复与断点派发恢复。
 
 ## 现场证据
 
@@ -33,4 +33,14 @@ provider/host为隔离mock；真实OA准备探针证据与正式checkpoint观察
 
 cdd-1:1只读审查提出完整config、Candidate适用性及并发领取问题，均已修复；
 最终审查无新的确定缺口。现场只读资格验证已确认原失败evt-4cbc168abb07仍绑定当前
-输入，修复后的屏幕检查返回无阻塞；实现提交后再部署并记录真实后继。
+输入，修复后的屏幕检查返回无阻塞；实现提交后已部署并记录真实后继。
+
+## 真实恢复观察
+
+15:11:56 UTC受控暂停evt-c19a2dec0bdc，控制面停止后FF部署0f04bf71；
+15:11:57恢复evt-ccb8c1efe6e9，配置、16个完成Task和宿主门保持。运行时在
+15:12:20发布原checkpoint重试evt-3bb4d8a925aa，15:12:22领取并开始
+evt-756eae1cba7a，原Codex session在15:12:26接收evt-bec54e6a7a55，
+已读取原typed briefing。operation/request/attempt/Run均保留，retry_count=1。
+证据：实验reports/oa-unsent-controlled-deploy.json及oa-unsent-live-recovery.json。
+当前为OA语义分诊执行中，未宣称其裁决、Judge或产品交付完成。
