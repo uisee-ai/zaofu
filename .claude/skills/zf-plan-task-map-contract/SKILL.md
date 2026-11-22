@@ -458,6 +458,24 @@ After session rotation or compaction, use the current attempt's pinned policy,
 read receipts and authorized recovery paths; previous output is historical
 observation, not proof of current model comprehension.
 
+Keep the continuation cursor and semantic work record separate from current
+memory. If `--required --resume` reports `delivery_predates_compaction` and
+starts a full delivery, do not repeatedly restart the entire bundle. Inspect
+`artifact recover` and `attempt missing-reads` for the current binding, then
+continue an exact retained cursor or read the authorized missing selections.
+Re-read any additional source needed to reconstruct the current decision; a
+historical receipt cannot establish that its content remains in context. Save
+the last fully delivered page/cursor, reviewed claims and open questions in the
+available work-record path. Preserve every required row and all admission gates.
+
+Return complete `items[].content` to the model. A host-side loop that prints
+only source IDs, page counts or cursors does not deliver the body, even if the
+CLI wrote read-ledger rows. Such rows and `missing_reads=[]` cannot prove model
+consumption. Replay hidden or truncated ranges through the authorized read
+command with complete bounded output; never fabricate receipts or substitute
+metadata for the required body. If full delivery cannot be established, report
+the concrete input blocker instead of a passed reading or review claim.
+
 
 Keep whole-file hydration limits separate from selected partition size. When
 complete task inputs exceed one artifact's limit, emit separately bound ports

@@ -10,7 +10,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 原生候选已验证、应用、重启；恢复Plan需owner审批，已执行并进入新一轮Plan返工；五步无人闭环未通过 |
 | LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；11-22最终Judge正式rejected：19项产品claim关闭，但历史完整实验claim未满足。旧Run受控暂停保全失败，Goal/本地交付未通过；NEW准备中 |
-| SR-WATCHDOG-WAKE | 静止后唤醒的正常刷新窗口不误报投影陈旧 -> verify: 刚唤醒及600秒边界不报警，601秒仍未刷新继续报警；覆盖实际watchdog与调用方。 | 当前HEAD先RED复现；移植原生候选最小修复并补600/601秒边界，直接8、自动闭包256/7skip、sentinel53、flow10通过；待隔离部署，旧候选队列尚未收尾 |
+| SR-WATCHDOG-WAKE | 静止后唤醒的正常刷新窗口不误报投影陈旧 -> verify: 刚唤醒及600秒边界不报警，601秒仍未刷新继续报警；覆盖实际watchdog与调用方。 | 当前HEAD先RED复现；移植原生候选最小修复并补600/601秒边界，直接8、自动闭包256/7skip、sentinel53、flow10通过；cfa4c855已隔离部署，旧候选队列尚未收尾 |
 | SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 已验证并随f2e927da部署；236项直接闭包、6149项自动闭包、sentinel53、flow10通过 |
 | SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数及显式disposition入口已验证部署；受控处理仅关闭有有效替代的旧候选 |
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已验证部署；341直接闭包、7143自动闭包通过，真实受控disposition保留旧失败 |
@@ -650,3 +650,19 @@ checkpoint/safe_resume_action。旧验证通过不能授权当前基线apply；�
 当前历史收尾门的只读复核：该门并非全局阻塞；continuation选择器会跳过blocked apply选择其他动作，但严格pending仍阻止最终完成。现有dispose仅支持“失败且已有验证/应用替代”，不支持撤回已验证但基线漂移/缺continuation候选；这是入口缺口，不能伪造discarded。原案卷与后续修复义务保留。
 
 SR-WATCHDOG-WAKE验证完成：当前HEAD先RED（1失败/5通过），修复与边界参数化后直接8通过；自动影响闭包256 passed/7 skipped、sentinel53、flow mock10通过。docs/instruction8项通过。属于确定性聚焦验证，未部署到运行控制面，未证明无监工通过。原生候选b3e965a4经独立只读review无确定源码阻断；本轮额外覆盖刷新窗口到期仍报警。
+
+10:03 UTC cfa4c855部署NEW成功：boot evt-257a89c96e19、PID142323，source tree
+d6ca11bb…，配置及全部Worker panes保持；资格协议已更新声明源码，未合dev/push。
+
+10:07–10:09真实读取诊断：冻结34项443082去重bytes；约7分钟一次compaction
+使--resume重读前缀。另发现Worker隐藏正文仅输出元数据，已有读取计数不能证明
+模型消费。精确反馈evt-bebb746b5ce6、evt-a0225b62907b均已由Kernel sent；不改
+固定输入/政策，不代读或补造收据。Planner方法增加工作记录、精确续读及隐藏/截断
+正文恢复纪律，正在验证；此准备期人工介入不计无人成功。
+
+操作员恢复脚本自身问题：首次RM reprompt漏safe_resume_action及expected downstream
+字段，造成evt-277082ce9bf7验证失败；不是RM没有收到提示。10:09使用完整既有
+动作合同真实重新投递，evt-207d978144d1核验resident.prompted通过，保留原失败。
+这只证明投递效果，不替代Agent诊断或业务恢复成功。
+
+读取方法变更：直接12项、自动docs/skills闭包41 passed/1 skipped；两种分发副本与canonical一致。独立研究确认源码级缺口：历史Provider delivery观察目前是非阻断诊断，仅宿主产出的页也可能满足ledger覆盖。需要新冻结合同可声明完整交付门；旧合同不能被现场静默改写。该准入修复待实施，真实Plan尚未批准。
