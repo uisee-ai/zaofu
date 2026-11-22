@@ -83,15 +83,18 @@ def dispatch_orchestrator_agent_operation(
                 "Reuse its saved read receipts/cursor, consume remaining required inputs, and submit "
                 "the typed result or a supported failure; a chat summary does not close this obligation."
             )
-        retry_orchestrator_agent_operation(
-            runtime,
-            prepared,
-            retry_attempt=retry_attempt,
-            dispatch_id=trigger.id,
-            causation_id=trigger.id,
-            reason=("retry_after_closed_turn_without_result" if missing_result
-                    else "retry_after_orchestrator_pane_respawn"),
-        )
+        if trigger_payload.get("unsent_failure_event_id"):
+            from zf.runtime.orchestrator_unsent_recovery import claim_unsent_retry
+
+            if not claim_unsent_retry(runtime, trigger, prepared.operation_id):
+                return
+        else:
+            retry_orchestrator_agent_operation(
+                runtime, prepared, retry_attempt=retry_attempt,
+                dispatch_id=trigger.id, causation_id=trigger.id,
+                reason=("retry_after_closed_turn_without_result" if missing_result
+                        else "retry_after_orchestrator_pane_respawn"),
+            )
     else:
         activate_orchestrator_agent_operation(
             runtime,
@@ -207,7 +210,12 @@ def dispatch_pending_orchestrator_checkpoint(runtime: Any) -> None:
         if event.type != "orchestrator.semantic.checkpoint.requested":
             continue
         operation = operations.get(str(event.payload.get("operation_id") or ""), {})
-        if operation.get("status") == "requested":
+        from zf.runtime.orchestrator_unsent_recovery import unsent_checkpoint_retry
+
+        if operation.get("status") == "requested" or (
+            event.payload.get("unsent_failure_event_id")
+            and unsent_checkpoint_retry(runtime, event, operation, events)
+        ):
             runtime._notify_orchestrator_agent(event)
             return
 

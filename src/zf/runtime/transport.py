@@ -934,6 +934,8 @@ def transport_error_diagnostics(exc: BaseException) -> dict[str, object]:
         out["failure_class"] = failure_class
     for key in (
         "pane_alive",
+        "input_not_sent",
+        "interactive_prompt_marker",
         "last_screen_excerpt",
         "launch_attempts",
         "requested_timeout_seconds",

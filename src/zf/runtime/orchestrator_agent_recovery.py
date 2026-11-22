@@ -103,6 +103,9 @@ def reconcile_orchestrator_agent_operation_liveness(runtime: Any) -> None:
 
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)
+    from zf.runtime.orchestrator_unsent_recovery import reconcile_unsent_checkpoints
+
+    reconcile_unsent_checkpoints(runtime, events, operations)
     _redrive_explicitly_stopped_checkpoints(runtime, events, operations)
     events = runtime.event_log.read_all()
     operations = reduce_workflow_operations(events)

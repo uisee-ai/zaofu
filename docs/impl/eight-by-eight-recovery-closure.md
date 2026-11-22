@@ -1025,3 +1025,21 @@ human-decision-dismiss精确确认，不自动清除其他门禁或改写历史�
 本批最终源码验证：影响闭包12185通过/18跳过，sentinel53通过，flow mock10通过。
 完整变更路径参数及回执保存于活动任务所列路径；这是确定性测试层，不等于真实
 8×8无人窗口通过。模型矩阵、现场配置权限与采证限额未更改。
+# OA 断点投递补充（2026-11-22）
+
+`ec46ef3e` 部署后，原 Run 在 14:45 UTC 恢复，RM 已生成并消费宿主采证诊断
+（evt-59d8ad5cccc9 / evt-7516fe0ee1b6）。旧 browser exit/stdout 缺失仍为 unknown；
+原无人窗口保持 failed，16/16 Task 不等于最终交付。
+
+OA 恢复的 Codex session 同时显示旧 token-refresh inline 错误和后来成功的 READY
+准备探针，导致 tmux 把历史文字误判为当前门。仅严格完成 footer 之前的确切旧
+inline 错误可过滤；一般 login、额度、权限、trust 提示及 footer 后的新错误仍拦截。
+footer 只划分屏幕历史，不证明账号有效或产品验收。
+
+精确 `provider_interactive_blocked` 来自 tmux 输入前检查。新诊断持久保留
+`input_not_sent` 和 `interactive_prompt_marker`；旧收据仅兼容这一已知前置 class，
+不从 error 文本猜测，显式 `input_not_sent=false` 不得恢复。原失败链绑定到当前
+operation/request/dispatch/Run 后，current config/Plan/Task/goal/Candidate 均复核，
+门解除且 provider 空闲时发布原 checkpoint 的一次 retry。实际发送前在既有 operation
+guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不再重复发送。
+暂停/终止、已有结果、失效绑定或发送状态未知时不适用；再失败转 blocked 保留诊断。
