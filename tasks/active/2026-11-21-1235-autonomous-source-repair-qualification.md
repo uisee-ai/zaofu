@@ -9,7 +9,8 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | SR1 | 核对 RM 诊断、修复合同、隔离工作区、发布与独立验证实际调用链 -> verify: 覆盖真实入口的确定性测试，未知原因、越权、失效绑定保持拒绝。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR2 | 故障注入应用与重启边界，修复已复现问题 -> verify: 缺少重启前提不改源码；失败不假报已恢复；正确版本重绑后才恢复原检查点。 | 代码已提交部署，确定性验证通过；真实故障实验待完成 |
 | SR3 | 配置受限的自动修复实验并验证 -> verify: 路径范围、合同/验证证据、授权和检查点均有效；模拟通过后才部署真实实验；完整保留失败与人工介入记录。 | 原生候选已验证、应用、重启；恢复Plan需owner审批，已执行并进入新一轮Plan返工；五步无人闭环未通过 |
-| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；准确Plan已审批，20:13操作员模型激活中断原尝试；20:20受控Judge retry-4执行中，Goal/本地交付尚未通过；原无人窗口失败保留 |
+| LIVE | 既有 Run Reader → Judge → Goal → 本地交付 -> verify: 每阶段正式结果、同候选/目标/合同绑定，不将代码测试冒充真实交付。 | 16/16业务完成保持；11-22最终Judge正式rejected：19项产品claim关闭，但历史完整实验claim未满足。旧Run受控暂停保全失败，Goal/本地交付未通过；NEW准备中 |
+| SR-WATCHDOG-WAKE | 静止后唤醒的正常刷新窗口不误报投影陈旧 -> verify: 刚唤醒及600秒边界不报警，601秒仍未刷新继续报警；覆盖实际watchdog与调用方。 | 当前HEAD先RED复现；移植原生候选最小修复并补600/601秒边界，直接8、自动闭包256/7skip、sentinel53、flow10通过；待隔离部署，旧候选队列尚未收尾 |
 | SR-WAKE | 源码修复步骤终态及时驱动下一步 -> verify: 真实tick入口在Supervisor周期前运行一次，普通bookkeeping不形成循环。 | 已验证并随f2e927da部署；236项直接闭包、6149项自动闭包、sentinel53、flow10通过 |
 | SR-STRICT | 严格修复队列不能由普通进展假结算 -> verify: human/business/Run完成不能消除严格pending，legacy行为保持。 | 严格计数及显式disposition入口已验证部署；受控处理仅关闭有有效替代的旧候选 |
 | SR-DISPOSITION | 明确关闭已被有效替代的失败候选 -> verify: 真实ControlledActionService/RM入口，旧失败保留、原案卷不变，陌生/过期/未应用替代与门禁拒绝。 | c7e403ac已验证部署；341直接闭包、7143自动闭包通过，真实受控disposition保留旧失败 |
@@ -620,3 +621,32 @@ fixture后该E2E与新边界合计20 passed。sentinel53、flow mock10通过。�
 此为聚焦影响闭包，不声称全量或真实无人验收。恢复策略不扩大aggregate-rebuild权限：
 该入口仅限Discovery。当前已settled Synth不能复活；最新合法Plan断点需用受控阶段
 重触发，声明精确冻结Planner材料并复用，随后新Synth正常审批前审核。
+
+
+2026-11-22 09:45–10:00 UTC 真实恢复后续：修复3d53ebaa已部署NEW隔离控制面，
+boot evt-59f48dd92638、PID55430，配置与Worker panes保留；未合dev、未push。
+通过stage-retrigger intent evt-7f56be1f5747 / trigger evt-042823a89a3a，声明12份
+精确冻结Planner材料恢复最新合法断点；新Planner operation 0ee0dfc2a35c正在运行，
+不是复活已settled Synth。10:00前只读核对34项必读尚缺6项，正式业务仍0/16，
+Plan未批准，资格窗口未开始。
+
+账号切换不会让所有驻留CLI自动刷新凭据：NEW旧RM reprompt明确返回账号已切换、
+旧access token无法refresh。新原生进程最小调用正常。受控resident-only restart请求
+evt-7ba161556142由内核执行evt-0bef12627c24；observe-only首轮产生
+evt-2507b7cb2a07、后续建议evt-ec9436743072。无需重复logout，未改预算权限，
+未重启业务Workflow。报告resident-auth-error-restart.json保留真实错误与恢复证据。
+
+OLD最终Judge在09:49正式准入rejected（evt-4e07872fa3e7 / evt-ed0c42b8c8ad）：
+19项产品claim已closed，但原始完整实验claim仍open；历史上精确16任务Plan批准
+晚于实施、无人窗口有人工介入，无法追溯修复为通过。受控run-pause
+evt-7d2764b66b12保全失败并停止继续派发重复规划；不等于local delivery/Goal通过，
+不把16已完成业务任务当作8×8无监工资格。详见OLD rejected-qualification-preserved.json。
+
+待处置历史watchdog候选b3e965a4：独立只读复核确认quiescent唤醒后旧projection
+误报补丁仍适用于当前源码，但旧contract基线539bd829已漂移，且原continuation缺
+checkpoint/safe_resume_action。旧验证通过不能授权当前基线apply；不填造恢复绑定，
+不伪造merged/discarded。正在核查现有合法收尾路径，整批保持active。
+
+当前历史收尾门的只读复核：该门并非全局阻塞；continuation选择器会跳过blocked apply选择其他动作，但严格pending仍阻止最终完成。现有dispose仅支持“失败且已有验证/应用替代”，不支持撤回已验证但基线漂移/缺continuation候选；这是入口缺口，不能伪造discarded。原案卷与后续修复义务保留。
+
+SR-WATCHDOG-WAKE验证完成：当前HEAD先RED（1失败/5通过），修复与边界参数化后直接8通过；自动影响闭包256 passed/7 skipped、sentinel53、flow mock10通过。docs/instruction8项通过。属于确定性聚焦验证，未部署到运行控制面，未证明无监工通过。原生候选b3e965a4经独立只读review无确定源码阻断；本轮额外覆盖刷新窗口到期仍报警。

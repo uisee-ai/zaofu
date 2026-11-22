@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     ProjectConfig,
     RuntimeConfig,
@@ -167,3 +169,57 @@ def test_watchdog_ignores_stale_projection_after_quiescent_ship(tmp_path: Path) 
 
     assert result.changed is False
     assert not [event for event in log.read_all() if event.type == RUN_MANAGER_UNHEALTHY]
+
+
+@pytest.mark.parametrize("elapsed_seconds, stale", [(1, False), (600, False), (601, True)])
+def test_watchdog_gives_quiescent_wake_time_to_refresh_stale_projection(
+    tmp_path: Path, elapsed_seconds: int, stale: bool,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    woke_at = datetime(2026, 7, 15, 7, 0, tzinfo=timezone.utc)
+    log.append(ZfEvent(
+        type="run.goal.quiescent.exited",
+        id="evt-quiescent-exit",
+        ts=woke_at.isoformat(),
+        payload={"reason": "woken"},
+    ))
+    projection = state_dir / "projections" / "run_manager.json"
+    projection.write_text("{}\n", encoding="utf-8")
+    stale_at = (woke_at - timedelta(hours=1)).timestamp()
+    os.utime(projection, (stale_at, stale_at))
+
+    result = run_manager_watchdog_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(source_repair=True),
+        event_log=log,
+        now=woke_at + timedelta(seconds=elapsed_seconds),
+    )
+
+    assert result.changed is stale
+    unhealthy = [event for event in log.read_all() if event.type == RUN_MANAGER_UNHEALTHY]
+    assert len(unhealthy) == int(stale)
+    assert result.source_repair_requested == int(stale)
+
+
+def test_watchdog_reports_projection_stale_without_recent_quiescent_wake(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    projection = state_dir / "projections" / "run_manager.json"
+    projection.write_text("{}\n", encoding="utf-8")
+    stale_at = datetime(2026, 7, 15, 6, 0, tzinfo=timezone.utc).timestamp()
+    os.utime(projection, (stale_at, stale_at))
+
+    result = run_manager_watchdog_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(source_repair=True),
+        event_log=log,
+        now=datetime(2026, 7, 15, 7, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.unhealthy_emitted == 1
+    assert result.source_repair_requested == 1
+    unhealthy = [event for event in log.read_all() if event.type == RUN_MANAGER_UNHEALTHY][-1]
+    assert unhealthy.payload["reason"] == "projection_stale"
