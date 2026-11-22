@@ -918,7 +918,10 @@ def triage_action_preflight(
             and bool(payload.get("task_map_generation"))
             and int(payload.get("failure_count") or 0) >= 1
         )
-        if not execution_review and payload.get("semantic_triage_required") is not True and int(payload.get("failure_count") or 0) < threshold:
+        from zf.runtime.candidate_aggregate_review import is_candidate_review_request
+
+        candidate_review = is_candidate_review_request(payload)
+        if not execution_review and not candidate_review and payload.get("semantic_triage_required") is not True and int(payload.get("failure_count") or 0) < threshold:
             failures.append("failure_count_below_semantic_triage_threshold")
         if not _string_list(payload.get("source_event_ids")):
             failures.append("missing_failure_evidence")

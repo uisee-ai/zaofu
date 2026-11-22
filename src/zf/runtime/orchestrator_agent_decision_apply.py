@@ -22,7 +22,9 @@ def apply_orchestrator_agent_decision(runtime: Any, event: ZfEvent) -> dict[str,
         return existing
     from zf.runtime.candidate_repair_outcome import published_candidate_repair_outcome
 
-    published = published_candidate_repair_outcome(runtime, event)
+    from zf.runtime.candidate_verification_recovery import published_verification_recovery
+
+    published = published_candidate_repair_outcome(runtime, event) or published_verification_recovery(runtime, event)
     if published:
         runtime.event_writer.append(ZfEvent(type="orchestrator.semantic.decision.applied",
             actor="zf-cli", origin="kernel", payload=published,
@@ -269,7 +271,7 @@ def _apply_semantic_failure(
     if expected.get("candidate_operation_id"):
         from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding
 
-        if action not in {"return_to_plan", "rework"}:
+        if action not in {"return_to_plan", "rework", "rebind"}:
             return _reject_semantic_directive(runtime, event, outcome, "candidate_reader_plan_only")
         try:
             candidate = candidate_checkpoint_binding(
@@ -307,6 +309,20 @@ def _apply_semantic_failure(
                 rejection,
                 directive_id=str(directive.get("directive_id") or ""),
             )
+        if candidate and action == "rebind":
+            from zf.runtime.candidate_verification_recovery import apply_verification_recovery
+
+            if len(action_directives) != 1:
+                return _reject_semantic_directive(runtime, event, outcome, "candidate recovery requires one directive")
+            try:
+                recovered = apply_verification_recovery(runtime, event=event, decision=decision,
+                    directive=directive, expected=expected, candidate=candidate)
+            except (ValueError, OSError, KeyError) as exc:
+                return _reject_semantic_directive(runtime, event, outcome, str(exc))
+            if not recovered.get("ok"):
+                return _reject_semantic_directive(runtime, event, outcome,
+                    str(recovered.get("reason") or "candidate verification recovery rejected"))
+            return {**outcome, "candidate_verification_recovery_event_id": recovered.get("stage_trigger_event_id")}
         if candidate and action == "rework":
             from zf.runtime.candidate_task_repair_decision import apply_candidate_task_repair
 
@@ -651,7 +667,7 @@ def _target_rejection(
     if role is None:
         return "target_role_missing"
     if candidate:
-        if action not in {"return_to_plan", "rework"} or any(target[key] != candidate[key] for key in (
+        if action not in {"return_to_plan", "rework", "rebind"} or any(target[key] != candidate[key] for key in (
             "attempt_id", "stage_id", "role_instance",
         )):
             return "candidate_target_mismatch"

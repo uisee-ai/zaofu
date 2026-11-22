@@ -5,7 +5,6 @@ snapshot and declared dependencies, no credentials, Git metadata or Docker socke
 """
 from __future__ import annotations
 
-import base64
 from dataclasses import asdict
 import hashlib
 import os
@@ -56,7 +55,7 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
     if any(source_digests.get(path) != expected for path, expected in policy.protected_files.items()):
         raise ValueError('preauthorized verification input was modified or removed')
     name = 'zf-probe-' + manifest['manifest_digest'][:24]
-    artifacts = []
+    evidence_ref = None
     with tempfile.TemporaryDirectory(prefix='zf-container-probe-') as temporary:
         folder = Path(temporary)
         source, output = folder / 'source', folder / 'output'
@@ -99,31 +98,28 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
             # The Docker client may exit while its container stays alive.
             _run_container(['docker', 'rm', '-f', name], timeout=15)
             code, text = 124, 'preauthorized container probe timed out'
-        total_bytes = 0
-        for artifact in sorted(output.rglob('*')):
-            if artifact.is_dir() and not artifact.is_symlink():
-                continue
-            if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_size > policy.max_artifact_bytes:
-                raise ValueError('container evidence must be regular files within the configured per-file limit')
-            data = artifact.read_bytes()
-            total_bytes += len(data)
-            if len(data) > policy.max_artifact_bytes or total_bytes > policy.max_total_evidence_bytes:
-                raise ValueError('container evidence exceeds configured size limits')
-            artifacts.append({'path': str(artifact.relative_to(output)),
-                'sha256': hashlib.sha256(data).hexdigest(), 'base64': base64.b64encode(data).decode()})
-        evidence_ref = write_sidecar_json(service.state_dir,
-            f'artifacts/task-host-actions/{manifest["manifest_digest"]}/container-evidence.json',
-            {'image': policy.image, 'target_commit': manifest['head'], 'files': artifacts},
-            kind='container_evidence', schema_version='container-evidence.v1',
-            created_by=service.actor, required=True)
+        from zf.runtime.host_evidence_collection import collect_container_evidence
+
+        artifacts, collection_error = collect_container_evidence(output, policy)
+        if collection_error is None:
+            evidence_ref = write_sidecar_json(service.state_dir,
+                f'artifacts/task-host-actions/{manifest["manifest_digest"]}/container-evidence.json',
+                {'image': policy.image, 'target_commit': manifest['head'], 'files': artifacts},
+                kind='container_evidence', schema_version='container-evidence.v1',
+                created_by=service.actor, required=True)
     stable = (git(root, 'rev-parse', 'HEAD') == manifest['head'] and source_files(root) == manifest['files']
               and not git(root, 'status', '--porcelain', '--untracked-files=all'))
-    return {'status': 'completed' if code == 0 and stable else 'failed',
+    raw_output = text.encode('utf-8')
+    output_limit = 1024 * 1024
+    return {'status': 'completed' if code == 0 and stable and collection_error is None else 'failed',
+        'evidence_status': 'collection_failed' if collection_error else 'collected',
+        'collection_error': collection_error,
+        'output_bytes': len(raw_output), 'output_truncated': len(raw_output) > output_limit,
         'exit_code': code, 'source_stable': stable, 'target_commit': manifest['head'],
         'command_id': command['command_id'], 'command': command['command'],
         'command_digest': command['command_digest'], 'execution_origin': 'preauthorized_container',
         'image': policy.image, 'policy_digest': digest(asdict(policy)),
-        'policy_snapshot': asdict(policy), 'evidence_ref': evidence_ref}, text
+        'policy_snapshot': asdict(policy), 'evidence_ref': evidence_ref}, raw_output[:output_limit].decode('utf-8', errors='replace')
 
 
 def reconcile_host_verification(service, *, allow_execution: bool = True,

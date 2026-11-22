@@ -1025,6 +1025,13 @@ def build_run_manager_projection(
     ]
     from zf.runtime.orchestrator_agent_execution_review import pending_execution_reviews
 
+    from zf.runtime.candidate_aggregate_review import pending_candidate_reviews, candidate_review_binding
+
+    rework_triage_actions.extend(pending_candidate_reviews(
+        state_dir=state_dir, config=config, events=events,
+    ))
+    candidate_review_failures = {event.id for event in events
+        if candidate_review_binding(state_dir, config, events, event) is not None}
     rework_triage_actions.extend(pending_execution_reviews(
         state_dir=state_dir, config=config, events=events,
         excluded_task_ids={str(action.get("task_id") or "") for action in rework_triage_actions},
@@ -1124,7 +1131,9 @@ def build_run_manager_projection(
     )
     triage_owned_tasks.difference_update(legacy_replan_tasks)
     events_by_id = {event.id: event for event in events if event.id}
-    triage_owned_fanouts: set[str] = set()
+    triage_owned_fanouts: set[str] = {
+        str(event.payload.get("fanout_id")) for event in events if event.id in candidate_review_failures
+    }
     for event in events:
         if event.type != "task.rework.triage.completed":
             continue
@@ -1226,6 +1235,7 @@ def build_run_manager_projection(
         action for action in candidate_action_candidates
         if (
             not _candidate_rework_shadowed_by_workflow(action, workflow_actions)
+            and str(action.get("source_event_id") or "") not in candidate_review_failures
             and str(action.get("source_event_id") or "") not in {
                 str(item.get("source_event_id") or "") for item in failure_diagnoses
             }
@@ -1432,6 +1442,11 @@ def build_run_manager_projection(
         current_progress_digest=str(
             continuation_identity.get("progress_digest") or ""
         ),
+    )
+    from zf.runtime.run_continuation import bind_continuation_blockers
+
+    pending_actions = bind_continuation_blockers(
+        pending_actions, completion_profile.get("pending_human_decisions"), events,
     )
     continuation = build_run_continuation_projection(
         events,
@@ -2018,6 +2033,8 @@ def _pending_resident_agent_actions(
         action.update({key: context[key] for key in (
             "request_kind", "recovery_context_ref", "read_set_ref",
             "source_ref", "diagnosis_expected_output",
+            "workflow_run_id", "task_id", "host_manifest_digest", "source_event_ids",
+            "diagnosis_source_action", "owner_route", "suggested_route",
         ) if key in context})
     if _action_seen(events, action):
         return []
@@ -6288,6 +6305,20 @@ def _execute_orchestrator_triage_request(
     state_dir: Path,
     config: ZfConfig,
 ) -> str:
+    if action.get("failure_class") == "candidate_aggregate_requires_semantic_review":
+        from zf.runtime.candidate_aggregate_review import candidate_review_binding
+
+        history = writer.event_log.read_all()
+        source = next((e for e in history if e.id == action.get("source_event_id")), None)
+        bound = candidate_review_binding(state_dir, config, history, source) if source else None
+        if (bound is None or bound.get("binding_error") or action.get("recovery_scope") != "candidate"
+                or action.get("target_operation_id")
+                or action.get("workflow_run_id") != bound["workflow_run_id"]
+                or action.get("task_id") != bound["anchor_task_id"]
+                or action.get("task_map_generation") != bound["task_map_generation"]):
+            _emit_blocked_action(writer, action, causation_id=causation_id,
+                                 reason="candidate aggregate review binding changed", human=False)
+            return "blocked"
     context_ref = _write_recovery_context_for_action(
         state_dir=state_dir,
         writer=writer,
@@ -7501,6 +7532,8 @@ def _execute_resident_agent_reprompt(
                 key: action[key] for key in (
                     "request_kind", "recovery_context_ref", "read_set_ref",
                     "source_ref", "diagnosis_expected_output",
+                    "workflow_run_id", "task_id", "host_manifest_digest", "source_event_ids",
+                    "diagnosis_source_action", "owner_route", "suggested_route",
                 ) if key in action
             } if action.get("request_kind") == "recovery_diagnosis" else {},
             "briefing_refreshed": briefing_refreshed,
@@ -11564,6 +11597,9 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "contract_revision": str(action.get("contract_revision") or ""),
         "active_attempt_id": str(action.get("active_attempt_id") or ""),
         "target_operation_id": str(action.get("target_operation_id") or ""),
+        "target_stage_id": str(action.get("target_stage_id") or ""),
+        "recovery_scope": str(action.get("recovery_scope") or ""),
+        "host_manifest_digest": str(action.get("host_manifest_digest") or ""),
         "continuation_expected_events": _string_list(action.get("continuation_expected_events")),
         **({"effect_bindings": action["effect_bindings"]} if "effect_bindings" in action else {}),
         "action": str(action.get("action") or ""),
@@ -12915,6 +12951,12 @@ def _status_explain_decision(
             "side_blocking_refs": side_refs,
         }
 
+    if pending_action and pending_action.get("continuation_blockers"):
+        return {
+            "owner_route": "human", "intervention_class": "human_decision",
+            "wait_reason": "human_decision_pending", "next_auto_action": "wait_for_human_decision",
+            "blocking": True, "blocking_refs": pending_action["continuation_blockers"],
+        }
     if pending_action:
         decision = pending_action.get("policy_decision")
         decision = decision if isinstance(decision, dict) else {}
@@ -13092,6 +13134,8 @@ def _pending_execution_summary(
 
 
 def _pending_action_readiness(action: dict[str, Any]) -> str:
+    if action.get("continuation_blockers"):
+        return "human_blocked"
     decision = action.get("policy_decision")
     decision = decision if isinstance(decision, dict) else {}
     preflight = action.get("preflight")

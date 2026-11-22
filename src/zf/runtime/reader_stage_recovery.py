@@ -26,8 +26,15 @@ def repaired_reader_stage_trigger(
         raise ValueError("reader repair retry requires approval_ref and repair reason")
     failure = next((e for e in events if e.id == failure_id), None)
     from zf.runtime.reader_failure_repair import repaired_failure_kind
-    if failure is None or repaired_failure_kind(state_dir, events, failure) != FAILURE_KIND_INFRA:
+    semantic_recovery = payload.get("orchestrator_decision_event_id")
+    if semantic_recovery:
+        from zf.runtime.candidate_verification_recovery import validate_recovery
+
+        validate_recovery(state_dir, config, events, payload)
+    elif failure is None or repaired_failure_kind(state_dir, events, failure) != FAILURE_KIND_INFRA:
         raise ValueError("reader repair retry requires an infrastructure failure")
+    if failure is None:
+        raise ValueError("reader repair failure missing")
     stage, reason = reader_stage_for_failure(config, events, failure)
     if stage is None:
         raise ValueError(reason)
@@ -49,7 +56,7 @@ def repaired_reader_stage_trigger(
     } for e in events[index + 1:]):
         raise ValueError("reader failure has a newer dispatch or aggregate outcome")
     trigger, reason = plan_reader_stage_replan(
-        config, events, failure, authorized_generation=f"repair-{requested.id}",
+        config, events, failure, state_dir=state_dir, authorized_generation=f"repair-{requested.id}",
         generation_source_event_id=failure.id, authorization_event_id=requested.id,
         authorization_ref=approval_ref,
     )
@@ -61,6 +68,9 @@ def repaired_reader_stage_trigger(
     bind_operator_feedback(trigger, operator_feedback(payload), request_id=requested.id)
     trigger.payload.update(repaired_failure_event_id=failure.id,
                            repair_reason=str(payload["reason"]))
+    if semantic_recovery:
+        trigger.payload['candidate_verification_recovery_key'] = payload['candidate_verification_recovery_key']
+        trigger.payload['orchestrator_decision_event_id'] = semantic_recovery
     if trigger.type == 'candidate.ready':
         from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
         native = frozen_candidate_for_payload(events, run_id, payload=trigger.payload)

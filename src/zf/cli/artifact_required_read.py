@@ -72,10 +72,17 @@ def prepare_required_read(
         index, start = decision.index, decision.offset
         skipped = sum(group["selection"].chars for group in list(groups.values())[:index]) + start
         resume_info = {
-            "mode": "resume" if skipped else "full", "reason": decision.reason,
+            "mode": "context_recovery" if decision.reason == "context_recovery" else ("resume" if skipped else "full"),
+            "reason": decision.reason,
             "skipped_chars": skipped, "current_memory": "unknown",
             "required_occurrences": len(rows), "distinct_bodies": len(groups),
         }
+        if decision.reason == "context_recovery":
+            resume_info.update({
+                "historical_delivery": "complete",
+                "guidance": "Recover the bound work record, then retrieve specific context gaps. "
+                            "Historical delivery does not prove current memory or comprehension.",
+            })
     else:
         index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
     items: list[dict[str, Any]] = []
@@ -95,6 +102,8 @@ def prepare_required_read(
             "next_action": "read_next_page" if continuation else "confirm_delivery_then_continue_current_step",
             **({"continuation": resume_info} if resume_info is not None else {}),
         }
+        if resume_info and resume_info["mode"] == "context_recovery":
+            page["next_action"] = "recover_work_record_then_retrieve_context_gaps"
         if output_format == "text":
             from zf.runtime.artifact_text_page import render_text_page
 

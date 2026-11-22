@@ -150,6 +150,11 @@ class LifecycleManagerMixin(
         """
         self._reconcile_task_attempts()
         now = self._now()
+        from datetime import datetime, timezone
+        from zf.runtime.pause_lifecycle import active_request_age_seconds, is_run_dispatch_paused
+        from zf.runtime.run_admission import task_workflow_run_id
+
+        pause_events = self.event_log.read_all()
         try:
             latest_dispatched = self._latest_dispatched_per_task()
         except Exception:
@@ -168,6 +173,9 @@ class LifecycleManagerMixin(
             epoch = self._dispatch_epoch.get(task.id)
             if epoch is None:
                 continue  # no dispatch record — legacy / test-fixture task
+            task_run = task_workflow_run_id(task, events=pause_events)
+            if is_run_dispatch_paused(pause_events, task_run):
+                continue
             assignee = task.assigned_to or ""
             worker_id = latest_dispatched.get(task.id, "")
             # Pick per-role timeouts when we know the role; fall back to
@@ -235,7 +243,9 @@ class LifecycleManagerMixin(
                 self._dispatch_epoch[task.id] = now
                 self._orphan_warned.discard(task.id)
                 continue
-            elapsed = now - epoch
+            elapsed = active_request_age_seconds(pause_events,
+                created_at=datetime.fromtimestamp(epoch, timezone.utc),
+                now=datetime.fromtimestamp(now, timezone.utc), run_id=task_run)
             if elapsed >= role.orphan_escalate_seconds:
                 self._emit_task_orphaned(task, role, elapsed)
                 # After escalate, clear tracking so the clock restarts

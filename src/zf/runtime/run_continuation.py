@@ -349,7 +349,8 @@ def blocking_decisions_for_action(
     related = {task_id, *map(str, action.get("blocked_by") or [])}
     blockers = []
     for decision in _blocking_human_decisions(value):
-        if _probe_budget_allows_diagnosis(decision, action, events):
+        if (_probe_budget_allows_diagnosis(decision, action, events)
+                or _host_effect_allows_diagnosis(decision, action, events)):
             continue
         scope = str(decision.get("blocking_scope") or "run").strip().lower()
         owner = str(decision.get("task_id") or "")
@@ -357,6 +358,48 @@ def blocking_decisions_for_action(
             continue
         blockers.append(decision)
     return blockers
+
+
+def _host_effect_allows_diagnosis(decision: dict, action: dict, events) -> bool:
+    """Authenticated unknown host holds allow independent read-only diagnosis."""
+    diagnosis = (action.get('action') == 'diagnose-attention' or (
+        action.get('action') == 'resident-agent-reprompt'
+        and action.get('diagnosis_source_action') == 'diagnose-attention'
+        and action.get('request_kind') == 'recovery_diagnosis'))
+    if (not diagnosis or not events or action.get('owner_route') != 'run_manager'
+            or action.get('suggested_route') != 'run_manager_resident_agent'
+            or not action.get('workflow_run_id') or not action.get('host_manifest_digest')):
+        return False
+    by_id = {event.id: event for event in events}
+    alert = by_id.get(decision.get('event_id'))
+    if (not alert or alert.origin != 'kernel' or alert.actor != 'run-manager'
+            or alert.type != 'human.escalate' or alert.correlation_id != action['workflow_run_id']
+            or alert.payload.get('blocking_scope') != 'verification'):
+        return False
+    from zf.runtime.host_probe_diagnosis import bound_unknown_host_effect
+
+    failures = [event for event in events
+        if event.payload.get('workflow_run_id') == action['workflow_run_id']
+        and bound_unknown_host_effect(event, by_id, event.payload.get('approval_ref'))]
+    own_failure = any(event.id in action.get('source_event_ids', [])
+        and event.payload.get('task_id') == action.get('task_id')
+        and event.payload.get('manifest_digest') == action['host_manifest_digest'] for event in failures)
+    # Each gate must independently prove the same structured unknown condition;
+    # unrelated holds and every mutating action retain normal blocking behavior.
+    return own_failure and any(event.payload.get('manifest_digest') == alert.payload.get('host_manifest_digest')
+                               for event in failures)
+
+
+def bind_continuation_blockers(actions: list[dict], decisions: Any, events: list[ZfEvent]) -> list[dict]:
+    """Present the same gate result used by the continuation selector."""
+    result = []
+    for action in actions:
+        blockers = blocking_decisions_for_action(decisions, action, events=events)
+        if blockers and human_decisions_block_action(decisions, action, events=events):
+            action = {**action, 'continuation_blockers': blockers,
+                      'policy_decision': {**(action.get('policy_decision') or {}), 'executable': False}}
+        result.append(action)
+    return result
 
 
 def _probe_budget_allows_diagnosis(decision: dict, action: dict, events) -> bool:

@@ -46,7 +46,12 @@ def test_capture_enforces_file_and_total_limits(case,monkeypatch,sizes,passed):
         result,_=verify_in_container(service,root,manifest,p)
         assert result['status']=='completed'
     else:
-        with pytest.raises(ValueError,match='evidence|limit'):verify_in_container(service,root,manifest,p)
+        result, output = verify_in_container(service,root,manifest,p)
+        assert result['status'] == 'failed' and result['exit_code'] == 0
+        assert result['collection_error']['kind'] in {'per_file_limit', 'total_limit'}
+        assert result['evidence_status'] == 'collection_failed'
+        assert not result.get('evidence_ref')
+        assert 'passed' in output
 
 
 def test_legacy_policy_receipt_requires_actual_current_budget_proof(tmp_path):

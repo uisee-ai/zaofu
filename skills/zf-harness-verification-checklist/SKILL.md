@@ -116,6 +116,10 @@ contract.
 先结合工作记录和仍掌握的上下文指出具体遗忘条款，再通过索引取相应原文；
 缺少WRC、发生压缩或 `current_memory=unknown` 都不是全量重读的默认理由。
 确实缺少正文时完整补读，首次必读、跨角色独立验证和当前证据门禁保持。
+若 `artifact read --required --resume` 返回 `context_recovery`，历史完整交付已获验证，
+当前记忆仍未知；执行 `artifact recover` 中绑定的工作记录入口，列出具体上下文缺口，
+再按精确来源定位补读。该提示不代表已验收通过，也不授权跳过首次必读或其他角色的独立评估。
+需要完整复核时可显式去掉 `--resume`；不要反复重启同一完整 bundle。
 
 受控重试若新建 operation，recover 可能返回 predecessor_work_record_read。
 使用当前 operation 的命令读取冻结的前驱草稿，逐条核对仍适用的证据和未决责任；

@@ -842,9 +842,9 @@ def _build_orchestration_flow_policy(
     if actions is not None:
         if (not isinstance(actions, list)
                 or any(not isinstance(item, str) for item in actions)
-                or set(actions) - {"delegate", "continue", "rework"}
+                or set(actions) - {"delegate", "continue", "rework", "rebind"}
                 or len(actions) != len(set(actions))):
-            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework actions")
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework/rebind actions")
         if mode != "semantic_control":
             raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
     review_blocked = data.get("review_blocked_tasks", False)

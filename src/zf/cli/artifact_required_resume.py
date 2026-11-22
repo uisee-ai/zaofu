@@ -81,6 +81,7 @@ def resume_decision(
         if not observed:
             return ResumeDecision(reason="current_session_delivery_unverified")
         if boundary:
+            historical = _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
             retained = []
             for row in observed:
                 witness = row.get("provider_observation_ref")
@@ -92,59 +93,71 @@ def resume_decision(
                         retained.append(row)
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
+            if historical.reason == "observed_complete":
+                current = _coverage(state_dir, retained, groups, receipts, attempt, bundle_digest)
+                if current.reason != "observed_complete":
+                    return ResumeDecision(len(groups), 0, "context_recovery")
             observed = retained
             if not observed:
                 return ResumeDecision(reason="delivery_predates_compaction")
-        bodies: dict[str, Any] = {}
-        for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
-            selection = group.get("selection")
-            content = group.get("content", "")  # Legacy direct callers.
-            total = selection.chars if selection else len(content)
-            digest = selection.digest if selection else hashlib.sha256(content.encode()).hexdigest()
-            byte_count = selection.byte_count if selection else len(content.encode())
-            ranges_by_alias: list[list[tuple[int, int]]] = []
-            for alias in aliases:
-                ranges: list[tuple[int, int]] = []
-                for row in observed:
-                    fields = ("workflow_run_id", "task_id", "attempt_id", "dispatch_id", "source_id",
-                              "artifact_id", "artifact_sha256", "json_path", "occurrence_id")
-                    if any(row.get(k) != alias.get(k) for k in fields):
-                        continue
-                    start, end = row.get("page_start"), row.get("page_end")
-                    if (type(start) is not int or type(end) is not int or not 0 <= start < end <= total
-                            or row.get("page_total") != total or row.get("selected_sha256") != digest
-                            or row.get("selected_bytes") != byte_count):
-                        continue
-                    output_digest = row["output_sha256"]
-                    if output_digest not in bodies:
-                        bodies[output_digest] = parse_artifact_page(hydrate_sidecar_ref(state_dir, row["output_ref"]).payload["body"])
-                    page = bodies[output_digest]
-                    if (page.get("schema_version") != "required-artifact-page.v2"
-                            or page.get("attempt_id") != attempt or page.get("bundle_digest") != bundle_digest
-                            or page.get("delivery_id") != row.get("delivery_id")):
-                        continue
-                    for item in page.get("items", []):
-                        sources = [item, *item.get("aliases", [])]
-                        if (any(s.get("source_id") == alias["source_id"] and s.get("artifact_id") == alias["artifact_id"]
-                                and s.get("json_path") == alias["json_path"]
-                                and (not s.get("artifact_sha256") or s["artifact_sha256"] == alias["artifact_sha256"])
-                                for s in sources)
-                                and item.get("page_start") == start and item.get("page_end") == end
-                                and item.get("content") == (selection.read(start, end) if selection else content[start:end])):
-                            ranges.append((start, end))
-                            break
-                ranges_by_alias.append(ranges)
-            ends = []
-            for ranges in ranges_by_alias:
-                end = 0
-                for start, stop in sorted(ranges):
-                    if start > end:
-                        break
-                    end = max(end, stop)
-                ends.append(end)
-            position = min(ends, default=0)
-            if position < total:
-                return ResumeDecision(index, position, "observed_prefix" if index or position else "coverage_gap")
-        return ResumeDecision(len(groups), 0, "observed_complete")
+        return _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         return ResumeDecision(reason="evidence_invalid")
+
+
+def _coverage(
+    state_dir: Path, observed: list[dict[str, Any]], groups: list[dict[str, Any]],
+    receipts: list[list[dict[str, Any]]], attempt: str, bundle_digest: str,
+) -> ResumeDecision:
+    """Validate exact delivered bytes independently of their retention in memory."""
+    bodies: dict[str, Any] = {}
+    for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
+        selection = group.get("selection")
+        content = group.get("content", "")  # Legacy direct callers.
+        total = selection.chars if selection else len(content)
+        digest = selection.digest if selection else hashlib.sha256(content.encode()).hexdigest()
+        byte_count = selection.byte_count if selection else len(content.encode())
+        ranges_by_alias: list[list[tuple[int, int]]] = []
+        for alias in aliases:
+            ranges: list[tuple[int, int]] = []
+            for row in observed:
+                fields = ("workflow_run_id", "task_id", "attempt_id", "dispatch_id", "source_id",
+                          "artifact_id", "artifact_sha256", "json_path", "occurrence_id")
+                if any(row.get(k) != alias.get(k) for k in fields):
+                    continue
+                start, end = row.get("page_start"), row.get("page_end")
+                if (type(start) is not int or type(end) is not int or not 0 <= start < end <= total
+                        or row.get("page_total") != total or row.get("selected_sha256") != digest
+                        or row.get("selected_bytes") != byte_count):
+                    continue
+                output_digest = row["output_sha256"]
+                if output_digest not in bodies:
+                    bodies[output_digest] = parse_artifact_page(hydrate_sidecar_ref(state_dir, row["output_ref"]).payload["body"])
+                page = bodies[output_digest]
+                if (page.get("schema_version") != "required-artifact-page.v2"
+                        or page.get("attempt_id") != attempt or page.get("bundle_digest") != bundle_digest
+                        or page.get("delivery_id") != row.get("delivery_id")):
+                    continue
+                for item in page.get("items", []):
+                    sources = [item, *item.get("aliases", [])]
+                    if (any(s.get("source_id") == alias["source_id"] and s.get("artifact_id") == alias["artifact_id"]
+                            and s.get("json_path") == alias["json_path"]
+                            and (not s.get("artifact_sha256") or s["artifact_sha256"] == alias["artifact_sha256"])
+                            for s in sources)
+                            and item.get("page_start") == start and item.get("page_end") == end
+                            and item.get("content") == (selection.read(start, end) if selection else content[start:end])):
+                        ranges.append((start, end))
+                        break
+            ranges_by_alias.append(ranges)
+        ends = []
+        for ranges in ranges_by_alias:
+            end = 0
+            for start, stop in sorted(ranges):
+                if start > end:
+                    break
+                end = max(end, stop)
+            ends.append(end)
+        position = min(ends, default=0)
+        if position < total:
+            return ResumeDecision(index, position, "observed_prefix" if index or position else "coverage_gap")
+    return ResumeDecision(len(groups), 0, "observed_complete")

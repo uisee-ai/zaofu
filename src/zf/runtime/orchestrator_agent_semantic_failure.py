@@ -176,9 +176,21 @@ def request_semantic_failure_checkpoint(
         "failure_events": [_event_row(item) for item in failures],
     }
     if candidate:
+        from zf.runtime.orchestrator_agent_execution_policy import bounded_actions
+
+        can_rebind = aggregate_candidate and "rebind" in (bounded_actions(runtime.config, flow_kind) or [])
         failure_body["candidate_verify"] = {
             **candidate, "failure_event_id": failures[-1].id, "operation_id": operation_id,
-            "permitted_recovery_actions": ["return_to_plan", "rework"],
+            "permitted_recovery_actions": ["return_to_plan", "rework", *(["rebind"] if can_rebind else [])],
+            "verification_recovery_contract": (
+                "rebind requires one exact-target directive with candidate_verification_recovery: "
+                "classification=verification_recovery, contract_changed=false, max_replays=1, "
+                "failure_event_id, candidate_snapshot_event_id and rationale. member_reviews must "
+                "account for all members and unresolved_members with their exact child_id, operation_id, "
+                "control_result_ref or child_event_id, disposition=reverify and rationale. Keep all findings. "
+                "It grants one stage replay per native freeze, no host execution, product verdict or contract change."
+                if can_rebind else "Verification rebind is not authorized by the current configuration."
+            ),
             "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "
             "exact-target directive: classification=product_defect, contract_changed=false, rationale, "
             "and gap_tasks copied exactly from the pinned Task Map for all implicated Tasks. Only task_id, "

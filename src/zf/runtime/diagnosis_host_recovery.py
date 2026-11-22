@@ -30,7 +30,7 @@ def host_recovery_context(
                 or not event.type.startswith('runtime.action.attempt.')):
             continue
         row = {'event_id': event.id, 'event_type': event.type, 'at': event.ts,
-            **{key:p.get(key) for key in ('operation_id','kind','manifest_digest','status')}}
+            **{key:p.get(key) for key in ('operation_id','kind','manifest_digest','status','reason','effect_status')}}
         ref = p.get('receipt_ref')
         if isinstance(ref, dict):
             row['receipt_ref'] = ref
@@ -45,7 +45,8 @@ def host_recovery_context(
                     raise ValueError('host receipt identity or digest is unavailable')
                 row.update(receipt_status='observed', **{key:body.get(key) for key in (
                     'command_id', 'command', 'exit_code', 'target_commit', 'source_stable',
-                    'execution_origin', 'policy_digest')})
+                    'execution_origin', 'policy_digest', 'evidence_status', 'collection_error',
+                    'output_ref', 'output_truncated')})
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 row.update(receipt_status='unavailable', receipt_error=str(exc))
         effects.append(row)

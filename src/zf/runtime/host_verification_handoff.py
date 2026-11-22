@@ -91,8 +91,8 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
         return required, {}, False
     from zf.runtime.host_verification_retained import retained_reader_probes
     receipts = retained_reader_probes(service, operation, contract, policy, events)
-    failed_probe = any(hydrate_sidecar_ref(service.state_dir, ref).payload['exit_code'] != 0
-                       for ref in receipts.values())
+    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()]
+    failed_probe = any(row.get('exit_code') != 0 or row.get('status') == 'failed' for row in retained)
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
@@ -106,7 +106,7 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
                 and receipt.get('status') in {'completed', 'failed'}
                 and type(receipt.get('exit_code')) is int and receipt.get('source_stable') is True):
             receipts[receipt['command_id']] = p['receipt_ref']
-            failed_probe = failed_probe or receipt['exit_code'] != 0
+            failed_probe = failed_probe or receipt['exit_code'] != 0 or receipt['status'] == 'failed'
     return required, receipts, failed_probe
 
 

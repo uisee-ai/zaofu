@@ -505,6 +505,12 @@ def plan_reader_stage_replan(
     if admitted_candidate_plan_recovery_owns_failure(stage, failure_event):
         return None, "owned_by_candidate_plan_recovery"
 
+    if not authorized_generation and trigger_type == "candidate.ready":
+        from zf.runtime.candidate_aggregate_review import candidate_review_binding
+
+        if candidate_review_binding(state_dir, config, events, failure_event) is not None:
+            return None, "owned_by_candidate_semantic_review"
+
     if (
         getattr(stage, "attempt_domain", "") != "plan"
         and active_candidate_replan_owns_failure(config, events, failure_event, event_index=index)

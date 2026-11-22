@@ -975,3 +975,53 @@ placement政策；模式仍由原operation冻结。
 当前Task恢复入口传递operation身份，handoff摘要保留provider_delivery及缺证提示，
 避免RM只看到host历史缺口为零。剩余OA账号恢复、已通过同候选重审入口和历史
 repair收尾尚未完成，不宣称真实8×8或全部恢复链通过。
+
+
+## 2026-11-22 最终审核恢复闭环
+
+本轮真实 Run `workflow-ddd320aa0dc7c2ef` 的16个Task均已完成，真实8 Impl +8 Verify
+重叠88.551秒；最终Reader第二轮4 rejected、4 abstained，未进入Judge和交付。
+原无人窗口以 `failed_to_complete_unattended_delivery` 关闭，再由受控run-pause暂停。
+修复后恢复属于有监工介入的观察段，不回写原窗口为通过。
+
+现场三个直接原因：通用stage retry在mixed聚合上重复生成冻结身份，导致原本合法的
+host收据不再适用；容器执行后采证异常只留下inspect_before_retry，丢失退出码与具体
+文件错误；verification门禁和quiescent主tick同时挡住只读诊断。另有已完整交付的
+Reader压缩后再次遍历完整bundle，及结果枚举错误信息不够精确的问题。
+
+- R1：当前mixed/semantic Candidate聚合由既有OA semantic_failure checkpoint接管。
+  RM首次tick就绑定Run、锚点、当前冻结版本和全部失败成员，不等待通用重试耗尽。
+  证据绑定损坏保留诊断owner，禁止退回通用重试；已发布请求去重，目标版本失效后
+  新请求绑定当前objective。旧失败和rejected/abstained原样保留。
+- R2：新增显式opt-in的`autonomous_actions: [rebind]`能力，默认权限不变，本次真实
+  项目尚未启用。仅blocking semantic_failure的Candidate aggregate可用；OA必须
+  逐一评估所有失败成员，声明合同未改、verification_recovery及max_replays=1。
+  控制入口再次核对裁决、配置快照、全部成员、当前合同及门禁。只有静态role名单
+  支持，children/affinity需另行证明等价；每个冻结输入最多一次，不靠新请求重置。
+  新Reader仍独立读取和验收。产品修复继续原Task/Plan路径，不能把产品失败改成通过。
+  发布后崩溃只补确认已发生效果，不再次派发；冻结字段与本次恢复授权分别校验。
+- R3/R4：采证失败也写入有界stdout、exit code、path/type/size/limit等机械事实；
+  必需媒体不全保持failed。历史无收据失败由精确kernel start/failure对进入诊断，
+  结论保持unknown。每个未解决manifest独立诊断身份及recovery_case指纹；同Run已验证unknown host门禁
+  允许只读诊断互相推进，其他门禁和执行副作用继续阻塞。主tick、超时有界reprompt、
+  配置的resident实例回复均沿既有consumer；preflight通过不能掩盖continuation门禁。
+- R5：同一消费者已有完整observed输出但发生压缩时，required --resume返回
+  context_recovery、historical_delivery=complete、current_memory=unknown，引导WRC及
+  精确缺口读取。缺页/无见证仍补读，显式完整复核可用。正式准入没有降级。
+  Product Acceptance枚举错误精确指出字段及passed/rejected/blocked。
+
+验证覆盖：实际RM首tick→OA checkpoint；裁决→受控恢复→新Reader读取/预检/准入
+消费原host收据且不重执行；collector四类错误；unknown门禁→主tick与超时重派；
+完整/缺页/损坏输出恢复。Agent判断和容器执行在确定性测试中为scripted/mock边界。
+真实Provider、全8成员重派、Judge及最终交付仍以恢复后的现场证据为准。
+对应活动任务：`tasks/active/2026-11-22-1348-candidate-recovery-closeout.md`。
+
+现场暂停后另复现两条误报：14:11 orphaned_task、14:14 goal idle rescans exhausted。
+原入口未识别Run级run.paused。已将Run/项目暂停接入两处计时入口，orphan按暂停
+区间并集扣时；恢复后不把暂停时长算作任务无人处理。既有误报仅由Owner授权的
+human-decision-dismiss精确确认，不自动清除其他门禁或改写历史。
+
+
+本批最终源码验证：影响闭包12185通过/18跳过，sentinel53通过，flow mock10通过。
+完整变更路径参数及回执保存于活动任务所列路径；这是确定性测试层，不等于真实
+8×8无人窗口通过。模型矩阵、现场配置权限与采证限额未更改。
