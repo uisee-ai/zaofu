@@ -23,6 +23,7 @@ Owner 已批准按下一步执行：现有真实 Run 继续独立验收，同时
 | READER-TERMINAL | 协议耗尽有明确fanout终态与合法恢复入口 -> verify: 当前精确失败投影、崩溃重放、暂停门禁及受控重试，不制造语义结论。 | 7becfc7b已部署；2380项自动闭包、sentinel53、flow10通过，真实历史前缀只读匹配通过；OLD正常child-rebuild已派发 |
 | QUAL-TOOLS | 真实并发采证及预声明故障工具 -> verify: 原生时间/turn绑定、准确审批、项目暂停、当前派发、源码加载及共享选段拒绝，外部工具不代做恢复。 | 实验目录6份工具已冻结，25项检查及独立静态review通过；真实旧Task Verify字段兼容检查通过，故障尚未注入 |
 | QUAL | 新窗口验证 Worker 失败、控制器重启与 Reader 缺证恢复 -> verify: 同 Run 真实 8 Impl + 8 Task Verify 重叠，16 项独立验收、Candidate、Docker 浏览器、Judge、Goal、本地交付完整，零人工恢复。 | 前置条件未满足，不宣称通过 |
+| INPUT-DELIVERY | 完整正文交付进入新冻结合同的准入条件 -> verify: host-only/截断拒绝；同attempt补读可提交；CLI预检只读、runtime terminal不能降级合同；真实失败仍可报告；旧合同、会话轮换与Task Pipeline恢复保持。 | 已复现submit与runtime terminal错误准入；自动闭包8383通过/14跳过，最终121直接、sentinel53、flow10通过。待部署及新合同真实验证，不改写已settled结果 |
 
 当前 Run 已有人工修复/部署，原无监工资格失败永久保留。新配置不允许 Agent 扩大授权，不将 `enabled` 或单条测试通过视为无监工完成。测试按影响闭包、sentinel、相关 mock E2E 执行；实现和实测记录提交，未满足验收保持 active。
 
@@ -666,3 +667,31 @@ d6ca11bb…，配置及全部Worker panes保持；资格协议已更新声明源
 这只证明投递效果，不替代Agent诊断或业务恢复成功。
 
 读取方法变更：直接12项、自动docs/skills闭包41 passed/1 skipped；两种分发副本与canonical一致。独立研究确认源码级缺口：历史Provider delivery观察目前是非阻断诊断，仅宿主产出的页也可能满足ledger覆盖。需要新冻结合同可声明完整交付门；旧合同不能被现场静默改写。该准入修复待实施，真实Plan尚未批准。
+
+2026-11-22 10:48 UTC：Planner09:45:38→10:18:21约32分43秒，已准入，独立核验
+34项完整交付。Synth10:18:29→10:25:49约7分20秒，虽正式passed，原生截断输出
+仍遗漏previous-plan-candidate-6/source_index.json的[6527,20322)及candidate-8/
+product_acceptance_spec.json的[0,2951)。其JSONDecodeError诊断另为合法text frame
+被按JSON解析；两类问题分开修复。准确Plan package fcbb41ce…仍未批准；业务0/16。
+OA10:26 blocked为旧进程账号刷新失败、transport retry耗尽，不能当作Plan不合格。
+
+INPUT-DELIVERY真实入口RED：摘要/截断输出原来均能submit；独立review另发现
+admit_runtime_call_result省略request_ref，worker宽松policy能绕过新门，已单独复现。
+现从canonical operation加载冻结要求；新增Flow inputDeliveryMode: observed，未声明
+保持旧合同。只读预检与正式准入共用完整页/来源/身份/witness覆盖验证；失败报告
+仍走原失败合同。recover分开列host历史读取与provider_delivery缺口，validate给精确
+selection补读命令。同attempt修正不增加semantic rework。纯内存预检witness不能被
+持久账本伪造使用。当前110项直接检查通过，整批active，真实无人窗口未开始。
+
+INPUT-DELIVERY收尾检查：自动聚焦闭包8383 passed/14 skipped；首次sentinel因
+call_result_admission超过1000行失败，输入政策解析移入同职责模块后，最终直接
+121 passed、sentinel53、flow mock10均通过。独立review发现并修复runtime terminal
+降级与current-task/handoff摘要丢失交付诊断，实际调用方测试覆盖。未运行全量pytest，
+未以mock冒充provider实验。旧合同真实封存证据只读回放：Planner34/34有完整交付；
+Synth41/44可证明，三项缺口中两项原生正文确实缺失、一项输出帧完整性未知。
+报告input-delivery-counterfactual-audit.json不改写任何旧admission。
+
+剩余边界明确：passed/settled Synth没有仅复审同候选的现成合法入口；重新触发
+prd-plan会再次进入Planner。OA账号刷新失败仍待受控恢复；四项历史repair队列的
+关闭证据尚不齐。本轮不批准存在输入缺证的Plan、不改旧结果或假关闭队列。新窗口
+仍未开始；这些后续事项不能被本次输入准入代码通过所替代。

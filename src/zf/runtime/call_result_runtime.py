@@ -434,11 +434,23 @@ def prepare_call_operation(
         check_review_input_budget(runtime.config, stage_id, payload["plan_review_optimization"])
     if required_reads:
         payload["required_reads"] = required_reads
+        from zf.runtime.input_delivery_contract import operation_delivery_mode
+
+        input_delivery_mode = operation_delivery_mode(runtime, operation_id, payload)
+        payload.pop("input_delivery_mode", None)
+        if input_delivery_mode == "observed":
+            payload["input_delivery_mode"] = input_delivery_mode
         policy = build_input_consumption_policy(
             workflow_run_id=workflow_run_id,
             attempt_id=attempt_id,
             required_reads=required_reads,
         )
+        if input_delivery_mode == "observed":
+            policy["delivery_evidence"] = {
+                "mode": "observed", "operation_id": operation_id,
+                "dispatch_id": dispatch_id, "consumer_actor": str(payload.get("role_instance") or ""),
+                "source_manifest_ref": dict(source_descriptor),
+            }
         policy_descriptor = write_input_consumption_policy(
             runtime.state_dir,
             policy,
@@ -481,6 +493,8 @@ def prepare_call_operation(
         ),
         "source_manifest_digest": str(source_descriptor.get("sha256") or ""),
         "read_policy_digest": str(payload.get("input_consumption_policy_digest") or ""),
+        **({"input_delivery_mode": payload["input_delivery_mode"]}
+           if payload.get("input_delivery_mode") else {}),
         "input_consumption_policy_ref": (
             dict(payload["input_consumption_policy_ref"])
             if isinstance(payload.get("input_consumption_policy_ref"), Mapping)

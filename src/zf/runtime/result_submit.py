@@ -344,6 +344,12 @@ class SemanticResultSubmitService:
                 credential=credential,
             )
         )
+        from zf.runtime.input_delivery_preflight import input_delivery_preflight
+
+        delivery_errors = input_delivery_preflight(self.state_dir, self.event_log, _operation, semantic)
+        if delivery_errors:
+            return {"schema_version": "semantic-result-preflight.v1", "status": "failed",
+                    "profile_id": profile_id, "profile_revision": _revision, "errors": delivery_errors}
         validation = validate_plan_candidate_semantic(
             state_dir=self.state_dir,
             request=request,
@@ -415,6 +421,13 @@ class SemanticResultSubmitService:
                 credential=credential,
             )
         )
+        from zf.runtime.input_delivery_preflight import input_delivery_preflight
+
+        delivery_errors = input_delivery_preflight(self.state_dir, self.event_log, operation, semantic)
+        if delivery_errors:
+            raise ResultSubmitError("input_delivery_not_admitted", "Required input delivery is incomplete",
+                details={"status": "repair_required", "attempt_domain": "protocol_repair",
+                         "semantic_rework_cost": 0, "issues": delivery_errors})
         profile = self.registry.profile(profile_id, revision)
         if profile_id == "orchestrator-semantic-decision":
             from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission

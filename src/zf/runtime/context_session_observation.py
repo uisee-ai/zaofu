@@ -5,7 +5,6 @@ This evidence never authorizes an attempt or claims retained model context.
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -16,6 +15,7 @@ from zf.runtime.artifact_read_ledger import _manifest_ref_path, _select_json_pat
 from zf.runtime.artifact_read_ledger_validation import _parse_ledger, validate_required_reads
 from zf.runtime.artifact_source_versions import read_source_version
 from zf.runtime.artifact_text_codec import decode_artifact_text, encode_selected
+from zf.runtime.artifact_text_page import parse_artifact_page
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -119,7 +119,7 @@ def _validate(state: Path, proof: Mapping[str, Any], receipt_ref: Mapping[str, A
         if not any(k in row for k in ("page_start", "page_end", "page_total")):
             _validate_raw_body(state, source, row, body)
         else:
-            page = json.loads(body)
+            page = parse_artifact_page(body)
             if page.get("schema_version") == "required-artifact-page.v2":
                 _require(page.get("attempt_id") == identity["attempt_id"]
                      and row.get("delivery_id") and page.get("delivery_id") == row["delivery_id"]

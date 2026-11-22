@@ -210,6 +210,8 @@ def build_run_contract(
                 "schema_version": "input-consumption-policy.v1",
                 "policy_ref": str(result_protocol.get("read_policy_ref") or ""),
                 "policy_digest": str(result_protocol.get("read_policy_digest") or ""),
+                **({"input_delivery_mode": result_protocol["input_delivery_mode"]}
+                   if "input_delivery_mode" in result_protocol else {}),
             },
             "artifact_package": {
                 "schema_version": "plan-artifact-package.v1",

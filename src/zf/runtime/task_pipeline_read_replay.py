@@ -20,6 +20,8 @@ def read_policy_compatibility(
     """
     old = previous.get("required_reads")
     new = current.get("required_reads")
+    if previous.get("input_delivery_mode", "produced") != current.get("input_delivery_mode", "produced"):
+        return None
     if not isinstance(old, list) or not old or not isinstance(new, list) or not new:
         return None
     for row in [*old, *new]:

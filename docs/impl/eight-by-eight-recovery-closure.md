@@ -938,3 +938,40 @@ bytes；旧候选15项198612 bytes，当前补充结构162560 bytes。原生09:5
 消费了正文。准备期已发精确绑定worker.reply要求补回受影响完整页，不改冻结
 manifest、必读政策和权限。通用读取方法补入Planner/Task Map skill并同步两种
 Provider分发副本；真实正文补读及结果准入仍须后续核验，不宣称已解决消费质量。
+
+### 完整输入交付的可选冻结合同
+
+真实Synth于2026-11-22 10:25准入passed，但两份必读选段存在正文缺口：旧实现只要求
+宿主读取账本覆盖，将Provider观察视为非阻断诊断。新增PrdFlow/IssueFlow/RefactorFlow
+参数`spec.inputDeliveryMode: observed`，编译到result_protocol并写入Run合同与新operation
+request。未配置或`produced`保持旧行为；同operation重试沿用首次冻结要求，不能借
+配置切换改变合同，不能追溯改变已settled结果。
+
+启用后，成功提交必须具备完整历史工具输出证据：来源版本/occurrence、选段正文、
+页区间、actor/operation/attempt/dispatch、不可变输出及原生Codex会话witness一致。
+截断、元数据摘要、丢失/损坏证明和不支持观察的Provider均为未知，不能贡献覆盖。
+只验证已声明的required selections，缺口可以在同attempt通过完整补读弥补；历史完整
+证明在compaction或会话轮换后仍有效，不声称模型当前理解或记忆。原有已绑定
+reader执行失败仍可报告，不将无法读取强制转换为产品失败。
+
+`result validate`及submit预检只读，不封存账本、不写witness、不消耗submit binding；
+正式准入独立复核。runtime terminal入口也从canonical operation获取request，不能
+由worker的宽松policy降级。Task Pipeline读取当前kernel派发的政策，不错误复用首次
+placement政策；模式仍由原operation冻结。
+
+`artifact recover`保留host历史读取计数，另列`provider_delivery`的完整证据缺口与
+下一步；两者不能混用。validate对缺失selection给出有界单源补读命令，要求返回完整
+工具正文并按next_page_start继续，不要求重读所有输入。text page通过统一解析器
+处理，修复原JSONDecodeError；这仅修复观察器格式兼容，不能补造真实缺失正文。
+
+首次新回归证明摘要与截断原本可成功submit；独立review补充runtime terminal降级
+路径RED。初步110项直接测试通过，包括冻结/重试、canonical入口、失败报告、证据
+篡改、compaction/轮换、只读恢复、公共配置与Run合同。需继续完成自动影响闭包、
+隔离部署及新的真实受控审核，不能把这些确定性检查当作无人8×8通过。
+
+完成当前代码闭包：8383通过/14跳过；首次结构门发现准入文件超过1000行，按输入
+政策职责提取后最终直接121、sentinel53、flow mock10通过。真实封存证据只读反事实
+回放中，Planner34/34完整，Synth41/44可证明；不将新政策追溯强加为旧运行时裁决。
+当前Task恢复入口传递operation身份，handoff摘要保留provider_delivery及缺证提示，
+避免RM只看到host历史缺口为零。剩余OA账号恢复、已通过同候选重审入口和历史
+repair收尾尚未完成，不宣称真实8×8或全部恢复链通过。

@@ -133,6 +133,16 @@ def build_input_recovery(
                     result["commands"]["handoff_accept_after_read"] = f"{prefix} handoff-accept --operation {operation} --digest {digest}"
     result["next_action"] = ("request_controlled_rebind" if lifecycle["requires_rebind"] else
         "read_missing_required_inputs" if missing else "assess_context_gaps_then_continue")
+    from zf.runtime.input_delivery_recovery import input_delivery_recovery
+
+    delivery = input_delivery_recovery(state_dir, events, dict(identity), manifest["attempt_id"], own_reads)
+    if delivery:
+        result["provider_delivery"] = delivery
+        result["instructions"] += (" For observed input contracts, historical_missing is still the host read count; "
+            "provider_delivery separately reports complete delivery evidence. Repair its missing selections "
+            "using bounded pages and full tool output; result validate lists exact repair commands.")
+        if not lifecycle["requires_rebind"] and delivery["status"] != "complete":
+            result["next_action"] = "repair_provider_delivery" if delivery["status"] == "incomplete" else "diagnose_delivery_evidence"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.
     for limit in range(4, 0, -1):
@@ -181,6 +191,7 @@ def current_task_input_recovery(state_dir: Path, events: list, task: Any, *, act
         query = ArtifactQueryService(state_dir=state_dir, project_root=state_dir.parent)
         return build_input_recovery(state_dir=state_dir, manifest=manifest,
             identity={"actor": task.assigned_to, "role": str(current.get("role") or ""),
+                      "operation_id": str(current.get("operation_id") or ""),
                       "purpose": str(manifest.get("read_purpose") or "")},
             events=events, required=required, reads=query._read_rows(attempt),
             checkpoint=maintenance_checkpoint_facts(state_dir, events, task_id=task.id, attempt_facts=facts))
