@@ -14,15 +14,70 @@ from zf.runtime.artifact_read_snapshot import open_selection
 from zf.runtime.call_result_envelope import canonical_json_sha256
 
 
-def recovery_hint(config, actor, attempt):
-    metadata = getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {}
-    if not attempt or actor not in (metadata.get("artifact_worker_cgroups") or {}):
+def configured_input_cgroup(config, actor):
+    from zf.core.config.artifact_worker_cgroups import artifact_worker_cgroups
+
+    group = artifact_worker_cgroups(config).get(actor, "")
+    if not group:
         return ""
+    role = next(
+        (r for r in getattr(config, "roles", ()) if r.instance_id == actor), None
+    )
+    return group if getattr(role, "backend", "") == "codex" else ""
+
+
+def available_input_cgroup(config, actor):
+    from zf.runtime.artifact_mount import mounted_scope
+
+    if not configured_input_cgroup(config, actor):
+        return ""
+    try:
+        return mounted_scope(config, actor)
+    except (OSError, ValueError):
+        return ""
+
+
+def pinned_input_cgroup(state_dir, event_log, operation_id, actor, attempt):
+    """Look up the immutable operator opt-in for this dispatch only."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    operation = load_workflow_operation(event_log, operation_id) or {}
+    if (
+        operation.get("active_attempt_id") != attempt
+        or operation.get("role_instance") != actor
+        or not operation.get("request_ref")
+    ):
+        return ""
+    request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload[
+        "request"
+    ]
+    if (
+        request.get("role_instance") != actor
+        or request.get("active_attempt_id") != attempt
+    ):
+        return ""
+    return request.get("native_input_cgroup", "")
+
+
+def recovery_hint(runtime, actor, attempt, operation_id):
     from zf.runtime.cli_command import zf_cli_cmd
 
+    if not operation_id or not attempt:
+        return ""
+    group = available_input_cgroup(runtime.config, actor)
+    if (
+        not group
+        or pinned_input_cgroup(
+            runtime.state_dir, runtime.event_log, operation_id, actor, attempt
+        )
+        != group
+    ):
+        return ""
     return (
-        f" Open RESUME.md from `{zf_cli_cmd()} artifact workspace --attempt {shlex.quote(attempt)}` "
-        "in the isolated worker, or use the authenticated artifact recover entry."
+        f" Open the mounted RESUME.md first. To obtain its path, run "
+        f"`{zf_cli_cmd()} artifact workspace --attempt {shlex.quote(attempt)}` "
+        "in a persistent tool session. Use the authenticated artifact recover command if the mount is unavailable."
     )
 
 

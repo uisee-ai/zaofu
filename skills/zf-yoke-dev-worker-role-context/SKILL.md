@@ -88,10 +88,11 @@ briefing，再按下表触发；同一会话中已完整读过且版本未变的
   decoded value. A transcription failure requires correcting the invocation,
   not rewriting the contract or reporting an upstream blocker.
 - Before editing, inspect the briefing's Controlled Artifact Inputs and consume
-  every declared `required_reads` row through literal sanctioned `zf artifact
-  read` commands (or the authenticated `--required` batch), using its exact
-  attempt id, source id, artifact id, and JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
-  exploration but does not satisfy the runtime read ledger.
+  every declared `required_reads` row for this attempt, source, artifact and selector.
+  When the briefing offers an authorized mount, open INPUTS.md and issue a single
+  literal `/usr/bin/cat ABSOLUTE_PATH` for each required selection. Ordinary checkout
+  files have no mounted-read receipts. When the mount or evidence is unavailable,
+  use the authenticated `zf artifact read` command or its `--required` batch.
 - 必需工件正文首次完整读取后，避免无目的重复读取；`--required` 统一返回
   `required-artifact-page.v2`，`aliases` 表示已分别鉴权、校验和记账的相同内容来源。
   一页可含多个来源，读取每个 `items[].content`，用同一命令加
@@ -293,7 +294,7 @@ not run on the reported source commit.
 
 ## Task 范围输入导航
 
-先用本次 briefing 的 `zf artifact index --attempt <id>` 定位来源/selector；
+已挂载时从 INPUTS.md 定位来源/selector。走 CLI 时用本次 briefing 的 `zf artifact index --attempt <id>` 定位来源/selector；
 `--query` 只过滤定位元数据，未命中不代表项目没有该需求。消费当前任务、必要共享
 接口和前置产物正文；不要因并行 lane 共用 Plan 就逐份通读其他任务。完成全部
 required reads 后按需扩读已授权来源；范围缺口通过受控 replan/补充绑定处理。

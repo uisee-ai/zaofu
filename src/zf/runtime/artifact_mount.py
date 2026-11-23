@@ -9,13 +9,15 @@ import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
-from zf.runtime.artifact_native_delivery import HOST_SCHEMA, open_call
+from zf.runtime.artifact_native_delivery import HOST_SCHEMA, NATIVE_CODEX_VERSION, open_call
 from zf.runtime.artifact_read_ledger import append_artifact_read
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
 
 def mounted_scope(config, actor, *, cgroups=Path("/sys/fs/cgroup")):
-    groups = (config.workflow.flow_metadata or {}).get("artifact_worker_cgroups", {})
+    from zf.core.config.artifact_worker_cgroups import artifact_worker_cgroups
+
+    groups = artifact_worker_cgroups(config)
     value = groups.get(actor, "") if isinstance(groups, dict) else ""
     if (
         not isinstance(value, str)
@@ -71,7 +73,7 @@ class MountAccess:
         base, bounds = _slice(name)
         data, row = self.view.read(base, bounds)
         proof = None
-        if row is not None and self.version == "0.171.0":
+        if row is not None and self.version == NATIVE_CODEX_VERSION:
             try:
                 proof = open_call(
                     self.state,

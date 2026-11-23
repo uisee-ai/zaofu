@@ -136,6 +136,7 @@ def recover_budget_amended_synth(
     )
     prompt += reader_continuation_guidance(
         attempt_id=prepared.attempt_id, backend=role.backend, cli=cli,
+        runtime=runtime, actor=role.instance_id, operation_id=operation_id,
     )
     if (manifest.get("aggregate") or {}).get("status") == "cancelled":
         runtime.event_writer.append(

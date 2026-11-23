@@ -100,6 +100,13 @@ def validate_aggregation_admission(
 ) -> None:
     """Require exact, readable operation-scoped aggregation inputs."""
 
+    from zf.runtime.milestone_successor import successor_is_current
+
+    checkpoint_ref = request.get("checkpoint_input_ref")
+    if checkpoint_ref:
+        successor = hydrate_sidecar_ref(runtime.state_dir, checkpoint_ref).payload.get("milestone_successor_ref")
+        if successor and not successor_is_current(runtime, successor, request["workflow_run_id"]):
+            raise OrchestratorAgentContractError("milestone successor candidate was superseded")
     expected = _descriptor_set(request.get("aggregation_input_refs"))
     provided = _descriptor_set(aggregation_result.get("input_result_refs"))
     if not expected:

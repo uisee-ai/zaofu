@@ -434,6 +434,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "workflow.notification.claimed",
     "workflow.schedule.claimed",
     "workflow.schedule.retry",
+    "workflow.schedule.session.started",
+    "workflow.schedule.session.reported",
     "workflow.schedule.finished",
     "automation.run.started", "automation.run.completed",
     "automation.run.failed", "automation.run.skipped",

@@ -6,6 +6,8 @@ import json
 import hashlib
 from types import SimpleNamespace
 import sys
+import time
+from zf.runtime.call_result_envelope import canonical_json_sha256
 
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events import EventWriter
@@ -50,7 +52,7 @@ def run(args: argparse.Namespace) -> int:
                 raise ValueError("operator authorization required")
             if not args.run_now.strip() or len(args.run_now) > 256:
                 raise ValueError("a bounded manual request ID is required")
-            if job["action"] != "inspect" or not job.get("enabled"):
+            if job["action"] not in {"inspect", "agent_report"} or not job.get("enabled"):
                 raise ValueError(
                     "manual run requires an enabled independent inspection"
                 )
@@ -61,6 +63,20 @@ def run(args: argparse.Namespace) -> int:
                 event_writer=EventWriter(log),
             )
             reconcile_schedules(runtime, manual_id=args.run_now, definition_id=args.id)
+            if job["action"] == "agent_report":
+                occurrence = canonical_json_sha256([job["id"], job["revision"], "manual:" + args.run_now])
+                until = time.monotonic() + job["timeout_seconds"] + 10
+                while True:
+                    rows = [e for e in log.read_all() if e.origin == "kernel" and e.actor == ACTOR
+                            and e.payload.get("occurrence") == occurrence]
+                    if not rows:
+                        raise ValueError("manual model job was not claimed; inspect the active job and occurrence budget")
+                    if any(e.type == PREFIX + "finished" for e in rows):
+                        break
+                    if time.monotonic() >= until:
+                        raise ValueError("model report outcome is pending reconciliation")
+                    time.sleep(.1)
+                    reconcile_schedules(runtime, manual_id=args.run_now, definition_id=args.id)
         history = [
             e.payload
             for e in log.read_all()

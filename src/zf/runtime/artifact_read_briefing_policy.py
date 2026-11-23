@@ -29,7 +29,7 @@ def bound_read_policy_locator(payload: Mapping[str, Any], state_dir: Path | None
         return ""
     return (
         f"- Complete required-read policy: `{descriptor['ref']}` (sha256 `{descriptor['sha256']}`); "
-        f"{len(body['required_reads'])} required selections. The preferred required-read command above "
+        f"{len(body['required_reads'])} required selections. The required-read command above "
         "consumes this exact policy; individual commands and authorized paths remain available through "
         "artifact index. This locator is not source content or read evidence."
     )

@@ -54,4 +54,77 @@
 
 影响范围测试需要控制器依赖。验证使用工作树独立环境安装 dev、web、controller 和 native-inputs 四组依赖。
 
-本轮记录的是模拟调用及冻结历史，真实模型端到端耗时、缓存 token、任务质量和双模型收益仍需另测。上述数字支持保留文本批页默认路径，不能据此缩短正在执行的合同或切换生产默认。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
+现行 CLI 默认使用 JSON 与 8 KiB 批页。B 是显式文本批页试验。三组调用数来自模拟工具返回，无法据此估算真实模型 token 或从派发到准入的耗时。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
+
+## 里程碑接手、静默与独立作业
+
+| 场景 | 实际入口 | 有效证据与失败处理 |
+| --- | --- | --- |
+| 静态检查解除门禁 | Kernel 静态门与 Stage Action 执行前后核对干净 Git HEAD；Candidate Verify 冻结质量门包含的命令 ID | 绑定 run、目标、任务图代次、合同摘要与完整命令集合。重放可复用相同候选已准入的逐命令成功回执。工作树变脏、漏跑、来源不符或目标变化时继续待证。 |
+| 阶段屏障与关闭前 OA 接手 | 启用 `milestone_handoff` 后，命中冻结候选与 Reader 交接的 OA checkpoint 从源事件读取交接包 | 包含原 freeze、成员、合同、义务、缺口和下一责任实例。运输层等待旧 operation 静止后启动新会话。准入前再校验候选身份。相同唤醒只产生一次派发。 |
+| 全板静默 | 在已启用的 `run_boards[RUN]` 加入正整数 `silence_seconds`；Supervisor 通过原有投影交给 Run Manager 的 `diagnose-attention` | 检查成员未完操作及尚未派发的任务。有效租约、同一 request/actor/attempt 的合法等待和有界工具执行宽限会推迟诊断。用量单列。未知原因交 RM，同一静默窗口重复巡检只派发一次诊断。 |
+| 跨会话独立只读报告 | 在 cron 定义中设置 `action: agent_report`、`provider: ollama`、本机 `port`、`model`、`max_output_tokens`、`timeout_seconds` 及带摘要的 `input_refs`；可设置 `max_input_bytes` | 每个 occurrence 建立独立会话，验证角色范围与输入预算，先记录 started，再调用无工具的本机模型。报告及实际 token 落不可变工件。如果进程在调用中消失，结果归 owner 对账，禁止自动再发。手工触发沿用带授权令牌的原入口。 |
+
+专项回归涵盖错 run、合同或目标的静态回执，OA 重复唤醒及过时结果，未派发任务上的静默告警，以及定时作业发送后失联、撤销与并发。运行 `tests/test_milestone_gates.py`、`tests/test_milestone_successor.py`、`tests/test_board_liveness.py` 和 `tests/test_scheduled_agent_job.py` 可复核。
+
+## 本机真实进程与业务评测（2026-11-23 UTC）
+
+使用独立的 Git 工程、运行目录和 CODEX_HOME。Codex CLI 0.171.0 通过环回 Responses 适配器访问本机 Qwen2.5。宿主 Ollama 0.6.2 不满足该 CLI 原生 OSS 接口版本要求，适配器仅供此项测试使用。每个测试单独启用。
+
+| 真实观测 | 结果与边界 |
+| --- | --- |
+| Candidate Verify 中断与恢复 | 先在冻结 Git 目标执行一次 pytest，真实 Codex 在后续 turn 开始后收到 SIGKILL。重新打开角色注册表与原会话，从 RESUME 恢复，再将模型判词及宿主回执提交至 `SemanticResultSubmitService`。接纳事件 `evt-7b11061e4144`，恢复后新增宿主检查 0 次。首次 turn 19.85 秒、756 输入 / 2 输出 token；恢复 turn 45.64 秒、1554 输入 / 13 输出，报告的缓存输入均为 0。 |
+| 历史上下文失真 | 一次试验中模型少复述一个审计标记字符。回归用例精确比对冻结标记，允许按原权限只补读对应来源一次，再核验后提交；仍不匹配则用例失败。上行成功样本无需补读。 |
+| 独立巡检报告 | 一个真实 occurrence 取得独立 session 和有摘要的报告，模型只接收获准的冻结来源。Ollama 返回 246 输入 / 10 输出 token。 |
+| 单、双模型业务对照 | 同一道 SQLite 应收对账题，执行者 Qwen2.5，双模型增加 Qwen2:7b 作 Planner。两个顺序各跑一次，每组允许一次返工。验收器在隔离数据库核对五行，参考 SQL 通过 5/5。 |
+
+| 顺序 | 模式 | 秒 | 输入 / 输出 token | 最终业务通过 | 返工次数 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 单 → 双 | 单 | 174.31 | 323 / 171 | 0/5 | 1 |
+| 单 → 双 | 双 | 233.66 | 798 / 332 | 0/5 | 1 |
+| 双 → 单 | 双 | 174.80 | 792 / 319 | 0/5 | 1 |
+| 双 → 单 | 单 | 102.12 | 318 / 167 | 0/5 | 1 |
+
+反序试验中出现 SQLite 不支持的 `GREATEST` 和余额或顺序不符。该任务的双模型两次都花了更多 token 和时间，业务评分没有提高。项目维持原执行模型。两组顺序都使用相同输入与独立判定，每次耗时受本机负载、模型驻留和缓存影响。
+
+复核以上真实用例使用 `pytest --no-cov -m real_provider -s`。在隔离测试环境为 `tests/integration/test_codex_milestone_recovery.py` 提供 `ZF_REAL_CODEX_LOCAL_URL` 和该环回端点要求的凭据。`tests/integration/test_worker_model_comparison.py` 的单、双模型试验设置 `ZF_REAL_MODEL_COMPARISON=1`，反序再设置 `ZF_MODEL_PAIR_REVERSE=1`。真实中断小样本从保留宿主回执到结果准入；原 8×8 的 40 项合同、两次断点和三种读法另有冻结回放。全量真实三组派发到准入的配对结果、以及原项目无人干预抵达最终交付，仍需各自独立取证。
+
+## v5 配置、读取入口与 8×8 断点
+
+根模板的公开入口为 `PrdFlow.spec.milestoneHandoff` 和 `PrdFlow.spec.artifactWorkerCgroups`。v5 启用里程碑交接，保留 WRC 的常规调度、独立 OA 与 RM，以及 8 个 Impl / 8 个 Verify。模板的 cgroup 映射为空。项目通过自己的 `zf.yaml` 给具体实例指定专属 cgroup，编译校验注册实例、Flow 归属及组之间的物理重叠。多 Flow 取对应 kind 的元数据；项目原有的显式覆盖优先。
+
+| 谁在读取什么 | 核实后的入口 |
+| --- | --- |
+| Impl 编辑源码、运行产品测试；Verifier 检查候选源文件 | 读取实际产品 workdir。工作区里同名的文件自身无法充当已冻结 workflow 输入的交付证据。 |
+| 已获准的 Codex Reader、Impl 或 Verify 的新 request | 首先用 `zf artifact workspace --attempt ATTEMPT` 启动有权限和期限的只读文件视图，随后直接通过文件路径读取 `INPUTS.md`、`RESUME.md` 和正文。挂载位于产品 Git 工作区之外。读取字节及 Provider 公开返回以相同会话和 call ID 对账。 |
+| 原 request 没有冻结 cgroup、宿主或 Codex 版本不匹配、或授权撤销 | 使用原 `zf artifact index/read/recover`。给已经发出的 request 补一行 YAML 无法改变它的选路。 |
+| OA 的语义 checkpoint、RM 的诊断与受控动作，以及结果提交 | 沿原有受控 CLI / 准入入口。没有把报告、权限检查、事件或终态写入搬进产品目录。 |
+
+托管的 Linux tmux Worker 由 `managed_worker_cgroup(project_root, state_dir, actor)` 生成项目独占的 user systemd scope 路径。将该值固定到项目 YAML 后，正常启动入口把对应 Codex 进程安置到这个 scope。其他角色沿用原位置。已有活跃同名 scope 拒绝二次启动；外部托管的专属组仍由部署方安置。挂载还要求 FUSE、libfuse2 与匹配的 Codex 版本。宿主验证同时核对实际 PID 归属、跨组拒绝、授权撤销与原生工具返回。
+
+### 原冻结断点的定向补读对照
+
+两条 Candidate Verify lane 均使用原 40 项合同、19 条宿主回执和同一浏览器缺口。每次仅补读原 `target` 一项，用本机同一模型回答三个问题（候选短 SHA、缺口回执 ID、可用回执数）。第一条按 A/B/C 顺序，第二条反序。A、B 使用正式 CLI 页渲染器，C 使用正式文件视图的原文，三组同样收到恢复证据。以下只计本次模型调用，未计全量准入时间。
+
+| lane 与顺序 | 格式 | 输入 / 输出 token | 秒 | 精确答对 |
+| --- | --- | ---: | ---: | ---: |
+| 0 · 先 | A，JSON | 2048 / 100 | 89.66 | 0/3 |
+| 0 · 中 | B，文本批页 | 2048 / 100 | 57.91 | 0/3 |
+| 0 · 后 | C，文件正文 | 1774 / 22 | 25.08 | 3/3 |
+| 1 · 先 | C，文件正文 | 1769 / 26 | 27.39 | 3/3 |
+| 1 · 中 | B，文本批页 | 2048 / 100 | 64.24 | 0/3 |
+| 1 · 后 | A，JSON | 2048 / 100 | 68.28 | 0/3 |
+
+A、B 都用满了本机该配置报告的 2048 输入和 100 输出 token。这个窗口限制影响成绩；不能由这两条 lane 外推生产模型或整份包的质量。服务未提供缓存命中 token。复核命令为 `pytest --no-cov -m real_provider -s tests/integration/test_frozen_checkpoint_reader_comparison.py`，用 `ZF_8X8_FIXTURE_STATE` 指向原状态、`ZF_REAL_READER_ATTEMPTS` 传入逗号分隔的两条 attempt。历史状态以只读方式打开。
+
+另一真实小型 Candidate 在会话中连续两次遭 SIGKILL 后复用原会话。最终判词严格匹配后，产生唯一准入事件 `evt-9446560fd5b5`，目标 `d99bad92`，恢复后新增宿主执行 0 次。两条完成的 turn 分别耗时 47.90、2.99 秒，token 分别为 755/2 和 1557/12。本机 FUSE 试验分别通过真实模型自行选择工具、以及固定工具选择两种方式得到可核对的 Codex 原生文件交付。
+
+### 8×8 原现场的无人恢复缺口
+
+原 Run `workflow-ddd320aa0dc7c2ef` 已完成 16 项业务任务。在候选 `88992ce7`，两条 Verify 正式报告 blocked。四条验收义务引用的浏览器命令退出 0，宿主事件 `evt-cacecbb4aaf4` 保存了 9 个文件。原合同声明 `artifacts/evidence/browser/`，其目录无法与归档中的具体文件建立精确绑定。保留 18 项可消费的检查与 1 项待办。
+
+聚合事件 `evt-36dfa17cd84c` 同时带有基础设施类别和已准入的依赖阻塞。旧 RM 只看类别并漏派 OA，工作流锚点随后被判为孤儿，`evt-6dc7582281e5` 令控制面进入静默。本轮修复仅将成员齐全、绑定一致、正式完成独立审核且全部报告该依赖缺口的聚合交给 OA。未知、未准入、超时、预算耗尽仍有各自负责人。当同一锚点已有上述分诊责任时，watchdog 不再另行报孤儿。对历史孤儿告警，仅允许同一运行、同一故障的语义审核，外部停止或审批仍有效。两次 tick 只产生一次合法请求，未启动新的宿主命令。
+
+只读重放原始账本选出 `oa-candidate-review-aa4e7342f3c0e242976fcefa`。业务材料的等价性或需要修订的合同，仍由 OA/审批流程判断。原实验的无人资格已有人工介入并封存为 `closed_failed`。从该断点开始的验证单独评价。
+
+专属文件视图也通过了一条完整 8×8 lane 的宿主验证。临时项目为同一冻结 Candidate 和 40 项输入建立新的授权 request（原 request 前缀 `9671fd06`，新 request 前缀 `37678252`，manifest 前缀 `05889beb`）。真实 `zf artifact workspace`、FUSE 和 Codex 执行 82 次文件读取。第 41 次后杀掉 Codex，原 SID 恢复并自行读取挂载的 RESUME.md，取得原缺口与声明路径，随后仅完成剩余 41 次。正式交付校验通过 40/40，恢复后新增宿主命令 0。模型选择命令由隔离的脚本固定，工具输出由真实进程产生；用例耗时 22.34 秒。可复核 `tests/integration/test_frozen_codex_workspace.py` 的环境说明。

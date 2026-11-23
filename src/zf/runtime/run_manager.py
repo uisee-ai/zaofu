@@ -1013,7 +1013,12 @@ def build_run_manager_projection(
     from zf.runtime.failure_diagnosis_routing import pending_failure_diagnoses
     from zf.runtime.worker_assistance import pending_assistance_actions
 
-    failure_diagnoses = pending_failure_diagnoses(state_dir, events, config)
+    from zf.runtime.candidate_aggregate_review import pending_candidate_reviews, candidate_review_binding
+
+    candidate_review_failures = {event.id for event in events
+        if candidate_review_binding(state_dir, config, events, event) is not None}
+    failure_diagnoses = [action for action in pending_failure_diagnoses(state_dir, events, config)
+        if action.get("source_event_id") not in candidate_review_failures]
     rework_triage_actions = [
         *pending_assistance_actions(events),
         *failure_diagnoses,
@@ -1031,13 +1036,9 @@ def build_run_manager_projection(
     ]
     from zf.runtime.orchestrator_agent_execution_review import pending_execution_reviews
 
-    from zf.runtime.candidate_aggregate_review import pending_candidate_reviews, candidate_review_binding
-
     rework_triage_actions.extend(pending_candidate_reviews(
         state_dir=state_dir, config=config, events=events,
     ))
-    candidate_review_failures = {event.id for event in events
-        if candidate_review_binding(state_dir, config, events, event) is not None}
     rework_triage_actions.extend(pending_execution_reviews(
         state_dir=state_dir, config=config, events=events,
         excluded_task_ids={str(action.get("task_id") or "") for action in rework_triage_actions},
@@ -1292,6 +1293,7 @@ def build_run_manager_projection(
         semantic_event_actions = [
             action for action in semantic_event_actions
             if str(action.get("task_id") or "") not in triage_owned_tasks
+            and not candidate_review_failures.intersection(action.get("source_event_ids") or [])
         ]
     attention_actions = []
     if completion_profile.get("status") != "complete":

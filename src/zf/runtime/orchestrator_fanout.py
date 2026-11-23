@@ -6783,6 +6783,7 @@ class FanoutCoordinationMixin(
             )
             prompt += reader_continuation_guidance(
                 attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
+                runtime=self, actor=role.instance_id, operation_id=original_payload.get("operation_id", "") or previous_dispatch.payload.get("operation_id", ""),
             )
         try:
             dispatch_context = self._send_scoped_transport_task(
@@ -8260,7 +8261,7 @@ class FanoutCoordinationMixin(
             ).rstrip().splitlines()
             child_report_lines = [
                 "Child report bodies are canonical required inputs in the Source Manifest.",
-                "Read every required child result with `zf artifact read`; do not rely on copied inline JSON. Update the prefilled result scratch in place; with apply_patch use `*** Update File`, and never delete, add, move, or recreate that path.",
+                "Read each required child result using the Controlled Artifact Inputs for this attempt. Update the prefilled result scratch in place; with apply_patch use `*** Update File`, and never delete, add, move, or recreate that path.",
                 "",
             ]
         else:

@@ -18,6 +18,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 HOST_SCHEMA = "mounted-file-read.v1"
 PROOF_SCHEMA = "mounted-file-tool-return.v1"
+NATIVE_CODEX_VERSION = "0.171.0"
 
 
 def session_rows(state, actor, cache=None):
@@ -196,7 +197,7 @@ def verified_native(state: Path, row: dict, text: str, *, ephemeral=False):
         or proof["host_ref"] != row["native_host_ref"]
         or not host["credential_generation"]
         or not host["peer_identity"]
-        or host["tool_version"] != "0.171.0"
+        or host["tool_version"] != NATIVE_CODEX_VERSION
         or row["production_status"] != "mounted_file_read"
         or row.get("provider_delivery_status") != "observed_in_transcript"
     ):

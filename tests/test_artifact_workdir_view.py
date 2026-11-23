@@ -224,6 +224,22 @@ def test_host_open_public_call_and_actual_admission(tmp_path, monkeypatch, outco
             )
 
 
+def configured_runtime(tmp_path, monkeypatch, *, backend="codex", mapped=True):
+    from tests.test_result_submit import _runtime
+    from zf.core.config.schema import RoleConfig
+
+    runtime = _runtime(tmp_path)
+    runtime.config.roles = [
+        RoleConfig(name="dev", instance_id="dev-1", backend=backend)
+    ]
+    groups = {"dev-1": "/dedicated"} if mapped else {}
+    runtime.config.workflow.flow_metadata["artifact_worker_cgroups"] = groups
+    monkeypatch.setattr(
+        artifact_mount, "mounted_scope", lambda config, actor: groups[actor]
+    )
+    return runtime
+
+
 def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
     tmp_path, monkeypatch, capsys
 ):
@@ -235,7 +251,8 @@ def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
         provision_role_artifact_read_credential,
     )
 
-    runtime, payload, prepared, _, _ = _operation(tmp_path)
+    runtime = configured_runtime(tmp_path, monkeypatch)
+    runtime, payload, prepared, _, _ = _operation(tmp_path, runtime=runtime)
     state = runtime.state_dir
     manifest = hydrate_sidecar_ref(state, payload["attempt_source_manifest"]).payload
     _grant(state, monkeypatch, manifest=manifest, operation_id=prepared.operation_id)
@@ -279,7 +296,118 @@ def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
         "--state-dir",
         str(state),
     ]
+    monkeypatch.setattr(artifact_workspace.shutil, "which", lambda _: "/bin/codex")
+    monkeypatch.setattr(
+        artifact_workspace.subprocess,
+        "run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="codex-cli 0.170.0"),
+    )
+    assert main(argv) == 1 and not served and "version" in capsys.readouterr().err
+    monkeypatch.setattr(
+        artifact_workspace.subprocess,
+        "run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="codex-cli 0.171.0"),
+    )
+    monkeypatch.setattr(artifact_workspace, "mounted_scope", lambda *args: "/other")
+    assert (
+        main(argv) == 1 and not served and "original request" in capsys.readouterr().err
+    )
+    monkeypatch.setattr(artifact_workspace, "mounted_scope", lambda *args: "/dedicated")
     assert main(argv) == 0 and len(served) == 1 and not served[0].exists()
     rollout.unlink()
     assert main(argv) == 1 and len(served) == 1
     assert "session" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("backend", "mapped", "expected"),
+    [
+        ("codex", True, True),
+        ("codex", False, False),
+        ("claude-code", True, False),
+    ],
+)
+def test_first_dispatch_freezes_file_preferences_across_replay(
+    tmp_path, monkeypatch, backend, mapped, expected
+):
+    from zf.runtime.artifact_read_ledger import render_attempt_source_briefing
+    from zf.runtime.call_result_runtime import prepare_call_operation
+    from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    runtime = configured_runtime(tmp_path, monkeypatch, backend=backend, mapped=mapped)
+    runtime, payload, first, _, _ = _operation(tmp_path, runtime=runtime)
+    operator = load_workflow_operation(runtime.event_log, first.operation_id)
+    request = hydrate_sidecar_ref(runtime.state_dir, operator["request_ref"]).payload[
+        "request"
+    ]
+    assert request.get("native_input_cgroup", "") == ("/dedicated" if expected else "")
+
+    def check_prompt(native):
+        rendered = render_attempt_source_briefing(payload, state_dir=runtime.state_dir)
+        assert ("Preferred artifact input" in rendered) == native
+        assert ("Preferred deduplicated read" in rendered) != native
+        assert ("CLI fallback" in rendered) == native
+        guidance = reader_continuation_guidance(
+            attempt_id=first.attempt_id,
+            backend=backend,
+            cli="zf",
+            runtime=runtime,
+            actor="dev-1",
+            operation_id=first.operation_id,
+        )
+        assert ("Open the mounted RESUME.md first" in guidance) == native
+
+    check_prompt(expected)
+    # A missing scope, a changed path or a newly authorized worker must never
+    # change the already published request, even with a spoofed transport preference.
+    runtime.config.workflow.flow_metadata["artifact_worker_cgroups"]["dev-1"] = (
+        "/changed"
+    )
+    payload["native_input_view"] = True
+    retry = prepare_call_operation(
+        runtime,
+        payload=payload,
+        operation_type="fanout_writer_child",
+        operation_key="dev-1-T1",
+        stage_id="impl",
+        task_id="T1",
+        dispatch_id="attempt-1",
+    )
+    assert retry.request_hash == first.request_hash
+    check_prompt(False)
+    monkeypatch.setattr(
+        artifact_mount,
+        "mounted_scope",
+        lambda *args: (_ for _ in ()).throw(ValueError("missing scope")),
+    )
+    assert "artifact workspace" not in reader_continuation_guidance(
+        attempt_id=first.attempt_id,
+        backend=backend,
+        cli="zf",
+        runtime=runtime,
+        actor="dev-1",
+        operation_id=first.operation_id,
+    )
+
+
+def test_delayed_host_placement_keeps_first_permission_without_preferring_unavailable_mount(
+    tmp_path, monkeypatch
+):
+    from zf.runtime.artifact_read_ledger import render_attempt_source_briefing
+    from zf.runtime.artifact_workdir_view import recovery_hint
+
+    runtime = configured_runtime(tmp_path, monkeypatch)
+
+    def unavailable(*_):
+        raise ValueError("scope has not started")
+
+    monkeypatch.setattr(artifact_mount, "mounted_scope", unavailable)
+    _, payload, first, _, _ = _operation(tmp_path, runtime=runtime)
+    assert "Preferred deduplicated read" in render_attempt_source_briefing(payload)
+    assert not recovery_hint(runtime, "dev-1", first.attempt_id, first.operation_id)
+    monkeypatch.setattr(artifact_mount, "mounted_scope", lambda *_: "/dedicated")
+    assert "RESUME.md" in recovery_hint(
+        runtime, "dev-1", first.attempt_id, first.operation_id
+    )
+    assert not recovery_hint(runtime, "dev-1", "different-attempt", first.operation_id)

@@ -81,6 +81,12 @@ def build_orchestrator_agent_context(
         effective_config_ref=effective_config_ref,
         effective_config_summary_ref=effective_config_summary_ref,
     )
+    from zf.runtime.milestone_successor import successor_context
+
+    successor = successor_context(runtime, checkpoint=checkpoint, run=workflow_run_id,
+                                 operation=operation_id, attempt=attempt_id, source_id=source_event_id, payload=payload)
+    if successor:
+        _append_descriptor(sources, source_id="milestone-successor", kind="milestone_successor", descriptor=successor)
     execution_ref = {}
     if execution_mode:
         input_mode = "execution"
@@ -136,6 +142,7 @@ def build_orchestrator_agent_context(
             ),
         },
         "objective": _checkpoint_objective(checkpoint),
+        **({"milestone_successor_ref": successor} if successor else {}),
         "flow_kind": str(payload.get("flow_kind") or ""),
         "risk_signals": list(risk_signals),
         "checkpoint_context": {
@@ -282,7 +289,7 @@ def build_orchestrator_agent_context(
         for source in required_sources
         if input_mode != "execution" or source["source_id"] in {
             "checkpoint-input", "execution-context", "effective-config",
-            "semantic-failure-input", "task-recovery-context",
+            "semantic-failure-input", "task-recovery-context", "milestone-successor",
         }
     ]
     from zf.runtime.artifact_read_snapshot import pin_read_selections

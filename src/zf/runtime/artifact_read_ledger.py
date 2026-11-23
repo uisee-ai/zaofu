@@ -606,9 +606,16 @@ def render_attempt_source_briefing(
             "(Claude allowlist matching is literal)."
         ),
     ]
-    if payload.get("native_input_view"):
-        lines.append(f"- `{cli_command} artifact workspace --attempt {attempt_id}` serves INPUTS.md and RESUME.md. "
-                     "Use /usr/bin/cat ABSOLUTE_PATH with optional .chars-START-END. CLI reads remain available.")
+    native = payload.get("native_input_view") is True
+    if native:
+        lines.append(
+            f"- Preferred artifact input: start `{cli_command} artifact workspace --attempt {shlex.quote(attempt_id)}` "
+            "in a persistent tool session. Open the printed INPUTS.md and RESUME.md paths. "
+            "The read-only mount is outside the product checkout. Use a single literal "
+            "`/usr/bin/cat ABSOLUTE_PATH` for each required text selection listed in INPUTS.md. "
+            "For partial delivery, read the missing .chars-START-END slices. Use the CLI fallback "
+            "if the mount or file evidence is unavailable."
+        )
     if required:
         from zf.runtime.reader_replan_feedback import repair_read_navigation
 
@@ -640,7 +647,7 @@ def render_attempt_source_briefing(
                 "predecessor task's contract as the current one."
             )
         lines.extend([
-            f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            f"- {'CLI fallback' if native else 'Preferred deduplicated read'}: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
             "each source is recorded. Follow `--cursor <next_cursor>` until null. "
             "Do not reread complete aliases.",
@@ -658,7 +665,7 @@ def render_attempt_source_briefing(
         ])
         if payload.get("output_profile_id") == "plan-synth":
             lines.append(
-                "- For Plan review, prefer --format text --page-bytes 32768 on the required-read command "
+                "- For Plan review through CLI, prefer --format text --page-bytes 32768 on the required-read command "
                 "when the tool can return the full page (reserve at least 16384 output tokens). "
                 "This bounded view prints original content without an outer JSON string escape layer. "
                 "Retain these flags with each cursor; if output truncates, retry the same cursor at 8192 "

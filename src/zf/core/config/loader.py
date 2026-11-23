@@ -3290,6 +3290,12 @@ def load_config(path: Path) -> ZfConfig:
     # they declare new event names and are NOT validated.
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
+    from zf.core.config.artifact_worker_cgroups import artifact_worker_cgroups
+
+    try:
+        artifact_worker_cgroups(cfg, validate_roles=True)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     _validate_orchestration_blocking_pilot_tiers(cfg)
     _validate_orchestration_oa_profile(cfg)
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])

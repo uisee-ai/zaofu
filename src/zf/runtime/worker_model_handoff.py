@@ -65,6 +65,11 @@ def freeze_model_profile(runtime, operation_id, payload):
 
 
 def local_plan(profile, packet):
+    return local_chat(profile, packet, "Read the bound implementation inputs. Return steps, "
+                      "checks and hand-back conditions. You have no tools or approval authority.")
+
+
+def local_chat(profile, packet, instruction):
     connection = http.client.HTTPConnection(
         "127.0.0.1", profile["port"], timeout=profile["timeout_seconds"]
     )
@@ -75,8 +80,7 @@ def local_plan(profile, packet):
         "messages": [
             {
                 "role": "system",
-                "content": "Read the bound implementation inputs. Return steps, "
-                "checks and hand-back conditions. You have no tools or approval authority.",
+                "content": instruction,
             },
             {"role": "user", "content": json.dumps(packet, ensure_ascii=False)},
         ],

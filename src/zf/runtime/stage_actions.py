@@ -348,6 +348,9 @@ class StageActionRunner:
         from zf.runtime.static_gate import build_static_gate_event, run_static_gate
 
         project_root = Path(context.project_root or ".")
+        from zf.runtime.milestone_gates import bind_static_result, static_target
+
+        initial_commit = static_target(context.config, project_root, context.source_event.payload)
         result = _static_gate_override_result(plan, context)
         if result is None:
             result = run_static_gate(
@@ -359,6 +362,7 @@ class StageActionRunner:
             trigger_event=context.source_event,
             actor="workflow_graph",
         )
+        bind_static_result(gate_event, context.source_event, context.config, project_root, initial_commit)
         gate_event.payload["stage_id"] = plan.stage_id
         gate_event.payload["action_type"] = plan.action_type
         gate_event.payload["decision"] = "committed"

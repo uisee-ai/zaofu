@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from zf.core.workflow.flow_metadata import flow_metadata_for
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -33,6 +34,15 @@ def dispatch_orchestrator_agent_operation(
     orch_role: Any,
     trigger: ZfEvent,
 ) -> None:
+    from zf.core.state.locks import locked_path
+
+    if flow_metadata_for(runtime.config, payload=trigger.payload).get("milestone_handoff") is True:
+        with locked_path(runtime.state_dir / "locks" / "milestone-successor-dispatch"):
+            return _dispatch_checkpoint(runtime, orch_role, trigger)
+    return _dispatch_checkpoint(runtime, orch_role, trigger)
+
+
+def _dispatch_checkpoint(runtime: Any, orch_role: Any, trigger: ZfEvent) -> None:
     from zf.runtime.orchestrator_agent_obsolete import reconcile_obsolete_checkpoint_operations
 
     reconcile_obsolete_checkpoint_operations(
@@ -54,6 +64,18 @@ def dispatch_orchestrator_agent_operation(
         runtime, exclude_operation_id=prepared.operation_id,
     ):
         return  # Requested operation remains durable for the next free turn.
+    successor = prepared.context.input_body.get("milestone_successor_ref") if prepared.context else None
+    if successor:
+        if not trigger.payload.get("checkpoint_dispatch_retry_attempt") and prepared.status != "requested":
+            return
+        from zf.runtime.milestone_successor import successor_is_current
+
+        if not successor_is_current(runtime, successor, prepared.workflow_run_id):
+            workflow_operation_service(runtime).supersede(
+                operation_id=prepared.operation_id, request_hash=prepared.request_hash,
+                workflow_run_id=prepared.workflow_run_id, reason="milestone_candidate_replaced",
+                causation_id=trigger.id, correlation_id=prepared.workflow_run_id)
+            return
     briefing = build_orchestrator_agent_operation_briefing(
         state_dir=runtime.state_dir,
         prepared=prepared,
@@ -96,6 +118,16 @@ def dispatch_orchestrator_agent_operation(
                         else "retry_after_orchestrator_pane_respawn"),
             )
     else:
+        if successor:
+            if runtime._active_task_for_instance(orch_role.instance_id) is not None:
+                return
+            launched = runtime._respawn_instance(
+                orch_role, recovery_reason=f"milestone_successor:{prepared.operation_id}",
+                inject_idle_prompt=False, force_fresh_session=True)
+            if launched.action != "respawn":
+                return
+            if not successor_is_current(runtime, successor, prepared.workflow_run_id):
+                return
         activate_orchestrator_agent_operation(
             runtime,
             prepared,

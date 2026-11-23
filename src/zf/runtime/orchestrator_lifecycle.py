@@ -247,6 +247,9 @@ class LifecycleManagerMixin(
                 created_at=datetime.fromtimestamp(epoch, timezone.utc),
                 now=datetime.fromtimestamp(now, timezone.utc), run_id=task_run)
             if elapsed >= role.orphan_escalate_seconds:
+                from zf.runtime.task_orphan_recovery import anchor_awaits_candidate_review
+                if anchor_awaits_candidate_review(self.state_dir, self.config, pause_events, task.id):
+                    continue  # The frozen Candidate already has a recovery owner.
                 self._emit_task_orphaned(task, role, elapsed)
                 # After escalate, clear tracking so the clock restarts
                 # when someone reassigns.
@@ -274,38 +277,9 @@ class LifecycleManagerMixin(
     def _emit_task_orphaned(
         self, task: Task, role: RoleConfig, elapsed: float,
     ) -> None:
-        """LH-0.T3: full orphan escalation — emit, unassign, requeue."""
-        try:
-            self.event_writer.append(ZfEvent(
-                type="task.orphaned",
-                actor="zf-cli",
-                task_id=task.id,
-                payload={
-                    "role": role.name,
-                    "assigned_to": task.assigned_to or "",
-                    "elapsed_seconds": round(elapsed, 1),
-                    "threshold_seconds": role.orphan_escalate_seconds,
-                },
-            ))
-        except Exception:
-            pass
-        try:
-            self.escalation.escalate(
-                f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
-                task_id=task.id,
-                metadata={"failure_class": "orphaned_task"},
-            )
-        except Exception:
-            pass
-        # Requeue for future dispatch. Clearing assigned_to also frees
-        # the WIP slot for that instance.
-        try:
-            self.task_store.update(
-                task.id, status="backlog", assigned_to="",
-            )
-        except Exception:
-            pass
+        from zf.runtime.task_orphan_recovery import record_task_orphaned
+
+        record_task_orphaned(self, task, role, elapsed)
 
     def _get_spawn_coordinator(self) -> "SpawnCoordinator":
         """Lazily build the coordinator (avoids circular init)."""
@@ -2117,7 +2091,7 @@ class LifecycleManagerMixin(
             context = continuation_context(self, role.instance_id, context)
             if before:
                 from zf.runtime.artifact_workdir_view import recovery_hint
-                prompt += recovery_hint(self.config, role.instance_id, before["attempt_id"])
+                prompt += recovery_hint(self, role.instance_id, before["attempt_id"], before["operation_id"])
             self._send_transport_task(role.instance_id, path, prompt, context)
             self._get_spawn_coordinator().notify_first_dispatch(role)
         except Exception:

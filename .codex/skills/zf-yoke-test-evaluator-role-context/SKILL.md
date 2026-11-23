@@ -129,26 +129,27 @@ amendment are separate role capabilities supplied by the workflow profile.
    worktree does not match, report execution/target failure and do not issue a
    product verdict.
 2. Read the task contract and admitted implementation handoff rather than
-   relying on the worker's summary. Execute one literal sanctioned
-   `zf artifact read` command for every briefing `required_reads` row, including
-   all `plan-port-*` sources, with the exact source/artifact/json-path tuple.
-   Direct file reads do not satisfy the attempt read ledger.
+   relying on the worker's summary. Consume every briefing `required_reads` row, including
+   all `plan-port-*` sources. Follow the input route frozen for this attempt.
+   For an authorized file mount, open the printed INPUTS.md and read the matching
+   selectors with a single literal `/usr/bin/cat ABSOLUTE_PATH` per tool call.
+   An ordinary checkout path has no mounted-read receipt. If the mount or its
+   receipts are unavailable, use the briefing's authenticated CLI and exact selectors.
    先按 required_reads 清单估算输出量，分批读取每行完整正文并保留本回合已读内容。
    不因一个批量输出被截断而重读整个 `--required` 集合；只补读未完整呈现的行。
    不用标题、摘要或截断片段替代完整必读正文，也不要重复打印已完整读过的大段 Plan/PAS。
-   单项 `zf artifact read --source ... --artifact ...` 的stdout就是正文，不是带`.content`
+   使用 CLI 读法时，单项 `zf artifact read --source ... --artifact ...` 的stdout就是正文，不是带`.content`
    字段的外壳；不要把正文JSON解析后再取不存在的`.content`而误判为空。`--required`
    统一返回 `required-artifact-page.v2`；完整消费 `items[].content` 并按 `next_cursor`
    续页到 null。原样返回每页及身份元数据，保留已完整呈现的正文，不重复dump。
-   `--required --page-bytes`仅允许1024—8192个UTF-8字节（含元数据，默认8192），不是token数；
-   不要调大到30000或65536。大段中文可使用已有单项精确分页：保持当前source/artifact/json-path，
+   `--required --page-bytes`支持1024—32768个UTF-8字节（含元数据，默认8192）。按工具实际输出预算选页长。大段中文可使用已有单项精确分页：保持当前source/artifact/json-path，
    从上一完整页的page_end接`--page-start <下一位置> --page-size 8192`，之后跟随next_page_start；
    这里8192是字符。新来源从0开始，不猜偏移；已读内容丢失则补读实际缺口。给工具足够输出
    预算并逐页完整消费，不能以截断或摘要替代正文。该方式沿用同一授权与账本，不减少必读；
    无需切换时继续原cursor，不为切换重读已保留正文或完整别名。
    等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
    避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
-   大体积正文使用 `zf artifact read --attempt <本次attempt> --required` 的有界分页，
+   CLI 回退时，大体积正文使用 `zf artifact read --attempt <本次attempt> --required` 的有界分页，
    完整读取每页 `items[].content`，按 `next_cursor` 继续直到为空；相同正文的 aliases
    已分别鉴权和记账，无须按别名重复阅读。按上述有界批读方法减少往返；工具输出
    预算较小时降低 `--pages` 或使用 `--page-bytes 2048`，截断时补读缺失正文，

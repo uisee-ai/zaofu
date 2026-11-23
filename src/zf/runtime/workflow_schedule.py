@@ -55,7 +55,10 @@ def definitions(config: Any) -> list[dict]:
         instant(definition["effective_at"])
         if type(definition.get("enabled", False)) is not bool:
             raise ValueError("enabled must be boolean")
-        if definition.get("action") == "inspect":
+        if definition.get("action") in {"inspect", "agent_report"}:
+            if definition["action"] == "agent_report":
+                from zf.runtime.scheduled_agent_job import validate_job
+                validate_job(definition)
             WorkflowCalendar(definition["cron"], definition["timezone"])
             if (
                 type(definition.get("max_occurrences")) is not int
@@ -119,6 +122,22 @@ def _record(runtime, name, definition, digest, *, now, **fields):
     )
 
 
+def _retirement(runtime, claim, reason):
+    from zf.runtime.scheduled_agent_job import STARTED, REPORTED
+
+    observed = next((e for e in reversed(runtime.event_log.read_all()) if e.origin == "kernel"
+                     and e.actor == ACTOR and e.causation_id == claim.id and e.type in {STARTED, REPORTED}), None)
+    fields = {"reason": reason, "status": "cancelled"}
+    if observed:
+        fields.update({"status": "needs_owner", "session_id": observed.payload["session_id"],
+                       "started_at": observed.payload["started_at"], "execution_outcome": "unknown"})
+        if observed.type == REPORTED:
+            fields["execution_outcome"] = observed.payload["status"]
+            if observed.payload.get("report_ref"):
+                fields["report_ref"] = observed.payload["report_ref"]
+    return fields
+
+
 def _due(d, history, events, now, manual_id):
     activation = instant(d["effective_at"])
     if now < activation or (d.get("expires_at") and now > instant(d["expires_at"])):
@@ -153,6 +172,9 @@ def _due(d, history, events, now, manual_id):
 
 def _execute(runtime, d, claim, events):
     run = d["workflow_run_id"]
+    if d["action"] == "agent_report":
+        from zf.runtime.scheduled_agent_job import advance_report
+        return advance_report(runtime, d, claim)
     if d["action"] == "inspect":
         operations = [
             op
@@ -284,8 +306,7 @@ def reconcile_schedules(runtime, *, now=None, manual_id="", definition_id="") ->
                         now=now,
                         occurrence=p["occurrence"],
                         claim_id=claim.id,
-                        status="cancelled",
-                        reason="definition_removed",
+                        **_retirement(runtime, claim, "definition_removed"),
                     )
                 )
     for d in definitions_:
@@ -329,8 +350,7 @@ def reconcile_schedules(runtime, *, now=None, manual_id="", definition_id="") ->
                             now=now,
                             occurrence=old.payload["occurrence"],
                             claim_id=old.id,
-                            status="cancelled",
-                            reason="definition_superseded",
+                            **_retirement(runtime, old, "definition_superseded"),
                         )
                     )
             history = [
@@ -373,8 +393,7 @@ def reconcile_schedules(runtime, *, now=None, manual_id="", definition_id="") ->
                             now=now,
                             occurrence=claim.payload["occurrence"],
                             claim_id=claim.id,
-                            status="cancelled",
-                            reason="disabled_or_expired",
+                            **_retirement(runtime, claim, "disabled_or_expired"),
                         )
                     )
                 continue
@@ -413,6 +432,8 @@ def reconcile_schedules(runtime, *, now=None, manual_id="", definition_id="") ->
                 started_at = datetime.now(timezone.utc) if wall_clock else now
                 try:
                     result = _execute(runtime, d, claim, events)
+                    if result is None:
+                        continue
                 except OSError as exc:
                     attempts = len(failures) + 1
                     delay = min(
@@ -449,9 +470,8 @@ def reconcile_schedules(runtime, *, now=None, manual_id="", definition_id="") ->
                         digest,
                         now=completed_at,
                         occurrence=occurrence,
-                        started_at=started_at.isoformat(),
                         claim_id=claim.id,
-                        **{"status": "completed", **result},
+                        **{"status": "completed", "started_at": started_at.isoformat(), **result},
                     )
                 )
     return emitted

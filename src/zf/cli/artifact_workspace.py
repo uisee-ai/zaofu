@@ -24,13 +24,14 @@ from zf.runtime.artifact_mount import (
     peer_identity,
     serve_mount,
 )
+from zf.runtime.artifact_native_delivery import NATIVE_CODEX_VERSION
 from zf.runtime.artifact_query import ArtifactQueryService
 from zf.runtime.artifact_read_capability import (
     authorize_artifact_read_from_environment,
     _binding_path,
 )
 from zf.runtime.artifact_read_requirements import required_reads_for_attempt
-from zf.runtime.artifact_workdir_view import AttemptFiles
+from zf.runtime.artifact_workdir_view import AttemptFiles, pinned_input_cgroup
 
 
 def run_workspace(args):
@@ -53,6 +54,10 @@ def run_workspace(args):
                 "a native workspace requires a current operation and attempt"
             )
         group = mounted_scope(ctx.config, identity["actor"])
+        if identity["provider"] != "codex" or pinned_input_cgroup(
+            state, log, identity["operation_id"], identity["actor"], identity["attempt_id"]
+        ) != group:
+            raise ValueError("the original request has no matching Codex worker cgroup")
         peer_identity(os.getpid(), group)
         config_stat = ctx.config_path.stat().st_mtime_ns
 
@@ -138,6 +143,8 @@ def run_workspace(args):
             )
             if probe.returncode == 0:
                 version = probe.stdout.strip().removeprefix("codex-cli ")
+        if version != NATIVE_CODEX_VERSION:
+            raise ValueError("this Codex version has no verified native input receipts")
         # mkdtemp atomically reserves a new, private mount point outside project Git.
         with tempfile.TemporaryDirectory(prefix="zf-input-view-", dir="/tmp") as tmp:
             path = Path(tmp)

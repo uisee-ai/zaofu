@@ -64,16 +64,22 @@ def reader_recovery_fence(
     return dispatch_index
 
 
-def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> str:
+def reader_continuation_guidance(
+    *, attempt_id: str, backend: str, cli: str, runtime=None, actor: str = "", operation_id: str = "",
+) -> str:
     """Offer a bounded read continuation without asserting current memory."""
     import shlex
 
+    from zf.runtime.artifact_workdir_view import recovery_hint
+
+    files = recovery_hint(runtime, actor, attempt_id, operation_id) if runtime and backend == "codex" else ""
+    entry = files or " Use artifact recover for this attempt."
     text = (
         " Continue the same pending operation from the available session and "
         "frozen inputs. Re-read any source you cannot still use; historical "
         "delivery alone does not prove current context after compaction. "
         "Reconcile unfinished tool calls and external effects before retrying."
-        " Use artifact recover for this attempt; if it exposes work_record_read, "
+        f"{entry} If the recovery view exposes work_record_read, "
         "read its digest-bound semantic checkpoint and assess pending criteria and "
         "report draft against current inputs. The record is unverified history, "
         "not a verdict or permission to skip required reads."
@@ -84,7 +90,7 @@ def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> 
         "result submission under the original briefing. Preserve permission, "
         "budget and evidence gates; input coverage is not an acceptance verdict."
     )
-    if backend == "codex" and attempt_id:
+    if backend == "codex" and attempt_id and not files:
         attempt = shlex.quote(attempt_id)
         text += (
             f" For a lost required-read cursor, use `{cli} artifact read --attempt "
@@ -99,9 +105,10 @@ def reader_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
     from zf.runtime.cli_command import zf_cli_cmd
 
     attempt_id = renew_reader_recovery_capability(runtime, role, child)
-    from zf.runtime.artifact_workdir_view import recovery_hint
-    return (reader_continuation_guidance(attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd())
-            + recovery_hint(runtime.config, role.instance_id, attempt_id))
+    return reader_continuation_guidance(
+        attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
+        runtime=runtime, actor=role.instance_id, operation_id=child.get("operation_id", ""),
+    )
 
 
 def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> str:

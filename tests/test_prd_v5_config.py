@@ -54,6 +54,8 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert config.runtime.run_manager.resident_agent.enabled is True
     assert config.runtime.run_manager.resident_agent.session_mode == "dedicated"
     assert config.runtime.workdirs.mode == "worktree"
+    assert config.workflow.flow_metadata["milestone_handoff"] is True
+    assert config.workflow.flow_metadata["artifact_worker_cgroups"] == {}
 
     task_pipeline = config.workflow.flow_metadata["task_pipeline"]
     assert task_pipeline["profile_id"] == "prd-flow-v4-task-pipeline"

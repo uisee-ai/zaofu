@@ -2149,11 +2149,15 @@ class WorkflowRuntimeCoordinator(
             return
 
         gate_project_root = self._static_gate_project_root(event)
+        from zf.runtime.milestone_gates import bind_static_result, static_target
+
+        initial_commit = static_target(self.config, gate_project_root, event.payload)
         result = run_static_gate(
             config=self.config,
             project_root=gate_project_root,
         )
         gate_event = build_static_gate_event(result, trigger_event=event)
+        bind_static_result(gate_event, event, self.config, gate_project_root, initial_commit)
         gate_event.payload["workdir"] = str(gate_project_root)
         try:
             self.event_writer.append(gate_event)

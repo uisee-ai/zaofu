@@ -127,7 +127,7 @@ def prepare_call_operation(
         operation_key=scoped_operation_key,
         operation_type=operation_type,
     )
-    context_delivery_enabled, context_inheritance = (
+    context_delivery_enabled, context_inheritance, previous_request = (
         _context_protocol_for_operation(
             runtime,
             operation_id=operation_id,
@@ -470,9 +470,14 @@ def prepare_call_operation(
 
     from zf.runtime.worker_model_handoff import freeze_model_profile
     freeze_model_profile(runtime, operation_id, payload)
-    view_config = getattr(getattr(runtime.config, "workflow", None), "flow_metadata", {}) or {}
+    from zf.runtime.artifact_workdir_view import available_input_cgroup, configured_input_cgroup
+    pinned_group = ""
+    if previous_request is not None:
+        pinned_group = previous_request.get("native_input_cgroup", "")
+    elif source_manifest["sources"]:
+        pinned_group = configured_input_cgroup(runtime.config, role_instance)
     payload.pop("native_input_view", None)
-    if role_instance in (view_config.get("artifact_worker_cgroups") or {}):
+    if pinned_group and pinned_group == available_input_cgroup(runtime.config, role_instance):
         payload["native_input_view"] = True
     context_envelope: dict[str, Any] = {}
     context_envelope_descriptor: dict[str, Any] = {}
@@ -504,6 +509,7 @@ def prepare_call_operation(
             payload.get("effective_config_digest") or ""
         ),
         **({"review_scope_ref": payload["review_scope_ref"]} if payload.get("review_scope_ref") else {}),
+        **({"native_input_cgroup": pinned_group} if pinned_group else {}),
         **({"worker_model_planner": payload["worker_model_planner"]} if payload.get("worker_model_planner") else {}),
         "source_manifest_digest": str(source_descriptor.get("sha256") or ""),
         "read_policy_digest": str(payload.get("input_consumption_policy_digest") or ""),
@@ -1187,12 +1193,12 @@ def _context_protocol_for_operation(
     *,
     operation_id: str,
     requested: Any,
-) -> tuple[bool, dict[str, Any]]:
+) -> tuple[bool, dict[str, Any], Mapping[str, Any] | None]:
     from zf.runtime.context_delivery import normalize_context_inheritance
 
     operation = load_workflow_operation(runtime.event_log, operation_id)
     if operation is None:
-        return True, normalize_context_inheritance(requested)
+        return True, normalize_context_inheritance(requested), None
     descriptor = operation.get("request_ref")
     if not isinstance(descriptor, Mapping):
         raise WorkflowOperationError(
@@ -1212,8 +1218,8 @@ def _context_protocol_for_operation(
     pinned = request.get("context_inheritance")
     if not isinstance(pinned, Mapping):
         # Pre-H0 operations retain their original manifest and request hash.
-        return False, {}
-    return True, normalize_context_inheritance(pinned)
+        return False, {}, request
+    return True, normalize_context_inheritance(pinned), request
 
 
 def _semantic_submit_mode(

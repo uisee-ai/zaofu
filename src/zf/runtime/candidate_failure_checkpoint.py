@@ -10,6 +10,7 @@ from zf.runtime.candidate_timeout_members import candidate_failed_members, candi
 
 def aggregate_candidate_binding(
     state_dir: Path, events: list[ZfEvent], *, failure_id: str, run_id: str, task_id: str,
+    require_completed_dependencies: bool = False,
 ) -> dict:
     failure = next((e for e in events if e.id == failure_id), None)
     if (not failure or failure.origin != 'kernel' or failure.type not in {'test.failed', 'verify.failed'}
@@ -29,6 +30,8 @@ def aggregate_candidate_binding(
     for child_id in sorted(children):
         child = children[child_id]
         if not child.payload.get('control_result_ref'):
+            if require_completed_dependencies:
+                raise ValueError('candidate dependency lacks admitted result')
             member, scope = candidate_unresolved_timeout(state_dir, events, child, aggregate,
                 operations, run_id=run_id, task_id=task_id)
             unresolved.append(member)
@@ -56,6 +59,11 @@ def aggregate_candidate_binding(
         if (not isinstance(result, dict) or result.get('schema_version') != 'verification-result.v1'
                 or any(not value or result.get(key) != value for key, value in identity.items())):
             raise ValueError('candidate member result identity mismatch')
+        if require_completed_dependencies and (
+            result.get('failure_class') != 'dependency_blocked' or result['verdict'] != 'blocked'
+            or result.get('execution_status') != 'completed'
+        ):
+            raise ValueError('candidate reader did not complete a dependency verdict')
         scope = candidate_plan_scope(state_dir, events, result)
         if scope['anchor_task_id'] != task_id:
             raise ValueError('candidate member anchor mismatch')

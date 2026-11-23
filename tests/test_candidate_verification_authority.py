@@ -72,13 +72,10 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
 
 def _seed_frozen_candidate(
     runtime: SimpleNamespace, tier: str = "task_non_smoke", *, package_fields=None, additional_completed=(),
-    producer_paths=None,
+    producer_paths=None, run_id="run-candidate-authority", generation="generation-1", candidate_head="c"*40,
 ) -> dict[str, str]:
-    run_id = "run-candidate-authority"
-    generation = "generation-1"
     child_task_id = "TASK-1"
     child_commit = "b" * 40
-    candidate_head = "c" * 40
     command = "pytest -q tests/test_pulse.py"
     command_digest = hashlib.sha256(command.encode("utf-8")).hexdigest()
     contract = {
@@ -404,6 +401,8 @@ def test_candidate_verify_semantic_submit_uses_pinned_candidate_authority(
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["milestone_handoff"] = True
     seeded = _seed_frozen_candidate(runtime)
+    runtime.config.quality_gates = {"lint": SimpleNamespace(enabled=True, required_checks=[seeded["command"]])}
+    runtime.config.workflow.flow_metadata["milestone_readiness"] = {"required_gates":["lint"]}
     runtime.event_log.append(ZfEvent(
         id="evt-candidate-recovery-wrapper",
         type="candidate.ready",
@@ -508,6 +507,7 @@ def test_candidate_verify_semantic_submit_uses_pinned_candidate_authority(
     body = hydrate_sidecar_ref(runtime.state_dir, payload["milestone_handoff_ref"]).payload
     projection = milestone_readiness(runtime.state_dir, runtime.event_log.read_all(), body)
     assert projection["ready"] and projection["admitted_event_id"] == submitted.admitted_event_id
+    assert projection["mandatory_gates"]["lint"]["event_id"] == submitted.admitted_event_id
     for changed in ({"required_gates": ["owner-required"]},
                     {"execution_facts": [{"command_id": "browser", "status": "unavailable"}]},
                     {"member_checkpoints": [{"unknown_effects": ["missing-host-receipt"]}]}):

@@ -273,8 +273,8 @@ def write_task_pipeline_briefing(
             "Inspect affected code and its callers; retain all acceptance criteria "
             "and run their required checks before handoff. Do not repeat global "
             "repository/skill discovery solely because this is a new attempt.",
-            "Current required reads are still mandatory. Use the deduplicated "
-            "--required pages once; aliases already have independent receipts. "
+            "Current required reads are still mandatory. Use this attempt's Controlled Artifact Inputs. "
+            "Use existing receipts to locate remaining selections. "
             "Prior receipts and continuation summaries cannot replace current "
             "source bodies. Keep the prior session/history and full evidence "
             "available for recovery; do not discard them to lower token usage.",

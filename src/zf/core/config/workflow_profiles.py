@@ -104,6 +104,8 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "milestoneHandoff", "milestone_handoff",
+    "artifactWorkerCgroups", "artifact_worker_cgroups",
     "reviewInputMaxBytes", "review_input_max_bytes",
     "reviewInputMaxPages", "review_input_max_pages",
     "planCriticEnabled", "plan_critic_enabled",
@@ -1068,7 +1070,21 @@ def _controller_metadata(
     if input_policy == "task-scoped-v1":
         required_ports.extend(["execution_spec", "task_execution_input",
                                "acceptance_matrix", "test_matrix", "real_e2e_matrix"])
+    recovery = {}
+    if kind == "prd":
+        for key, field, expected in (
+            ("milestoneHandoff", "milestone_handoff", bool),
+            ("artifactWorkerCgroups", "artifact_worker_cgroups", dict),
+        ):
+            if key in params and field in params:
+                raise WorkflowProfileError(f"PrdFlow.{key} aliases are ambiguous")
+            if key in params or field in params:
+                value = _pick(params, key, field)
+                if not isinstance(value, expected):
+                    raise WorkflowProfileError(f"PrdFlow.{key} requires {expected.__name__}")
+                recovery[field] = value
     return {
+        **recovery,
         "flow_kind": kind,
         "quality_floor": str(_pick(
             params, "qualityFloor", "quality_floor",
@@ -1827,6 +1843,13 @@ def expand_workflow_profile(params: dict) -> dict[str, Any]:
     return expander(params)
 
 
+def _with_project_recovery_overrides(metadata: dict, project_metadata: dict) -> dict:
+    return {**metadata, **{
+        key: project_metadata[key] for key in ("milestone_handoff", "artifact_worker_cgroups")
+        if key in project_metadata
+    }}
+
+
 def merge_expansion_into_body(body: dict, expansion: dict) -> None:
     """展开产物并入 ZfConfig body —— 三源守门:手写最高。
 
@@ -1885,7 +1908,8 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
         if expansion.get("multi_kind") and flow_kind:
             metadata_by_kind = workflow.setdefault("_flow_metadata_by_kind", {})
             if isinstance(metadata_by_kind, dict):
-                metadata_by_kind[flow_kind] = dict(metadata)
+                prior = metadata_by_kind.get(flow_kind) or {}
+                metadata_by_kind[flow_kind] = _with_project_recovery_overrides(metadata, prior)
             routes = workflow.setdefault("kind_routes", {})
             if isinstance(routes, dict):
                 route = routes.setdefault(flow_kind, {})
@@ -1896,7 +1920,7 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
         else:
             flow_meta = workflow.setdefault("_flow_metadata", {})
             if isinstance(flow_meta, dict):
-                flow_meta.update(metadata)
+                flow_meta.update(_with_project_recovery_overrides(metadata, flow_meta))
 
     # canonical-dag/v8 and refactor-flow/v5 terminate through the admitted
     # Thin Judge -> Completion Gate protocol. Keep hand-written goal settings

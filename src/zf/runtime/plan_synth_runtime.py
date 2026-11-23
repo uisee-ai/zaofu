@@ -375,6 +375,7 @@ class PlanSynthRuntimeMixin:
         prompt += reader_continuation_guidance(
             attempt_id=str(payload.get("attempt_id") or run_id),
             backend=role.backend, cli=zf_cli_cmd(),
+            runtime=self, actor=role.instance_id, operation_id=operation_id,
         )
         dispatch_context = self._dispatch_context(
             role=role,

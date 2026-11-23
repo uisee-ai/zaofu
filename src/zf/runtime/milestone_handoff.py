@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from zf.core.workflow.flow_metadata import flow_metadata_for
 from pathlib import Path
 from typing import Any
 
@@ -59,10 +60,7 @@ def attach_milestone_handoff(
         }:
             raise ValueError("milestone handoff consumer changed")
     else:
-        metadata = (
-            getattr(getattr(runtime.config, "workflow", None), "flow_metadata", {})
-            or {}
-        )
+        metadata = flow_metadata_for(runtime.config, payload=payload)
         if metadata.get("milestone_handoff") is not True or not all(
             payload.get(k) for k in BINDINGS
         ):
@@ -147,6 +145,9 @@ def attach_milestone_handoff(
         gates = policy.get("required_gates", [])
         if any(not isinstance(g, str) or not g.strip() for g in gates):
             raise ValueError("mandatory milestone gates need nonempty IDs")
+        from zf.runtime.milestone_gates import freeze_gate_commands
+
+        body["gate_command_ids"] = freeze_gate_commands(runtime.config, contract, gates)
         body["required_gates"] = sorted(set(gates))
         body["empty_waiver_gate"] = str(policy.get("empty_waiver_gate") or "")
         host_ref = payload.get("candidate_host_evidence_ref")
@@ -284,7 +285,8 @@ def milestone_readiness(state: Path, events: list, handoff: dict) -> dict:
                     "static_gate.failed",
                     "static_gate.skipped",
                 }
-                and e.payload.get("gate_id") == gate
+                and (e.payload.get("gate_id") == gate
+                     or (e.type.startswith("static_gate.") and gate in e.payload.get("static_gate_ids", [])))
                 and all(
                     e.payload.get(k) == binding[k]
                     for k in (
@@ -307,6 +309,13 @@ def milestone_readiness(state: Path, events: list, handoff: dict) -> dict:
             else "blocked",
             "event_id": last.id if last else None,
         }
+        checks = handoff.get("gate_command_ids", {}).get(gate, [])
+        if not last and admitted_id and checks and all(
+            probes.get(cmd, {}).get("status") == "passed"
+            and probes[cmd].get("target_commit") == binding["target_commit"]
+            and probes[cmd].get("evidence_refs") for cmd in checks
+        ):
+            gates[gate] = {"status": "passed", "event_id": admitted_id, "command_ids": checks}
     latest = next(
         (
             e
