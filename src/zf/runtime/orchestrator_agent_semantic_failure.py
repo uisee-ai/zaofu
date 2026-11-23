@@ -206,6 +206,11 @@ def request_semantic_failure_checkpoint(
     if aggregate_candidate:
         from zf.runtime.diagnosis_host_recovery import host_recovery_context
         from zf.runtime.host_evidence_media import materialize_container_media
+        from zf.runtime.milestone_task_lifecycles import aggregate_recovery_lifecycles
+
+        lifecycles = aggregate_recovery_lifecycles(runtime.state_dir, events, workflow_run_id, candidate)
+        if lifecycles:
+            failure_body["candidate_verify"]["task_pipeline_lifecycles"] = lifecycles
         host = host_recovery_context(runtime.state_dir, events, runtime.config, workflow_run_id,
             operation_ids=frozenset(member["operation_id"] for member in candidate["members"]))
         failure_body["preauthorized_host_recovery"] = host

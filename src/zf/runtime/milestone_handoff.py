@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.milestone_task_lifecycles import SOURCE as LIFECYCLES, task_lifecycle_evidence
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import (
     load_workflow_operation,
@@ -42,7 +43,7 @@ def attach_milestone_handoff(
     inputs = [
         row
         for row in payload.get("input_refs", [])
-        if not isinstance(row, dict) or row.get("source_id") != SOURCE
+        if not isinstance(row, dict) or row.get("source_id") not in {SOURCE, LIFECYCLES}
     ]
     payload["input_refs"] = inputs
     state = Path(runtime.state_dir)
@@ -97,6 +98,13 @@ def attach_milestone_handoff(
             "authorizes_execution": False,
         }
         events = runtime.event_log.read_all()
+        lifecycles = task_lifecycle_evidence(events, run=payload["workflow_run_id"],
+            generation=payload["task_map_generation"], target=target["target_commit"],
+            freeze_id=body["candidate_event_id"], members=members)
+        if lifecycles:
+            body["task_pipeline_lifecycles_ref"] = write_immutable_json_sidecar(state, lifecycles,
+                root="milestone-task-lifecycles", kind=LIFECYCLES, schema_version=lifecycles["schema_version"],
+                created_by="kernel", source_event_id=body["candidate_event_id"])
         verification_events = {e.id: e for e in events}
         from zf.runtime.task_handoff import _unconfirmed_continuations
 
@@ -182,6 +190,10 @@ def attach_milestone_handoff(
             created_by="kernel",
             source_event_id=body["candidate_event_id"],
         )
+    if lifecycle_ref := body.get("task_pipeline_lifecycles_ref"):
+        inputs.append({**lifecycle_ref, "source_id": LIFECYCLES, "artifact_id": LIFECYCLES,
+            "allowed_paths": ["$.summary", *(f"$.tasks[{i}]" for i in range(len(body["members"])))],
+            "access_scope": {"actors": [payload["role_instance"]], "purposes": ["candidate-verify"]}})
     payload["milestone_handoff_ref"] = ref
     inputs.append(
         {
@@ -360,7 +372,13 @@ def milestone_readiness(state: Path, events: list, handoff: dict) -> dict:
         and all(g["status"] == "passed" for g in gates.values())
         and all(o["status"] == "passed" and o["evidence_refs"] for o in obligations)
     )
+    lifecycle_view = {}
+    if lifecycle_ref := handoff.get("task_pipeline_lifecycles_ref"):
+        summary = hydrate_sidecar_ref(state, lifecycle_ref).payload["summary"]
+        lifecycle_view["task_pipeline_lifecycles"] = {"source_id": LIFECYCLES, "artifact_id": LIFECYCLES,
+                                                   "sha256": lifecycle_ref["sha256"], "summary": summary}
     return {
+        **lifecycle_view,
         "ready": ready,
         "verdict": verdict,
         "admitted_event_id": admitted_id,

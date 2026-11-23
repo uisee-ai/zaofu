@@ -274,6 +274,7 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   提交成功；只在聊天中说明失败、修改两个状态字段后结束，都不构成结果提交。
   此路径只承认执行失败，不承认产品通过或拒绝；不扩大 sandbox 权限。恢复后
   使用当前 operation 的身份继续必读材料和独立验收，不能将旧失败当作通过证据。
+- 核验调度或并发要求时，先从本次 Candidate 的 `milestone-task-lifecycles` 读取 `$.summary`，按索引取对应成员的 `$.tasks[i]`。保留原 Plan generation、entry mode、真实 operation 起止事件和计时口径。任务级只读 Verify、开发后的 Task Verify 与最终 Candidate Reader 各有独立派发。工具调用回执不能独立证明一组操作的并发。缺少同一组的完整时间边界时，记录缺失的证据。
 - 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
   可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
   同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免
