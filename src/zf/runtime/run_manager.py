@@ -3444,13 +3444,20 @@ def _unresolved_action_effects(events: list[ZfEvent]) -> tuple[list[str], list[s
             RUN_MANAGER_ACTION_EFFECT_FAILED,
         }:
             terminal[effect_id] = (index, event.type, payload)
-    pending_ids = sorted(set(pending) - set(terminal))
+    from zf.runtime.reader_recovery_effect import dispatched_reader_replacements, reader_triage_scope
+
+    open_scopes = {reader_triage_scope(row[-1]) for row in (*pending.values(), *terminal.values())}
+    replacements = dispatched_reader_replacements(events) if any(open_scopes) else set()
+    pending_ids = sorted(effect_id for effect_id in pending.keys() - terminal.keys()
+                         if reader_triage_scope(pending[effect_id][1]) not in replacements)
     failed_ids: list[str] = []
-    for effect_id, (index, event_type, _payload) in terminal.items():
-        if event_type != RUN_MANAGER_ACTION_EFFECT_FAILED:
+    for effect_id, (index, event_type, payload) in terminal.items():
+        if (event_type != RUN_MANAGER_ACTION_EFFECT_FAILED
+                or reader_triage_scope(payload) in replacements):
             continue
         recovered = any(
-            event.type == "candidate.ready"
+            event.type == "candidate.ready" and isinstance(event.payload, dict)
+            and not event.payload.get("repaired_failure_event_id")
             for event in events[index + 1:]
         )
         if not recovered:

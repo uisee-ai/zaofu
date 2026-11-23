@@ -1070,3 +1070,5 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 证据，以及blocked诊断引用不可用host事实，保持原有合同；host材料仍可供独立AC/产品
 判断。它不声称证明所有未提供可验证来源的普通probe都真实执行。先前admission保留
 历史，使用已有失败聚合与受控恢复生成新的独立判词，不改写append-only事件。
+
+同一冻结候选的 Reader 受控重试可能先于旧分诊的超时写入。Goal 回放只有在受控动作已应用、同一 Run 和 task map 的同一冻结候选已有新 Reader 派发、且新派发明确引用原失败时，才从当前阻塞中移除对应的旧分诊 effect。原有 pending 或 failed 事件保留。新 Reader 的验收、新失败及交付仍各自按账本判定。
