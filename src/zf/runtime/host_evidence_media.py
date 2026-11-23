@@ -16,7 +16,12 @@ from zf.runtime.sidecar_refs import (
 def required_media_paths(command: dict) -> set[str]:
     """Map the declared container output root to its retained relative paths."""
     paths = set()
-    for declared in command.get('producer_paths') or []:
+    declared_paths = command.get('producer_paths')
+    if declared_paths is None:
+        return paths
+    if not isinstance(declared_paths, list):
+        raise ValueError('host producer_paths must be a list of relative file paths')
+    for declared in declared_paths:
         if not isinstance(declared, str):
             raise ValueError('invalid host producer path')
         # This is the explicit output root mounted by container_command, not

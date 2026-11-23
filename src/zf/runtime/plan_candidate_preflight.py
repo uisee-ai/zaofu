@@ -193,7 +193,9 @@ def evaluate_plan_candidate_preflight(
                 "task_map.goal_claims",
                 str(diagnostic.get("goal_claim_id") or "mandatory claim is uncovered"),
             )
-        errors.extend(_claim_acceptance_command_errors(task_map))
+        errors.extend(_claim_acceptance_command_errors(
+            task_map, host_commands=(writer_policy or {}).get("host_verification_commands", ()),
+        ))
         errors.extend(_rolling_smoke_command_errors(task_map, metadata=metadata))
         if validation.passed:
             task_items: list[dict[str, Any]] = []
