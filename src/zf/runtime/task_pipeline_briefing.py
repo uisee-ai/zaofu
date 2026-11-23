@@ -66,6 +66,12 @@ def write_task_pipeline_briefing(
             "Set target_commit and every self-check target to the exact HEAD.",
             "Do not update candidate/main refs or runtime truth directly.",
         ]
+        if payload.get("worker_model_planner"):
+            stage_instructions.append(f"Use `{zf_cli_cmd()} artifact worker-plan --attempt {payload['attempt_id']} "
+                "--reason initial --input SOURCE ARTIFACT SELECTOR` with the frozen goal and constraints. Carry the "
+                "plan back into this workspace. Return on two repeated failures, interface deviation or design choice "
+                "with bound receipt selectors and --reason repeated_failure, interface_deviation or design_choice. "
+                "If unavailable continue with your assigned model. Scope, budget and independent Verify still apply.")
     elif stage == "verify":
         verification_owner = str(
             contract_snapshot.get("verification_owner") or "task_verify"

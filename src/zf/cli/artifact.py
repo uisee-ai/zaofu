@@ -88,6 +88,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
     index_cmd.add_argument("--attempt", required=True)
     index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--source-id", default="", help="Look up only the authorized, exact source ID")
     index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
     index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
     index_cmd.add_argument("--cursor", default=None)
@@ -98,11 +99,30 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd.set_defaults(func=run_input_index)
     recover_cmd = sub.add_parser("recover", help="Reconstruct authorized current inputs without granting execution authority")
     recover_cmd.add_argument("--attempt", required=True)
-    recover_cmd.add_argument("--cursor", default=None)
+    recovery_page = recover_cmd.add_mutually_exclusive_group()
+    recovery_page.add_argument("--cursor", default=None)
+    recovery_page.add_argument("--delivery-cursor", help="Continue the frozen observed delivery gap list")
     recover_cmd.add_argument("--state-dir", default=None)
     from zf.cli.artifact_input_recovery import run_input_recovery
 
     recover_cmd.set_defaults(func=run_input_recovery)
+    from zf.cli.artifact_board import register as register_board
+    register_board(sub)
+    from zf.cli.artifact_milestone import run_milestone
+
+    milestone = sub.add_parser("milestone", help="Read the bound candidate milestone obligations and decision")
+    milestone.add_argument("--attempt", required=True)
+    milestone.add_argument("--state-dir", default=None)
+    milestone.set_defaults(func=run_milestone)
+
+    from zf.cli.artifact_worker_plan import register as register_worker_plan
+    register_worker_plan(sub)
+    from zf.cli.artifact_workspace import run_workspace
+    workspace = sub.add_parser("workspace", help="Serve a read-only input view for a dedicated worker cgroup")
+    workspace.add_argument("--attempt", required=True)
+    workspace.add_argument("--state-dir")
+    workspace.set_defaults(func=run_workspace)
+
     costs = sub.add_parser("costs", help="Inspect attempt input costs without inferring provider savings")
     costs.add_argument("--attempt", required=True)
     costs.add_argument("--state-dir", default=None)

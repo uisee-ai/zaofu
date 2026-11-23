@@ -606,6 +606,9 @@ def render_attempt_source_briefing(
             "(Claude allowlist matching is literal)."
         ),
     ]
+    if payload.get("native_input_view"):
+        lines.append(f"- `{cli_command} artifact workspace --attempt {attempt_id}` serves INPUTS.md and RESUME.md. "
+                     "Use /usr/bin/cat ABSOLUTE_PATH with optional .chars-START-END. CLI reads remain available.")
     if required:
         from zf.runtime.reader_replan_feedback import repair_read_navigation
 

@@ -1946,6 +1946,7 @@ class LifecycleManagerMixin(
         an idle packet and loses the child. The existing fanout briefing is
         the canonical contract; re-deliver it into the fresh worker context.
         """
+        from zf.runtime.reader_respawn_continuation import ReaderAlreadySettled
         path = self._fanout_child_briefing_path(role, fanout_child)
         if path is None:
             try:
@@ -1983,6 +1984,11 @@ class LifecycleManagerMixin(
                 dispatch_id=str(fanout_child.get("run_id") or ""),
                 run_id=str(fanout_child.get("workflow_run_id") or ""),
             )
+            if role.role_kind == "reader" and fanout_child.get("operation_id"):
+                from zf.runtime.reader_respawn_continuation import current_reader_input
+                current_reader_input(self, role, fanout_child)
+                from dataclasses import replace
+                context = replace(context, reader_recovery_dispatch=str(fanout_child["event_id"]))
             self._send_transport_task(role.instance_id, path, prompt, context)
             if fanout_child.get("recovery_kind") == "operator_synth_checkpoint":
                 from zf.runtime.synth_restart_checkpoint import mark_reopened_synth_started
@@ -2019,6 +2025,8 @@ class LifecycleManagerMixin(
                     },
                     correlation_id=str(fanout_child.get("trace_id") or "") or None,
                 ))
+        except ReaderAlreadySettled:
+            return True
         except Exception:
             return False
         return True
@@ -2057,6 +2065,8 @@ class LifecycleManagerMixin(
                     pass
                 return True
             task = idle_task
+        from zf.runtime.task_pipeline_attempt_recovery import live_task_pipeline_attempt_for_role
+        before = live_task_pipeline_attempt_for_role(self, role.instance_id)
         git_context = None
         try:
             git_context = capture_recovery_git_context(self, role, task)
@@ -2096,7 +2106,18 @@ class LifecycleManagerMixin(
             )
             from zf.runtime.task_attempt_continuation import continuation_context
 
+            if before:
+                from zf.runtime.task_attempt_continuation import admitted_before_recovery
+                if admitted_before_recovery(self, before):
+                    return True
+                latest = live_task_pipeline_attempt_for_role(self, role.instance_id)
+                if not latest or any(before.get(k) != latest.get(k) for k in (
+                        "task_id", "attempt_id", "operation_id", "dispatch_id", "lease_id", "instance_id")):
+                    return False
             context = continuation_context(self, role.instance_id, context)
+            if before:
+                from zf.runtime.artifact_workdir_view import recovery_hint
+                prompt += recovery_hint(self.config, role.instance_id, before["attempt_id"])
             self._send_transport_task(role.instance_id, path, prompt, context)
             self._get_spawn_coordinator().notify_first_dispatch(role)
         except Exception:

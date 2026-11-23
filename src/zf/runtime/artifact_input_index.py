@@ -38,16 +38,30 @@ def load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, 
 
 
 
+MEDIA_SUFFIXES = {".zip", ".png", ".webm", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".pdf", ".bin"}
+
+
+def binary_input(source: dict[str, Any]) -> bool:
+    """Old container-media manifests retained kind/ref but omitted encoding."""
+    if source.get("encoding"):
+        return source["encoding"] == "binary"
+    suffix = Path(source["ref"]).suffix.lower()
+    return suffix in MEDIA_SUFFIXES and (source.get("kind") == "container_media_projection"
+                                         or not source.get("read_selections"))
+
+
 def input_index(
     *, manifest: dict[str, Any], required: list[dict[str, Any]] | None,
     identity: dict[str, str], reads: list[dict[str, Any]],
-    query: str = "", cursor: str | None = None, limit: int = 50,
+    source_id: str = "", query: str = "", cursor: str | None = None, limit: int = 50,
     relation_id: str = "", navigate: bool = False,
     lifecycle: dict[str, Any] | None = None, state_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Literal lookup; pinned reconstruction only, no global search or ACL union."""
     if not 1 <= limit <= 50 or max(len(query), len(relation_id)) > 256:
         raise ValueError("input index requires limit 1..50 and query at most 256 characters")
+    if source_id and (len(source_id) > 256 or query or navigate or relation_id):
+        raise ValueError("exact source lookup does not accept text navigation filters")
     from zf.runtime.artifact_read_ledger import required_read_satisfied
     from zf.runtime.cli_command import zf_cli_cmd
     from zf.runtime.artifact_navigation_shards import query_navigation
@@ -62,6 +76,9 @@ def input_index(
         if not artifact_access_allowed(source.get("access_scope"),
                 actor=identity.get("actor", ""), role=identity.get("role", ""), purpose=identity.get("purpose", "")):
             continue
+        if source_id and source["source_id"] != source_id:
+            continue
+        binary = binary_input(source)
         allowed = source.get("allowed_paths") or ["$"]
         requirements = [row for row in (required or []) if row.get("source_id") == source["source_id"]
                         and row.get("artifact_id") == source["artifact_id"]
@@ -75,7 +92,7 @@ def input_index(
             snapshot = next((s for s in source.get("read_selections", []) if s.get("json_path") == path), {})
             navigation = snapshot.get("navigation") or {}
             matches = []
-            if navigate or relation_id or (query and not locator_match):
+            if not binary and (navigate or relation_id or (query and not locator_match)):
                 def pinned_text():
                     if state_dir is None:
                         raise ValueError('pinned navigation recovery requires state_dir')
@@ -84,7 +101,8 @@ def input_index(
                         'artifact_sha256': source['sha256'], 'json_path': path}).read()
                 navigation, matches = query_navigation(state_dir, navigation, relation_id=relation_id,
                     query='' if locator_match else query, fallback=pinned_text)
-            navigation_states.append(navigation.get('complete'))
+            if not binary:
+                navigation_states.append(navigation.get('complete'))
             policy = next((row for row in requirements if row.get("json_path", "$") == path), None)
             occurrence_reads = [r for r in reads if r.get("status") == "read"
                 and r.get("attempt_id") == attempt and r.get("source_id") == source["source_id"]
@@ -108,12 +126,17 @@ def input_index(
                 "navigation_complete": navigation.get("complete"),
                 "locator_id": canonical_json_sha256([source.get("occurrence_id"), source["source_id"], source["artifact_id"], path]),
             }
+            if binary:
+                item["body_kind"] = "binary"
+                item.pop("read_command")
             if locator_match and not relation_id:
                 items.append((item, None))
             items.extend((item, entry) for entry in matches)
     binding = canonical_json_sha256({"schema": INDEX_SCHEMA, "manifest": manifest, "requirements": required,
                                     "identity": identity, "query": query, "relation_id": relation_id,
                                     "navigate": navigate, "lifecycle": lifecycle})
+    if source_id:
+        binding = canonical_json_sha256([binding, source_id])
     start = 0
     if cursor:
         try:
@@ -132,7 +155,7 @@ def input_index(
         "task_id": str(manifest.get("task_id") or ""),
         "read_purpose": str(manifest.get("read_purpose") or ""),
         "manifest_sha256": canonical_json_sha256(manifest),
-        "scope": "authorized_attempt_inputs", "query_mode": "literal_locator",
+        "scope": "authorized_attempt_inputs", "query_mode": "exact_source_id" if source_id else "literal_locator",
         "relation_id": relation_id, "lifecycle": lifecycle or {"status": "unknown"},
         "role_input": role_input_view(manifest),
         "navigation_complete": (all(navigation_states) if navigation_states and None not in navigation_states else None),

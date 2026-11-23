@@ -169,7 +169,8 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
         if not required_media_paths(command) <= produced:
             raise ValueError('required host media is missing')
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        item.update(status='unavailable', reason=str(exc))
+        item.update(status='unavailable', reason=str(exc),
+                    declared_paths=[p for p in command.get('producer_paths', []) if isinstance(p, str)])
     body = {**fact, 'consumption_status': item['status'], 'media_refs': item['media_refs']}
     if item.get('reason'):
         body['consumption_reason'] = item['reason']

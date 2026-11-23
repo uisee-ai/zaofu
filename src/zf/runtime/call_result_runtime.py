@@ -230,6 +230,9 @@ def prepare_call_operation(
 
         prepare_candidate_host_consumption(runtime, payload=payload,
             operation_id=operation_id, attempt_id=attempt_id)
+        from zf.runtime.milestone_handoff import attach_milestone_handoff
+
+        attach_milestone_handoff(runtime, payload, operation_id, attempt_id)
     payload["handoff_authority_contract"] = build_handoff_authority_contract(
         payload,
         output_profile_id=output_profile_id,
@@ -426,6 +429,9 @@ def prepare_call_operation(
             runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
             explicit=bool(explicit_required_reads), strategy=strategy,
         )
+    from zf.runtime.artifact_review_scope import select_review_inputs
+    required_reads = select_review_inputs(runtime, operation_id, output_profile_id, payload, source_manifest,
+                                         required_reads, explicit_required_reads)
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_inspection import review_scope_diagnostics
         from zf.runtime.plan_review_input_budget import check_review_input_budget
@@ -462,6 +468,12 @@ def prepare_call_operation(
             "input_consumption_policy_digest": str(policy_descriptor.get("sha256") or ""),
         })
 
+    from zf.runtime.worker_model_handoff import freeze_model_profile
+    freeze_model_profile(runtime, operation_id, payload)
+    view_config = getattr(getattr(runtime.config, "workflow", None), "flow_metadata", {}) or {}
+    payload.pop("native_input_view", None)
+    if role_instance in (view_config.get("artifact_worker_cgroups") or {}):
+        payload["native_input_view"] = True
     context_envelope: dict[str, Any] = {}
     context_envelope_descriptor: dict[str, Any] = {}
     provider_session_id = ""
@@ -491,6 +503,8 @@ def prepare_call_operation(
         "effective_config_digest": str(
             payload.get("effective_config_digest") or ""
         ),
+        **({"review_scope_ref": payload["review_scope_ref"]} if payload.get("review_scope_ref") else {}),
+        **({"worker_model_planner": payload["worker_model_planner"]} if payload.get("worker_model_planner") else {}),
         "source_manifest_digest": str(source_descriptor.get("sha256") or ""),
         "read_policy_digest": str(payload.get("input_consumption_policy_digest") or ""),
         **({"input_delivery_mode": payload["input_delivery_mode"]}
@@ -640,6 +654,8 @@ def prepare_call_operation(
             )
         },
     }
+    if payload.get("milestone_handoff_ref"):
+        request["milestone_handoff_ref"] = dict(payload["milestone_handoff_ref"])
     if payload.get("candidate_host_evidence_ref"):
         request["candidate_host_evidence_ref"] = dict(payload["candidate_host_evidence_ref"])
     pinned_write_scopes = list(dict.fromkeys(

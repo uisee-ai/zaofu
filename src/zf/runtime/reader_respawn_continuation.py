@@ -99,23 +99,46 @@ def reader_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
     from zf.runtime.cli_command import zf_cli_cmd
 
     attempt_id = renew_reader_recovery_capability(runtime, role, child)
-    return reader_continuation_guidance(attempt_id=attempt_id,
-                                       backend=role.backend, cli=zf_cli_cmd())
+    from zf.runtime.artifact_workdir_view import recovery_hint
+    return (reader_continuation_guidance(attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd())
+            + recovery_hint(runtime.config, role.instance_id, attempt_id))
 
 
 def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> str:
     """Renew the existing input grant only after checking its immutable carrier."""
     from zf.runtime.artifact_read_capability import bind_attempt_artifact_read_capability
+
+    if not child.get("operation_id"):
+        return str(child.get("attempt_id") or "")
+    manifest, request_hash = current_reader_input(runtime, role, child)
+    attempt_id = manifest["attempt_id"]
+    bind_attempt_artifact_read_capability(runtime.state_dir, operation_id=child["operation_id"],
+        attempt_id=attempt_id, role_instance=role.instance_id, manifest=manifest)
+    child.update(attempt_id=attempt_id, request_hash=request_hash)
+    return attempt_id
+
+
+class ReaderAlreadySettled(ValueError):
+    """The previous result is authoritative; the kernel can route it without another send."""
+
+
+def current_reader_input(runtime: Any, role: Any, child: dict) -> tuple[dict, str]:
+    """Validate the original dispatch again without rotating or granting a capability."""
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
     from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
 
-    operation_id = str(child.get("operation_id") or "")
-    if not operation_id:  # Legacy unbound fanouts have no capability to renew.
-        return str(child.get("attempt_id") or "")
+    operation_id = str(child["operation_id"])
     events = runtime.event_log.read_all()
     dispatch = next((e for e in reversed(events) if e.id == child.get("event_id")), None)
     identity = reader_dispatch_call_identity(dispatch.payload) if dispatch else {}
     operation = reduce_workflow_operations(events).get(operation_id, {})
+    if (dispatch and dispatch.origin == "kernel" and dispatch.actor == "zf-cli"
+            and dispatch.payload.get("role_instance") == role.instance_id and identity.get("operation_id") == operation_id
+            and identity.get("request_hash") and any(e.origin == "kernel" and
+                e.type == "workflow.call.result.admitted" and e.actor == "zf-cli" and e.payload.get("admission_status") == "admitted"
+                and e.payload.get("operation_id") == operation_id and e.payload.get("request_hash") == identity["request_hash"]
+                and e.payload.get("attempt_id") == identity["attempt_id"] for e in events)):
+        raise ReaderAlreadySettled("reader result already admitted; preserve its verdict")
     if (operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}
             or operation.get("status") not in {"requested", "running"}
             or operation.get("role_instance") != role.instance_id
@@ -144,8 +167,15 @@ def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> st
             or (child.get("attempt_id") and child["attempt_id"] not in {
                 attempt_id, dispatch.payload.get("attempt_id")})):
         raise ValueError("reader recovery immutable input binding differs")
-    bind_attempt_artifact_read_capability(runtime.state_dir, operation_id=operation_id,
-        attempt_id=attempt_id, role_instance=role.instance_id, manifest=manifest)
-    # This is a local lifecycle descriptor, not a canonical operation mutation.
-    child.update(attempt_id=attempt_id, request_hash=identity["request_hash"])
-    return attempt_id
+    if dispatch.payload.get("lease_id"):
+        from zf.core.state.task_attempts import TaskAttemptStore
+
+        rows = [row for row in TaskAttemptStore(runtime.state_dir / "task_attempts.json").current_rows()
+                if row.get("instance_id") == role.instance_id and row.get("dispatch_id") == operation["dispatch_id"]]
+        if len(rows) != 1 or rows[0].get("lease_id") != dispatch.payload["lease_id"] or rows[0].get("status") != "sent":
+            raise ValueError("reader recovery transport lease changed")
+        from datetime import datetime, timezone
+        expiry = rows[0].get("lease_expires_at")
+        if expiry and datetime.fromisoformat(expiry) <= datetime.now(timezone.utc):
+            raise ValueError("reader recovery transport lease expired")
+    return manifest, identity["request_hash"]

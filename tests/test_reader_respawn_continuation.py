@@ -184,3 +184,21 @@ def test_only_a_held_lock_for_the_same_role_defers_recovery(tmp_path):
     stale.write_text("stale pid\n")
     assert not reader_respawn_in_progress(tmp_path, "reviewer")
     assert stale.read_text() == "stale pid\n"
+
+
+def test_reader_result_arriving_during_recovery_keeps_original_verdict(tmp_path, monkeypatch):
+    from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
+
+    _, log, runtime, role, event, _ = _running_recovered_synth(tmp_path)
+    payload = {**event.payload, "event_id": event.id}
+    identity = reader_dispatch_call_identity(event.payload)
+    original = runtime._dispatch_context
+    def admit_then_prepare(*args, **kwargs):
+        log.append(ZfEvent(type="workflow.call.result.admitted", origin="kernel", actor="zf-cli",
+            task_id=event.task_id, payload={**identity, "admission_status": "admitted", "semantic_verdict": "blocked"}))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(runtime, "_dispatch_context", admit_then_prepare)
+    sent = len(runtime.transport.sent)
+    assert runtime._inject_fanout_recovery_briefing(role, payload)
+    assert len(runtime.transport.sent) == sent
+    assert not [e for e in log.read_all() if e.type == "worker.recovery.injected"]

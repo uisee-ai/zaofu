@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**326** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**332** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -30,6 +30,7 @@ Artifact manifest helpers
 | Command | Parser description |
 |---|---|
 | `zf artifact` | Artifact manifest helpers |
+| `zf artifact board` | Read and acknowledge public messages in the bound Run |
 | `zf artifact catalog` | Query rebuildable artifact metadata and lineage |
 | `zf artifact catalog lineage` | Show subject-to-artifact lineage |
 | `zf artifact catalog list` | List artifact objects |
@@ -42,11 +43,14 @@ Artifact manifest helpers
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
+| `zf artifact milestone` | Read the bound candidate milestone obligations and decision |
 | `zf artifact read` | Read one attempt input and append read evidence |
 | `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
 | `zf artifact work-record` | Publish or read current worker progress without completing a task |
 | `zf artifact work-record publish` | Publish an optional nonterminal checkpoint without completing a task or replacing acceptance. |
 | `zf artifact work-record show` | No parser summary. |
+| `zf artifact worker-plan` | Consult a frozen tool-free local model for an implementation attempt |
+| `zf artifact workspace` | Serve a read-only input view for a dedicated worker cgroup |
 
 ## `zf attach`
 
@@ -804,10 +808,12 @@ Inspect workflow topology
 | `zf workflow gates` | Render the effective read-only gate projection |
 | `zf workflow hooks` | Render the effective read-only hook registry |
 | `zf workflow inspect` | Preflight inspect workflow graph, handoff, affinity, and skills |
+| `zf workflow milestone` | Inspect readiness of a frozen milestone after its worker has exited |
 | `zf workflow prepare` | Select, clarify and assemble a Workflow for review |
 | `zf workflow preview` | Read the complete redacted YAML and current proposal |
 | `zf workflow render` | Render linear and star topology |
 | `zf workflow routes` | List active workflow routes bound to a Task |
+| `zf workflow schedule` | Inspect persistent job history or run a configured inspection |
 | `zf workflow start` | Preview, propose, or apply a Task-bound workflow route |
 
 ## `zf workspace`

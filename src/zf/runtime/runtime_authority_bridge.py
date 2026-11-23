@@ -84,6 +84,13 @@ class RuntimeAuthorityMixin:
             prepare_task_attempt,
         )
 
+        if context is not None and context.reader_recovery_dispatch:
+            from zf.runtime.reader_respawn_continuation import current_reader_input
+            role = self._find_role_by_instance(role_name)
+            dispatch = next((e for e in self.event_log.read_all() if e.id == context.reader_recovery_dispatch), None)
+            if dispatch is None or role is None or context.operation_id != dispatch.payload.get("operation_id"):
+                raise RuntimeError("original reader dispatch is unavailable")
+            current_reader_input(self, role, {**dispatch.payload, "event_id": dispatch.id})
         if context is not None and context.continuation:
             from zf.runtime.task_attempt_continuation import validate_task_continuation
 

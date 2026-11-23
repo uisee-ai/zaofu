@@ -81,6 +81,7 @@ class DispatchContext:
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
     worker_envelope_digest: str | None = None
+    reader_recovery_dispatch: str = ""
     continuation: bool = False
     continuation_id: str | None = None
 

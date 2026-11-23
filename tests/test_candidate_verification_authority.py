@@ -402,6 +402,7 @@ def test_candidate_verify_semantic_submit_uses_pinned_candidate_authority(
     tmp_path: Path,
 ) -> None:
     runtime = _runtime(tmp_path)
+    runtime.config.workflow.flow_metadata["milestone_handoff"] = True
     seeded = _seed_frozen_candidate(runtime)
     runtime.event_log.append(ZfEvent(
         id="evt-candidate-recovery-wrapper",
@@ -502,3 +503,41 @@ def test_candidate_verify_semantic_submit_uses_pinned_candidate_authority(
         if event.type == "workflow.call.result.admitted"
     ]
     assert admitted
+
+    from zf.runtime.milestone_handoff import milestone_readiness
+    body = hydrate_sidecar_ref(runtime.state_dir, payload["milestone_handoff_ref"]).payload
+    projection = milestone_readiness(runtime.state_dir, runtime.event_log.read_all(), body)
+    assert projection["ready"] and projection["admitted_event_id"] == submitted.admitted_event_id
+    for changed in ({"required_gates": ["owner-required"]},
+                    {"execution_facts": [{"command_id": "browser", "status": "unavailable"}]},
+                    {"member_checkpoints": [{"unknown_effects": ["missing-host-receipt"]}]}):
+        assert not milestone_readiness(runtime.state_dir, runtime.event_log.read_all(), {**body, **changed})["ready"]
+
+
+def test_opt_in_milestone_freezes_roster_and_replays_same_successor(tmp_path):
+    from zf.runtime.milestone_handoff import milestone_readiness
+
+    runtime = _runtime(tmp_path)
+    runtime.config.workflow.flow_metadata["milestone_handoff"] = True
+    seeded = _seed_frozen_candidate(runtime)
+    def prepare():
+        payload = {"workflow_run_id": seeded["run_id"], "task_id": "FLOW-ANCHOR",
+                   "fanout_id": "fanout-candidate-verify", "child_id": "verify-lane-0",
+                   "role_instance": "verify-lane-0", "stage_id": "issue-lanes-verify",
+                   "output_profile_id": "candidate-verify", "artifact_package_mode": "shadow",
+                   "target_commit": seeded["candidate_head"], "canonical_success_event": "test.passed",
+                   "canonical_failure_event": "test.failed"}
+        prepared = prepare_call_operation(runtime, payload=payload, operation_type="fanout_reader_child",
+            operation_key="verify-lane-0", stage_id="issue-lanes-verify", task_id="FLOW-ANCHOR",
+            dispatch_id="dispatch-candidate-verify", causation_id="evt-candidate-ready")
+        return prepared, payload
+    first, original = prepare()
+    second, replay = prepare()
+    assert first.operation_id == second.operation_id
+    assert original["milestone_handoff_ref"] == replay["milestone_handoff_ref"]
+    body = hydrate_sidecar_ref(runtime.state_dir, original["milestone_handoff_ref"]).payload
+    assert [m["task_id"] for m in body["members"]] == ["TASK-1"]
+    assert body["binding"]["target_commit"] == seeded["candidate_head"]
+    projection = milestone_readiness(runtime.state_dir, runtime.event_log.read_all(), body)
+    assert not projection["ready"] and not projection["authorizes_execution"]
+    assert projection["obligations"] and all(r["status"] == "pending" for r in projection["obligations"])

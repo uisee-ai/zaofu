@@ -59,11 +59,16 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]], *,
         registry = None
     observations: dict[str, list[tuple[str, str, str, str, str]]] = {}
     bodies: dict[str, str] = {}
+    native_sessions = {}
     result = []
     for original in rows:
         row = dict(original)
         # This key is created only by this invocation's read-only observer.
         row.pop("_provider_observation", None)
+        if row.get("production_status") == "mounted_file_read":
+            from zf.runtime.artifact_native_delivery import observe_native
+            result.append(observe_native(state_dir, row, persist_observations, native_sessions))
+            continue
         if row.get("production_status") != "stdout_flushed":
             result.append(row)
             continue

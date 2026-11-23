@@ -236,33 +236,18 @@ class AgentViewRuntimeMixin:
         if not admit_worker_reply(self, request, instance_id, payload):
             return None
         task_id = str(payload.get("task_id") or self._active_task_id_for_worker(instance_id) or "")
-        replies_dir = self.state_dir / "operator-replies"
-        replies_dir.mkdir(parents=True, exist_ok=True)
-        seq = len(list(replies_dir.glob(f"{instance_id}-*.md"))) + 1
-        briefing_path = replies_dir / f"{instance_id}-{seq:04d}.md"
-        briefing_path.write_text(
-            "\n".join([
-                "# Operator Reply",
-                "",
-                f"- worker: `{instance_id}`",
-                f"- task_id: `{task_id}`" if task_id else "- task_id: ``",
-                "",
-                "## Message",
-                message,
-                "",
-            ]),
-            encoding="utf-8",
-        )
-        prompt = (
-            f"Operator reply for {instance_id}.\n"
-            f"Read `{briefing_path}` and continue the current task accordingly."
-        )
+        from zf.runtime.worker_reply_binding import write_reply_briefing
+        briefing_path, prompt = write_reply_briefing(self.state_dir, instance_id, task_id, request.id, message,
+                                                      notice=bool(payload.get("notification_key")))
         try:
             context = self._dispatch_context(
                 role=role,
                 briefing_path=briefing_path,
                 task_id=task_id or None,
             )
+            if payload.get("notification_key"):
+                from zf.runtime.worker_reply_binding import notification_context
+                context = notification_context(self, request, instance_id, payload, context)
             self._send_transport_task(instance_id, briefing_path, prompt, context)
             self.event_writer.append(ZfEvent(
                 type="worker.reply.sent",

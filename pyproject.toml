@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
+native-inputs = ["fusepy==3.0.1; sys_platform == 'linux'"]
 dev = [
     "httpx>=0.25",
     "jsonschema>=4.23,<5",

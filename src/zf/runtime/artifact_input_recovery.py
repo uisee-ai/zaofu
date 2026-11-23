@@ -138,6 +138,9 @@ def build_input_recovery(
     delivery = input_delivery_recovery(state_dir, events, dict(identity), manifest["attempt_id"], own_reads)
     if delivery:
         result["provider_delivery"] = delivery
+        if delivery.get("next_gap_cursor"):
+            result["commands"]["next_delivery_gaps"] = (
+                f"{prefix} recover --attempt {attempt} --delivery-cursor {delivery['next_gap_cursor']}")
         result["instructions"] += (" For observed input contracts, historical_missing is still the host read count; "
             "provider_delivery separately reports complete delivery evidence. Repair its missing selections "
             "using bounded pages and full tool output; result validate lists exact repair commands.")
