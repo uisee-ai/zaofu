@@ -43,15 +43,16 @@ def review_claim_issues(
     issues: list[dict[str, str]] = []
     def error(field: str, message: str) -> None:
         issues.append({'field': field, 'code': 'plan_review_evidence_invalid', 'message': message})
-    def items(key: str) -> list:
+    def items(key: str) -> list[tuple[str, Any]]:
         rows = value(key) or []
+        path = f'report.{key}' if report.get(key) else key
         if not isinstance(rows, list):
-            error(key, 'Blocking evidence items must be an array')
+            error(path, 'Blocking evidence items must be an array')
             return []
-        return rows
+        return [(f'{path}[{index}]', row) for index, row in enumerate(rows)]
     rows = [*items('fix_items'),
-            *[x for x in items('findings') if isinstance(x, Mapping) and x.get('blocking') is True],
-            *[x for x in items('owner_decision_items') if isinstance(x, Mapping) and x.get('blocking') is not False]]
+            *((path, row) for path, row in items('findings') if isinstance(row, Mapping) and row.get('blocking') is True),
+            *((path, row) for path, row in items('owner_decision_items') if isinstance(row, Mapping) and row.get('blocking') is not False)]
     rejected = value('verdict') == 'rejected' or value('recommendation') in {'reject', 'needs_rework'}
     if rejected and not rows:
         error('fix_items', 'A rejection requires a blocking item with current evidence and obligation basis')
@@ -78,8 +79,8 @@ def review_claim_issues(
             matches = [s for s in manifest['sources'] if s.get('source_id') == binding['source_id']]
             if len(matches) != 1 or any(matches[0].get(k) != binding.get(k) for k in ('ref', 'sha256', 'artifact_id')):
                 raise ValueError('Review contract and source manifest bindings differ')
-        for index, row in enumerate(rows):
-            field = f'blocking_items[{index}].basis'
+        for path, row in rows:
+            field = f'{path}.basis'
             basis = row.get('basis') if isinstance(row, Mapping) else None
             if not isinstance(basis, Mapping) or not str(basis.get('obligation') or '').strip():
                 error(field, 'Name the existing requirement/approved obligation; advice cannot create one')
@@ -89,13 +90,13 @@ def review_claim_issues(
                 if not isinstance(citations, list) or not citations:
                     error(f'{field}.{name}', 'Provide exact current manifest source, digest, selector and observed value/quote')
                     continue
-                for citation in citations:
+                for index, citation in enumerate(citations):
                     try:
                         _check_citation(state_dir, manifest, citation,
                                         current=current if name == 'current_evidence' else None,
                                         role=str(request.get('role_instance') or ''))
                     except (ValueError, OSError, KeyError, TypeError) as exc:
-                        error(f'{field}.{name}', str(exc))
+                        error(f'{field}.{name}[{index}]', str(exc))
     except (ValueError, OSError, KeyError, TypeError) as exc:
         error('review_context', str(exc))
     return issues

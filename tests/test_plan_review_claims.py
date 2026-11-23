@@ -49,6 +49,21 @@ def test_preflight_and_submit_reject_false_current_value(tmp_path):
     assert [e.id for e in runtime.event_log.read_all()] == before
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_preflight_identifies_the_exact_failed_citation_in_the_submitted_result(tmp_path, nested):
+    _, prepared, service, token, result, _ = _case(tmp_path)
+    item = result["report"].pop("fix_items")[0]
+    citations = item["basis"]["current_evidence"]
+    citations.insert(0, {**citations[0], "observed_value": "confirmed"})
+    container = result["report"] if nested else result
+    container["findings"] = [{"blocking": False}, {**item, "blocking": True}]
+    check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
+        role_instance="plan-critic", credential=token)
+    errors = [e for e in check["errors"] if e["code"] == "plan_review_evidence_invalid"]
+    prefix = "report." if nested else ""
+    assert [e["field"] for e in errors] == [prefix + "findings[1].basis.current_evidence[1]"]
+
+
 def test_legacy_frozen_request_preserves_old_contract_and_exposes_original_gap(tmp_path):
     _, prepared, service, token, result, _ = _case(tmp_path, policy='')
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
