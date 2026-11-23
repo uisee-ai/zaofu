@@ -128,3 +128,7 @@ A、B 都用满了本机该配置报告的 2048 输入和 100 输出 token。这
 只读重放原始账本选出 `oa-candidate-review-aa4e7342f3c0e242976fcefa`。业务材料的等价性或需要修订的合同，仍由 OA/审批流程判断。原实验的无人资格已有人工介入并封存为 `closed_failed`。从该断点开始的验证单独评价。
 
 专属文件视图也通过了一条完整 8×8 lane 的宿主验证。临时项目为同一冻结 Candidate 和 40 项输入建立新的授权 request（原 request 前缀 `9671fd06`，新 request 前缀 `37678252`，manifest 前缀 `05889beb`）。真实 `zf artifact workspace`、FUSE 和 Codex 执行 82 次文件读取。第 41 次后杀掉 Codex，原 SID 恢复并自行读取挂载的 RESUME.md，取得原缺口与声明路径，随后仅完成剩余 41 次。正式交付校验通过 40/40，恢复后新增宿主命令 0。模型选择命令由隔离的脚本固定，工具输出由真实进程产生；用例耗时 22.34 秒。可复核 `tests/integration/test_frozen_codex_workspace.py` 的环境说明。
+
+2026-11-23 13:46 UTC，运行中的实验控制面从 `3841652d` 受控升级至 `bfbda3b3`，专用项目 YAML 为 lane 0 固定 cgroup。重载前后 4 个 tmux pane 及 16 项已完成任务均保留。RM 从历史故障自主发出 `evt-42f547657f65`；OA checkpoint 为 `evt-28dd510a3161`，实际开始事件为 `evt-4a5813f2545a`。该 OA 通过普通受控 CLI 读取审核资料。观察期间无人工向产品 worker 派发指令。部署与本次观察另保存在实验目录的 `v5-recovery-20261123T1335Z/`。
+
+最终影响闭包以 6 个 worker 完成，确定性测试 13,796 通过、22 跳过；串行 4、契约哨兵 53、mock E2E 10 项全部通过。首次 8 worker 测试发现生命周期和 transport 模块超过体量约束，随后将孤儿处理、tmux 启动环境移到各自责任模块；另一个 Channel 等待超时在单独重跑及最终闭包中通过。真实 Provider、FUSE 与 8×8 冻结回放的证据另列如上。
