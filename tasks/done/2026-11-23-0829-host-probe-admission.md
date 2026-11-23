@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 阻止普通 probe 绕过 host 事实来源准入
 
@@ -44,3 +44,10 @@ blocked诊断保留原有合同。此次不宣称解决所有未提供可验证�
 
 方法验证：65 passed / 1 skipped；Skill源码与两镜像SHA256均为
 7d637c926c7ddf257c612c061a95a7c1bc1b80802206afd704c0c4ff2c4471ec。
+
+
+实现提交：`a5077a3e fix: preserve host evidence provenance in verification probes`。
+实际控制面PID2588877加载a5077a3e（evt-f96aa99336c9）；run.resumed evt-c04603973228，
+受控新代际trigger evt-00274691df5f，两个Reader实际dispatch evt-1d87fa2a5693 /
+evt-eed87099da70。新checklist manifest/实际文件摘要一致。源修复完成、原断点复评已启动；
+并非产品已验收或路径契约已修复，最终判词/交付仍由后续监工记录跟踪。
