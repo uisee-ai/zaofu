@@ -553,7 +553,7 @@ def test_service_rename_requires_capability_and_printable_title(tmp_path: Path) 
 
     assert unavailable.value.code == "terminal_rename_unavailable"
     backend.rename_available = True
-    service._capability = None
+    service.capability(refresh=True)
     with pytest.raises(TerminalRuntimeError) as invalid:
         service.rename_session(record.session_id, "\x00\n\t")
     assert invalid.value.code == "invalid_terminal_title"

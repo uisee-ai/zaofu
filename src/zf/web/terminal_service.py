@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 import re
+import shutil
+from threading import Lock
 import time
 from typing import Sequence
 from uuid import uuid4
@@ -28,6 +30,7 @@ from zf.web.terminal_usage import TerminalUsageBinding, TerminalUsageService
 from zf.integrations.controller.terminal_execution import managed_terminal
 
 
+_BinaryIdentity = tuple[str, int, int, int, int]
 _SLOT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
@@ -51,6 +54,45 @@ def _validated_title(raw: str) -> str:
     return value
 
 
+class TerminalCapabilityCache:
+    """Share one in-flight qualification per host binary and version policy."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._result: TerminalCapability | None = None
+        self._identity: _BinaryIdentity | None = None
+        self._expires = 0.0
+
+    @staticmethod
+    def _binary_identity(binary: str) -> _BinaryIdentity | None:
+        path = shutil.which(binary)
+        if not path:
+            return None
+        try:
+            stat = Path(path).stat()
+        except OSError:
+            return None
+        return (path, stat.st_dev, stat.st_ino, stat.st_size, stat.st_ctime_ns)
+
+    def get(self, binary: str, backend: TerminalBackend, *, refresh: bool) -> TerminalCapability:
+        previous = self._result
+        with self._lock:
+            identity = self._binary_identity(binary)
+            if (
+                self._result is not None
+                and self._identity == identity
+                and time.monotonic() < self._expires
+                and (not refresh or self._result is not previous)
+            ):
+                return self._result
+            result = backend.probe()
+            self._result = result
+            self._identity = identity
+            # No timer or retry loop. A later request can retry a transient failure.
+            self._expires = time.monotonic() + (10 if result.available else 2)
+            return result
+
+
 class TerminalService:
     def __init__(
         self,
@@ -62,6 +104,7 @@ class TerminalService:
         allowed_providers: Sequence[str],
         backend: TerminalBackend | None = None,
         usage_service: TerminalUsageService | None = None,
+        capability_cache: TerminalCapabilityCache | None = None,
         usage_binding_wait_seconds: float = 2.0,
     ) -> None:
         self.project_id = project_id
@@ -84,7 +127,7 @@ class TerminalService:
             f"{project_id}\0{self.project_root}".encode("utf-8")
         ).hexdigest()[:16]
         self.herdr_session_name = f"zf-{digest}"
-        self._capability: tuple[float, TerminalCapability] | None = None
+        self._capability_cache = capability_cache or TerminalCapabilityCache()
 
     def _require_enabled(self) -> None:
         if not self.config.enabled:
@@ -101,12 +144,7 @@ class TerminalService:
                 binary=self.config.herdr_binary,
                 reason="runtime.web_terminal.enabled is false",
             )
-        now = time.monotonic()
-        if not refresh and self._capability is not None and now - self._capability[0] < 10:
-            return self._capability[1]
-        capability = self.backend.probe()
-        self._capability = (now, capability)
-        return capability
+        return self._capability_cache.get(self.config.herdr_binary, self.backend, refresh=refresh)
 
     def _require_capability(self) -> TerminalCapability:
         self._require_enabled()

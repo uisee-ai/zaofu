@@ -415,12 +415,13 @@ async def relay_terminal_websocket(
         maxsize=config.bridge_queue_frames
     )
     queued_bytes = 0
+    peak_frames = peak_bytes = 0
     queue_lock = asyncio.Lock()
 
     observer_eof = False
 
     async def read_bridge() -> None:
-        nonlocal queued_bytes, observer_eof
+        nonlocal queued_bytes, observer_eof, peak_frames, peak_bytes
         while True:
             record = await bridge.read_record()
             if record is None:
@@ -458,6 +459,8 @@ async def relay_terminal_websocket(
                     (encoded, payload, size, record.get("type") == "terminal.closed")
                 )
                 queued_bytes += size
+                peak_frames = max(peak_frames, queue.qsize())
+                peak_bytes = max(peak_bytes, queued_bytes)
             if record.get("type") == "terminal.closed":
                 return
 
@@ -538,6 +541,9 @@ async def relay_terminal_websocket(
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        logging.getLogger(__name__).debug(
+            "Terminal relay mode=%s peak_frames=%d peak_bytes=%d", spec.mode, peak_frames, peak_bytes,
+        )
         await bridge.close()
         try:
             if close_reason:
