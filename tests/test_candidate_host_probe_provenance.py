@@ -18,6 +18,27 @@ def probe_for(evidence, payload, ref, *, status='passed'):
         'status': status, 'exit_code': 0, 'evidence_refs': [ref]}
 
 
+def test_misnested_host_receipts_return_actionable_preflight(evidence):
+    runtime, _, _, _, _, _ = evidence
+    _, _, service, kwargs = consumer_result(evidence)
+    scratch = kwargs['semantic_result']
+    ids = scratch.pop('host_execution_receipt_ids')
+    scratch['control_result'] = {'host_execution_receipt_ids': ids}
+    before = runtime.event_log.read_all()
+    validation = service.validate_plan_candidate(**kwargs)
+    assert validation['status'] == 'failed'
+    assert any(issue['code'] == 'verification_host_receipts_misnested'
+               and 'top-level host_execution_receipt_ids' in issue['message']
+               for issue in validation['errors'])
+    assert runtime.event_log.read_all() == before
+    with pytest.raises(ResultSubmitError):
+        service.submit(**kwargs)
+    del scratch['control_result']
+    scratch['host_execution_receipt_ids'] = ids
+    assert service.validate_plan_candidate(**kwargs)['status'] == 'passed'
+    assert service.submit(**kwargs).admitted_event_id
+
+
 @pytest.mark.parametrize('evidence', ['', 'directory-output'], indirect=True)
 @pytest.mark.parametrize('kind', ['bundle', 'fact', 'receipt', 'output', 'event', 'start-event',
                                  'source-id', 'execution-id', 'media', 'media-file',

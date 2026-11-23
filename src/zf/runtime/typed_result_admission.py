@@ -51,6 +51,16 @@ def typed_result_admission_issues(
         schema_version == "verification-result.v1"
         and bool(result.get("contract_snapshot_ref") or result.get("contract_snapshot_digest"))
     )
+    if semantic_submit and schema_version == "verification-result.v1":
+        nested = result.get("control_result")
+        if isinstance(nested, Mapping) and nested.get("host_execution_receipt_ids"):
+            return [_issue(
+                field="control_result.host_execution_receipt_ids",
+                code="verification_host_receipts_misnested",
+                message=("Move the receipt IDs from scratch control_result.host_execution_receipt_ids "
+                         "to top-level host_execution_receipt_ids beside verdict. Validate the same scratch again."),
+                owner="candidate_verify", action="result_repair",
+            )]
     if (schema_version == "verification-result.v1" and result.get("host_execution_receipt_ids")
             and not contract_bound_verification):
         return [_issue(field="control_result.host_execution_receipt_ids",

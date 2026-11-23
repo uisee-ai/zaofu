@@ -330,7 +330,7 @@ def prepare_fanout_result_guidance(
         if child_payload.get("candidate_host_evidence_ref"):
             guidance.append(
                 "Read candidate-host-execution and its bound fact/media sources. You may consume "
-                "only its receipt_id values in host_execution_receipt_ids, preserving the source "
+                f"only its receipt_id values in `{verification_prefix}host_execution_receipt_ids` beside verdict, preserving the source "
                 "operation's identity. These are execution facts, not Impl reusable receipts or "
                 "your fresh probe_receipts. Do not repeat a command solely because reusable=false; "
                 "that flag governs Impl self-check reuse. Independently judge every required "

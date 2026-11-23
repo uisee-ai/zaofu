@@ -289,6 +289,8 @@ class FanoutBriefingMixin:
                 )
                 success_payload["reusable_impl_receipts"] = reusable_receipts
             verification_template = verification_result_template(contract_snapshot)
+            if child_payload.get("candidate_host_evidence_ref"):
+                verification_template["host_execution_receipt_ids"] = []
             verification_template["reused_command_receipt_ids"] = [
                 str(item.get("receipt_id") or "")
                 for item in reusable_receipts
