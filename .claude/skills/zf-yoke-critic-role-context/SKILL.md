@@ -63,7 +63,8 @@ Task 必须先后执行时，引用本版规定跨 Task 前置条件的原句，
 
 上下文压缩后若 `--required --resume` 再次送来读过的首页，先调用
 `zf artifact recover --attempt <当前 attempt>`，核对本代 work record、历史交付缺口和需要重新理解的条款。
-按返回的精确路径和游标补读，已收齐的历史区间仍需由 Critic 判断能否用于当前审查。
+出现 `continuation.historical_next_cursor` 时，用 `--required --cursor <该游标>` 接着读取尚未交付的正文。
+按返回的精确路径补读需要重新理解的条款，已收齐的历史区间仍需由 Critic 判断能否用于当前审查。
 
 标准 Issue/PRD/Refactor 计划在进入 writer admission 前由一个独立 Critic
 做一次有界语义检查。light topology 可跳过。这里的检查完全属于本 Skill 和

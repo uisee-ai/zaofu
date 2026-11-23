@@ -91,6 +91,20 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
     assert resumed["continuation"]["reason"]
     assert resumed["continuation"]["required_occurrences"] == 1
     assert resumed["continuation"]["distinct_bodies"] == 1
+    if witness in {"compacted_event", "compacted_transcript"}:
+        gap_cursor = resumed["continuation"]["historical_next_cursor"]
+        assert resumed["continuation"]["historical_delivery"] == "partial"
+        assert resumed["next_action"] == "recover_work_record_then_read_historical_gap"
+        assert gap_cursor == first["next_cursor"]
+        assert main([*command, "--resume", "--page-bytes", "1024"]) == 0
+        short_page = capsys.readouterr().out.rstrip("\n")
+        assert len(short_page.encode()) + 1 <= 1024
+        assert parse_artifact_page(short_page)["continuation"]["historical_next_cursor"] == gap_cursor
+        assert main([*command, "--cursor", gap_cursor]) == 0
+        gap_page = parse_artifact_page(capsys.readouterr().out.rstrip("\n"))
+        assert gap_page["items"][0]["page_start"] == first["items"][0]["page_end"]
+    else:
+        assert "historical_next_cursor" not in resumed["continuation"]
     for before, after in zip(outputs, outputs[1:]):
         assert after["items"][0]["page_start"] == before["items"][-1]["page_end"]
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)

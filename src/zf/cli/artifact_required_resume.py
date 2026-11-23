@@ -26,6 +26,7 @@ class ResumeDecision:
     index: int = 0
     offset: int = 0
     reason: str = "evidence_unavailable"
+    historical_gap: tuple[int, int] | None = None
 
 
 def resume_position(*args: Any, **kwargs: Any) -> tuple[int, int]:
@@ -93,13 +94,16 @@ def resume_decision(
                         retained.append(row)
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
-            if historical.reason == "observed_complete":
-                current = _coverage(state_dir, retained, groups, receipts, attempt, bundle_digest)
-                if current.reason != "observed_complete":
-                    return ResumeDecision(len(groups), 0, "context_recovery")
-            observed = retained
-            if not observed:
-                return ResumeDecision(reason="delivery_predates_compaction")
+            current = (_coverage(state_dir, retained, groups, receipts, attempt, bundle_digest)
+                       if retained else ResumeDecision(reason="delivery_predates_compaction"))
+            if historical.reason == "observed_complete" and current.reason != "observed_complete":
+                return ResumeDecision(len(groups), 0, "context_recovery")
+            gap = (historical.index, historical.offset)
+            if gap > (current.index, current.offset):
+                # Keep the current-context reread available. The worker may explicitly
+                # continue the independently witnessed delivery after recovering its notes.
+                return ResumeDecision(current.index, current.offset, current.reason, gap)
+            return current
         return _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         return ResumeDecision(reason="evidence_invalid")

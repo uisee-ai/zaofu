@@ -83,6 +83,11 @@ def prepare_required_read(
                 "guidance": "Recover the bound work record, then retrieve specific context gaps. "
                             "Historical delivery does not prove current memory or comprehension.",
             })
+        elif decision.historical_gap is not None:
+            resume_info.update({
+                "historical_delivery": "partial",
+                "historical_next_cursor": _cursor(bundle_digest, *decision.historical_gap),
+            })
     else:
         index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
     items: list[dict[str, Any]] = []
@@ -104,6 +109,8 @@ def prepare_required_read(
         }
         if resume_info and resume_info["mode"] == "context_recovery":
             page["next_action"] = "recover_work_record_then_retrieve_context_gaps"
+        elif resume_info and "historical_next_cursor" in resume_info:
+            page["next_action"] = "recover_work_record_then_read_historical_gap"
         if output_format == "text":
             from zf.runtime.artifact_text_page import render_text_page
 
@@ -138,8 +145,10 @@ def prepare_required_read(
                     high = middle - 1
             end = low
             if end == start:
-                if items:
-                    break  # Preserve room for the continuation identity.
+                if items or (resume_info and resume_info.get("historical_next_cursor")):
+                    # A small recovery page can carry both navigation choices without
+                    # recording a body read. Either explicit cursor uses normal paging.
+                    break
                 raise ValueError("required page metadata exceeds output bound")
         items.append(item(end))
         for receipt in receipts[key]:
