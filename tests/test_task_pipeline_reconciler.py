@@ -183,7 +183,8 @@ def test_external_gate_never_dispatches_impl_and_enters_integration_when_satisfi
     assert admitted["queues"]["integration_ready"] == ["HUMAN"]
 
 
-def test_verify_only_starts_at_verify_and_never_reworks_through_impl() -> None:
+def test_verify_only_starts_at_verify_and_never_reworks_through_impl(tmp_path) -> None:
+    policy = {**_policy(), "max_rework_attempts": 2}
     task = _task("AUDIT", priority=1)
     task["contract"] = {
         "evidence_contract": {"runtime_only": True, "write_free": True},
@@ -191,15 +192,17 @@ def test_verify_only_starts_at_verify_and_never_reworks_through_impl() -> None:
     stale_impl = _operation("AUDIT", "impl", "suspended")
 
     ready = TaskPipelineReconciler().reconcile(
-        policy=_policy(),
+        policy=policy,
         tasks=[task],
         operations=[stale_impl],
         attempts=[],
     )
     rejected_verify = _operation("AUDIT", "verify", "settled")
     rejected_verify["semantic_verdict"] = "rejected"
+    rejected_verify["call_result_admitted_event_id"] = "evt-readonly-admitted"
+    rejected_verify["admitted_control_result_ref"] = {"ref": "artifacts/audit.json", "sha256": "a" * 64}
     rejected = TaskPipelineReconciler().reconcile(
-        policy=_policy(),
+        policy=policy,
         tasks=[task],
         operations=[stale_impl, rejected_verify],
         attempts=[],
@@ -211,6 +214,21 @@ def test_verify_only_starts_at_verify_and_never_reworks_through_impl() -> None:
     assert rejected["tasks"][0]["stage"] == "blocked"
     assert "verify_only_verification_rejected" in rejected["tasks"][0]["blockers"]
     assert rejected["dispatchable"]["impl"] == []
+    from zf.core.events import EventWriter
+
+    log = EventLog(tmp_path / "events.jsonl")
+    runtime = SimpleNamespace(event_log=log, event_writer=EventWriter(log, default_origin="kernel"))
+    kwargs = {"projection": rejected, "generation_contexts": {
+        "AUDIT": {"workflow_run_id": "run", "task_map_generation": "generation"},
+    }}
+    fact, = reconcile_task_pipeline_semantic_exhaustion(runtime, **kwargs)
+    assert fact.causation_id == "evt-readonly-admitted"
+    assert fact.payload["reason"] == "verify_only_verification_rejected"
+    assert fact.payload["control_result_ref"] == rejected_verify["admitted_control_result_ref"]
+    assert fact.payload["max_rework_attempts"] == 0
+    assert fact.payload["configured_max_rework_attempts"] == 2
+    assert fact.payload["semantic_triage_required"] is True
+    assert not reconcile_task_pipeline_semantic_exhaustion(runtime, **kwargs)
 
 
 def test_reconciler_prefers_task_stage_session_owner_when_slot_is_idle() -> None:

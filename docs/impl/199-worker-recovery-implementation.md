@@ -597,3 +597,9 @@ LS-v1 完成第54项任务后出现“5次重扫耗尽”，其中一次实际�
 跨 Run 负例及上限回归见 `tests/test_goal_idle_tick_scope.py`、
 `tests/test_goal_idle_driver.py`；记录见
 `tasks/2026-11-09-0333-goal-idle-run-scope.md`。
+
+
+只读 Task Verify 的正式语义拒绝也经 `task.pipeline.semantic_rework.exhausted`
+交给 Run Manager 分诊。只读合同可用的本任务实现返工次数为零，回执另记配置的
+返工上限、实际拒绝原因、对应 operation 与已接收的结果引用。执行环境弃权继续走
+验证执行恢复路径；后续变更合同或修订计划仍由获授权的决策者处理。
