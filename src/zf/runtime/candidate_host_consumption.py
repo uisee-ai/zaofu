@@ -190,6 +190,9 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
 def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | None,
                             events: list | None) -> list[dict]:
     """Read-only validation against this consumer's immutable request and ledger."""
+    if result.get('probe_receipts') and operation and operation.get('request_ref'):
+        from zf.runtime.host_probe_provenance import reject_host_backed_probes
+        reject_host_backed_probes(state_dir, result, _request(state_dir, operation))
     ids = result.get('host_execution_receipt_ids') or []
     if not ids:
         return []

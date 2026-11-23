@@ -57,6 +57,11 @@ event schema or recovery state machine.
   socket does not invalidate a bound host execution receipt. Receipt availability
   alone does not establish product acceptance. If the recovery input itself is
   unreadable, report an input failure with the actual diagnostic evidence.
+- Host execution provenance: use the briefing's `host_execution_receipt_ids`
+  route for bound host facts. Ordinary `probe_receipts` describe checks this
+  Reader actually executed with their own evidence, not copied host observations.
+  An unavailable host fact cannot become a passing probe by changing its label
+  or downgrading its finding. Preserve the original source and consumption status.
 - Historical process evidence: a publication or reassessment attempt may contain
   only GREEN while the original implementation's RED remains in pinned predecessor
   handoffs. Before claiming it is absent, use known command event IDs as lookup
@@ -84,6 +89,12 @@ event schema or recovery state machine.
 这表示交给 Planner 修订，不授权 Verify 修改 Plan。不能只在 summary/owner/next_gate
 中写“重新规划”，同时把范围全写成源码路径；也不能把普通产品错误改报为合同阻塞。
 混合缺陷分别保留，不用重规划请求掩盖已证明的实现错误。
+
+命令已执行但必需媒体不可用时，对照冻结的 `producer_paths`、实际执行脚本、
+采证根及媒体索引，明确缺口发生在哪一处。若证明需修订产物路径或命名空间约定，
+按上面的 scoped Plan-port 交接指出实际来源，不笼统交给 runner 重跑；若是采集器
+漏收或文件损坏，交执行/采证诊断 owner。原因未确定时保留 unknown 并指定诊断责任。
+没有新输入或修复证据，不以重复相同命令代替诊断；exit 0 不授权忽略必需媒体合同。
 
 The current runtime-provided `verification-result`/child report profile is the
 authoritative output shape. Fill it exactly and cite durable evidence refs.

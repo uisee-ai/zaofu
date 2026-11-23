@@ -1057,3 +1057,16 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 猜测目录映射或改写合同。该差异由Reader/RM/OA及合同Owner通过现有流程纠正，已有
 浏览器执行和媒体仍是原目标历史事实。测试覆盖实际`resume_reader_after_probes`入口的
 有/无request首次恢复、合法文件、非法声明和缺失文件，以及重复tick不重派。
+
+## 普通 probe 与已授权 host 来源的准入边界（2026-11-23）
+
+真实复评曾把19条只引用host bundle的普通probe接纳为通过，绕过
+`host_execution_receipt_ids`的来源/媒体校验。现在实际预检和结果提交入口都对
+普通passed probe核对当前冻结host图中的ref、来源alias及事件身份；词法等价的
+绝对路径、文件URI和fragment保留同一来源。命中者必须改用既有专用host回执入口，
+不得重命名为新执行事实，也不会自动补receipt ID或降低unavailable的效力。
+
+这项校验不靠command相同、存在host绑定或正文关键词推断来源。独立probe引用自身
+证据，以及blocked诊断引用不可用host事实，保持原有合同；host材料仍可供独立AC/产品
+判断。它不声称证明所有未提供可验证来源的普通probe都真实执行。先前admission保留
+历史，使用已有失败聚合与受控恢复生成新的独立判词，不改写append-only事件。

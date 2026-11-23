@@ -32,8 +32,10 @@ def prepare(runtime, seeded, role):
 def evidence(tmp_path, request):
     fault = getattr(request, 'param', '')
     runtime = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(runtime, producer_paths=(
-        ['ZF_EVIDENCE_DIR/artifacts/probe.json'] if fault == 'output-root' else None))
+    seeded = _seed_frozen_candidate(runtime, producer_paths={
+        'output-root': ['ZF_EVIDENCE_DIR/artifacts/probe.json'],
+        'directory-output': ['artifacts/evidence/browser/'],
+    }.get(fault))
     configured = policy()
     configured.commands = [seeded['command']]
     runtime.config.runtime = SimpleNamespace(host_verification=configured,
