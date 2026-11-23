@@ -1,6 +1,7 @@
 # 恢复验证按需定位前驱证据
 
-> 状态: active
+> 状态: done
+> 实现: `95ec8524 fix: guide recovery review to pinned predecessor evidence`
 
 持续监工授权范围内修复已复现的证据导航与方法问题；不替业务 Worker 改代码、提交或重派。
 
@@ -30,4 +31,14 @@ SUM Verify `evt-ea0ffdc342e0` / admission `evt-cd84eaaa86a5` 以缺RED拒绝；�
 - ZaoFu Skill校验/dispatch treatment测试通过，canonical/Codex/Claude三份字节一致。通用skill-creator quick_validate不支持该Skill既有stages/tags/auto_inject/load_on_demand字段；前言与基线字节完全相同，未为通过工具删字段。
 - 跨worktree运行新回归作为基线负例，被仓库import归属门拒绝（2 setup errors），不计作行为RED，不改此门。现场旧响应与指令已经复现缺失导航/全索引读取。
 - 精确计划、日志与回执：`reports/handoff-evidence-method/`。本轮不运行全量pytest或新真实provider Run。
-- 当前SUM已由runtime自主返工；尚待部署后下一Verify实际物化新版方法的证据，保持active。
+- 当前SUM已由runtime自主返工；实施时待部署后下一Verify物化证据；现已取得，见下方。
+
+- 补充正确隔离的基线负例：在9d360d9e临时worktree内运行相同导航行为测试，native/host两种来源均因缺source_operation失败（2 failed）；新版对应测试已通过。临时worktree恢复干净后已移除。保留先前环境错误记录。
+- 实现commit：95ec8524 fix: guide recovery review to pinned predecessor evidence。已受控加载到live，PID2043064，配置/历史资格/现有worker保留；后续实际物化证据见下方。
+
+## 运行接续验证
+
+- SUM原生返工无新产品差量，06:48:18 `evt-121d1189caf8` Impl结果通过；06:48:46 `evt-153235907bd8` 自动派发新Verify。
+- 物化事件 `evt-d843365bf224`，checklist manifest/实际文件/部署源SHA均为 `6b64a29b742116f6d4d0f401216797dd8f9994796244248497f527233e7e8069`。
+- current operation `wop-verify-tp-TASK-SUM-bf5c274f0404c214-ver-1628dd188187`。上述证明新方法进入实际dispatch输入，不声称模型理解、语义判词或最终交付已通过；该部分继续监工。
+- 记录已归档到`reports/handoff-evidence-method/`，控制面保留配置、原worker、15项done及历史closed_failed资格。
