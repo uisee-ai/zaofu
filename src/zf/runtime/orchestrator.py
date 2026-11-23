@@ -838,31 +838,8 @@ class WorkflowRuntimeCoordinator(
         re-raise — the housekeeping helper's contract is that the
         orchestration loop continues.
         """
-        now = time.time()
-        last = self._housekeeping_failure_last.get(step, 0.0)
-        if now - last < self._housekeeping_failure_dedup_seconds:
-            return
-        self._housekeeping_failure_last[step] = now
-        try:
-            self.event_writer.append(ZfEvent(
-                type="kernel.housekeeping.failed",
-                actor="orchestrator",
-                payload={
-                    "step": step,
-                    "exc_type": type(exc).__name__,
-                    # Truncate repr to keep events.jsonl rows bounded —
-                    # long Python tracebacks have leaked entire stack
-                    # frames into the event log in the past.
-                    "exc_repr": repr(exc)[:500],
-                },
-            ))
-        except Exception as emit_exc:
-            import sys
-            print(
-                f"[kernel.housekeeping.failed] step={step} "
-                f"exc={exc!r} emit_failed={emit_exc!r}",
-                file=sys.stderr,
-            )
+        from zf.runtime.housekeeping_failures import emit_housekeeping_failure
+        emit_housekeeping_failure(self, step, exc)
 
     def run_once(
         self, events: list[ZfEvent] | None = None, *, consumed_offset: int | None = None,
@@ -983,6 +960,8 @@ class WorkflowRuntimeCoordinator(
         for decision in reconcile_dependency_barriers(self.config, events):
             self.event_writer.append(decision.to_event())
         self._recover_unstarted_reader_fanouts()
+        from zf.runtime.plan_critic_reassessment import reconcile_reassessments
+        reconcile_reassessments(self, events)
 
     def _emit_decision_recorded(
         self,

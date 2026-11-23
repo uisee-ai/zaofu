@@ -14,14 +14,16 @@ def child_wait(worktree: Path) -> dict:
     """Read the owned child's explicit wait/stop; never answer or reopen it."""
     if worktree.is_symlink() or not (worktree / "zf.yaml").is_file():
         return {}
+    owned = False
     try:
         root = worktree.resolve()
-        config = load_config(root / "zf.yaml")
-        state = (root / config.project.state_dir).resolve()
-        state.relative_to(root)
+        from zf.autoresearch.owned_runtime_state import owned_runtime_state
+        state = owned_runtime_state(root)
         session = SessionStore(state / "session.yaml").load()
         if session is None or Path(session.project_root).resolve() != root:
             return {}
+        owned = True
+        config = load_config(root / "zf.yaml")
         log = event_log_from_project(state, config=config)
         try:
             events = log.read_all()
@@ -54,7 +56,13 @@ def child_wait(worktree: Path) -> dict:
             "resume_condition": "answer the bound child decision through its authorized control path",
             "evidence_paths": [str(state / "events.jsonl")],
         }
-    except (OSError, ValueError, TypeError, ConfigError, ZfNotInitialized, yaml.YAMLError):
+    except (OSError, ValueError, TypeError, ConfigError, ZfNotInitialized, yaml.YAMLError) as exc:
+        if owned:
+            return {'status': 'incomplete', 'reproduction_status': 'incomplete',
+                    'failure_class': 'child_observer_unavailable', 'diagnosis_owner': 'run_manager',
+                    'recovery_phase': 'child_observation', 'reason': type(exc).__name__,
+                    'child_state_dir': str(state),
+                    'resume_condition': 'restore owned child observation before continuing diagnosis'}
         return {}
 
 

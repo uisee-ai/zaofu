@@ -631,6 +631,7 @@ def build_plan_synth_call_payload(
             input_refs.append(source)
             seen_sources.add(identity)
 
+    input_refs.extend(manifest.get('review_input_refs') or [])
     revision_basis = {
         "schema_version": PLAN_SYNTH_CONTRACT_SCHEMA,
         "workflow_run_id": workflow_run_id,

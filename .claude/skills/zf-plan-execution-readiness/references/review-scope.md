@@ -74,6 +74,25 @@ Channel 核对需求、业务边界、歧义及异常验收；Plan 核对新增�
 
 ## replan 的当前审查与历史继承
 
+### 当前阻塞依据与原候选复审
+
+拒绝前对争议字段重新读取当前绑定版本，分别记录历史值、当前值及语义影响。
+历史 pending 不能覆盖当前 confirmed；confirmed 也不自动证明其消费者已经正确执行。
+每项阻塞指出既有义务、当前缺口、最小修订及 done_when。建议的新需求保持 nonblocking，
+除非 owner 已通过授权路径将它纳入本轮范围；必要证据缺失仍是明确缺口。
+
+当 briefing 声明 `current-evidence-v1`，在现有 fix_item、blocking finding 或 owner question
+中提供 `basis: {obligation, requirement_evidence: [...], current_evidence: [...]}`。
+引用包含输入索引的 source_id、artifact_id、sha256、json_path，以及 JSON observed_value
+或原文 quote；文本可限定 start/end 字符范围。current_evidence 必须来自当前候选的
+child 输入，历史仅支持比较。Runtime 校验引用/版本/选择器和字面事实；Agent 仍需判断
+义务是否适用、引用是否足以支持该结论，不以机械通过替代语义审查。
+
+受控 review-only 复审提供 `plan-review-counter-evidence` 和 `plan-review-prior-verdict`。
+只复核原候选及反证，不改写 Plan/Task Map、不扩展范围。先判断旧 finding 是否仍成立，
+再记录受影响范围及未审义务；有效拒绝仍拒绝。一次复审没有通过不构成扩大次数或另开
+Planner 的授权。复审证据不能伪装成人工批准、旧 verdict 继承或无人交付资格。
+
 `targeted_replan_navigation` 表示重新审查当前候选，不表示历史 approval 可继承。
 先读原始需求、当前完整 Plan/Task Map、返修原因及旧 finding；逐项关闭并检查变化
 影响的共享约束、前置与消费者。当前补充矩阵按 focus/Task/AC 展开，旧候选和未知

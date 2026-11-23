@@ -54,7 +54,8 @@ def test_resolved_resume_does_not_starve_new_attention(tmp_path, kind, case_stat
         projection = build_run_manager_projection(state, events=log.read_all(), config=_config())
     diagnosis = [a for a in projection['pending_actions']
                  if a.get('fingerprint') == 'new-reader-failure']
-    assert bool(diagnosis) is (case_state == 'resolved')
+    # A different fault remains eligible even while the older Case is active.
+    assert diagnosis
     assert not any(a['recovery_case_id'] == case_id for a in projection['pending_actions'])
     # The old receipt remains visible; a pending effect is never bypassed.
     assert any(c['recovery_case_id'] == case_id for c in projection['recovery_cases']['cases'])

@@ -384,6 +384,9 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if payload.get('review_only') is True:
+            from zf.runtime.plan_critic_reassessment import apply_reassessment
+            return apply_reassessment(self, requested, action, requested_action, payload)
         if payload.get("repaired_failure_event_id"):
             if "input_task_ids" in payload:
                 return self._recovery_failed(

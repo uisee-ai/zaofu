@@ -789,6 +789,12 @@ def _run_manager_tick_unlocked(
                     _read_events(state_dir, event_log=event_log),
                     _run_manager_reflect_request_id(action),
                 )
+                if not diagnosis_satisfied and action.get('failure_class') == 'autoresearch_diagnosis_incomplete':
+                    _emit_blocked_action(writer, action, causation_id=started.id,
+                        reason='Autoresearch follow-up requires an available Run Manager decision owner', human=True)
+                    actions_blocked += 1
+                    events = _read_events(state_dir, event_log=event_log)
+                    continue
                 if not diagnosis_satisfied and _emit_autoresearch_request(
                     state_dir=state_dir,
                     writer=writer,
@@ -1210,8 +1216,10 @@ def build_run_manager_projection(
     repair_validation_actions = _pending_repair_validation_actions(merge_queue, events)
     from zf.runtime.repair_dispatch_recovery import pending_dispatch_diagnoses
     from zf.runtime.candidate_finding_partition import pending_obligation_diagnoses
+    from zf.runtime.autoresearch_failure_handoff import pending_autoresearch_followups
 
-    for diagnosis in [*pending_dispatch_diagnoses(events), *pending_obligation_diagnoses(events)]:
+    for diagnosis in [*pending_dispatch_diagnoses(events), *pending_obligation_diagnoses(events),
+                      *pending_autoresearch_followups(events)]:
         if not _action_seen(events, diagnosis):
             diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
             diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
@@ -1286,23 +1294,12 @@ def build_run_manager_projection(
             if str(action.get("task_id") or "") not in triage_owned_tasks
         ]
     attention_actions = []
-    if (
-        not workflow_actions
-        and not post_repair_continuation_actions
-        and not candidate_actions
-        and not human_gate_actions
-        and not semantic_event_actions
-        and completion_profile.get("status") != "complete"
-    ):
+    if completion_profile.get("status") != "complete":
         attention_actions = _pending_attention_diagnostic_actions(
             state_dir,
             events,
             resident_agent=resident_agent,
         )
-        attention_actions = [
-            action for action in attention_actions
-            if str(action.get("task_id") or "") not in triage_owned_tasks
-        ]
     runtime_pane_snapshot = _safe_runtime_pane_snapshot(
         state_dir,
         config=config,
@@ -1323,8 +1320,12 @@ def build_run_manager_projection(
         *candidate_actions,
         *human_gate_actions,
         *semantic_event_actions,
-        *attention_actions,
     ]
+    from zf.runtime.run_manager_attention_frontier import independent_attention_actions
+
+    base_pending_actions.extend(independent_attention_actions(
+        attention_actions, base_pending_actions, events,
+    ))
     dynamic_continuation_actions = []
     normal_frontier_owner_blocked: dict[str, Any] | None = None
     if (
@@ -1712,7 +1713,8 @@ def _pending_action_priority(action: dict[str, Any]) -> tuple[int, str, str]:
             return (30, action_name, str(action.get("checkpoint_id") or ""))
         return (40, action_name, str(action.get("checkpoint_id") or ""))
     if readiness == "needs_diagnosis":
-        return (70, action_name, str(action.get("checkpoint_id") or ""))
+        return (71 if action.get("attention_id") else 70,
+                action_name, str(action.get("checkpoint_id") or ""))
     if readiness == "human_blocked":
         return (80, action_name, str(action.get("checkpoint_id") or ""))
     if readiness == "preflight_blocked":
@@ -13373,7 +13375,7 @@ def _autoresearch_proposal_refs(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _autoresearch_next_route(status: str, payload: dict[str, Any]) -> str:
     if status == "failed":
-        return "human_escalate"
+        return "run_manager_diagnosis"
     if payload.get("repair_task_payload") or payload.get("repair_request"):
         return "repair_worker"
     if _autoresearch_proposal_refs(payload):

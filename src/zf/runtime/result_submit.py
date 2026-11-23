@@ -361,6 +361,7 @@ class SemanticResultSubmitService:
             return validation
         if profile_id == _PLAN_SYNTH_PROFILE_ID:
             return validate_plan_synth_result(
+                state_dir=self.state_dir,
                 registry=self.registry,
                 event_type=self._canonical_event_type(request, semantic),
                 operation=_operation,
@@ -457,6 +458,8 @@ class SemanticResultSubmitService:
             binding_errors = plan_synth_output_binding_issues(
                 request.get("result_identity") or {}, semantic,
             )
+            from zf.runtime.plan_review_claims import review_claim_issues
+            binding_errors.extend(review_claim_issues(self.state_dir, request, semantic))
             if binding_errors:
                 raise ResultSubmitError(
                     "plan_synth_result_not_admitted", "Plan Synth output binding failed",

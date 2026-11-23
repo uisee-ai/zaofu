@@ -391,6 +391,13 @@ class CallResultAuthorityMixin:
                 ))
             else:
                 issues.extend(plan_synth_output_binding_issues(expected, body))
+                if expected.get("plan_review_evidence_policy"):
+                    from zf.runtime.plan_review_claims import review_claim_issues
+                    try:
+                        request = hydrate_sidecar_ref(self.state_dir, dict(operation["request_ref"])).payload["request"]
+                        issues.extend(review_claim_issues(self.state_dir, request, body))
+                    except (ValueError, OSError, KeyError, TypeError) as exc:
+                        issues.append(_currentness_issue("control_result", "plan_review_evidence_invalid", str(exc)))
         return issues
 
     def _latest_candidate_for_run(self, workflow_run_id: str) -> ZfEvent | None:

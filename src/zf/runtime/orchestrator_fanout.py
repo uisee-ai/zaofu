@@ -7016,6 +7016,9 @@ class FanoutCoordinationMixin(
         manifest = self._fanout_manifest(fanout_id)
         if not manifest:
             return
+        from zf.runtime.plan_critic_reassessment import reassessment_result_current
+        if not reassessment_result_current(self, manifest, event):
+            return
         stale_reason, superseded_by = self._fanout_identity_stale_reason(fanout_id)
         if stale_reason:
             self._emit_fanout_identity_stale_completion(
@@ -8059,6 +8062,7 @@ class FanoutCoordinationMixin(
         )
         from zf.core.workflow.runner_policy import pure_aggregator_policy_plan
         from zf.runtime.plan_execution_review import plan_review_briefing
+        from zf.runtime.plan_review_claims import review_claim_briefing
 
         runner_policy = pure_aggregator_policy_plan(self.config, role)
         runner_policy_lines: list[str] = []
@@ -8280,6 +8284,7 @@ class FanoutCoordinationMixin(
                 "Do not emit the configured success or failure event directly.",
                 "",
                 *runner_policy_lines,
+                *review_claim_briefing(str(call_payload.get("plan_review_evidence_policy") or "")),
                 *scope_summary_lines,
                 *research_handoff_lines,
                 *source_lines,

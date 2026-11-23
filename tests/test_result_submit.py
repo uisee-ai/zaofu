@@ -37,7 +37,7 @@ from zf.cli.result import _print_error
 def _runtime(tmp_path: Path):
     project_root = tmp_path / "project"
     state_dir = project_root / ".zf"
-    state_dir.mkdir(parents=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
     log = EventLog(state_dir / "events.jsonl")
     return SimpleNamespace(
         project_root=project_root,
@@ -280,7 +280,7 @@ def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str =
     return runtime, prepared, service, token_path.read_text().strip()
 
 
-def _running_plan_synth_operation(tmp_path: Path, *, verdict_only: bool = False):
+def _running_plan_synth_operation(tmp_path: Path, *, verdict_only: bool = False, extra_payload=None):
     runtime = _runtime(tmp_path)
     token_path = provision_role_submit_credential(
         runtime.state_dir,
@@ -304,6 +304,7 @@ def _running_plan_synth_operation(tmp_path: Path, *, verdict_only: bool = False)
         "plan_synth_contract_digest": "a" * 64,
         "reviewed_plan_candidate_digest": "a" * 64,
     }
+    payload.update(extra_payload or {})
     prepared = prepare_call_operation(
         runtime,
         payload=payload,

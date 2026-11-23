@@ -543,6 +543,7 @@ def prepare_call_operation(
                 "plan_synth_contract_ref",
                 "plan_synth_contract_digest",
                 "plan_synth_verdict_only",
+                "plan_review_evidence_policy",
                 "reviewed_plan_candidate_digest",
                 "pdd_id",
                 "feature_id",

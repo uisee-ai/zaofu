@@ -129,3 +129,37 @@ cancelled不自动满足依赖。活动任务摘要变化仍拒绝，不因“�
 真实只读入口可复现，修复后用真实WRC入口重放和混合代际用例验证；不修改旧Task、
 合同、generation或失败事件。重复失败的诊断调度与维护continuation处置独立跟踪，
 不以这项投影修复声称所有恢复路径均已自动闭环。
+
+## 审核纠错与诊断交接 P0
+
+新增 Critic 请求冻结 `current-evidence-v1`。现有阻塞项的 basis 绑定原义务与当前输入；
+validate、submit 和 canonical admission 都核对摘要、读取范围及精确 JSON 值/原文引用。
+历史请求保留原合同，不能补造旧读取证明。引用正确不代表语义正确，现有技能负责
+义务适用性与证据推论；真实缺陷继续拒绝。
+
+`stage-replan-new-generation` 的 `review_only: true` 是原候选复审选项：需既有 cap
+escalation、approval_ref、reason 和 current counter_evidence。它复用已接纳的原生产者
+工件和完整合同，不触发 Planner、不改变 Task Map、不清零 replan 计数。原拒绝、当前
+反证通过不可变 sidecar 提供给新 Critic operation；同一 Run/stage/候选仅一次，重放
+同请求幂等。候选改变、更新 fanout、活跃 operation、终态或跨范围请求拒绝。现有
+fanout aggregate 账本及 Orchestrator reconciliation 负责重启续接；新结果仍走原准入。
+
+Run Manager 完整收集独立 attention 后按精确 source event 身份去重与仲裁；相同 Task
+不等于相同故障。不可执行候选不能遮蔽独立诊断；同一 resident 忙时保留有绑定的等待。
+task pipeline 维护异常复用已有 60 秒/step 告警去重，首个事实和后续再次发生均可观察。
+
+AR loop.failed 产生独立后继 Case，保留 parent Case、失败阶段、partial diagnosis、
+checkpoint、archive/cleanup 状态和下一 RM owner。consumed 仅证明收到失败，不证明
+修复原故障；负责人不可用时明确升级，不自动递归开启 AR。清理失败与语义报告缺失
+分别记录。owned runtime 定位仅解析生命周期所需 project.state_dir，再检查 containment
+及 session owner；实际 stop 仍在隔离环境的新 CLI 中完整校验配置。此修复支持旧 resident
+与新配置 schema 漂移；配置真的无效时保留并移交，不猜测 tmux 或父项目 state。
+child observer 配置错误明确返回 observation unavailable，不能当作正常空观察。
+
+现场 briefing 文件存在、派发路径正确；公开工具调用丢掉 repair-worktrees 层后读取了
+父项目文件。派发方法现明确复用原始 locator、一次精确重读、失败回报；incident 证据
+与本 operation 的角色合同分开。这是 Agent 方法，不能宣称实现了宿主文件系统隔离。
+
+本批新回归覆盖 controlled action → Critic dispatch → 独立拒绝、重放/重启、当前事实
+反例、独立诊断仲裁和 AR 后继。测试命令与结果记录于本批任务；此前 12142 等数字
+属于前轮验证。真实 8×8 的旧 closed_failed 和未交付状态不由本批单元测试改写。
