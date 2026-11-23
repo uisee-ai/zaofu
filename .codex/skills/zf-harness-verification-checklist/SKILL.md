@@ -79,6 +79,12 @@ authoritative output shape. Fill it exactly and cite durable evidence refs.
 Do not copy field lists from old examples, emit a different terminal event, or
 move task truth directly.
 
+判词中的每项主张对应当前条款、真实触发入口、预期/观察和可复核证据；命令绿灯只证明
+实际覆盖的行为。无阻断 finding 时也说明检查范围。报告正文/summary 末尾列“未验证项”
+及原因、影响和下一责任方；不能以缺少本地 runner 否认适用的 host 收据，也不能以收据
+存在替代语义判断。需要补齐上述映射时按[项目验证方法](references/project-verification.md)
+核对；不增加字段、权限、重跑要求或第二份 verdict。
+
 ## Gap Handoff
 
 Only blocking product/parity gaps become gap work. Load

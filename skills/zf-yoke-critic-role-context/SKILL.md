@@ -143,6 +143,11 @@ Approve 时返回当前 plan/task-map refs、revision、摘要和 residual risks
 `required_change`、`done_when` 和 evidence refs。不要修改 task map；同一 Planner
 根据这些项修订。
 
+没有 finding 时，在既有 summary 中说明实际核对的本版条款、入口/证据生产关系和
+审查维度，不能只写“计划合理”。末尾保留“未验证项”及原因、影响和下一责任方；
+规划时尚未执行的产品验证按既定后继责任记录，不冒充已通过，也不据此要求提前执行。
+只提出可返工的修订要求，不替 Planner 改计划，不通过新会话或压缩清除原有义务。
+
 纯聚合 Plan Critic 也必须显式返回顶层 `plan_content_profile`；这是本次语义审查的结论，
 不属于应留空的 task map、plan ports 等结构化计划正文。对照确切 authority 核对 PRD
 目标/范围、SDD 入口/合同/失败语义、TDD 预期结果/验证责任/证据路径以及 Decision
