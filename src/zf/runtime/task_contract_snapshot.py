@@ -305,7 +305,7 @@ def build_task_contract_snapshot(
         contract_revision=identity["contract_revision"],
         verification_tiers=list(getattr(contract, "verification_tiers", []) or []),
     )
-    verification_owner, verification_tier = _snapshot_verification_route(
+    verification_owner, verification_tier = snapshot_verification_route(
         criteria, commands=commands, task_id=identity["task_id"],
     )
     all_command_ids = [str(item["id"]) for item in commands]
@@ -700,7 +700,7 @@ def _validate_target_snapshot(snapshot: Mapping[str, Any]) -> None:
         )
 
 
-def _snapshot_verification_route(
+def snapshot_verification_route(
     criteria: list[dict[str, Any]],
     *,
     commands: list[dict[str, Any]],
@@ -824,6 +824,7 @@ __all__ = [
     "hydrate_task_contract_snapshot",
     "hydrate_target_snapshot",
     "normalize_acceptance_criteria",
+    "snapshot_verification_route",
     "snapshot_payload_fields",
     "target_payload_fields",
     "target_descriptor_from_payload",

@@ -100,6 +100,7 @@ def review_execution(
     graph = _graph(tasks)
     pipeline = metadata.get("task_pipeline") or {}
     per_task = isinstance(pipeline, Mapping) and pipeline.get("mode") == "blocking"
+    write_scope, writer_items = _review_writer_items(task_map)
     commands = [c for t in tasks for c in _rows(_object(t.get("validation")).get("commands"))
                 if isinstance(c, Mapping)]
     owners = Counter(str(c.get("owner") or "impl_self_check") for c in commands)
@@ -138,14 +139,17 @@ def review_execution(
             "configured_writer_instances": writers,
             "configured_writer_count": len(writers),
             "dependency_level_peak_width": max(graph["level_widths"].values(), default=0),
-            "write_scope_validation": _write_scope_validation(task_map),
+            "write_scope_validation": write_scope,
         },
         "verification": {
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
             "rolling_smoke_policy": _rolling_smoke_policy(),
-            "task_requirements": [_task_requirements(task) for task in tasks],
+            "task_requirements": [
+                _task_requirements(task, writer_items.get(str(task.get("task_id") or task.get("id") or ""))
+                                   if per_task else None) for task in tasks
+            ],
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
         },
@@ -172,17 +176,54 @@ def _digest(body: Mapping[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _write_scope_validation(task_map: Mapping[str, Any]) -> dict[str, Any]:
+def _review_writer_items(task_map: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, dict]]:
     from zf.runtime.writer_fanout_admission import validate_writer_task_items, writer_task_items
 
     try:
-        validate_writer_task_items(writer_task_items(dict(task_map)))
+        items = writer_task_items(dict(task_map))
+        validate_writer_task_items(items)
     except (RuntimeError, ValueError) as exc:
-        return {"status": "failed", "reason": str(exc)}
-    return {"status": "passed"}
+        return {"status": "failed", "reason": str(exc)}, {}
+    return {"status": "passed"}, {item["task_id"]: item for item in items}
 
 
-def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
+def _initial_readonly_verify(item: dict) -> dict:
+    from zf.runtime.task_contract_snapshot import (
+        normalize_acceptance_criteria, snapshot_verification_route,
+    )
+    from zf.runtime.verification_commands import (
+        acceptance_required_for_stage, task_map_verification_commands,
+        verification_command_required_for_stage,
+    )
+    from zf.runtime.writer_task_materialization import writer_task_pipeline_entry_mode
+
+    raw = item["raw_task"]
+    if writer_task_pipeline_entry_mode(item, raw) != "verify_only":
+        return {}
+    task_id = item["task_id"]
+    criteria = raw.get("acceptance_criteria") or raw.get("acceptance") or []
+    if not criteria or not all(isinstance(c, dict) and (c.get("id") or c.get("acceptance_id"))
+                               for c in criteria):
+        return {"initial_readonly_verify": {"status": "requires_dispatch_contract"}}
+    try:
+        criteria = normalize_acceptance_criteria(criteria, task_id=task_id, contract_revision="",
+                                                verification_tiers=item["verification_tiers"])
+    except ValueError:
+        return {"initial_readonly_verify": {"status": "requires_dispatch_contract"}}
+    commands = task_map_verification_commands(raw)
+    owner, _ = snapshot_verification_route(criteria, commands=commands, task_id=task_id)
+    baseline = raw.get("immutable_baseline") or _object(raw.get("evidence_contract")).get("immutable_baseline", "")
+    return {"initial_readonly_verify": {
+        "verification_owner": owner,
+        "declared_baseline": baseline,
+        "mandatory_acceptance_ids": [c["acceptance_id"] for c in criteria if c["mandatory"]
+                                     and acceptance_required_for_stage(c, verification_owner=owner)],
+        "command_ids": [c["id"] for c in commands if verification_command_required_for_stage(
+            c, verification_owner=owner, task_id=task_id)],
+    }}
+
+
+def _task_requirements(task: Mapping[str, Any], writer_item: dict | None) -> dict[str, Any]:
     from zf.runtime.verification_commands import (
         acceptance_required_for_stage, verification_command_required_for_stage,
     )
@@ -191,6 +232,7 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
     owners = ("impl_self_check", "task_verify", "candidate_verify")
     return {
         "task_id": task_id,
+        **(_initial_readonly_verify(writer_item) if writer_item else {}),
         "rolling_smoke_command_ids": [
             str(command.get("id") or "")
             for command in _rows(_object(task.get("validation")).get("commands"))

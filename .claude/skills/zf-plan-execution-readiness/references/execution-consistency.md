@@ -37,6 +37,13 @@ execution_readiness 或 Critic report，不建立第二份 canonical task contra
 未来生产者的完整场景留给后续责任，当前片保留已就绪的子断言；父来源及最终
 mandatory 验收不删减。不能用反向依赖制造循环来修复当前片的测试时点。
 
+审查只读任务时，打开本版 `plan-execution-verification` 明细，或对相同 Task Map 执行
+`zf plan inspect-execution`。逐项核对 `initial_readonly_verify` 的基线、mandatory AC 和命令。
+当只读任务兼管整包验收时，检查浏览器或集成断言所需的每个生产者是否已在该基线上。
+对依赖后续实现的断言，在评审中引用具体任务、基线、AC、命令与未来生产者，
+要求修正绑定并检查最终 Candidate 仍承担同一 AC 和命令。若基线已经具备该行为，
+保留当前审计及其真实探针。未能重建的历史任务回到冻结合同核实。
+
 ## 2. 权限必须带动作和状态
 
 对权限敏感行为建立具名组合：主体及有效身份、直接/组/继承职责、资源范围、节点状态、

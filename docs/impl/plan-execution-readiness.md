@@ -56,6 +56,12 @@ Planner/critic 的事实使用当前派发配置及冻结的验证请求。
 不会自动阻断、批准、调整 task map、启用 pipeline 或执行 setup。
 Planner 的 validate 结果与 Critic 的输入使用相同事实生成器。
 
+阻塞式 Task Pipeline 的执行预检在只读任务的 `verification.task_requirements` 明细中提供
+`initial_readonly_verify`。其中列出声明的基线、运行时选择的验收 owner、当前 mandatory AC
+及命令 ID。Planner、Critic 与 Owner 可以在批准前对照基线已有实现及最终候选的验收矩阵。
+同一投影通过 `zf plan inspect-execution` 和 Critic 的 `plan-execution-verification` 明细交付。
+缺少明确 AC ID 的历史草稿需在派发合同生成后核对；阶段可行性由评审者判定。
+
 ## 显式分区规格
 
 补充规格端口可声明如下正文（既有固定 schema 矩阵不要改套此结构）：

@@ -789,6 +789,16 @@ delta. These are scheduler semantics, not permission to weaken evidence:
   `immutable_baseline`. Its mandatory criteria use `candidate_verify`. A failed
   audit must not silently become an Impl rework of the same read-only task.
 
+For each `verify_only` task, read `initial_readonly_verify` in the Plan execution
+review. Its mandatory criteria and selected commands execute on the task target,
+even when their owner is `candidate_verify`. Trace each assertion to the code
+available on that target. A baseline browser audit can require its browser probe
+there. A journey that needs later writers belongs on the integrated candidate.
+Keep its AC and commands mandatory in the candidate contract and matrices. One
+supported arrangement is to bind them to a standard task with its own independent
+module checks, leaving the read-only task with its baseline obligations. Recheck
+the command producer, unique command IDs and goal references after moving them.
+
 When a candidate audit depends on an external gate, put the gate task in
 `blocked_by` and declare `required_external_digest_env` in the audit's
 `evidence_contract`. The audit command may read that environment variable; the

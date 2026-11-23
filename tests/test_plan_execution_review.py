@@ -255,3 +255,33 @@ workflow:
         report = json.loads(capsys.readouterr().out)
         assert report["verification"]["independent_task_verify"] is expected
     assert not (tmp_path / "state").exists()
+
+
+def test_blocking_pipeline_previews_baseline_audit_without_waiving_its_browser():
+    from zf.runtime.plan_execution_review import review_execution
+
+    def criterion(name):
+        return {"id": name, "statement": name, "verification_owner": "candidate_verify",
+                "verification_command_ids": [name]}
+
+    def probe(name):
+        return {"id": name, "command": "run " + name, "owner": "candidate_verify"}
+
+    audit = {"task_id": "AUDIT", "execution_mode": "runtime_only", "allowed_paths": [],
+             "runtime_only": True, "write_free": True,
+             "immutable_baseline": "git:frozen", "acceptance_criteria": [criterion("MODULE"), criterion("BROWSER")],
+             "validation": {"commands": [probe("MODULE"), probe("BROWSER")]}}
+    def projection(task):
+        report = review_execution({"tasks": [task]}, ports={}, policy={},
+                                  metadata={"task_pipeline": {"mode": "blocking"}})
+        return report["verification"]["task_requirements"][0]["initial_readonly_verify"]
+
+    before = projection(audit)
+    assert before["verification_owner"] == "candidate_verify"
+    assert before["mandatory_acceptance_ids"] == before["command_ids"] == ["MODULE", "BROWSER"]
+    assert before["declared_baseline"] == "git:frozen"
+    assert "verdict" not in before
+    # A genuine baseline browser audit stays locally required.
+    browser_audit = {**audit, "acceptance_criteria": [criterion("BROWSER")],
+                     "validation": {"commands": [probe("BROWSER")]}}
+    assert projection(browser_audit)["command_ids"] == ["BROWSER"]
