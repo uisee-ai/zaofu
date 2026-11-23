@@ -30,6 +30,7 @@ from zf.runtime.verification_commands import (
     task_map_verification_commands as task_verification_commands,
 )
 from zf.runtime.verification_path_refs import command_path_refs as _command_path_refs
+from zf.runtime.writer_task_materialization import writer_task_evidence_contract
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,10 @@ def validate_task_map_payload(
         owner_role = str(raw.get("owner_role") or "").strip()
         task_dependencies[task_id] = _string_list(raw.get("blocked_by"))
         errors.extend(successor_base_errors(raw, task_id=task_id))
+        try:
+            writer_task_evidence_contract(raw)
+        except ValueError as exc:
+            errors.append(f"{task_id}: {exc}")
         if str(raw.get("root_owner_class") or "").strip().lower() == "assembly":
             if owner_role:
                 assembly_owner_roles[task_id] = owner_role

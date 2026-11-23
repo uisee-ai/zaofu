@@ -3641,6 +3641,7 @@ class WorkflowRuntimeCoordinator(
                 bind_plan_package_source_refs,
                 writer_task_allowed_paths,
                 writer_task_contract_source_ref,
+                writer_task_evidence_contract,
                 writer_task_pipeline_entry_mode,
             )
             bind_plan_package_source_refs(source_refs, loaded)
@@ -3660,11 +3661,7 @@ class WorkflowRuntimeCoordinator(
                 raw.get("affinity_tag"),
                 item.get("affinity_tag"),
             )
-            raw_evidence_contract = (
-                raw.get("evidence_contract")
-                if isinstance(raw.get("evidence_contract"), dict)
-                else {}
-            )
+            raw_evidence_contract = writer_task_evidence_contract(raw)
             goal_id = self._first_nonempty(
                 raw.get("goal_id"),
                 payload.get("goal_id"),

@@ -38,14 +38,35 @@ def writer_task_allowed_paths(
     return [str(fallback).strip()] if str(fallback).strip() else []
 
 
+def writer_task_evidence_contract(raw: dict[str, Any]) -> dict[str, Any]:
+    """Preserve declared read scope when projecting an approved task into the TaskStore."""
+    nested = raw.get("evidence_contract")
+    evidence = dict(nested) if isinstance(nested, dict) else {}
+    for key in ("runtime_only", "write_free", "verification_read_paths"):
+        if key in raw:
+            value = raw[key]
+            if key in evidence and evidence[key] != value:
+                raise ValueError(f"conflicting task and evidence_contract values for {key}")
+            evidence[key] = value
+    if raw.get("runtime_only") is True:
+        mode = str(raw.get("execution_mode") or evidence.get("task_pipeline_entry_mode")
+                   or evidence.get("execution_mode") or "").strip().lower()
+        if mode not in {"", "runtime_only", "verify_only"}:
+            raise ValueError("runtime_only conflicts with declared pipeline entry mode")
+        if raw.get("allowed_paths") or evidence.get("write_free") is False:
+            raise ValueError("runtime_only conflicts with declared write scope")
+        if not mode and not (evidence.get("write_free") is True and raw.get("allowed_paths") == []):
+            raise ValueError("runtime_only needs an explicit entry mode or write_free with empty allowed_paths")
+    return evidence
+
+
 def writer_task_pipeline_entry_mode(
     item: dict[str, Any],
     raw: dict[str, Any],
 ) -> str:
     """Normalize structured Task Map execution semantics for the scheduler."""
 
-    evidence = raw.get("evidence_contract")
-    evidence = evidence if isinstance(evidence, dict) else {}
+    evidence = writer_task_evidence_contract(raw)
     explicit = str(
         raw.get("execution_mode")
         or item.get("execution_mode")
@@ -175,5 +196,6 @@ __all__ = [
     "materialize_writer_tasks",
     "writer_task_allowed_paths",
     "writer_task_contract_source_ref",
+    "writer_task_evidence_contract",
     "writer_task_pipeline_entry_mode",
 ]
