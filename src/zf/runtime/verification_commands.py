@@ -180,6 +180,8 @@ def acceptance_required_for_stage(
     criterion: Mapping[str, Any], *, verification_owner: str,
 ) -> bool:
     """Route immutable AC ownership without waiving later mandatory results."""
+    if criterion.get("frozen_candidate_only") is True:
+        return False
     owner = str(criterion.get("verification_owner") or "task_verify")
     if verification_owner in {"impl_self_check", "task_verify"}:
         return owner not in {"candidate_verify", "human"}
@@ -196,6 +198,8 @@ def verification_command_required_for_stage(
 ) -> bool:
     """Select the canonical command subset required by a verification stage."""
 
+    if command.get("frozen_candidate_only") is True:
+        return False
     command_owner = str(command.get("owner") or "impl_self_check").strip()
     stage_owner = str(verification_owner or "").strip()
     producer_task_id = str(command.get("producer_task_id") or "").strip()

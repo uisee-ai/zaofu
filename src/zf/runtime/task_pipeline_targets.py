@@ -29,6 +29,11 @@ def prepare_contract_snapshot(
         base_commit=str(workspace.base_commit),
         task_ref=f"{runtime.config.runtime.git.task_ref_prefix}/{task.id}",
     )
+    if any(item.get("frozen_candidate_only") for item in snapshot["acceptance_criteria"]):
+        from zf.runtime.candidate_verification_stages import has_candidate_verification_consumer
+
+        if not has_candidate_verification_consumer(runtime.config):
+            raise ValueError("frozen_candidate_acceptance_ids requires a downstream Candidate Verify stage")
     descriptor = write_task_contract_snapshot(
         Path(runtime.state_dir),
         snapshot,

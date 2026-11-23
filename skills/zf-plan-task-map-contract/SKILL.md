@@ -799,6 +799,15 @@ supported arrangement is to bind them to a standard task with its own independen
 module checks, leaving the read-only task with its baseline obligations. Recheck
 the command producer, unique command IDs and goal references after moving them.
 
+When a completed sibling must retain its approved contract, a read-only audit
+may declare `evidence_contract.frozen_candidate_acceptance_ids` on its own row.
+List only mandatory `candidate_verify` AC IDs that belong to the frozen integrated
+candidate. Bind every AC to explicit command IDs. Keep a separate mandatory local
+criterion with an independently executable check. The initial read-only preview
+shows both the baseline requirements and the deferred IDs. Full Candidate Verify
+still requires the listed criteria and commands. A shared command remains local
+when a baseline criterion names it. Review the configured final Reader stage.
+
 When a candidate audit depends on an external gate, put the gate task in
 `blocked_by` and declare `required_external_digest_env` in the audit's
 `evidence_contract`. The audit command may read that environment variable; the

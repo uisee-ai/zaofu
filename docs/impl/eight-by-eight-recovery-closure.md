@@ -1078,3 +1078,5 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 PNG 的索引项提供 `image_page_command`。无法挂载时，可视化客户端按该命令读取第 0 页，再按 `next_page` 获取同一 attempt、来源和 SHA-256 的后续页，直至值为 null。将各页的 `data_base64` 顺序拼接并渲染为一张 PNG，在图像工具返回后独立核对视口。每页重新鉴权，仅返回绑定来源的原始字节。分页产出记为读取成本，图片传输本身不生成产品判词。
 
 对于批准的 Task Map，顶层明确同时声明 `runtime_only: true`、`write_free: true` 和空 `allowed_paths` 的任务进入 `verify_only`。其顶层 `verification_read_paths` 随同一任务写入 TaskStore 的 evidence_contract。顶层与嵌套声明冲突，或只读声明同时携带写路径时，Plan 校验返回具体任务和字段；只有空写路径本身不会把开发任务改成审计。
+
+若已完成的兄弟任务必须保留原合同，只读审计可在自己的 `evidence_contract.frozen_candidate_acceptance_ids` 中列出由最终冻结 Candidate 执行的强制 `candidate_verify` 条款。每个条款须显式绑定命令，本地仍须有可独立执行的强制基线检查。仅候选使用的命令随条款延后，共用命令仍在基线执行。Plan 预览列出实际初审义务及延后的 ID。Task Verify 保留完整合同快照，最终 Candidate 汇集全部强制条款与命令重新验证。使用这项声明需要配置独立的下游 Candidate Reader。

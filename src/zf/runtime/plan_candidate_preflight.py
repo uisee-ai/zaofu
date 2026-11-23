@@ -196,6 +196,14 @@ def evaluate_plan_candidate_preflight(
         errors.extend(_claim_acceptance_command_errors(
             task_map, host_commands=(writer_policy or {}).get("host_verification_commands", ()),
         ))
+        from zf.runtime.frozen_audit_scope import FROZEN_CANDIDATE_IDS
+
+        for task in tasks:
+            evidence = task.get("evidence_contract")
+            if (isinstance(evidence, Mapping) and FROZEN_CANDIDATE_IDS in evidence
+                    and (writer_policy or {}).get("frozen_candidate_reader") is not True):
+                _error(errors, "frozen_candidate_consumer_missing", f"task_map.tasks[{task.get('task_id')}].evidence_contract",
+                       "The pinned workflow must have a downstream Candidate Verify stage for deferred audit criteria.")
         errors.extend(_rolling_smoke_command_errors(task_map, metadata=metadata))
         if validation.passed:
             task_items: list[dict[str, Any]] = []

@@ -211,11 +211,22 @@ def _initial_readonly_verify(item: dict) -> dict:
     except ValueError:
         return {"initial_readonly_verify": {"status": "requires_dispatch_contract"}}
     commands = task_map_verification_commands(raw)
+    from zf.runtime.frozen_audit_scope import bind_frozen_audit_scope
+    from zf.runtime.writer_task_materialization import writer_task_evidence_contract
+
+    try:
+        bind_frozen_audit_scope(writer_task_evidence_contract(raw), criteria, commands,
+                                task_id=task_id, write_paths=raw.get("allowed_paths"))
+    except ValueError as exc:
+        return {"initial_readonly_verify": {"status": "invalid", "reason": str(exc)}}
     owner, _ = snapshot_verification_route(criteria, commands=commands, task_id=task_id)
     baseline = raw.get("immutable_baseline") or _object(raw.get("evidence_contract")).get("immutable_baseline", "")
     return {"initial_readonly_verify": {
         "verification_owner": owner,
         "declared_baseline": baseline,
+        **({"frozen_candidate_acceptance_ids": [c["acceptance_id"] for c in criteria
+                                               if c.get("frozen_candidate_only")]}
+           if any(c.get("frozen_candidate_only") for c in criteria) else {}),
         "mandatory_acceptance_ids": [c["acceptance_id"] for c in criteria if c["mandatory"]
                                      and acceptance_required_for_stage(c, verification_owner=owner)],
         "command_ids": [c["id"] for c in commands if verification_command_required_for_stage(
@@ -351,6 +362,7 @@ def _object(value: Any) -> Mapping[str, Any]:
 def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     """Snapshot the exact mechanical writer policy used after Plan."""
 
+    from zf.runtime.candidate_verification_stages import has_candidate_verification_consumer
     from zf.runtime.plan_candidate_role_preflight import writer_role_policy
 
     workflow = getattr(config, "workflow", None)
@@ -358,6 +370,7 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     split = getattr(work_units, "split_quality", None)
     host = getattr(getattr(config, "runtime", None), "host_verification", None)
     return {
+        "frozen_candidate_reader": has_candidate_verification_consumer(config),
         "host_verification_commands": list(host.commands) if host and host.enabled else [],
         "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
