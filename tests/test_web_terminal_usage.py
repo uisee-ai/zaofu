@@ -400,3 +400,95 @@ def test_codex_hook_requires_matching_project_and_native_session_meta(
         )
     )
     assert service.bind_codex_reference(native_id, tmp_path).status == "pending"
+
+
+def test_incremental_rollout_matches_fresh_read_across_file_changes(tmp_path, monkeypatch):
+    from zf.web.terminal_usage_cursor import UsageCursor
+
+    def service():
+        return TerminalUsageService(state_dir=tmp_path / "state", codex_sessions_root=tmp_path)
+
+    reader = service()
+    path = tmp_path / "rollout-fixture.jsonl"
+    record = _record(provider="codex", provider_session_id="sample",
+                     provider_session_path=str(path), project_root=str(tmp_path))
+    meta = {"type": "session_meta", "payload": {"id": "sample", "cwd": str(tmp_path)}}
+
+    def count(tokens, model):
+        return {"type": "event_msg", "payload": {"type": "token_count", "info": {
+            "model": model, "total_token_usage": {"input_tokens": tokens}}}}
+
+    reads = []
+    original = UsageCursor.records
+
+    def measured(cursor, handle, size):
+        entry = [cursor.offset, 0, 0]
+        reads.append(entry)
+        for row in original(cursor, handle, size):
+            entry[1] += 1
+            yield row
+        entry[2] = handle.tell() - entry[0]
+
+    monkeypatch.setattr(UsageCursor, "records", measured)
+
+    def compare():
+        expected = service().snapshot(record)
+        reads.clear()
+        assert reader.snapshot(record) == expected
+        return expected
+
+    _append_jsonl(path, meta, *[{"padding": "x" * 256}] * 64, count(50, "first"))
+    assert compare()["input_tokens"] == 50
+    assert reads == [[0, 66, path.stat().st_size]]
+    assert compare()["input_tokens"] == 50
+    assert reads == []
+    offset = path.stat().st_size
+    receipt = json.dumps(count(7, "second")).encode() + b"\n"
+    with path.open("ab") as handle:
+        handle.write(receipt[:12])
+    assert compare()["input_tokens"] == 50
+    assert reads == [[offset, 0, 12]]
+    with path.open("ab") as handle:
+        handle.write(receipt[12:])
+    assert compare()["models"] == ["first", "second"]
+    assert reads == [[offset, 1, len(receipt)]]
+    assert reader.snapshot(record)["input_tokens"] == 57
+
+    path.write_text("")
+    _append_jsonl(path, meta, count(3, "third"))
+    assert compare()["input_tokens"] == 3
+    assert reads[0][0] == 0
+    replacement = path.with_suffix(".next")
+    _append_jsonl(replacement, meta, count(25, "fourth"))
+    replacement.replace(path)
+    assert compare()["models"] == ["fourth"]
+    assert reads[0][0] == 0
+    assert reader.settle(record)["status"] == "observed"
+    _append_jsonl(path, {"type": "session_meta", "payload": {"id": "another"}})
+    assert reader.snapshot(record)["status"] == "unavailable"
+
+
+def test_concurrent_claude_sessions_keep_incremental_receipts_separate(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+
+    def new_reader():
+        return TerminalUsageService(state_dir=tmp_path / "state", claude_projects_root=tmp_path)
+
+    def receipt(session, tokens):
+        return {"type": "assistant", "sessionId": session, "message": {
+            "id": "shared-message-id", "model": "claude-sonnet", "usage": {"input_tokens": tokens}}}
+
+    records = []
+    for session, tokens in [("first", 11), ("second", 19)]:
+        path = tmp_path / f"{session}.jsonl"
+        _append_jsonl(path, receipt(session, tokens))
+        record = _record(provider="claude-code", provider_session_id=session, provider_session_path=str(path))
+        records.append(replace(record, session_id="term-" + session))
+    reader = new_reader()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert [s["input_tokens"] for s in pool.map(reader.snapshot, records)] == [11, 19]
+        _append_jsonl(tmp_path / "first.jsonl", receipt("first", 15))
+        snapshots = list(pool.map(reader.snapshot, records))
+        assert snapshots == [new_reader().snapshot(record) for record in records]
+        assert [s["input_tokens"] for s in snapshots] == [15, 19]

@@ -148,6 +148,11 @@ export function WebChatActivityDrawer({
             ) : (
               <div className="webchat-observed-terminal"><Radio size={15} /><span>Host-observed status: {selected.status}</span></div>
             )}
+            {Boolean(selected.terminal_evidence?.length) && <details>
+              <summary>Terminal evidence</summary>
+              <ul>{selected.terminal_evidence?.map((entry, index) =>
+                <li key={String(entry.event_id || index)}>{String(entry.event_type || "Event")} <code>{String(entry.ref || entry.event_id || "")}</code></li>)}</ul>
+            </details>}
             {(selected.artifact_refs || []).length ? (
               <div className="webchat-child-artifacts">
                 <span><Bot size={14} /> Output</span>

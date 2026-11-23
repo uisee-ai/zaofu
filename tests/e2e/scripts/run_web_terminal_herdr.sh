@@ -10,7 +10,7 @@ spec=tests/web-terminal-herdr095.spec.ts
 filter=()
 unset ZF_WEB_HERDR_HOST_SMOKE ZF_WEB_TRUSTED_SESSION ZF_WEB_PASSCODE HERDR_SOCKET_PATH HERDR_SESSION
 case "$tier" in
-  fixture) filter=(-g "survives uncertainty") ;;
+  fixture) filter=(tests/web-terminal-212.spec.ts --grep-invert "official Herdr") ;;
   legacy) spec=tests/web-terminal.spec.ts ;;
   host)
     binary=$(realpath "${2:?provide the Herdr 0.9.5 binary}")
@@ -70,7 +70,12 @@ for i in {1..100}; do
   if curl -fsS "$ZF_WEB_BASE_URL/" -o /dev/null 2>/dev/null; then break; fi
   sleep 0.2
 done
-docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
+evidence_args=()
+if [[ -n "${ZF_TERMINAL_SCREENSHOTS:-}" ]]; then
+  mkdir -p "$ZF_TERMINAL_SCREENSHOTS"
+  evidence_args=(-v "$(realpath "$ZF_TERMINAL_SCREENSHOTS"):/screenshots" -e ZF_TERMINAL_SCREENSHOTS=/screenshots)
+fi
+docker run "${evidence_args[@]}" --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
   -v "$web:/work/web:ro" -v "$run:$run" -w /work/web \
   -e ZF_WEB_TERMINAL_FIXTURE -e ZF_WEB_HERDR_HOST_SMOKE -e ZF_WEB_ACTION_TOKEN_FOR_TEST -e ZF_WEB_BASE_URL \
   --entrypoint bash mcp/playwright:latest -ec '
@@ -78,3 +83,6 @@ docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
     export ZF_E2E_CHROMIUM_EXECUTABLE_PATH="${chromium[0]}"
     exec ./node_modules/.bin/playwright test "$@" --workers=1 --output=/tmp/zf-browser-result
   ' bash "$spec" "${filter[@]}"
+if [[ "$tier" == host ]]; then
+  python "$root/tests/e2e/scripts/herdr_cursor_widths.py" "$binary"
+fi

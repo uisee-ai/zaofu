@@ -10,8 +10,11 @@ function hasPromptSurface(line: IBufferLine | undefined): boolean {
 
 function hasPromptMarker(line: IBufferLine | undefined): boolean {
   const cell = line?.getCell(0);
-  return cell?.getChars() === "›" && !!cell.isBold() && !!cell.isDim()
-    && cell.isFgRGB() && cell.getFgColor() === 0xeeeeee;
+  if (cell?.getChars() !== "›" || !cell.isBold() || !cell.isDim()) return false;
+  if (cell.isFgRGB()) return cell.getFgColor() === 0xeeeeee;
+  // Codex 0.171 can leave the marker at default ink and color only the text.
+  const text = line?.getCell(2);
+  return !!cell.isFgDefault() && !!text?.isFgRGB() && text.getFgColor() === 0xeeeeee;
 }
 
 export function trackCodexPromptRows(terminal: Terminal): () => void {

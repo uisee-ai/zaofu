@@ -1066,8 +1066,9 @@ async def test_bridge_rejects_sequence_gaps_after_full_frame() -> None:
 
 @pytest.mark.asyncio
 async def test_slow_websocket_is_closed_instead_of_dropping_terminal_frames(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("DEBUG", logger=terminal_gateway.__name__)
     class FastBridge:
         closed = False
 
@@ -1110,7 +1111,8 @@ async def test_slow_websocket_is_closed_instead_of_dropping_terminal_frames(
             await asyncio.Event().wait()
             return {}
 
-        async def close(self, *, code: int) -> None:
+        async def close(self, *, code: int, reason: str) -> None:
+            assert reason == "terminal output overloaded"
             self.codes.append(code)
 
     monkeypatch.setattr(terminal_gateway, "HerdrNDJSONBridge", FastBridge)
@@ -1126,6 +1128,7 @@ async def test_slow_websocket_is_closed_instead_of_dropping_terminal_frames(
     )
 
     assert websocket.codes == [1013]
+    assert "Terminal output overloaded: frames=4 bytes=" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+const capture = JSON.parse(readFileSync(new URL("./fixtures/herdr-codex-prompt.json", import.meta.url), "utf8"));
 
 const fixture = process.env.ZF_WEB_TERMINAL_FIXTURE;
 
@@ -24,7 +25,7 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   const sample = [
     ink + bg + "Unrelated output" + reset,
     "", pad, bg + ink + "\x1b[1;2m› " + reset + bg + ink + "介绍下你自己" + reset,
-    bg + ink + "  Continued line" + reset, pad, "Reply", "",
+    bg + ink + "  Continued line" + reset, pad, "Reply", ...capture.ansi_rows, "",
   ].join("\r\n");
   setScenario({ status: "blocked", sample_output: sample });
   const dir = path.join(root, "codex", "sessions", "2026", "11", "23");
@@ -83,8 +84,16 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   await expect(prompt).toHaveCSS("color", colors.color);
   await expect(continued).toHaveCSS("background-color", colors.backgroundColor);
   await expect(screen.getByText("Unrelated output")).toHaveCSS("background-color", originalSurface);
+  const model = screen.locator("span.xterm-bg-257").filter({ hasText: "GPT-6.2-Sol" });
+  const menuSurface = await model.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(menuSurface).not.toEqual("rgba(0, 0, 0, 0)");
+  const history = screen.locator(".web-terminal-codex-prompt").filter({ hasText: "请检查界面排版" });
+  await expect(history.first()).toBeVisible();
+  const screenshotDir = process.env.ZF_TERMINAL_SCREENSHOTS;
+  if (screenshotDir) await drawer.screenshot({path: path.join(screenshotDir, "prompt-light.png")});
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(prompt).toHaveCSS("background-color", originalSurface);
+  if (screenshotDir) await drawer.screenshot({path: path.join(screenshotDir, "prompt-dark.png")});
   await page.emulateMedia({ colorScheme: "light" });
   await expect(prompt).toHaveCSS("background-color", colors.backgroundColor);
 
@@ -114,8 +123,12 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   await expect(tab).toContainText("Working");
   let observers = 0;
   const observerCommands: string[] = [];
-  const mirror = await page.context().newPage();
-  await mirror.goto("/");
+  const controlWidth = await screen.evaluate(el => el.clientWidth);
+  const phone = await page.context().browser()!.newContext({
+    viewport: { width: 390, height: 844 }, storageState: await page.context().storageState(),
+  });
+  const mirror = await phone.newPage();
+  await mirror.goto(page.url());
   await mirror.getByRole("button", { name: "Toggle Terminal" }).click();
   const viewer = mirror.getByRole("complementary", { name: "Coding Agent Terminal" });
   const observersWithFullFrame = new Set<number>();
@@ -137,13 +150,18 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   const mirrorScreen = viewer.locator(".is-active .xterm-screen");
   await expect(mirrorScreen).toContainText("Coding agent ready");
   await mirrorScreen.click({ position: { x: 30, y: 30 } });
+  await expect(mirrorScreen).toContainText("Select Model and Effort");
+  await expect(mirrorScreen.locator(".web-terminal-codex-prompt").filter({hasText: "第二行包含"})).toBeVisible();
+  await mirror.setViewportSize({ width: 844, height: 390 });
+  await expect(mirrorScreen).toContainText("Coding agent ready");
+  expect(await screen.evaluate(el => el.clientWidth)).toBe(controlWidth);
   expect(observerCommands).toEqual([]);
   await screen.click({ position: { x: 2, y: 2 } });
   await page.keyboard.type("controller-alive");
   await expect(screen).toContainText("controller-alive");
   await page.keyboard.press("Enter");
   await expect.poll(() => submitted.length).toBe(1);
-  await mirror.close();
+  await phone.close();
   setScenario({ tab_error: "tab_not_found" });
   expect((await request.post(api + "/reconcile", { headers })).ok()).toBeTruthy();
   expect((await record()).state).toBe("missing");
@@ -163,9 +181,14 @@ test("official Herdr and Codex create, observe, regain control and stop the same
   await page.getByRole("button", { name: "Toggle Terminal" }).click();
   const drawer = page.getByRole("complementary", { name: "Coding Agent Terminal" });
   const frames: string[] = [];
+  let controlColumns = 0;
   page.on("websocket", socket => socket.on("framereceived", ({ payload }) => {
     if (typeof payload !== "string") return;
-    if (payload.includes('"terminal.frame"') && JSON.parse(payload).full) frames.push(new URL(socket.url()).pathname);
+    if (!payload.includes('"terminal.frame"')) return;
+    const meta = JSON.parse(payload);
+    const endpoint = new URL(socket.url()).pathname;
+    if (meta.full) frames.push(endpoint);
+    if (endpoint.endsWith("/control")) controlColumns = meta.width;
   }));
   await drawer.getByRole("button", { name: "New terminal" }).click();
   const created = page.waitForResponse(r => r.request().method() === "POST" && r.url().endsWith("/terminal-sessions"));
@@ -177,6 +200,32 @@ test("official Herdr and Codex create, observe, regain control and stop the same
 
   try {
     await expect.poll(() => frames.some(p => p.endsWith(`/${id}/control`))).toBeTruthy();
+    const phone = await page.context().browser()!.newContext({
+      viewport: {width: 390, height: 844}, storageState: await page.context().storageState(),
+    });
+    try {
+      const mirror = await phone.newPage();
+      const observeCommands: string[] = [];
+      mirror.on("websocket", socket => {
+        if (new URL(socket.url()).pathname.endsWith("/observe")) {
+          socket.on("framesent", event => observeCommands.push(String(event.payload)));
+        }
+      });
+      await mirror.goto(page.url());
+      await mirror.getByRole("button", {name: "Toggle Terminal"}).click();
+      const observer = mirror.getByRole("complementary", {name: "Coding Agent Terminal"});
+      await observer.getByRole("button", {name: "Terminal actions"}).click();
+      await observer.getByRole("menu").getByText("Observe", {exact: true}).click();
+      const view = observer.locator(".is-active .web-terminal-view");
+      await expect(view).toHaveAttribute("data-terminal-status", "observing");
+      const columns = controlColumns;
+      await mirror.setViewportSize({width: 844, height: 390});
+      await expect(drawer.locator(".is-active .web-terminal-view")).toHaveAttribute("data-terminal-status", "controlling");
+      expect(controlColumns).toBe(columns);
+      expect(observeCommands).toEqual([]);
+    } finally {
+      await phone.close();
+    }
     await drawer.getByRole("button", { name: "Terminal actions" }).click();
     await drawer.getByRole("menu").getByText("Observe", { exact: true }).click();
     await expect.poll(() => frames.some(p => p.endsWith(`/${id}/observe`))).toBeTruthy();

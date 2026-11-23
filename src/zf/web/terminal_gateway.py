@@ -7,6 +7,7 @@ import base64
 import binascii
 from dataclasses import dataclass
 import json
+import logging
 import secrets
 from threading import Lock
 import time
@@ -506,6 +507,7 @@ async def relay_terminal_websocket(
         asyncio.create_task(receive_control()),
     }
     close_code = 1000
+    close_reason = ""
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         failure: BaseException | None = None
@@ -524,6 +526,9 @@ async def relay_terminal_websocket(
                 failure = BridgeBackpressureError(
                     "terminal attachment could not drain; reconnect for a full frame"
                 )
+        if isinstance(failure, BridgeBackpressureError):
+            logging.getLogger(__name__).debug("Terminal output overloaded: frames=%d bytes=%d", queue.qsize(), queued_bytes)
+            close_reason = "terminal output overloaded"
         if isinstance(failure, BridgeBackpressureError) or observer_eof:
             close_code = 1013
         elif failure is not None:
@@ -535,6 +540,9 @@ async def relay_terminal_websocket(
         await asyncio.gather(*tasks, return_exceptions=True)
         await bridge.close()
         try:
-            await websocket.close(code=close_code)
+            if close_reason:
+                await websocket.close(code=close_code, reason=close_reason)
+            else:
+                await websocket.close(code=close_code)
         except RuntimeError:
             pass

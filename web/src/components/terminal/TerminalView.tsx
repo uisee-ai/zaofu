@@ -1,12 +1,12 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import type { ThemeMode } from "../../app/sharedTypes";
-import { issueTerminalAttachment, terminalWebSocketUrl } from "./api";
+import { TerminalRequestError, issueTerminalAttachment, terminalWebSocketUrl } from "./api";
 import {
   acceptsTerminalFrame,
   terminalModifierBits,
@@ -22,7 +22,9 @@ import type {
   TerminalSession,
 } from "./types";
 
-interface TerminalViewProps {
+import { TerminalQuote, type QuoteDestinationProps } from "./TerminalQuote";
+
+interface TerminalViewProps extends QuoteDestinationProps {
   mouse: boolean;
   expectedClose: boolean;
   mode: TerminalAttachmentMode;
@@ -150,6 +152,8 @@ function terminalCellAtPointer(
 
 export function TerminalView({
   mouse,
+  quoteTargets,
+  onQuote,
   expectedClose,
   mode,
   onStatusChange,
@@ -163,16 +167,21 @@ export function TerminalView({
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const writableSocket = useRef<WebSocket | null>(null);
   const modeRef = useRef(mode);
   const mouseRef = useRef(mouse);
   const visibleRef = useRef(visible);
   const takeoverSeenRef = useRef(0);
   const expectedCloseRef = useRef(expectedClose);
+  const resumeOverloadOnShow = useRef(false);
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
+  const lastInputSocket = useRef<WebSocket | null>(null);
+  const [inputNotice, setInputNotice] = useState("");
+  const [selection, setSelection] = useState(false);
   const resolvedTheme = useResolvedDashboardTheme(themeMode);
   const terminalTheme = TERMINAL_THEMES[resolvedTheme];
 
@@ -197,22 +206,27 @@ export function TerminalView({
       theme: terminalTheme,
     });
     const fit = new FitAddon();
-    const unicode = new Unicode11Addon();
+    const unicode = new UnicodeGraphemesAddon();
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon());
     terminal.loadAddon(unicode);
-    terminal.unicode.activeVersion = "11";
     terminal.open(host);
+    const selected = terminal.onSelectionChange(() => setSelection(terminal.hasSelection()));
     if (visibleRef.current) fit.fit();
     terminalRef.current = terminal;
     fitRef.current = fit;
 
     const sendTerminalText = (text: string): void => {
       const socket = socketRef.current;
-      if (modeRef.current !== "control" || socket?.readyState !== WebSocket.OPEN) return;
+      if (modeRef.current !== "control") return;
+      if (!socket || socket.readyState !== WebSocket.OPEN || writableSocket.current !== socket) {
+        setInputNotice("Disconnected. Input was not sent.");
+        return;
+      }
       for (const chunk of terminalInputChunks(text)) {
         if (socket.readyState !== WebSocket.OPEN) break;
         socket.send(JSON.stringify({ type: "terminal.input", text: chunk }));
+        lastInputSocket.current = socket;
       }
     };
     const textarea = terminal.textarea;
@@ -311,8 +325,9 @@ export function TerminalView({
     });
     const binary = terminal.onBinary((value) => {
       const socket = socketRef.current;
-      if (modeRef.current === "control" && socket?.readyState === WebSocket.OPEN) {
+      if (modeRef.current === "control" && socket?.readyState === WebSocket.OPEN && writableSocket.current === socket) {
         socket.send(JSON.stringify({ type: "terminal.input", bytes: window.btoa(value) }));
+        lastInputSocket.current = socket;
       }
     });
     let resizeTimer: number | null = null;
@@ -321,7 +336,7 @@ export function TerminalView({
       if (resizeTimer !== null) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
         resizeTimer = null;
-        fit.fit();
+        if (modeRef.current === "control") fit.fit();
         const socket = socketRef.current;
         if (modeRef.current === "control" && socket?.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
@@ -342,6 +357,7 @@ export function TerminalView({
       imeInput.dispose();
       input.dispose();
       binary.dispose();
+      selected.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -363,7 +379,7 @@ export function TerminalView({
     if (!visible) return undefined;
     const frame = window.requestAnimationFrame(() => {
       const terminal = terminalRef.current;
-      fitRef.current?.fit();
+      if (modeRef.current === "control") fitRef.current?.fit();
       if (!terminal) return;
       const socket = socketRef.current;
       if (modeRef.current === "control" && socket?.readyState === WebSocket.OPEN) {
@@ -391,11 +407,23 @@ export function TerminalView({
     let lastSeq: number | null = null;
     let pendingFrame: Extract<TerminalServerMessage, { type: "terminal.frame" }> | null = null;
     let streaming = false;
+    let ended = false;
+    let stableTimer: number | undefined;
+    let parsedBacklog = 0;
+    let parsedSeq: number | null = null;
+    const scheduleRetry = () => {
+      const delay = terminalReconnectDelay(retryAttemptRef.current++);
+      setStatus(`reconnecting in ${Math.round(delay / 100) / 10}s`);
+      retryTimerRef.current = window.setTimeout(() => {
+        retryTimerRef.current = null;
+        setRetryGeneration(value => value + 1);
+      }, delay);
+    };
 
     const connect = async () => {
       setStatus("authorizing");
       setError("");
-      fitRef.current?.fit();
+      if (mode === "control" && visibleRef.current) fitRef.current?.fit();
       const takeover = mode === "control" && takeoverNonce > takeoverSeenRef.current;
       if (takeover) takeoverSeenRef.current = takeoverNonce;
       try {
@@ -414,7 +442,7 @@ export function TerminalView({
         socket.binaryType = "arraybuffer";
         socketRef.current = socket;
         socket.onopen = () => {
-          retryAttemptRef.current = 0;
+          if (cancelled) return;
           setStatus("waiting for full frame");
           if (mode === "control") {
             socket?.send(JSON.stringify({
@@ -425,23 +453,36 @@ export function TerminalView({
           }
         };
         socket.onmessage = (event) => {
+          if (cancelled || socket?.readyState !== WebSocket.OPEN) return;
           if (event.data instanceof ArrayBuffer) {
             if (!pendingFrame) {
               setError("terminal bridge returned an unexpected binary payload");
-              socket?.close(1002);
+              socket?.close(4002);
               return;
             }
-            terminal.write(new Uint8Array(event.data));
+            const size = event.data.byteLength;
+            parsedBacklog += size;
+            if (parsedBacklog > 8 * 1024 * 1024 && parsedBacklog > size) {
+              console.debug("Terminal parser backlog", { bytes: parsedBacklog, receivedSeq: pendingFrame.seq, parsedSeq });
+              socket?.close(4013, "terminal output overloaded");
+              return;
+            }
+            const seq = pendingFrame.seq;
+            // Keep the reset in xterm’s write queue, after any old attachment data.
+            if (pendingFrame.full) terminal.write("\x1bc");
+            terminal.write(new Uint8Array(event.data), () => { parsedBacklog -= size; parsedSeq = seq; });
             pendingFrame = null;
             if (!streaming) {
               streaming = true;
+              if (mode === "control") writableSocket.current = socket;
+              stableTimer = window.setTimeout(() => { retryAttemptRef.current = 0; }, 10000);
               setStatus(mode === "control" ? "controlling" : "observing");
             }
             return;
           }
           if (pendingFrame) {
             setError("terminal frame payload is missing; reconnecting");
-            socket?.close(1002);
+            socket?.close(4002);
             return;
           }
           let message: TerminalServerMessage;
@@ -449,10 +490,12 @@ export function TerminalView({
             message = JSON.parse(String(event.data)) as TerminalServerMessage;
           } catch {
             setError("terminal bridge returned invalid data");
-            socket?.close(1002);
+            socket?.close(4002);
             return;
           }
           if (message.type === "terminal.closed") {
+            ended = true;
+            writableSocket.current = null;
             setStatus("closed");
             if (expectedCloseRef.current) {
               setError("");
@@ -463,39 +506,40 @@ export function TerminalView({
           }
           if (!acceptsTerminalFrame(lastSeq, hasFullFrame, message)) {
             setError("terminal frame baseline/sequence is invalid; reconnecting");
-            socket?.close(1002);
+            socket?.close(4002);
             return;
           }
-          if (message.full) {
-            terminal.reset();
-            hasFullFrame = true;
+          if (mode === "observe" && (terminal.cols !== message.width || terminal.rows !== message.height)) {
+            terminal.resize(message.width, message.height);
           }
+          if (message.full) hasFullFrame = true;
           lastSeq = message.seq;
           pendingFrame = message;
         };
-        socket.onerror = () => setError("terminal websocket failed");
+        socket.onerror = () => { if (!cancelled) setError("terminal websocket failed"); };
         socket.onclose = (event) => {
+          window.clearTimeout(stableTimer);
+          if (cancelled) return;
+          if (lastInputSocket.current === socket && event.code !== 1000) setInputNotice("Connection interrupted. Check recent input before sending again.");
+          if (event.code === 4013 || event.reason === "terminal output overloaded") {
+            socketRef.current = null;
+            resumeOverloadOnShow.current = document.hidden;
+            setStatus("overloaded");
+            setError("Terminal output paused. Reconnect for a fresh screen.");
+            return;
+          }
           if (socketRef.current === socket) socketRef.current = null;
-          if (
-            cancelled
-            || session.state !== "active"
-            || expectedCloseRef.current
-            || event.code === 1000
-            || event.code === 1008
-            || event.code === 4401
-            || event.code === 4403
-          ) return;
-          const delay = terminalReconnectDelay(retryAttemptRef.current);
-          retryAttemptRef.current += 1;
-          setStatus(`reconnecting in ${Math.round(delay / 100) / 10}s`);
-          retryTimerRef.current = window.setTimeout(() => {
-            retryTimerRef.current = null;
-            setRetryGeneration((value) => value + 1);
-          }, delay);
+          if (ended || expectedCloseRef.current || [1000, 1008, 4401, 4403].includes(event.code)) {
+            setStatus("closed");
+            if (event.code !== 1000) setError(event.reason || "Terminal access ended.");
+            return;
+          }
+          scheduleRetry();
         };
       } catch (reason) {
         if (!cancelled) {
-          setStatus("unavailable");
+          if (!expectedCloseRef.current && (!(reason instanceof TerminalRequestError) || reason.status >= 500)) scheduleRetry();
+          else setStatus("unavailable");
           setError(reason instanceof Error ? reason.message : String(reason));
         }
       }
@@ -503,6 +547,9 @@ export function TerminalView({
     void connect();
     return () => {
       cancelled = true;
+      writableSocket.current = null;
+      lastInputSocket.current = null;
+      window.clearTimeout(stableTimer);
       if (retryTimerRef.current !== null) {
         window.clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
@@ -512,6 +559,18 @@ export function TerminalView({
     };
   }, [mode, projectId, retryGeneration, session.session_id, session.state, takeoverNonce]);
 
+  useEffect(() => {
+    if (status !== "overloaded" || !resumeOverloadOnShow.current) return;
+    const resume = () => {
+      if (document.hidden || !resumeOverloadOnShow.current) return;
+      resumeOverloadOnShow.current = false;
+      setRetryGeneration(value => value + 1);
+    };
+    resume();
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  }, [status]);
+
   const visibleNotice = error || (status.startsWith("reconnecting") ? status : "");
 
   return (
@@ -520,9 +579,11 @@ export function TerminalView({
       data-terminal-status={status}
       data-terminal-theme={resolvedTheme}
     >
+      {terminalRef.current && quoteTargets.length > 0 && <TerminalQuote hasSelection={selection} terminal={terminalRef.current} session={session} quoteTargets={quoteTargets} onQuote={onQuote} />}
+      {inputNotice && <div role="status" className="web-terminal-input-notice">{inputNotice} <button type="button" onClick={() => setInputNotice("")}>Dismiss</button></div>}
       {visibleNotice ? (
         <div className="web-terminal-connection-notice" role="status">
-          {visibleNotice}
+          {visibleNotice} {status === "overloaded" && <button type="button" onClick={() => setRetryGeneration(value => value + 1)}>Reconnect</button>}
         </div>
       ) : null}
       <div

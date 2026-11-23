@@ -8,6 +8,8 @@ from provider transcript files is consumed.
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from copy import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -25,8 +27,10 @@ from zf.core.cost.calculator import calculate_usage_cost
 from zf.core.cost.catalog import PricingCatalogStore
 from zf.core.cost.tracker import CostTracker
 from zf.core.state.locks import locked_path
+from zf.runtime.codex_turn_boundary import CodexTurnBoundary
 from zf.runtime.provider_usage import canonical_usage_tokens
 from zf.web.terminal_backend import TerminalSessionRecord
+from zf.web.terminal_usage_cursor import UsageCursor
 
 
 TERMINAL_COST_FILENAME = "terminal-cost.jsonl"
@@ -103,6 +107,24 @@ class _UsageSnapshot:
     observed_at: str = ""
     reason: str = ""
     turn_boundary: dict = field(default_factory=dict)
+    identity_conflict: bool = False
+
+
+@dataclass
+class _UsageRead:
+    cursor: UsageCursor = field(default_factory=UsageCursor)
+    snapshot: _UsageSnapshot | None = None
+    messages: dict[str, tuple[str, dict[str, Any], str]] = field(default_factory=dict)
+    rows: int = 0
+    boundary: CodexTurnBoundary = field(default_factory=CodexTurnBoundary)
+    buckets: dict[str, _UsageBucket] = field(default_factory=dict)
+    previous: dict[str, int] = field(default_factory=dict)
+    seen_incremental: set[str] = field(default_factory=set)
+    current_model: str = "unknown"
+    provider: str = "openai"
+    accounting_mode: str = "unknown"
+    observed_at: str = ""
+    context_ratio: float | None = None
 
 
 class TerminalUsageService:
@@ -133,7 +155,7 @@ class TerminalUsageService:
             codex_shell_snapshots_root or codex_config_root / "shell_snapshots"
         ).resolve(strict=False)
         self.cost_path = self.state_dir / TERMINAL_COST_FILENAME
-        self._cache: dict[tuple[str, str, int, int], _UsageSnapshot] = {}
+        self._cache: OrderedDict[tuple[str, str, str], _UsageRead] = OrderedDict()
         self._lock = RLock()
 
     def prepare_launch(self, provider: str, project_root: Path) -> TerminalUsageLaunch:
@@ -305,6 +327,7 @@ class TerminalUsageService:
         internal = self._read_snapshot(record)
         if (
             internal.status not in {"observed", "awaiting_usage"}
+            and not internal.identity_conflict
             and record.usage_binding_status != "conflict"
         ):
             fallback = self._ledger_snapshot(record)
@@ -422,33 +445,41 @@ class TerminalUsageService:
                 provider=record.provider,
                 reason="provider transcript is not available yet",
             )
+        key = (self.instance_id(record), record.provider_session_id, str(path))
         try:
-            stat = path.stat()
+            with self._lock, path.open("rb") as handle:
+                version = UsageCursor.file_version(handle)
+                state = self._cache.get(key)
+                if state and state.cursor.version == version and state.snapshot:
+                    self._cache.move_to_end(key)
+                    return state.snapshot
+                if not state or not state.cursor.continues(handle, version):
+                    state = _UsageRead()
+                # Evict before mutation so a partial read or parse failure cannot be resumed.
+                self._cache.pop(key, None)
+                records = state.cursor.records(handle, version[2])
+                if record.provider == "claude-code":
+                    snapshot = self._read_claude(path, records=records, state=state,
+                                                 expected_session=record.provider_session_id)
+                else:
+                    snapshot = self._read_codex(
+                        path, expected_root=Path(record.project_root), records=records,
+                        state=state, expected_session=record.provider_session_id,
+                    )
+                if snapshot.status != "unavailable":
+                    state.cursor.anchor = state.cursor.fingerprint(handle)
+                    if UsageCursor.file_version(handle) != version:
+                        return _UsageSnapshot(status="awaiting_usage", source="provider_transcript",
+                                              provider=record.provider, reason="transcript changed during read")
+                    state.cursor.version = version
+                    state.snapshot = snapshot
+                    self._cache[key] = state
+                    if len(self._cache) > 32:
+                        self._cache.popitem(last=False)
+                return snapshot
         except OSError:
-            return _UsageSnapshot(
-                status="awaiting_usage",
-                source="provider_transcript",
-                provider=record.provider,
-                reason="provider transcript is not available yet",
-            )
-        cache_key = (record.provider, str(path), stat.st_mtime_ns, stat.st_size)
-        with self._lock:
-            cached = self._cache.get(cache_key)
-        if cached is not None:
-            return cached
-        snapshot = (
-            self._read_claude(path)
-            if record.provider == "claude-code"
-            else self._read_codex(path, expected_root=Path(record.project_root))
-        )
-        with self._lock:
-            self._cache = {
-                key: value
-                for key, value in self._cache.items()
-                if key[0] != record.provider or key[1] != str(path)
-            }
-            self._cache[cache_key] = snapshot
-        return snapshot
+            return _UsageSnapshot(status="awaiting_usage", source="provider_transcript",
+                                  provider=record.provider, reason="provider transcript is unavailable")
 
     def _resolve_transcript(self, record: TerminalSessionRecord) -> Path | None:
         root = (
@@ -473,11 +504,26 @@ class TerminalUsageService:
                     f"*/*/*/rollout-*-{record.provider_session_id}.jsonl"
                 )
             )
-        return matches[0].resolve(strict=False) if len(matches) == 1 else None
+        if len(matches) == 1:
+            path = matches[0].resolve(strict=False)
+            if self._under(path, root):
+                return path
+        return None
 
-    def _read_claude(self, path: Path) -> _UsageSnapshot:
-        messages: dict[str, tuple[str, dict[str, Any], str]] = {}
-        for index, obj in enumerate(self._jsonl(path)):
+    def _read_claude(
+        self, path: Path, *, records: Iterable[dict] | None = None,
+        state: _UsageRead | None = None, expected_session: str = "",
+    ) -> _UsageSnapshot:
+        state = state or _UsageRead()
+        messages = state.messages
+        if records is None:
+            records = self._jsonl(path)
+        for obj in records:
+            if expected_session and obj.get("sessionId") and obj["sessionId"] != expected_session:
+                return _UsageSnapshot(status="unavailable", source="provider_transcript", provider="anthropic",
+                                      reason="provider transcript session identity mismatch", identity_conflict=True)
+            index = state.rows
+            state.rows += 1
             if obj.get("type") != "assistant":
                 continue
             message = obj.get("message")
@@ -536,25 +582,23 @@ class TerminalUsageService:
             observed_at=observed_at,
         )
 
-    def _read_codex(self, path: Path, *, expected_root: Path, strict: bool = False) -> _UsageSnapshot:
-        from zf.runtime.codex_turn_boundary import CodexTurnBoundary
-
-        boundary = CodexTurnBoundary()
-        buckets: dict[str, _UsageBucket] = {}
-        previous: dict[str, int] = {}
-        seen_incremental: set[str] = set()
-        current_model = "unknown"
-        provider = "openai"
-        accounting_mode = "unknown"
-        observed_at = ""
-        context_ratio: float | None = None
-        for obj in self._jsonl(path, strict=strict):
-            boundary.consume(obj)
+    def _read_codex(
+        self, path: Path, *, expected_root: Path, strict: bool = False,
+        expected_session: str = "", records: Iterable[dict] | None = None, state: _UsageRead | None = None,
+    ) -> _UsageSnapshot:
+        state = state or _UsageRead()
+        if records is None:
+            records = self._jsonl(path, strict=strict)
+        for obj in records:
+            state.boundary.consume(obj)
             kind = obj.get("type")
             payload = obj.get("payload")
             if not isinstance(payload, dict):
                 payload = {}
             if kind == "session_meta":
+                if expected_session and payload.get("id") and payload["id"] != expected_session:
+                    return _UsageSnapshot(status="unavailable", source="provider_transcript", provider="codex",
+                                          reason="provider transcript session identity mismatch", identity_conflict=True)
                 cwd = str(payload.get("cwd") or "")
                 if cwd and Path(cwd).resolve(strict=False) != expected_root.resolve(
                     strict=False
@@ -563,12 +607,12 @@ class TerminalUsageService:
                         status="unavailable",
                         source="provider_transcript",
                         provider="codex",
-                        reason="provider transcript Project identity mismatch",
+                        reason="provider transcript Project identity mismatch", identity_conflict=True,
                     )
-                provider = str(payload.get("model_provider") or provider)
+                state.provider = str(payload.get("model_provider") or state.provider)
                 continue
             if kind == "turn_context":
-                current_model = str(payload.get("model") or current_model)
+                state.current_model = str(payload.get("model") or state.current_model)
                 continue
             if kind != "event_msg" or payload.get("type") != "token_count":
                 continue
@@ -578,7 +622,7 @@ class TerminalUsageService:
             raw_total = info.get("total_token_usage")
             raw_last = info.get("last_token_usage")
             timestamp = str(obj.get("timestamp") or "")
-            model = str(info.get("model") or current_model or "unknown")
+            model = str(info.get("model") or state.current_model or "unknown")
             if isinstance(raw_total, dict):
                 receipt = canonical_usage_tokens(
                     raw_total,
@@ -589,13 +633,13 @@ class TerminalUsageService:
                 delta = {
                     key: (
                         value
-                        if value < previous.get(key, 0)
-                        else value - previous.get(key, 0)
+                        if value < state.previous.get(key, 0)
+                        else value - state.previous.get(key, 0)
                     )
                     for key, value in current.items()
                 }
-                previous = current
-                self._add_counters(buckets, model, delta, timestamp)
+                state.previous = current
+                self._add_counters(state.buckets, model, delta, timestamp)
             elif isinstance(raw_last, dict):
                 marker = hashlib.sha256(
                     json.dumps(
@@ -604,50 +648,50 @@ class TerminalUsageService:
                         separators=(",", ":"),
                     ).encode("utf-8")
                 ).hexdigest()
-                if marker not in seen_incremental:
-                    seen_incremental.add(marker)
+                if marker not in state.seen_incremental:
+                    state.seen_incremental.add(marker)
                     receipt = canonical_usage_tokens(
                         raw_last,
                         backend="codex",
                         input_semantics="combined_includes_cache",
                     )
                     self._add_counters(
-                        buckets,
+                        state.buckets,
                         model,
                         self._receipt_counters(receipt),
                         timestamp,
                     )
             window = int(info.get("model_context_window") or 0)
             if isinstance(raw_last, dict) and window > 0:
-                context_ratio = max(int(raw_last.get("input_tokens") or 0), 0) / window
+                state.context_ratio = max(int(raw_last.get("input_tokens") or 0), 0) / window
             rate_limits = payload.get("rate_limits")
             if isinstance(rate_limits, dict) and str(rate_limits.get("plan_type") or ""):
-                accounting_mode = "subscription"
+                state.accounting_mode = "subscription"
             if timestamp:
-                observed_at = timestamp
+                state.observed_at = timestamp
         buckets = {
-            model: bucket
-            for model, bucket in buckets.items()
+            model: copy(bucket)
+            for model, bucket in state.buckets.items()
             if bucket.total_tokens > 0
         }
         if not buckets:
             return _UsageSnapshot(
                 status="awaiting_usage",
                 source="provider_transcript",
-                provider=provider,
-                accounting_mode=accounting_mode,
+                provider=state.provider,
+                accounting_mode=state.accounting_mode,
                 reason="provider transcript has no usage receipt yet",
-                turn_boundary=boundary.project(),
+                turn_boundary=state.boundary.project(),
             )
         return _UsageSnapshot(
             status="observed",
             source="provider_transcript",
-            provider=provider,
-            accounting_mode=accounting_mode,
+            provider=state.provider,
+            accounting_mode=state.accounting_mode,
             buckets=buckets,
-            context_usage_ratio=context_ratio,
-            observed_at=observed_at,
-            turn_boundary=boundary.project(),
+            context_usage_ratio=state.context_ratio,
+            observed_at=state.observed_at,
+            turn_boundary=state.boundary.project(),
         )
 
     def _project(self, snapshot: _UsageSnapshot) -> dict[str, object]:
