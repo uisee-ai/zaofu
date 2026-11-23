@@ -1,6 +1,6 @@
 # 审核方法与证据表达补齐
 
-> 状态: active
+> 状态: done — `a9ade0e4 docs: ground review methods in scoped evidence and runtime authority`
 
 用户批准借鉴本地 my-ai-coding-workflow 的审核方法并继续现有运行。基线为
 `b8c718b0`；沿用既有 P0 的身份、权限、收据与恢复实现，不新增状态机或扩大验收范围。
@@ -37,3 +37,7 @@ working memory；同步两套已跟踪 provider 镜像。保留现有 TDD、Thin
 启用边界：更新配置指向的 canonical 技能源，保留在途 Critic 的物化包和原冻结 digest。
 后续原生派发重新物化并冻结新方法；不修改当前 operation，不重启控制面或 workers，
 不把 source HEAD 更新宣称为在途模型已经读到新 Skill。
+
+2026-11-23 05:05 UTC 已将 live 技能源快进至上述实现提交；部署前后在途 Critic
+技能包逐文件 SHA256 及 manifest SHA256 完全相同。原运行保持 running、16 项业务
+任务 done，历史 qualification=closed_failed 保留。未合并 dev、未 push、未重启服务。
