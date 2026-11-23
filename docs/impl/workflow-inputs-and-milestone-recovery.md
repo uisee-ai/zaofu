@@ -11,7 +11,7 @@
 | `zf artifact workspace --attempt ATTEMPT` | 在持久工具会话前台启动只读挂载，初始化后打印 `INPUTS.md` 和 `RESUME.md` 的绝对路径。来源路径相对于该目录。查询、浏览目录均不构成必读见证。 |
 | `/usr/bin/cat /绝对路径/inputs/来源.txt.chars-0-800` | 读取选中正文的字符区间。普通文本、CRLF、中文与空值保留原字节。二进制可原样读取，媒体的视觉验收由相应角色承担。 |
 
-在同一 Codex 会话内容压缩时，若轨迹能证明部分材料已交付，`zf artifact read --required --resume` 保留当前上下文的重读位置，并返回 `continuation.historical_next_cursor`。先用 `zf artifact recover --attempt <id>` 找回工作记录，再按该游标补读历史交付缺口。已有回执不能证明模型当前记得材料。
+在同一 Codex 会话内容压缩时，若轨迹能证明部分材料已交付，`zf artifact read --required --resume` 保留当前上下文的重读位置，并返回 `continuation.historical_next_cursor`。先用 `zf artifact recover --attempt <id>` 找回工作记录，再按该游标补读历史交付缺口。轨迹确认当前上下文收到 `next_resume=continue_witnessed_delivery_gap` 提示后，再次执行 `--resume` 也会从已核验的交付缺口继续。省略 `--resume` 可从头重读。已有回执不能证明模型当前记得材料。
 
 挂载试点使用 Linux、cgroup v2、FUSE、`fusermount` 及 libfuse2。项目可通过 `uv sync --extra native-inputs` 安装对应的 Python 适配器。在项目的 `workflow.flow_metadata.artifact_worker_cgroups` 中将具体 worker 实例映射到专属 cgroup 的绝对层级名。每次 open/read 都检查当前派发凭据、会话、进程、cgroup 和 grant 代次。直接 I/O 并禁用数据缓存，原进程退出、凭据轮换后旧描述符不得继续读取。当前版本只为与注册会话相符的 Codex CLI 0.171.0 单文件 `exec_command` 创建严格原生交付见证。旧合同、共享工作区、无法验证的包装器及不支持的 Provider 使用派发中原有的 CLI。
 

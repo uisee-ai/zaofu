@@ -103,6 +103,16 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         assert main([*command, "--cursor", gap_cursor]) == 0
         gap_page = parse_artifact_page(capsys.readouterr().out.rstrip("\n"))
         assert gap_page["items"][0]["page_start"] == first["items"][0]["page_end"]
+        if pages == 1:
+            with transcript.open("a") as fp:
+                fp.write(json.dumps({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=3)).isoformat(),
+                    "type": "response_item", "payload": {"type": "function_call_output",
+                    "call_id": "current-recovery-notice", "output": raw}}) + "\n")
+            assert main([*command, "--resume"]) == 0
+            continued = parse_artifact_page(capsys.readouterr().out.strip())
+            assert continued["continuation"]["mode"] == "delivery_gap"
+            assert continued["continuation"]["current_memory"] == "unknown"
+            assert continued["items"][0]["page_start"] == gap_page["items"][0]["page_start"]
     else:
         assert "historical_next_cursor" not in resumed["continuation"]
     for before, after in zip(outputs, outputs[1:]):

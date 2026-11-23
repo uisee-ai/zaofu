@@ -100,6 +100,8 @@ def resume_decision(
                 return ResumeDecision(len(groups), 0, "context_recovery")
             gap = (historical.index, historical.offset)
             if gap > (current.index, current.offset):
+                if _delivered_gap_notice(state_dir, retained, attempt, bundle_digest):
+                    return ResumeDecision(*gap, "continue_historical_delivery")
                 # Keep the current-context reread available. The worker may explicitly
                 # continue the independently witnessed delivery after recovering its notes.
                 return ResumeDecision(current.index, current.offset, current.reason, gap)
@@ -107,6 +109,23 @@ def resume_decision(
         return _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         return ResumeDecision(reason="evidence_invalid")
+
+
+def _delivered_gap_notice(state_dir: Path, retained: list[dict[str, Any]],
+                          attempt: str, bundle_digest: str) -> bool:
+    """A repeated resume may use the delivery frontier after explaining it to this session."""
+    seen: set[str] = set()
+    for row in reversed(retained):
+        digest = row["output_sha256"]
+        if digest in seen:
+            continue
+        seen.add(digest)
+        page = parse_artifact_page(hydrate_sidecar_ref(state_dir, row["output_ref"]).payload["body"])
+        if (page.get("bundle_digest") == bundle_digest and page.get("attempt_id") == attempt
+                and page.get("delivery_id") == row.get("delivery_id")
+                and page.get("continuation", {}).get("next_resume") == "continue_witnessed_delivery_gap"):
+            return True
+    return False
 
 
 def _coverage(

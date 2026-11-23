@@ -83,9 +83,13 @@ def prepare_required_read(
                 "guidance": "Recover the bound work record, then retrieve specific context gaps. "
                             "Historical delivery does not prove current memory or comprehension.",
             })
+        elif decision.reason == "continue_historical_delivery":
+            resume_info.update(mode="delivery_gap", historical_delivery="partial",
+                               next_resume="continue_witnessed_delivery_gap")
         elif decision.historical_gap is not None:
             resume_info.update({
                 "historical_delivery": "partial",
+                "next_resume": "continue_witnessed_delivery_gap",
                 "historical_next_cursor": _cursor(bundle_digest, *decision.historical_gap),
             })
     else:
