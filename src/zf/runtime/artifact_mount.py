@@ -253,5 +253,10 @@ def serve_mount(access):
             negative_timeout=0,
             fsname="zf-inputs",
         )
+    except RuntimeError as exc:
+        # fusepy reports a nonzero fuse_main return as RuntimeError(int).
+        if len(exc.args) != 1 or type(exc.args[0]) is not int:
+            raise
+        raise OSError(f"FUSE mount failed in this worker environment (exit {exc.args[0]})") from exc
     finally:
         stopped.set()

@@ -1072,3 +1072,5 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 历史，使用已有失败聚合与受控恢复生成新的独立判词，不改写append-only事件。
 
 同一冻结候选的 Reader 受控重试可能先于旧分诊的超时写入。Goal 回放只有在受控动作已应用、同一 Run 和 task map 的同一冻结候选已有新 Reader 派发、且新派发明确引用原失败时，才从当前阻塞中移除对应的旧分诊 effect。原有 pending 或 failed 事件保留。新 Reader 的验收、新失败及交付仍各自按账本判定。
+
+若 worker 的隔离环境不能建立 FUSE 挂载，`zf artifact workspace` 返回非零并提示 `zf artifact index/read/recover`。回退后的 CLI 投递仍按当前 attempt 的完整输出回执验证。宿主上其他目录挂载成功不能作为该 Reader 的原生文件读取证据。

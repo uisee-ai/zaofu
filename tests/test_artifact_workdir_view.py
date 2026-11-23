@@ -411,3 +411,16 @@ def test_delayed_host_placement_keeps_first_permission_without_preferring_unavai
         runtime, "dev-1", first.attempt_id, first.operation_id
     )
     assert not recovery_hint(runtime, "dev-1", "different-attempt", first.operation_id)
+
+
+def test_worker_mount_refusal_uses_cli_fallback_error(monkeypatch, tmp_path):
+    import sys
+    from types import SimpleNamespace
+    from zf.runtime.artifact_mount import serve_mount
+
+    def mount_refused(*args, **kwargs):
+        raise RuntimeError(1)  # fusepy when /dev/fuse is unavailable in this worker
+
+    monkeypatch.setitem(sys.modules, "fusepy", SimpleNamespace(Operations=object, FUSE=mount_refused))
+    with pytest.raises(OSError, match=r"FUSE mount failed in this worker environment \(exit 1\)"):
+        serve_mount(SimpleNamespace(path=tmp_path))
