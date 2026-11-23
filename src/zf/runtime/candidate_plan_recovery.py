@@ -15,6 +15,23 @@ from zf.runtime.verification_result import failed_acceptance_ids
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
+def candidate_recovery_superseded(
+    events: list[ZfEvent], candidate: ZfEvent, workflow_run_id: str,
+) -> bool:
+    """A newer admitted Plan ends old recovery even before its Candidate freezes."""
+    seen = False
+    for event in events:
+        if event.id == candidate.id:
+            seen = True
+            continue
+        if (seen and event.origin == "kernel"
+                and (event.payload.get("workflow_run_id") or event.correlation_id) == workflow_run_id
+                and event.type in {"run.goal.completed", "run.goal.cancelled",
+                                   "plan.artifact_package.admitted", "task_map.ready"}):
+            return True
+    return not seen
+
+
 def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -> dict:
     """Return only implicated child Tasks; an unmapped AC requires planner scoping."""
     run_id = result.get("workflow_run_id")
@@ -37,16 +54,7 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
         and (event.origin == "kernel" or event.id in admitted_redrives)
     ]
     current = next((e for e in reversed(run_events) if e.type == "candidate.ready"), None)
-    if current is None or any(
-        e.type
-        in {
-            "run.goal.completed",
-            "run.goal.cancelled",
-            "plan.artifact_package.admitted",
-            "task_map.ready",
-        }
-        for e in run_events[run_events.index(current) + 1 :]
-    ):
+    if current is None or candidate_recovery_superseded(run_events, current, run_id):
         raise ValueError("candidate recovery target superseded")
     trigger = current
     current = frozen_candidate_for_payload(run_events, run_id, payload={"candidate_event_id": trigger.id})

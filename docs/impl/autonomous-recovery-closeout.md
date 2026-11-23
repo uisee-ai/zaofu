@@ -64,6 +64,13 @@ tick 重试。内核事件绑定 source_request_id；事件重放仍只产生一
 
 ## 未知容器探针的独立补采
 
+后继 Plan 已准入或 `task_map.ready` 已出现时，旧 Candidate 的恢复权限结束，
+即使新 Candidate 尚未冻结。宿主探针与 Candidate Plan recovery 共用同 Run 的
+后继权威检查；自动 reconcile、preview 和 apply 都经过该检查。历史 receipt 可继续
+审计或幂等读取，不能以“仍是最新 freeze”为理由执行新的旧探针。检查不改写旧结果，
+也不干预当前 Task 的发布/验证或其他 Run；纯基础设施恢复在原权威有效时仍可执行。
+回归入口见 `tests/test_candidate_host_supersession.py` 的真实 Run Manager tick 闭包。
+
 `runtime.host_verification.recollect_commands` 默认空，必须由 owner 在 zf.yaml 明确
 声明为可安全重复观测的精确命令，且是 commands 的子集；不根据命令名称推测安全。
 原镜像摘要、网络、保护文件、超时及既有执行上限继续适用。
