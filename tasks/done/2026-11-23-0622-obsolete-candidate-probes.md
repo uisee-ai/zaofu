@@ -1,6 +1,7 @@
 # 新 Plan 接续后停止旧 Candidate 宿主探针
 
-> 状态: active
+> 状态: done
+> 实现: `bf0edafc fix: stop superseded candidate host probes after plan handoff`
 
 授权来自持续监工中的“遇到问题修复问题、记录后恢复”。仅修复已复现的旧恢复继续执行；不改产品语义、不重置无人资格，不替当前 Worker 提交结果。
 
