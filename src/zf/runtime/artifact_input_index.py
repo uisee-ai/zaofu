@@ -129,6 +129,8 @@ def input_index(
             if binary:
                 item["body_kind"] = "binary"
                 item.pop("read_command")
+                if path == "$" and Path(source["ref"]).suffix.lower() == ".png":
+                    item["image_page_command"] = f"{zf_cli_cmd()} {shlex.join(args)} --image-page 0"
             if locator_match and not relation_id:
                 items.append((item, None))
             items.extend((item, entry) for entry in matches)

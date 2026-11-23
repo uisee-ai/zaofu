@@ -616,6 +616,15 @@ def render_attempt_source_briefing(
             "For partial delivery, read the missing .chars-START-END slices. Use the CLI fallback "
             "if the mount or file evidence is unavailable."
         )
+    if any(isinstance(row, Mapping) and str(row.get("ref", "")).lower().endswith(".png")
+           for row in payload.get("input_refs", [])):
+        lines.append(
+            "- To inspect a PNG without a mount, take its image_page_command from artifact index. "
+            "In a visual tool client, collect each JSON data_base64 field in page order using next_page "
+            "until null, then display image(\"data:image/png;base64,\" + parts.join(\"\")); "
+            "keep the bytes inside the tool and visually inspect the returned image. "
+            "Each page is bound to this attempt and SHA. Do not guess filesystem paths."
+        )
     if required:
         from zf.runtime.reader_replan_feedback import repair_read_navigation
 

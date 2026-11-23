@@ -153,6 +153,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
+    read_cmd.add_argument("--image-page", type=int, help="Read one bounded base64 page of an authorized original PNG for a visual tool")
     read_cmd.add_argument("--page-start", type=int, default=None, help="Start character offset for a bounded complete-read page")
     read_cmd.add_argument("--page-size", type=int, default=8192, help="Characters per page, 1..8192")
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
@@ -296,6 +297,19 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         from zf.runtime.worker_load_receipt import record_worker_cli_load
         record_worker_cli_load(context.state_dir, event_log, manifest, identity, _run_attempt_read)
+        if getattr(args, "image_page", None) is not None:
+            if (required or args.json_path != "$" or args.max_items or args.max_chars
+                    or args.page_start is not None or args.output_format != "json"):
+                raise ValueError("--image-page requires an exact whole-image source and JSON output")
+            from zf.runtime.artifact_image import image_page
+            from zf.runtime.artifact_input_costs import record_input_observation
+
+            frame = image_page(context.state_dir, manifest, identity, args.source, args.artifact, args.image_page)
+            output = json.dumps(frame, separators=(",", ":"))
+            print(output, flush=True)
+            record_input_observation(event_log, manifest, identity, kind="image_page", output=output,
+                                     elapsed_ms=(perf_counter()-started)*1000)
+            return 0
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
             from zf.runtime.artifact_context_events import artifact_context_events

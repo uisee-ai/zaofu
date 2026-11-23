@@ -1074,3 +1074,5 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 同一冻结候选的 Reader 受控重试可能先于旧分诊的超时写入。Goal 回放只有在受控动作已应用、同一 Run 和 task map 的同一冻结候选已有新 Reader 派发、且新派发明确引用原失败时，才从当前阻塞中移除对应的旧分诊 effect。原有 pending 或 failed 事件保留。新 Reader 的验收、新失败及交付仍各自按账本判定。
 
 若 worker 的隔离环境不能建立 FUSE 挂载，`zf artifact workspace` 返回非零并提示 `zf artifact index/read/recover`。回退后的 CLI 投递仍按当前 attempt 的完整输出回执验证。宿主上其他目录挂载成功不能作为该 Reader 的原生文件读取证据。
+
+PNG 的索引项提供 `image_page_command`。无法挂载时，可视化客户端按该命令读取第 0 页，再按 `next_page` 获取同一 attempt、来源和 SHA-256 的后续页，直至值为 null。将各页的 `data_base64` 顺序拼接并渲染为一张 PNG，在图像工具返回后独立核对视口。每页重新鉴权，仅返回绑定来源的原始字节。分页产出记为读取成本，图片传输本身不生成产品判词。
