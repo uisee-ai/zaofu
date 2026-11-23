@@ -57,6 +57,17 @@ event schema or recovery state machine.
   socket does not invalidate a bound host execution receipt. Receipt availability
   alone does not establish product acceptance. If the recovery input itself is
   unreadable, report an input failure with the actual diagnostic evidence.
+- Historical process evidence: a publication or reassessment attempt may contain
+  only GREEN while the original implementation's RED remains in pinned predecessor
+  handoffs. Before claiming it is absent, use known command event IDs as lookup
+  leads with `artifact handoff-evidence --event`; use `previous_operation` and
+  `--source-operation` to reach the relevant original attempt when needed. Search
+  indexes only for unknown locations, and read the selected output completely.
+  Check its actual baseline, assertion, execution order and applicability to the
+  current contract. Keep its original identity; do not borrow old credentials or
+  damage working code to manufacture RED. If the authorized chain cannot supply
+  it, report the specific missing evidence and diagnosis owner, not an inferred
+  product defect. Current target verification remains independently required.
 - `passed`: all mandatory criteria are covered; no blocking finding remains.
 - `rejected`: verification executed successfully and evidence proves one or
   more product criteria failed.

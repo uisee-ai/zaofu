@@ -148,9 +148,13 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
         "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage. "
                        "For historical command output, including controlled host probes after settlement, "
                        "use host_execution_evidence_reads first when present, otherwise execution_evidence_read. "
-                       "Read every page using next_page_start and the returned digest. Select --event from the "
-                       "index event_id, never a receipt source_event_id; use --source-operation for a linked "
-                       "earlier attempt. Observations are not acceptance verdicts.",
+                       "Known command event IDs in admitted results or self-checks are lookup leads: read them "
+                       "directly with --event; otherwise search the index for the required observation. "
+                       "Use previous_operation and --source-operation to follow pinned earlier attempts before "
+                       "concluding historical evidence is missing; a publication reassessment may contain only GREEN. "
+                       "Read every page of the selected observation using next_page_start and the returned digest. "
+                       "Use the indexed command event_id, never a receipt source_event_id. "
+                       "Observations are not acceptance verdicts.",
         "references": references, "authorizes_execution": False, "business_completed": False,
     })
 

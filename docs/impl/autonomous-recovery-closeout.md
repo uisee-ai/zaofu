@@ -53,6 +53,14 @@ tick 重试。内核事件绑定 source_request_id；事件重放仍只产生一
 
 ## 执行事实与消费身份分开
 
+发布后的 Impl 复核可能只含 GREEN；原实施的 RED 仍属于之前 attempt。Task handoff
+通过不可变前驱链保留它。`artifact handoff-evidence` 索引首屏返回已校验的
+`source_operation` / `previous_operation` 导航元数据；已知 command event 可用
+`--event` 定点读取，前驱用 `--source-operation`。不必先遍历不相关索引，但选中证据
+正文仍须完整分页且摘要连续。导航不是验收或额外读取权限，原 credential、索引成员、
+身份和 ref 校验不变。Verify 方法在宣告历史缺失前检查相关合法前驱，并独立判断
+基线、失败断言、时序及当前合同适用性，不能为补证据破坏已经工作的实现。
+
 新 Candidate 身份可消费旧执行事实，条件为 Run、Task、Task Map 代际、源码 commit
 相同，完整合同除内核冻结身份/定位字段外逐项相同。child authorities、Plan 绑定、
 验收、命令、未知新增字段仍参与比较；此证明不推断跨补丁语义等价。
