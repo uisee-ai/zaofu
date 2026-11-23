@@ -682,6 +682,13 @@ class GoalClosureBridgeMixin:
             }
             for item in descriptors
         ]
+        # The compact summary is already a required part of closure-fact.
+        if detail := identity.get("candidate_lifecycle_input"):
+            from zf.runtime.milestone_task_lifecycles import SOURCE
+
+            descriptors.append({"source_id": SOURCE, "artifact_id": SOURCE, "kind": SOURCE,
+                "ref": detail["ref"], "sha256": detail["sha256"],
+                "allowed_paths": ["$.summary", *(f"$.tasks[{i}]" for i in range(detail["task_count"]))]})
         return {
             "objective_ref": objective_ref,
             "planning_result_ref": planning_result_ref,

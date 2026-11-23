@@ -37,6 +37,15 @@ execution_readiness 或 Critic report，不建立第二份 canonical task contra
 未来生产者的完整场景留给后续责任，当前片保留已就绪的子断言；父来源及最终
 mandatory 验收不删减。不能用反向依赖制造循环来修复当前片的测试时点。
 
+把跨阶段条款拆成可单独验证的两项，例如 Candidate 核对本 Run 的原执行记录，
+Judge 随后交付具名附件。分别检查冻结的 product acceptance、执行规格与 Goal 的
+验收责任、证据入口及产物路径。目标要求具名文件时，应指出哪个已接线的生产者
+会发布它、由谁在下游验证。范围须按来源保留为 Run、Plan 版本或目标 commit；
+用一次只补跑部分任务的接续审查这套绑定，确认原执行记录仍标注真实的 generation。
+
+原文限定测试输入的取值范围时，把取值域与应用处理域外输入的义务分别对账。
+若有单独批准的域外行为，核对触发该行为的输入、可观察结果及对应的冻结用例。
+
 审查只读任务时，打开本版 `plan-execution-verification` 明细，或对相同 Task Map 执行
 `zf plan inspect-execution`。逐项核对 `initial_readonly_verify` 的基线、mandatory AC 和命令。
 当只读任务兼管整包验收时，检查浏览器或集成断言所需的每个生产者是否已在该基线上。

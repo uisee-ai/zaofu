@@ -42,6 +42,15 @@ def test_lifecycles_separate_entry_stages_and_keep_retained_plan_generations():
     old, new = summary["generations"]
     assert old["task_map_generation"] == "old" and old["first_entry_overlap_seconds"] == 6
     assert old["peak_by_entry_stage"] == {"impl": 1, "verify": 1}
+    bounds = old["overlap_bounds"]
+    ledger = {event.id: event for event in events}
+    assert ledger[bounds["latest_start_event"]].type == bounds["latest_start_type"] == "workflow.operation.started"
+    assert ledger[bounds["earliest_terminal_event"]].type == bounds["earliest_terminal_type"] == "workflow.operation.settled"
+    assert ledger[bounds["latest_start_event"]].ts == bounds["latest_start_at"]
+    assert ledger[bounds["earliest_terminal_event"]].ts == bounds["earliest_terminal_at"]
+    assert (datetime.fromisoformat(bounds["earliest_terminal_at"]) -
+            datetime.fromisoformat(bounds["latest_start_at"])).total_seconds() == old["first_entry_overlap_seconds"]
+    assert new["overlap_bounds"] == {}
     assert new["first_entry_overlap_seconds"] is None
     assert summary["task_ids"] == ["audit", "build"]
     audit, build = body["tasks"]
@@ -119,6 +128,46 @@ def test_candidate_lifecycle_read_scope_and_replay(tmp_path, recovering):
     recovery = aggregate_recovery_lifecycles(runtime.state_dir, events, run, candidate)
     assert recovery["summary"] == view["task_pipeline_lifecycles"]["summary"]
     assert aggregate_recovery_lifecycles(runtime.state_dir, events, run, {**candidate, "source_commit": "other"}) is None
+    # Judge receives its own Run-scoped facts only after the exact Candidate cohort passed.
+    from zf.runtime.goal_closure_identity import build_closure_identity
+    common = {"workflow_run_id": run, "task_map_generation": gen, "target_commit": seeded["candidate_head"],
+              "fanout_id": payload["fanout_id"]}
+    dispatched = ZfEvent(type="fanout.child.dispatched", origin="kernel",
+                         payload={**common, "operation_id": payload["operation_id"], "payload": payload})
+    accepted = ZfEvent(type="test.passed", origin="kernel", payload={**common, "candidate_snapshot_event_id": handoff["candidate_event_id"]})
+    discovery = ZfEvent(type="flow.discovery.completed", origin="kernel", payload=common)
+    def judge_facts(aggregate, *later):
+        identity = build_closure_identity([*events, dispatched, aggregate, *later, discovery], source_event=discovery,
+            payload={**common, "goal_id": "goal", "candidate_head_commit": seeded["candidate_head"]},
+            state_dir=runtime.state_dir, flow_kind="issue")
+        return json.loads((runtime.state_dir / identity["closure_fact_ref"]).read_bytes())
+    from zf.runtime.goal_closure_bridge import GoalClosureBridgeMixin
+    from zf.core.config.schema import ZfConfig
+    hist = [*events, dispatched, accepted, discovery]
+    closure = build_closure_identity(hist, source_event=discovery,
+        payload={**common, "goal_id": "goal", "candidate_head_commit": seeded["candidate_head"]},
+        state_dir=runtime.state_dir, flow_kind="issue")
+    bridge = GoalClosureBridgeMixin()
+    bridge.state_dir, bridge.project_root, bridge.config = runtime.state_dir, runtime.project_root, ZfConfig()
+    judge = bridge._goal_closure_read_contract(hist, workflow_run_id=run, goal_id="goal",
+        identity=closure, claim_set={}, payload={})
+    detail = next(v for v in judge["input_refs"] if v["source_id"] == SOURCE)
+    assert detail["sha256"] == ref["sha256"] and detail["allowed_paths"] == ["$.summary", "$.tasks[0]"]
+    assert all(v["source_id"] != SOURCE for v in judge["required_reads"])
+    assert any(v["source_id"] == "closure-fact" for v in judge["required_reads"])
+    facts = judge_facts(accepted)["candidate_task_lifecycles"]
+    assert facts["summary"] == recovery["summary"] and facts["candidate_passed_event_id"] == accepted.id
+    wrong = ZfEvent(type="test.passed", origin="kernel", payload={**accepted.payload, "candidate_snapshot_event_id": "other-freeze"})
+    assert "candidate_task_lifecycles" not in judge_facts(wrong)
+    original_freeze = next(e for e in events if e.id == handoff["candidate_event_id"])
+    later_freeze = ZfEvent(type="candidate.ready", origin="kernel", payload=dict(original_freeze.payload))
+    assert "candidate_task_lifecycles" not in judge_facts(accepted, later_freeze)
+    subsequent_failure = ZfEvent(type="test.failed", origin="kernel",
+                                 payload={**common, "fanout_id": "new-cohort", "stage_id": "candidate-review"})
+    accepted.payload["stage_id"] = "candidate-review"
+    assert "candidate_task_lifecycles" not in judge_facts(accepted, subsequent_failure)
+    external = ZfEvent(type="test.passed", origin="external", payload=accepted.payload)
+    assert "candidate_task_lifecycles" not in judge_facts(external)
     frozen = (runtime.state_dir/ref["ref"]).read_bytes()
     prepare()
     replay = hydrate_sidecar_ref(runtime.state_dir, payload["attempt_source_manifest"]).payload

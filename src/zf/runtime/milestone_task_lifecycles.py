@@ -30,8 +30,8 @@ def _entry_summary(generation: str, package: str, entries: dict) -> dict:
                 continue
         except ValueError:
             continue
-        starts.append((start, row["start"]["event_id"]))
-        ends.append((end, row["terminal"]["event_id"]))
+        starts.append((start, row["start"]["event_id"], row["start"]["type"]))
+        ends.append((end, row["terminal"]["event_id"], row["terminal"]["type"]))
         changes[row["stage"]][start] += 1
         changes[row["stage"]][end] -= 1
     peaks = {}
@@ -44,10 +44,12 @@ def _entry_summary(generation: str, package: str, entries: dict) -> dict:
     overlap = None
     bounds = {}
     if len(peaks) > 1 and len(starts) == len(entries):
-        last_start, start_event = max(starts)
-        first_end, end_event = min(ends)
+        last_start, start_event, start_type = max(starts)
+        first_end, end_event, end_type = min(ends)
         overlap = max(0., (first_end - last_start).total_seconds())
-        bounds = {"latest_start_event": start_event, "earliest_terminal_event": end_event}
+        bounds = {"latest_start_event": start_event, "latest_start_at": last_start.isoformat(),
+                  "latest_start_type": start_type, "earliest_terminal_event": end_event,
+                  "earliest_terminal_at": first_end.isoformat(), "earliest_terminal_type": end_type}
     return {"task_map_generation": generation, "plan_artifact_package_digest": package,
             "observed_entry_tasks": sorted(entries), "closed_entry_count": len(starts),
             "peak_by_entry_stage": peaks, "first_entry_overlap_seconds": overlap, "overlap_bounds": bounds}
@@ -112,7 +114,9 @@ def task_lifecycle_evidence(events: list[ZfEvent], *, run: str, generation: str,
     return {"schema_version": "milestone-task-lifecycles.v1",
             "summary": {"workflow_run_id": run, "candidate_event_id": freeze_id, "target_commit": target,
                         "candidate_generation": generation, "task_ids": ids,
-                        "measurement": "kernel Task Pipeline operations; first observed entry per task and Plan package",
+                        "measurement": ("For each task and Plan package, measure the first admitted entry-stage "
+                                        "operation from workflow.operation.started to its matching terminal event. "
+                                        "The overlap covers all measured entries of one group."),
                         "generations": [_entry_summary(gen, pkg, rows) for (gen, pkg), rows in entries.items()]},
             "tasks": [{"task_id": task, "operations": tasks[task]} for task in ids]}
 
@@ -145,4 +149,58 @@ def aggregate_recovery_lifecycles(state: Path, events: list[ZfEvent], run: str, 
             target=binding["target_commit"], freeze_id=handoff["candidate_event_id"], members=handoff["members"])
     if evidence:
         return {"source_handoff_digest": ref["sha256"], "summary": evidence["summary"]}
+    return None
+
+
+def judge_candidate_lifecycles(state: Path, events: list[ZfEvent], *, source_event: ZfEvent,
+                              run: str, generation: str, target: str, package: str) -> dict | None:
+    """Project the passed cohort's kernel facts into the Judge's own frozen input."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    end = next((i for i, event in enumerate(events) if event.id == source_event.id), None)
+    if end is None:
+        return None
+    expected = {"workflow_run_id": run, "task_map_generation": generation, "target_commit": target}
+    accepted = next((i for i in range(end, -1, -1) if events[i].type == "test.passed"
+                     and events[i].origin == "kernel"
+                     and all(events[i].payload.get(k) == v for k, v in expected.items())), None)
+    if accepted is None:
+        return None
+    gate = events[accepted]
+    freeze, fanout = gate.payload.get("candidate_snapshot_event_id"), gate.payload.get("fanout_id")
+    if not freeze or not fanout or (package and gate.payload.get("plan_artifact_package_digest") != package):
+        return None
+    stage = gate.payload.get("stage_id")
+    if stage and any(e.origin == "kernel" and e.type in {"test.failed", "verify.failed"}
+                     and e.payload.get("stage_id") == stage and e.payload.get("workflow_run_id") == run
+                     and e.payload.get("task_map_generation") == generation for e in events[accepted + 1:end + 1]):
+        return None
+    from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+    current = frozen_candidate_for_payload(events[:end + 1], run, payload={})
+    if current is None or current.id != freeze or current.origin != "kernel":
+        return None
+    for event in reversed(events[:accepted]):
+        if event.origin != "kernel" or event.type != "fanout.child.dispatched":
+            continue
+        p = event.payload
+        if p.get("fanout_id") != fanout or p.get("workflow_run_id") != run:
+            continue
+        request = p.get("payload") or {}
+        ref = request.get("milestone_handoff_ref")
+        if (request.get("output_profile_id") != "candidate-verify" or not ref or ref.get("access_scope")
+                or (package and request.get("plan_artifact_package_digest") != package)):
+            continue
+        handoff = hydrate_sidecar_ref(state, ref).payload
+        if (handoff["candidate_event_id"] != freeze
+                or handoff["consumer"]["operation_id"] != p.get("operation_id")
+                or any(handoff["binding"].get(k) != v for k, v in expected.items())):
+            continue
+        evidence = handoff.get("task_pipeline_lifecycles_ref")
+        if evidence and not evidence.get("access_scope"):
+            summary = hydrate_sidecar_ref(state, evidence).payload["summary"]
+            if (summary.get("candidate_event_id") == freeze and summary.get("workflow_run_id") == run
+                    and summary.get("target_commit") == target and summary.get("candidate_generation") == generation):
+                return {"candidate_passed_event_id": gate.id, "lifecycle_ref": evidence["ref"],
+                        "lifecycle_digest": evidence["sha256"], "summary": summary}
     return None

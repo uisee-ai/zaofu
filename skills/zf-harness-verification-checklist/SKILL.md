@@ -120,6 +120,14 @@ amendment. Suggestions and nits stay in the verification report.
 分别列出。不能将偏好的边界行为追补为阻塞 AC；每项阻塞须给原条款、实际触发与失败证据。
 复用执行事实时核对目标、合同、来源、环境和补丁影响；只有审核身份变化不能单独成为重跑
 全部命令的理由。受控交付的历史收据仍需独立判断，不是当前消费者的通过票。
+对跨版本接续的 Candidate，先从冻结条款和 execution spec 确定度量对象与验收责任。
+若度量对象是整个 Run，可核验该 Run 内一个原始执行组的完整证据；分别引用 Run、
+原 Plan 包及 generation、成员、起止事件。保留补跑组的独立身份。若条款限定当前
+generation 或目标，则须提供匹配的记录。分属不同组的峰值不能相加来证明同时发生。
+分别评价当前可观察的事实和后续角色要交付的附件。核对附件的生产者、消费阶段与
+正式交付入口；把尚待生产的附件留给责任阶段跟踪。若当前 mandatory 条款同时要求
+下游尚未发生的动作，提交合同冲突、原文和责任方，保留义务，交由受控修订处理。
+
 Candidate 合同带 `candidate_recovery_obligations` 时，最终通过还须逐项提交
 `recovery_obligation_results`，写明 finding_id、resolved、rationale 与真实 evidence_refs。
 evidence_refs 必须使用当前输入索引中的 ref/sha256 对象；读权限或内容不匹配不能提交。
