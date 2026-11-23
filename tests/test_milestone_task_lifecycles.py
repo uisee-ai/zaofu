@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from zf.core.events import ZfEvent
 from zf.runtime.milestone_task_lifecycles import task_lifecycle_evidence
 
@@ -50,9 +52,9 @@ def test_lifecycles_separate_entry_stages_and_keep_retained_plan_generations():
     assert task_lifecycle_evidence(events,run="R",generation="new",target="wrong",freeze_id=freeze.id,members=[]) is None
 
 
-def test_fresh_candidate_binds_optional_scoped_lifecycle_slices_and_replays_same_bytes(tmp_path):
+@pytest.mark.parametrize("recovering", [False, True])
+def test_candidate_lifecycle_read_scope_and_replay(tmp_path, recovering):
     import json
-    import pytest
     from zf.runtime.artifact_workdir_view import AttemptFiles
     from tests.test_candidate_verification_authority import _runtime, _seed_frozen_candidate
     from zf.runtime.artifact_read_ledger import ArtifactReadError, read_attempt_artifact
@@ -78,6 +80,8 @@ def test_fresh_candidate_binds_optional_scoped_lifecycle_slices_and_replays_same
                "child_id": "verify-lane-0", "role_instance": "verify-lane-0", "stage_id": "issue-lanes-verify",
                "output_profile_id": "candidate-verify", "artifact_package_mode": "shadow", "target_commit": seeded["candidate_head"],
                "canonical_success_event": "test.passed", "canonical_failure_event": "test.failed"}
+    if recovering:
+        payload["trigger_payload"] = {"operator_feedback": ["Reassess the prior failure against this freeze."]}
     def prepare():
         return prepare_call_operation(runtime, payload=payload, operation_type="fanout_reader_child", operation_key="verify-lane-0",
                 stage_id="issue-lanes-verify", task_id="FLOW-ANCHOR", dispatch_id="dispatch-candidate-verify", causation_id="evt-candidate-ready")
@@ -86,7 +90,10 @@ def test_fresh_candidate_binds_optional_scoped_lifecycle_slices_and_replays_same
     manifest = hydrate_sidecar_ref(runtime.state_dir, payload["attempt_source_manifest"]).payload
     ref = next(row for row in manifest["sources"] if row["source_id"] == SOURCE)
     assert ref["allowed_paths"] == ["$.summary", "$.tasks[0]"]
-    assert all(row["source_id"] != SOURCE for row in payload["required_reads"])
+    selected = [row["json_path"] for row in payload["required_reads"] if row["source_id"] == SOURCE]
+    assert selected == (["$.summary"] if recovering else [])
+    if recovering:
+        assert [row["source_id"] for row in payload["required_reads"][:2]] == ["critical-reader-repair-context", SOURCE]
     def read(path, actor="verify-lane-0"):
         return read_attempt_artifact(runtime.state_dir, manifest=manifest, source_id=SOURCE, artifact_id=SOURCE,
                                      json_path=path, actor=actor, purpose="candidate-verify", record=False)

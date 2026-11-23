@@ -85,6 +85,10 @@ def build_canonical_required_reads(
         source_ids = {
             str(source.get("source_id") or "") for source in _sources(manifest)
         }
+        # A recovered Reader needs the native roster summary to distinguish original
+        # Task operations from the later Candidate review. Member rows stay on demand.
+        if {"critical-reader-repair-context", "milestone-task-lifecycles"} <= source_ids:
+            required_paths["milestone-task-lifecycles"] = ("$.summary",)
         if "candidate-freeze" in source_ids:
             required_paths["candidate-freeze"] = ("$",)
         else:
@@ -250,7 +254,7 @@ def build_canonical_required_reads(
     # Only new declarations change order; pinned attempts/cursors keep theirs.
     # The default page must expose the recovery input before bulk product data.
     recovery_order = {"critical-reader-repair-context": 0, "plan-review-counter-evidence": 1,
-                      "plan-review-prior-verdict": 2}
+                      "plan-review-prior-verdict": 2, "milestone-task-lifecycles": 1}
     return sorted(deduped, key=lambda row: recovery_order.get(row["source_id"], 3))
 
 

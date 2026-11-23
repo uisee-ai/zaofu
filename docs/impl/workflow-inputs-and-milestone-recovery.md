@@ -26,7 +26,7 @@
 | 配置或入口 | 行为及恢复 |
 | --- | --- |
 | `milestone_handoff: true` | Candidate Verify 新 request 冻结目标、成员、前驱判定、草稿来源及剩余义务。重放复用同一摘要。worker 通过 `zf artifact milestone --attempt ATTEMPT` 查看状态，本地操作员可在原 worker 退出后执行 `zf workflow milestone OPERATION`。 |
-| `milestone-task-lifecycles` | 新 Candidate 在已有任务级调度证据时固定可选数据源。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。该时长统计内核运行区间，Provider 实际活跃时长需独立轨迹证据。 |
+| `milestone-task-lifecycles` | 有任务级调度证据时，首次 Candidate 审查按需读取。新的 Candidate 恢复请求同时绑定修复说明和生命周期索引时，将说明和对应冻结的 `$.summary` 排在必读首位；成员明细按需读取。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。该时长统计内核运行区间，Provider 实际活跃时长需独立轨迹证据。 |
 | `milestone_readiness.required_gates` | 显式 gate ID 需要同 run、合同、generation 和 target 的已通过证据。空义务集须有 `empty_waiver_gate` 对应的通过记录。目标变更、未决执行、缺少独立验收、缺少命令或发现待处理问题时，投影列出缺口与 owner。实际推进继续走原准入。 |
 | `run_boards[RUN]` | 固定 `enabled`、`generation`、`members` 与可选 `groups`。用 `zf artifact board --attempt ATTEMPT --post ID --recipient @group/review --text TEXT` 提交；接收者用 `--seen KEY` 和 `--ack KEY` 分别报告看见与消费。投递前重新核对活跃 operation、原 request、接收者、代次；竞争和重复消费共享同一认领。 |
 | `orchestration_schedules` | 定义 `id/revision/owner/goal/workflow_run_id/effective_at/enabled/action`。`inspect` 需要五字段 cron、IANA 时区、`max_occurrences`；`notify` 需要 deadline 和原 operation、request_hash、actor、attempt，可绑定一个事件类型及来源。每个 wait 只有一个胜因。夏令时缺口跳过，重复时间取较早一次；停机默认合并，`catchup` 可指定有限补算。 |
