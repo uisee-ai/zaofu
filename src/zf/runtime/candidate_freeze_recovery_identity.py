@@ -79,3 +79,21 @@ def native_freeze_for_recovery(events: list[ZfEvent], candidate: ZfEvent) -> ZfE
         return native
 
     return resolve(candidate)
+
+
+def bind_retrigger_snapshot(events: list[ZfEvent], source: ZfEvent, payload: dict) -> None:
+    """A Reader redrive may reference a current native freeze, never create one."""
+    if source.type != "candidate.ready" or not (
+        payload.get("schema_version") == "candidate-freeze-receipt.v1"
+        or payload.get("candidate_snapshot_event_id")
+    ):
+        return
+    from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+    run = str(payload.get("workflow_run_id") or source.correlation_id or "")
+    native = frozen_candidate_for_payload(events, run, payload={"candidate_event_id": source.id})
+    current = frozen_candidate_for_payload(events, run, payload={})
+    if source.origin != "kernel" or not run or native is None or native.origin != "kernel" or native != current:
+        raise ValueError("Candidate retrigger requires its current native freeze")
+    payload["candidate_snapshot_event_id"] = native.id
+    payload.pop("schema_version", None)

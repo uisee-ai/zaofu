@@ -315,8 +315,13 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
+        from zf.runtime.candidate_freeze_recovery_identity import bind_retrigger_snapshot
         from zf.runtime.plan_declared_inputs import supplemental_plan_inputs
 
+        try:
+            bind_retrigger_snapshot(events, source, base)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         try:
             supplemental = supplemental_plan_inputs(
                 self.state_dir, payload, request_id=requested.id)
