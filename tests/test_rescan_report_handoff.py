@@ -9,8 +9,10 @@ from tests.test_reader_replan_plan_binding import _dispatched_replan
 
 
 @pytest.mark.parametrize("explicit", [False, True])
-def test_admitted_rescan_keeps_gap_report_through_aggregate(tmp_path, explicit):
+def test_admitted_rescan_keeps_gap_report_through_aggregate(tmp_path, explicit, monkeypatch):
     state, log, orch, child, _, _ = _dispatched_replan(tmp_path)
+    # This report-handoff fixture uses a synthetic Candidate rather than a Git repo.
+    monkeypatch.setattr('zf.runtime.candidate_continuation._git_commit', lambda *_: 'partial456')
     source = ZfEvent(type="flow.discovery.child.failed", actor="discovery", payload={
         **child, "status": "failed", "reason": "missing implementation",
         "report": {

@@ -77,20 +77,19 @@ def build_input_recovery(
         "identity": {key: manifest.get(key, "") for key in (
             "workflow_run_id", "task_id", "attempt_id", "dispatch_id", "contract_revision", "task_map_generation", "target_commit")},
         "required_visible": len(visible), "historical_missing": missing,
-        "reconstruction_required": len(visible), "checkpoint": checkpoint or {"status": "unavailable", "authorizes_continuation": False},
+        "required_scope_count": len(visible), "checkpoint": checkpoint or {"status": "unavailable", "authorizes_continuation": False},
         "commands": {"index": f"{prefix} index --attempt {attempt}",
                      "recover": f"{prefix} recover --attempt {attempt}"},
-        "instructions": "This report is informational, not an execution permission or denial. "
-                        "It does not revoke existing execution authority. "
-                        "authorizes_execution=false and current_memory=unknown remain unchanged after reads; "
-                        "reconstruction_required is the required-input scope count, not a remaining-read counter. "
-                        "Do not wait for true/zero or a checkpoint to appear. Execution remains governed by the "
-                        "current dispatch, identity, workdir, lease and runtime gates. Rebind when required; "
-                        "otherwise consume missing required bodies and reconstruct forgotten clauses/interfaces "
-                        "from their bound sources, then perform the next in-scope check. History/checkpoints "
-                        "never prove current memory. After the latest known compaction, re-read missing or forgotten "
-                        "required bodies with complete untruncated delivery. Repeated notices do not restart an "
-                        "unchanged completed read set. Use --resume only while current-session material remains available.",
+        "instructions": "This report does not revoke existing execution authority and grants none. "
+                        "Dispatch, identity, workdir, lease and runtime gates still govern execution. "
+                        "current_memory stays unknown; required_scope_count is scope, historical_missing is "
+                        "this consumer's read-gap count. Do not wait for memory/permission fields to change. "
+                        "Rebind when required. Otherwise read a bound work record if available, consume missing "
+                        "required bodies, then retrieve exact forgotten clauses through the index and continue. "
+                        "History/checkpoints never prove current understanding. Zero historical_missing calls "
+                        "for assessing semantic context gaps, not a full reset. Compaction or absent WRC alone "
+                        "does not require repeating all inputs or completed checks. Deliver needed bodies fully "
+                        "without truncation. Use --resume only while current-session material remains available.",
         "recovery_exit": {"after_complete_delivery": "continue_current_step",
                           "requires_current_execution_authority": True,
                           "requires_complete_untruncated_delivery": True,
@@ -119,7 +118,8 @@ def build_input_recovery(
         op = shlex.quote(str(result["work_record"]["operation_id"]))
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
-        result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
+        if missing:
+            result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
         from zf.runtime.task_handoff_receipt import handoff_receipt_projection
 
         handoff_sources = [s for s in manifest.get("sources", []) if s.get("source_id") == "task-handoff"]
@@ -131,7 +131,18 @@ def build_input_recovery(
                     operation = shlex.quote(receipt["target_operation_id"])
                     digest = shlex.quote(handoff_sources[0]["sha256"])
                     result["commands"]["handoff_accept_after_read"] = f"{prefix} handoff-accept --operation {operation} --digest {digest}"
-    result["next_action"] = "request_controlled_rebind" if lifecycle["requires_rebind"] else "reconstruct_required_inputs"
+    result["next_action"] = ("request_controlled_rebind" if lifecycle["requires_rebind"] else
+        "read_missing_required_inputs" if missing else "assess_context_gaps_then_continue")
+    from zf.runtime.input_delivery_recovery import input_delivery_recovery
+
+    delivery = input_delivery_recovery(state_dir, events, dict(identity), manifest["attempt_id"], own_reads)
+    if delivery:
+        result["provider_delivery"] = delivery
+        result["instructions"] += (" For observed input contracts, historical_missing is still the host read count; "
+            "provider_delivery separately reports complete delivery evidence. Repair its missing selections "
+            "using bounded pages and full tool output; result validate lists exact repair commands.")
+        if not lifecycle["requires_rebind"] and delivery["status"] != "complete":
+            result["next_action"] = "repair_provider_delivery" if delivery["status"] == "incomplete" else "diagnose_delivery_evidence"
     # The embedded index stays paginated; the recovery response itself, including
     # checkpoint metadata and command envelope, has the same byte budget.
     for limit in range(4, 0, -1):
@@ -180,6 +191,7 @@ def current_task_input_recovery(state_dir: Path, events: list, task: Any, *, act
         query = ArtifactQueryService(state_dir=state_dir, project_root=state_dir.parent)
         return build_input_recovery(state_dir=state_dir, manifest=manifest,
             identity={"actor": task.assigned_to, "role": str(current.get("role") or ""),
+                      "operation_id": str(current.get("operation_id") or ""),
                       "purpose": str(manifest.get("read_purpose") or "")},
             events=events, required=required, reads=query._read_rows(attempt),
             checkpoint=maintenance_checkpoint_facts(state_dir, events, task_id=task.id, attempt_facts=facts))

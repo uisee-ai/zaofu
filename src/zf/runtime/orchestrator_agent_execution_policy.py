@@ -200,6 +200,11 @@ def execution_decision_rejection(
     permission = "delegate" if checkpoint == "pre_impl" and action == "adopt" else action
     if permission not in (configured or []):
         return "execution_action_not_authorized:" + permission
+    if permission == "rebind" and configured is not None:
+        candidate_context = input_body.get("checkpoint_context") or {}
+        if (checkpoint != "semantic_failure" or candidate_context.get("candidate_failure_scope") != "aggregate"
+                or not candidate_context.get("candidate_failure_id")):
+            return "execution_rebind_requires_candidate_aggregate"
     if checkpoint == "pre_impl":
         ids = {row["task_id"] for row in context.get("plan_tasks", [])}
         if not ids:

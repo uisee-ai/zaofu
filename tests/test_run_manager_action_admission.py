@@ -7,6 +7,36 @@ from tests.test_run_manager import _config, _state
 from zf.runtime.run_manager import run_manager_tick
 
 
+@pytest.mark.parametrize('invalid', ['', 'untrusted_alert', 'wrong_run', 'missing_failure',
+                                  'untrusted_failure', 'product_failure', 'mutation', 'other_gate'])
+def test_host_budget_exception_is_bound_to_real_candidate_diagnosis(tmp_path, invalid):
+    from zf.core.events import ZfEvent
+    from zf.runtime.candidate_infrastructure_recovery import pending_candidate_infrastructure_diagnoses
+    from zf.runtime.run_manager import _pending_human_decisions
+    from zf.runtime.run_manager_action_admission import action_gate_reason
+    from zf.runtime.run_continuation import human_decisions_block_action
+    state, log, writer = _state(tmp_path)
+    failure = writer.append(ZfEvent(type='test.failed', origin='kernel', correlation_id='run-1',
+        payload={'workflow_run_id': 'run-1', 'failure_scope': 'candidate',
+                 'failure_kind': 'infra', 'fanout_id': 'f1'}))
+    action = pending_candidate_infrastructure_diagnoses(log.read_all())[0]
+    alert = writer.append(ZfEvent(type='human.escalate', origin='kernel', actor='run-manager',
+        correlation_id='run-1', payload={'blocking_scope': 'verification',
+            'reason': 'preauthorized_probe_budget_exhausted', 'host_manifest_digest': 'a' * 64}))
+    events = log.read_all()
+    if invalid == 'untrusted_alert': events[-1].origin = 'worker'
+    if invalid == 'wrong_run': action['workflow_run_id'] = 'other'
+    if invalid == 'missing_failure': action['source_event_ids'] = ['absent']
+    if invalid == 'untrusted_failure': events[0].origin = 'worker'
+    if invalid == 'product_failure': events[0].payload['failure_kind'] = 'quality'
+    if invalid == 'mutation': action['action'] = 'workflow-batch-resume'
+    if invalid == 'other_gate': events.append(ZfEvent(type='human.escalate', payload={'reason': 'owner approval'}))
+    gates = _pending_human_decisions(events)
+    assert bool(human_decisions_block_action(gates, action, events=events)) is bool(invalid)
+    assert (action_gate_reason(state, events, action, gates) == '') is (not invalid)
+    assert alert.id in {e.id for e in events} and failure.id in {e.id for e in events}
+
+
 @pytest.mark.parametrize("scope,expected", [(None, "task"), ("task", "task"), ("run", "run"),
                                           ("side", "side"), ("invalid", "run")])
 def test_escalation_producer_preserves_scope_through_admission(tmp_path, scope, expected):

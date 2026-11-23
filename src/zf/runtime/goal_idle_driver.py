@@ -66,6 +66,11 @@ def maybe_emit_goal_idle_rescan(
         state.goal_idle_ticks = 0
         return ""
     run_id = str(projection.get("run_id") or "")
+    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+
+    if is_run_dispatch_paused(events, run_id):
+        state.goal_idle_ticks = 0
+        return ""
     scoped_events = events_for_run(events, run_id=run_id) if run_id else []
     goal_start = next(
         (index for index, event in enumerate(scoped_events)

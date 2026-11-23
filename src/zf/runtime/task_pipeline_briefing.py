@@ -390,6 +390,11 @@ def verification_result_template(
         "reused_command_receipt_ids": [],
         "probe_receipts": probes,
         "rework_items": [],
+        **({"recovery_obligation_results": [{
+            "finding_id": row["finding_id"], "status": "pending",
+            "rationale": "<independent disposition of retained finding>", "evidence_refs": [],
+        } for row in contract_snapshot["candidate_recovery_obligations"]]}
+            if contract_snapshot.get("candidate_recovery_obligations") else {}),
         "evidence_refs": ["<durable verification report ref>"],
         "requirement_results": [
             _verification_requirement_template(

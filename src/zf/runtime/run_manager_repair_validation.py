@@ -7,13 +7,16 @@ or mutating the main worktree.
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Any
+
+from zf.runtime.repair_process_environment import isolated_repair_environment
+from zf.runtime.repair_process_supervisor import RepairProcessCleanupError, run_repair_command
 
 
 def execute_repair_verification_plan(
@@ -44,6 +47,14 @@ def execute_repair_verification_plan(
             "results": [],
         }
 
+    with TemporaryDirectory(prefix='zf-repair-verification-') as workspace:
+        environment = isolated_repair_environment(workspace)
+        return _execute_steps(root, verification_plan, timeout_seconds, environment)
+
+
+def _execute_steps(root: Path, verification_plan: list[Any], timeout_seconds: int,
+                   environment: dict[str, str]) -> dict[str, Any]:
+    """Test state is isolated from the resident controller and removed on exit."""
     results: list[dict[str, Any]] = []
     for index, step in enumerate(verification_plan):
         row = step if isinstance(step, dict) else {}
@@ -68,10 +79,12 @@ def execute_repair_verification_plan(
                 "kind": kind,
                 "command": command,
                 "required": required,
-                "status": "passed",
-                "reason": "manual_review_instruction_recorded",
-                "returncode": 0,
+                "status": "failed" if required else "skipped",
+                "reason": "manual_review_evidence_required",
+                "returncode": 1 if required else 0,
             })
+            if required:
+                break
             continue
         invocation = _trusted_invocation(command)
         if invocation is None:
@@ -87,10 +100,10 @@ def execute_repair_verification_plan(
             if required:
                 break
             continue
-        env = os.environ.copy()
+        env = environment.copy()
         env.update(invocation["env"])
         try:
-            completed = subprocess.run(
+            completed = run_repair_command(
                 invocation["argv"],
                 cwd=str(root),
                 env=env,
@@ -109,6 +122,7 @@ def execute_repair_verification_plan(
                 "returncode": returncode,
                 "stdout_tail": _tail(completed.stdout),
                 "stderr_tail": _tail(completed.stderr),
+                "process_cleanup": completed.cleanup_receipt,
             }
         except subprocess.TimeoutExpired as exc:
             result = {
@@ -120,7 +134,12 @@ def execute_repair_verification_plan(
                 "returncode": 124,
                 "stdout_tail": _tail(exc.stdout),
                 "stderr_tail": _tail(exc.stderr),
+                "process_cleanup": exc.cleanup_receipt,
             }
+        except RepairProcessCleanupError as exc:
+            result = {"kind": kind, "command": command, "required": required,
+                "status": "failed", "reason": f"repair_process_cleanup_unknown:{exc}",
+                "returncode": 125, "process_cleanup": {"cleanup": "unknown"}}
         except OSError as exc:
             result = {
                 "kind": kind,
@@ -131,14 +150,13 @@ def execute_repair_verification_plan(
                 "returncode": 127,
             }
         results.append(result)
-        if required and result["status"] != "passed":
+        if result.get("process_cleanup", {}).get("cleanup") == "unknown" or (required and result["status"] != "passed"):
             break
 
     failed_required = [
         result for result in results
-        if bool(result.get("required", True))
-        and result.get("status") != "passed"
-        and str(result.get("reason") or "") != "manual_review_instruction_recorded"
+        if result.get("process_cleanup", {}).get("cleanup") == "unknown"
+        or (bool(result.get("required", True)) and result.get("status") != "passed")
     ]
     ok = not failed_required
     return {
@@ -152,6 +170,11 @@ def execute_repair_verification_plan(
 
 
 def _trusted_invocation(command: str) -> dict[str, Any] | None:
+    from zf.runtime.repair_checkout_contract import trusted_pytest_invocation
+
+    pytest_invocation = trusted_pytest_invocation(command)
+    if pytest_invocation is not None:
+        return pytest_invocation
     if command == "git diff --check":
         return {"argv": ["git", "diff", "--check"], "env": {}}
     if command == "npm --prefix web run build":
@@ -161,20 +184,10 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
     if command.startswith(prefix):
         env["PYTEST_ADDOPTS"] = "--no-cov"
         command = command[len(prefix):].strip()
-    argv = shlex.split(command)
-    # The frozen checkout contract reuses this interpreter's dependencies,
-    # while importing the isolated candidate. Do not admit arbitrary env or
-    # executable paths from an agent's verification instruction.
-    if (len(argv) >= 5 and argv[:3] == ["env", "PYTHONPATH=src", sys.executable]
-            and argv[3:5] == ["-m", "pytest"]):
-        return {"argv": argv[2:], "env": {**env, "PYTHONPATH": "src"}}
-    # Older frozen contracts retain this spelling. Bind it to our interpreter;
-    # never execute a candidate-controlled virtualenv entrypoint.
-    if argv and argv[0] == ".venv/bin/pytest":
-        return {"argv": [sys.executable, "-m", "pytest", *argv[1:]],
-                "env": {**env, "PYTHONPATH": "src"}}
-    if len(argv) >= 4 and argv[:3] == ["uv", "run", "pytest"]:
-        return {"argv": argv, "env": env}
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
     if (
         len(argv) == 5
         and argv[0] in {"python", "python3"}
@@ -183,7 +196,7 @@ def _trusted_invocation(command: str) -> dict[str, Any] | None:
         and argv[3] == "--base"
         and re.fullmatch(r"[A-Za-z0-9._/-]+", argv[4])
     ):
-        return {"argv": argv, "env": env}
+        return {"argv": [sys.executable, *argv[1:]], "env": {**env, "PYTHONPATH": "src"}}
     if argv == ["bash", "scripts/dev-premerge-gate.sh"]:
         return {"argv": argv, "env": env}
     if argv == ["bash", "scripts/run-flow-smoke.sh"]:

@@ -16,6 +16,7 @@ from zf.runtime.problem_taxonomy import (
     problem_envelope_from_attention,
     problem_envelope_from_event,
 )
+from zf.runtime.plan_state_attention import task_state_admission_attention_items
 
 
 ATTENTION_SCHEMA_VERSION = "attention-items.v0"
@@ -53,6 +54,9 @@ def build_attention_items(
             if item:
                 items.append(item)
     from zf.runtime.task_pipeline_dispatch_attention import dispatch_failure_attention_items
+    items.extend(task_state_admission_attention_items(
+        history_events if history_events is not None else events, make_item=_attention_item,
+    ))
     items.extend(dispatch_failure_attention_items(
         history_events if history_events is not None else events, make_item=_attention_item,
     ))
@@ -217,13 +221,19 @@ def apply_attention_lifecycle(
 
     current = now or datetime.now(timezone.utc)
     lifecycle = _attention_lifecycle(events, now=current)
+    from zf.runtime.supervisor_human_decisions import applied_human_decisions, applied_human_decision_ref
+
+    applied_decisions = applied_human_decisions(events)
+    events_by_id = {event.id: event for event in events if event.id}
     out: list[dict[str, Any]] = []
     for item in items:
         updated = dict(item)
         keys = _attention_keys(item)
-        status = "open"
-        lifecycle_ref: dict[str, Any] = {}
+        lifecycle_ref = applied_human_decision_ref(item, events_by_id, applied_decisions)
+        status = "resolved" if lifecycle_ref else "open"
         for key in keys:
+            if lifecycle_ref:
+                break
             ref = lifecycle.get(key)
             if ref:
                 status = str(ref.get("status") or status)

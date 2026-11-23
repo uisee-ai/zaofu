@@ -56,6 +56,7 @@ def test_owner_checkpoint_reads_same_candidate_without_promoting_verdict(tmp_pat
         lambda s, ref: hydrate_sidecar_ref(s, ref).payload)
     runtime = SimpleNamespace(state_dir=state, project_root=tmp_path, event_log=writer.event_log, event_writer=writer,
         _fanout_identity_stale_reason=lambda _: ('', ''), _fanout_manifest=lambda _: identity,
+        _cancel_candidate_superseded_replan_fanout=lambda _: False,
         _finalize_fanout_synth=Mock(side_effect=AssertionError('Owner question must hold the Run')))
     PlanSynthRuntimeMixin._handle_fanout_synth_completed(runtime, event)
     events = writer.event_log.read_all()

@@ -7,11 +7,12 @@ from zf.runtime.task_host_manifest import digest
 from zf.runtime.host_verification_handoff import resume_reader_after_probes
 
 
+@pytest.mark.parametrize('increase_budget', [False, True])
 @pytest.mark.parametrize(('status', 'exit_code', 'stable', 'expected'), [
     ('completed', 0, True, True), ('failed', 1, True, True), ('failed', 125, True, True),
     ('failed', 1, False, False), ('started', None, True, False), ('failed', None, True, False),
 ])
-def test_completed_probe_routes_through_controlled_retry_once(recovery, status, exit_code, stable, expected):
+def test_completed_probe_routes_through_controlled_retry_once(recovery, status, exit_code, stable, expected, increase_budget):
     service, failure, original = recovery
     p = policy()
     operation={'operation_id':'op-reader','workflow_run_id':'run-1'}
@@ -25,6 +26,8 @@ def test_completed_probe_routes_through_controlled_retry_once(recovery, status, 
     service.writer.emit('runtime.action.attempt.completed',payload={**operation,'approval_ref':p.approval_ref,
         'kind':'verify','receipt_ref':ref})
     contract={'verification_commands':[{'command_id':'probe','command':'python3 probe.py'}]}
+    if increase_budget:
+        p.max_executions_per_run = 120
     assert resume_reader_after_probes(service,operation,contract,p,service.writer.event_log.read_all()) is expected
     if not expected:
         assert not any(e.payload.get('repaired_failure_event_id') == failure.id for e in service.writer.event_log.read_all())
@@ -107,7 +110,9 @@ def test_partial_allowlist_cannot_reopen_reader_as_if_all_commands_were_probed(r
 
 
 @pytest.mark.parametrize('different', ['', 'fanout', 'target', 'contract', 'run'])
-def test_completed_candidate_probe_owner_does_not_duplicate_sibling_effects(recovery, monkeypatch, different):
+@pytest.mark.parametrize('late_failure', [False, True])
+@pytest.mark.parametrize('ownership', ['receipt', 'unresolved'])
+def test_completed_candidate_probe_owner_does_not_duplicate_sibling_effects(recovery, monkeypatch, different, late_failure, ownership):
     from zf.runtime import host_verification as module
     from zf.runtime import host_verification_handoff as handoff
     service, _, _ = recovery
@@ -126,11 +131,16 @@ def test_completed_candidate_probe_owner_does_not_duplicate_sibling_effects(reco
         requests['sibling']['fanout_id' if different == 'fanout' else 'target_commit'] = 'changed'
     if different == 'contract': requests['sibling']['result_identity']['contract_snapshot_digest'] = 'changed'
     operations = {'owner': first, 'sibling': second}
+    if late_failure:
+        operations = {'sibling': second, 'owner': first}
     monkeypatch.setattr(module, 'reduce_workflow_operations', lambda events: operations)
     monkeypatch.setattr(module, 'binding', lambda service, oid: (operations[oid], requests[oid], contract, service.project_root))
     monkeypatch.setattr(handoff, 'completed_reader_probes', lambda service, op, *args:
-        ({'probe'}, {'probe': result} if op['operation_id'] == 'owner' else {}, False))
-    service.writer.emit('runtime.action.attempt.completed', payload={'manifest_digest': 'owner'})
+        ({'probe'}, {'probe': result} if ownership == 'receipt' and op['operation_id'] == 'owner' else {}, False))
+    service.writer.default_origin = 'kernel'
+    service.writer.emit('runtime.action.attempt.completed' if ownership == 'receipt' else 'runtime.action.attempt.started',
+        payload={'manifest_digest': 'owner', 'action':'task-host-assist', 'kind':'verify',
+            'operation_id':'owner', 'workflow_run_id':'run-1', 'approval_ref':'owner:test'})
     monkeypatch.setattr(module, 'preview', lambda service, **kw:
         {'manifest_digest': kw['operation_id'], 'identity': {'workflow_run_id': operations[kw['operation_id']]['workflow_run_id']}})
     effects = []

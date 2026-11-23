@@ -4,6 +4,37 @@ import shlex
 import sys
 
 
+def trusted_pytest_invocation(command: str) -> dict | None:
+    """Normalize known test spellings without a shell or candidate executable."""
+    if any(token in command for token in ('\n', '\r', ';', '&', '|', '<', '>', '`', '$(')):
+        return None
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    env = {'PYTHONPATH': 'src'}
+    allowed = {'PYTHONPATH': 'src', 'PYTEST_ADDOPTS': '--no-cov'}
+    if argv and argv[0] == 'env':
+        argv = argv[1:]
+        if not argv or '=' not in argv[0]:
+            return None
+    while argv and '=' in argv[0]:
+        key, value = argv.pop(0).split('=', 1)
+        if allowed.get(key) != value:
+            return None
+        env[key] = value
+    if argv and argv[0] in {'pytest', '.venv/bin/pytest'}:
+        arguments = argv[1:]
+    elif argv[:3] == ['uv', 'run', 'pytest']:
+        arguments = argv[3:]
+    elif (len(argv) >= 3 and argv[0] in {'python', 'python3', '.venv/bin/python', sys.executable}
+          and argv[1:3] == ['-m', 'pytest']):
+        arguments = argv[3:]
+    else:
+        return None
+    return {'argv': [sys.executable, '-m', 'pytest', *arguments], 'env': env}
+
+
 def bind_checkout_contract(contract: dict, source_root: Path) -> dict:
     root = source_root.resolve()
     scope = []
@@ -28,11 +59,17 @@ def bind_checkout_contract(contract: dict, source_root: Path) -> dict:
             if text.startswith(prefix):
                 text = text[len(prefix):]
                 break
+        invocation = trusted_pytest_invocation(text)
+        if invocation is not None:
+            # The trusted interpreter may live under the harness checkout.
+            # Only its executable is exempt; test/config arguments still may
+            # not point back at that checkout instead of the repair worktree.
+            if any(str(root) in argument for argument in invocation['argv'][1:]):
+                raise ValueError("repair verification must run in its isolated checkout")
+            return shlex.join(['env', *(f'{k}={v}' for k, v in invocation['env'].items()),
+                               *invocation['argv']])
         if str(root) in text:
             raise ValueError("repair verification must run in its isolated checkout")
-        for prefix in (".venv/bin/python -m pytest", ".venv/bin/pytest", "python -m pytest", "python3 -m pytest", "pytest"):
-            if text == prefix or text.startswith(prefix + " "):
-                return f"env PYTHONPATH=src {shlex.quote(sys.executable)} -m pytest" + text[len(prefix):]
         return text
 
     instruction = command(contract["verification_instruction"])

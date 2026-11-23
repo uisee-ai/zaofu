@@ -13,6 +13,14 @@ def run_replay_sweep(
     events: Iterable[ZfEvent] | None,
 ) -> None:
     event_batch = list(events or [])
+    if not event_batch or any(event.type in {
+        "run.goal.updated", "run.resumed", "runtime.maintenance.exited", "dispatch.resumed",
+    } for event in event_batch):
+        from zf.runtime.fanout_aggregate_recovery import reconcile_pending_aggregate_rebuilds
+
+        runtime._safe_housekeeping(
+            "aggregate_rebuild_replay", lambda: reconcile_pending_aggregate_rebuilds(runtime),
+        )
     if not event_batch:
         from zf.runtime.candidate_continuation_runtime import recover_pending_continuations
 

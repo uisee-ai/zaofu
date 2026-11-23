@@ -22,6 +22,13 @@ def test_watchdog_is_opt_in_and_rendered_from_runtime_config(tmp_path):
     assert _build_runtime({}).host_watchdog_seconds == 0
 
 
+@pytest.mark.parametrize('seconds, expected', [(15, 90), (120, 120), (300, 300)])
+def test_start_deadline_covers_first_complete_watchdog_tick(tmp_path, seconds, expected):
+    body = render_user_unit(project_root=tmp_path, state_dir=tmp_path / 'state',
+        python=Path('/usr/bin/python3'), source_root=tmp_path, watchdog_seconds=seconds)
+    assert f'TimeoutStartSec={expected}s' in body
+
+
 @pytest.mark.parametrize('value', [-1, True, 'abc', float('nan'), float('inf'), 1])
 def test_invalid_watchdog_interval_rejected(value):
     with pytest.raises(ConfigError):

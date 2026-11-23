@@ -15,6 +15,23 @@ from zf.runtime.verification_result import failed_acceptance_ids
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
+def candidate_recovery_superseded(
+    events: list[ZfEvent], candidate: ZfEvent, workflow_run_id: str,
+) -> bool:
+    """A newer admitted Plan ends old recovery even before its Candidate freezes."""
+    seen = False
+    for event in events:
+        if event.id == candidate.id:
+            seen = True
+            continue
+        if (seen and event.origin == "kernel"
+                and (event.payload.get("workflow_run_id") or event.correlation_id) == workflow_run_id
+                and event.type in {"run.goal.completed", "run.goal.cancelled",
+                                   "plan.artifact_package.admitted", "task_map.ready"}):
+            return True
+    return not seen
+
+
 def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -> dict:
     """Return only implicated child Tasks; an unmapped AC requires planner scoping."""
     run_id = result.get("workflow_run_id")
@@ -29,23 +46,15 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
     )
     if not run_id or not generation or not all(result.get(key) for key in required):
         raise ValueError("candidate recovery identity incomplete")
+    admitted_redrives = _admitted_candidate_redrives(events, run_id)
     run_events = [
         event
         for event in events
         if (event.payload.get("workflow_run_id") or event.correlation_id) == run_id
-        and event.origin == "kernel"
+        and (event.origin == "kernel" or event.id in admitted_redrives)
     ]
     current = next((e for e in reversed(run_events) if e.type == "candidate.ready"), None)
-    if current is None or any(
-        e.type
-        in {
-            "run.goal.completed",
-            "run.goal.cancelled",
-            "plan.artifact_package.admitted",
-            "task_map.ready",
-        }
-        for e in run_events[run_events.index(current) + 1 :]
-    ):
+    if current is None or candidate_recovery_superseded(run_events, current, run_id):
         raise ValueError("candidate recovery target superseded")
     trigger = current
     current = frozen_candidate_for_payload(run_events, run_id, payload={"candidate_event_id": trigger.id})
@@ -133,12 +142,14 @@ def candidate_checkpoint_binding(
     scope, _ = candidate_reader_binding(
         state_dir, events, fanout_id=payload["fanout_id"], operation_id=operation_id
     )
+    from zf.runtime.candidate_timeout_members import candidate_failed_members
+    failed_members = candidate_failed_members(events, aggregate)
     if (
         (task_id and scope["anchor_task_id"] != task_id)
         or scope["workflow_run_id"] != run_id
         or scope["pdd_id"] != payload.get("pdd_id")
         or scope["task_map_generation"] != payload.get("task_map_generation")
-        or scope["child_id"] not in (aggregate.payload.get("failed_children") or [])
+        or scope["child_id"] not in failed_members
         or not any(e.id == scope["child_event_id"] for e in earlier)
     ):
         raise ValueError("candidate failure and reader scope differ")
@@ -265,3 +276,33 @@ def candidate_action_scope(state_dir: Path, events: list[ZfEvent], failure: ZfEv
         "trace_id": run_id,
         "target_ref": scope["candidate_ref"],
     }
+
+
+def _admitted_candidate_redrives(events: list[ZfEvent], run_id: str) -> set[str]:
+    """Controlled retriggers keep operator origin; trust their exact kernel admission."""
+    candidates: dict[str, ZfEvent] = {}
+    positions = {event.id: i for i, event in enumerate(events)}
+    admissions = {event.payload.get("trigger_event_id"): i for i, event in enumerate(events)
+                  if event.type == "fanout.started" and event.origin == "kernel"
+                  and (event.payload.get("workflow_run_id") or event.correlation_id) == run_id}
+    admitted = set()
+    for event in events:
+        if (event.type != "candidate.ready"
+                or (event.payload.get("workflow_run_id") or event.correlation_id) != run_id):
+            continue
+        if event.origin == "kernel":
+            candidates[event.id] = event
+            continue
+        parent_id = event.payload.get("redrive_of")
+        parent = candidates.get(parent_id)
+        if (parent is None or event.payload.get("rework_of") != parent_id
+                or event.task_id != parent.task_id
+                or admissions.get(event.id, -1) <= positions[event.id]
+                or parent.payload.get("schema_version") != "candidate-freeze-receipt.v1"
+                or any(event.payload.get(key) != parent.payload.get(key) for key in (
+                    "schema_version", "freeze_id", "pdd_id", "task_id", "candidate_ref",
+                    "candidate_head_commit", "task_map_generation", "plan_artifact_package_digest"))):
+            continue
+        candidates[event.id] = event
+        admitted.add(event.id)
+    return admitted

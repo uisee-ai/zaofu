@@ -394,6 +394,10 @@ def apply_worker_activity_heartbeat(
     """
     if not is_worker_activity_event(event.type):
         return
+    # Replayed disk accounting is reconciled by usage_liveness against the
+    # provider sample timestamp; this generic path must not renew it first.
+    if event.type == "agent.usage" and event.payload.get("source") == "disk_reader":
+        return
     instance_id = (event.actor or "").strip()
     if not instance_id or instance_id in _ACTIVITY_LIVENESS_INFRA_ACTORS:
         return

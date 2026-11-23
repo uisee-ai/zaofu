@@ -121,13 +121,35 @@ def reconcile_task_pipeline_terminals(
         if task is None:
             continue
         if str(task.status) != "done":
-            runtime.task_store.update(
+            from zf.runtime.task_contract_snapshot import effective_contract_revision
+
+            receipt_authority = receipt.get("contract_authority_revision")
+            if isinstance(receipt_authority, str):
+                if task.contract_authority_revision != receipt_authority:
+                    continue
+            if effective_contract_revision(task) != receipt.get("contract_revision"):
+                # Older receipts bind the semantic revision only. Never infer
+                # current applicability merely from the old operation's status.
+                continue
+            # A prior integration cannot close a subsequent contract revision
+            # or a new execution attempt. Keep the conflict for recovery review.
+            current_events = runtime.event_log.read_all()
+            integration_index = next(i for i, e in enumerate(current_events) if e.id == integrated.id)
+            after_integration = current_events[integration_index + 1:]
+            if any(event.task_id == task_id and event.type in {
+                "task.contract.revision.applied", "task.pipeline.stage.dispatched",
+            } for event in after_integration):
+                continue
+            _, applied = runtime.task_store.compare_and_update_fields(
                 task_id,
-                status="done",
-                assigned_to=None,
-                active_dispatch_id="",
-                completed_at=_now_iso(),
+                expected_authority_revision=task.contract_authority_revision,
+                expected_status=task.status,
+                expected_active_dispatch_id=task.active_dispatch_id,
+                updates={"status": "done", "assigned_to": None,
+                         "active_dispatch_id": "", "completed_at": _now_iso()},
             )
+            if not applied:
+                continue
             decisions.append(WorkflowRuntimeDecision(
                 action="task_pipeline_task_done",
                 task_id=task_id,
@@ -378,6 +400,15 @@ def _freeze_generation(
     candidate_base_commit = str(
         context.get("dispatch_base_commit") or ""
     )
+    reuse_refs = [row.get("completion_reuse_ref") for row in task_contexts.values()]
+    if reuse_refs and all(reuse_refs) and all(ref == reuse_refs[0] for ref in reuse_refs):
+        from zf.runtime.candidate_continuation import _json
+
+        reuse = _json(Path(runtime.state_dir), reuse_refs[0])["manifest"]
+        if (reuse["task_map_generation"] != task_map_generation
+                or reuse["candidate_head_commit"] != candidate_head):
+            return False
+        candidate_base_commit = reuse["candidate_base_commit"]
     flow_kind = str(context.get("flow_kind") or "").strip()
     pdd_id = str(
         context.get("pdd_id")

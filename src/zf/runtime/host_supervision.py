@@ -45,6 +45,7 @@ def render_user_unit(*, project_root: Path, state_dir: Path, python: Path,
     if watchdog_seconds:
         lines[lines.index('Type=simple')] = 'Type=notify'
         lines += ['NotifyAccess=main', f'WatchdogSec={watchdog_seconds:g}s',
+                  f'TimeoutStartSec={max(90, watchdog_seconds):g}s',
                   'WatchdogSignal=SIGKILL']
     lines += [f'ExecCondition={cli} recover host-check --state-dir {_quote(str(state), command=True)}',
               f'ExecStart={cli} start --control-plane-only --skip-workflow-inspect',

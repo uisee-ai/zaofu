@@ -821,6 +821,25 @@ def run(args: argparse.Namespace) -> int:
         print(f"Error: {state_dir} not found. To fix: run 'zf init'", file=sys.stderr)
         return 1
     if not dry_run:
+        from zf.runtime.provider_sandbox import probe_configured_codex_sandbox
+
+        sandbox_check = probe_configured_codex_sandbox(config, project_root)
+        if sandbox_check and sandbox_check["probe"]["returncode"] != 0:
+            probe = sandbox_check["probe"]
+            detail = str(probe.get("stderr") or probe.get("stdout") or
+                         f"sandbox probe exited {probe['returncode']}").strip()
+            _append_event(
+                event_log_from_project(state_dir, config=config),
+                ZfEvent(type="env.preflight.failed", actor="zf-cli", payload={
+                    "check": "codex_sandbox", "detail": detail,
+                    "hard": True, "problem_class": "environment",
+                    **sandbox_check,
+                }),
+            )
+            print(f"Error: Codex sandbox preflight failed: {detail}", file=sys.stderr)
+            print("Run `zf doctor provider --backend codex --json` and repair "
+                  "the host prerequisites before restarting.", file=sys.stderr)
+            return 1
         _refresh_pricing_catalog(config, state_dir)
     session_path = state_dir / "session.yaml"
     if not session_path.exists():

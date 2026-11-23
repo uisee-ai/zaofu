@@ -838,31 +838,8 @@ class WorkflowRuntimeCoordinator(
         re-raise — the housekeeping helper's contract is that the
         orchestration loop continues.
         """
-        now = time.time()
-        last = self._housekeeping_failure_last.get(step, 0.0)
-        if now - last < self._housekeeping_failure_dedup_seconds:
-            return
-        self._housekeeping_failure_last[step] = now
-        try:
-            self.event_writer.append(ZfEvent(
-                type="kernel.housekeeping.failed",
-                actor="orchestrator",
-                payload={
-                    "step": step,
-                    "exc_type": type(exc).__name__,
-                    # Truncate repr to keep events.jsonl rows bounded —
-                    # long Python tracebacks have leaked entire stack
-                    # frames into the event log in the past.
-                    "exc_repr": repr(exc)[:500],
-                },
-            ))
-        except Exception as emit_exc:
-            import sys
-            print(
-                f"[kernel.housekeeping.failed] step={step} "
-                f"exc={exc!r} emit_failed={emit_exc!r}",
-                file=sys.stderr,
-            )
+        from zf.runtime.housekeeping_failures import emit_housekeeping_failure
+        emit_housekeeping_failure(self, step, exc)
 
     def run_once(
         self, events: list[ZfEvent] | None = None, *, consumed_offset: int | None = None,
@@ -983,6 +960,8 @@ class WorkflowRuntimeCoordinator(
         for decision in reconcile_dependency_barriers(self.config, events):
             self.event_writer.append(decision.to_event())
         self._recover_unstarted_reader_fanouts()
+        from zf.runtime.plan_critic_reassessment import reconcile_reassessments
+        reconcile_reassessments(self, events)
 
     def _emit_decision_recorded(
         self,
@@ -3102,17 +3081,11 @@ class WorkflowRuntimeCoordinator(
                         from zf.core.state.role_sessions import (
                             RoleSessionRegistry,
                         )
-                        inst = str(event.actor or "").strip()
-                        if inst:
-                            RoleSessionRegistry(
-                                self.state_dir / "role_sessions.yaml",
-                                project_root=str(self.project_root),
-                            ).record_heartbeat(inst, {
-                                "instance_id": inst,
-                                "last_action_ts": event.ts,
-                                "source": "agent.usage",
-                                "event_id": event.id,
-                            })
+                        from zf.runtime.usage_liveness import apply_usage_fallback_liveness
+                        apply_usage_fallback_liveness(RoleSessionRegistry(
+                            self.state_dir / "role_sessions.yaml",
+                            project_root=str(self.project_root),
+                        ), event)
                     except Exception:
                         pass
             elif event.type == "memory.note":
@@ -3611,7 +3584,7 @@ class WorkflowRuntimeCoordinator(
             return
 
 
-    def _ensure_writer_tasks_canonical(self, loaded) -> None:
+    def _ensure_writer_tasks_canonical(self, loaded, *, preview_only: bool = False):
         """Register writer task-map tasks and refresh replan refs."""
         from zf.core.task.schema import Task, TaskContract
         from zf.runtime.verification_commands import (
@@ -3845,6 +3818,9 @@ class WorkflowRuntimeCoordinator(
             if existing is None:
                 pending_new_tasks.append(refreshed_task)
             elif self._can_refresh_writer_task(existing, loaded):
+                if preview_only:
+                    pending_new_tasks.append(refreshed_task)
+                    continue
                 old_ref = self._task_contract_task_map_ref(existing.contract)
                 refresh_writer_task_contract(
                     task_store=self.task_store,
@@ -3858,6 +3834,8 @@ class WorkflowRuntimeCoordinator(
                     new_task_map_ref=loaded.task_map_ref,
                     is_replan=bool(getattr(loaded, "is_replan", False)),
                 )
+        if preview_only:
+            return {task.id: task for task in pending_new_tasks}
         from zf.runtime.writer_task_materialization import materialize_writer_tasks
         materialize_writer_tasks(self, pending_new_tasks, loaded)
         from zf.runtime.writer_task_map_supersede import (

@@ -44,7 +44,9 @@ def publish_repair_candidate(*, writer, state_dir: Path, harness: Path, root: Pa
         for name in names:
             if (_hard_denied(name) or any(fnmatch.fnmatchcase(name, p) for p in policy.deny_paths)
                     or not any(fnmatch.fnmatchcase(name, p) for p in policy.allow_paths)
-                    or not any(fnmatch.fnmatchcase(name, p) for p in contract['scope'])):
+                    or not any(fnmatch.fnmatchcase(name, p) for p in [
+                        *contract['scope'], *(contract.get('governance_scope') or []),
+                    ])):
                 raise ValueError(f'repair publish path outside authorized scope: {name}')
         git(root, 'var', 'GIT_AUTHOR_IDENT')
         git(root, 'var', 'GIT_COMMITTER_IDENT')

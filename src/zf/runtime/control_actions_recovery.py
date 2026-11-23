@@ -175,10 +175,10 @@ class RecoveryActionsMixin:
                 correlation_id=payload["workflow_run_id"], causation_id=requested.id,
                 payload={**{k: payload[k] for k in (
                     "fanout_id", "fanout_child_id", "workflow_run_id",
-                    "target_operation_id", "active_attempt_id", "source_event_id")},
+                    "target_operation_id", "active_attempt_id", "source_event_id") if k in payload},
                     "action_id": action_id, "kind": "rerun_fanout_child",
                     "recovery_action": action,
-                    "idempotency_key": f"reader-rebuild:{payload['target_operation_id']}:{payload['source_event_id']}",
+                    "idempotency_key": f"reader-rebuild:{payload.get('target_operation_id') or payload['active_attempt_id']}:{payload['source_event_id']}",
                     "reason": str(payload.get("reason") or "retry the exact failed Reader")},
             ))
             return self._recovery_ok(requested, emitted, action, requested_action,
@@ -240,6 +240,12 @@ class RecoveryActionsMixin:
     def _stage_retrigger_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        from zf.runtime.reader_replan_feedback import bind_operator_feedback, operator_feedback
+
+        try:
+            feedback = operator_feedback(payload)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
         source_event_id = str(payload.get("source_event_id") or "").strip()
         if not source_event_id:
             return self._recovery_failed(
@@ -265,6 +271,10 @@ class RecoveryActionsMixin:
                 requested, action, requested_action,
                 f"{source.type} is not a retriggerable driving event",
             )
+        if payload.get("restore_completed_tasks"):
+            from zf.runtime.terminal_completion_restore import execute
+
+            return execute(self, source, payload, requested, requested_action)
         if source.type == "flow.gap_plan.ready":
             if source.origin != "kernel":
                 return self._recovery_failed(
@@ -285,12 +295,45 @@ class RecoveryActionsMixin:
         for event in events:
             body = event.payload if isinstance(event.payload, dict) else {}
             if str(body.get("redrive_of") or "") == source_event_id:
+                if payload.get("reuse_completed_plan") and body.get("completion_reuse_ref"):
+                    if payload.get("dry_run"):
+                        break
+                    if payload.get("repair_task_refs"):
+                        from zf.core.state.locks import locked_path
+                        from zf.runtime.plan_completion_reuse import apply
+
+                        try:
+                            with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                                apply(self, source, payload, requested)
+                        except (ValueError, OSError) as exc:
+                            return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+                        return self._recovery_ok(requested, event, action, requested_action, {
+                            "retriggered_event_id": event.id, "source_event_id": source.id,
+                            "reason": "repaired completed reuse TaskRefs without another trigger"})
                 return self._recovery_failed(
                     requested, action, requested_action,
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
-        if payload.get("repair_plan_output"):
+        from zf.runtime.plan_declared_inputs import supplemental_plan_inputs
+
+        try:
+            supplemental = supplemental_plan_inputs(
+                self.state_dir, payload, request_id=requested.id)
+        except (ValueError, OSError) as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc))
+        if payload.get("reuse_completed_plan"):
+            from zf.core.state.locks import locked_path
+            from zf.runtime.plan_completion_reuse import apply, preview
+
+            try:
+                with locked_path(self.state_dir / "locks" / "plan-output-recovery"):
+                    if payload.get("dry_run"):
+                        return {"ok": True, "action": action, "manifest": preview(self, source)}
+                    base = apply(self, source, payload, requested)
+            except (ValueError, OSError) as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
+        elif payload.get("repair_plan_output"):
             from zf.core.state.locks import locked_path
             from zf.runtime.plan_output_recovery import repair_plan_output
 
@@ -311,6 +354,8 @@ class RecoveryActionsMixin:
         elif payload.get("retain_completed_task_ids"):
             return self._recovery_failed(
                 requested, action, requested_action, "completion retention requires a Plan output repair")
+        if supplemental:
+            base['artifact_refs'] = [*base.get('artifact_refs', []), *supplemental]
         base["redrive_of"] = source_event_id
         base["rework_of"] = source_event_id  # 代际:retrigger 不是 replay
         trigger = ZfEvent(
@@ -321,6 +366,8 @@ class RecoveryActionsMixin:
             causation_id=requested.id,
             correlation_id=source.correlation_id,
         )
+        if "operator_feedback" in payload:
+            bind_operator_feedback(trigger, feedback, request_id=requested.id)
         from zf.runtime.reader_shadow_recovery import retain_shadow_as_observation
 
         retain_shadow_as_observation(
@@ -337,6 +384,9 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if payload.get('review_only') is True:
+            from zf.runtime.plan_critic_reassessment import apply_reassessment
+            return apply_reassessment(self, requested, action, requested_action, payload)
         if payload.get("repaired_failure_event_id"):
             if "input_task_ids" in payload:
                 return self._recovery_failed(

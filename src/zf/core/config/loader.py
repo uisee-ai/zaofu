@@ -842,9 +842,9 @@ def _build_orchestration_flow_policy(
     if actions is not None:
         if (not isinstance(actions, list)
                 or any(not isinstance(item, str) for item in actions)
-                or set(actions) - {"delegate", "continue", "rework"}
+                or set(actions) - {"delegate", "continue", "rework", "rebind"}
                 or len(actions) != len(set(actions))):
-            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework actions")
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework/rebind actions")
         if mode != "semantic_control":
             raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
     review_blocked = data.get("review_blocked_tasks", False)
@@ -3875,6 +3875,9 @@ def _build_runtime(
     from zf.core.config.task_publication import parse_task_publication
     try:
         host_verification = parse_host_verification(data.get("host_verification"))
+        if (host_verification.enabled and host_watchdog_seconds
+                and host_watchdog_seconds <= host_verification.timeout_seconds):
+            raise ValueError("runtime.host_watchdog_seconds must exceed the synchronous host_verification.timeout_seconds; allow additional tick overhead")
         task_publication = parse_task_publication(data.get("task_publication"))
     except (ValueError, TypeError) as exc:
         raise ConfigError(str(exc)) from exc

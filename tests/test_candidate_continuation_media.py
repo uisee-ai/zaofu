@@ -14,8 +14,11 @@ from zf.runtime.sidecar_refs import write_sidecar_json
 
 
 @pytest.mark.parametrize('corrupt', [False, True])
-def test_initial_continuation_delivers_verified_media_without_probe(source, corrupt):
+@pytest.mark.parametrize('size_allowed', [False, True])
+def test_initial_continuation_delivers_verified_media_without_probe(source, corrupt, size_allowed):
     seeded, service, run_id, candidate = source
+    if not size_allowed:
+        seeded.config.runtime.host_verification.max_artifact_bytes = 1
     target = candidate.payload['candidate_head_commit']
     evidence = write_sidecar_json(seeded.state_dir, 'artifacts/old-browser.json', {
         'image': 'bound-image', 'target_commit': target, 'files': [{
@@ -37,15 +40,15 @@ def test_initial_continuation_delivers_verified_media_without_probe(source, corr
     assert accepted['ok'], accepted
     invoke = next(e for e in seeded.event_log.read_all() if e.id == accepted['event_id'])
     runtime = Orchestrator(seeded.state_dir, seeded.config, _Transport(), project_root=seeded.project_root)
-    if corrupt:
-        with pytest.raises(ValueError, match='digest'):
+    if corrupt or not size_allowed:
+        with pytest.raises(ValueError, match='digest|limit'):
             runtime._on_workflow_invoke_requested(invoke)
     else:
         runtime._on_workflow_invoke_requested(invoke)
     events = [e for e in seeded.event_log.read_all()
               if e.payload.get('workflow_run_id') == accepted['workflow_run_id']]
     candidates = [e for e in events if e.type == 'candidate.ready']
-    if corrupt:
+    if corrupt or not size_allowed:
         assert not candidates
         return
     indices = list((seeded.state_dir / 'artifacts/container-media').glob('*/index.json'))

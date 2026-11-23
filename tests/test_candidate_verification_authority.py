@@ -72,6 +72,7 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
 
 def _seed_frozen_candidate(
     runtime: SimpleNamespace, tier: str = "task_non_smoke", *, package_fields=None, additional_completed=(),
+    producer_paths=None,
 ) -> dict[str, str]:
     run_id = "run-candidate-authority"
     generation = "generation-1"
@@ -112,7 +113,7 @@ def _seed_frozen_candidate(
             "acceptance_ids": ["AC-1"],
             "owner": "task_verify",
             "tier": tier,
-            "producer_paths": ["artifacts/probe.json"],
+            "producer_paths": producer_paths if producer_paths is not None else ["artifacts/probe.json"],
             "deterministic": True,
             "reusable": False,
             "timeout_seconds": 60,

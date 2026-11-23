@@ -11,6 +11,25 @@ from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workf
 def repaired_failure_kind(state_dir, events, failure):
     """Read immutable admitted child evidence; never rewrite historical events."""
     explicit = failure_kind_from_payload(failure.payload)
+    if (explicit == 'infra' and failure.origin == 'kernel'
+            and failure.type in {'test.failed', 'verify.failed'}
+            and failure.payload.get('reason') == 'timeout'):
+        # Legacy timeout aggregates omitted settled semantic siblings. Their
+        # host receipts cannot authorize the pure-infrastructure successor.
+        operations = reduce_workflow_operations(events)
+        semantic = [operations.get(e.payload.get('operation_id'), {}) for e in events
+                    if e.type == 'fanout.child.failed' and e.origin == 'kernel'
+                    and e.payload.get('fanout_id') == failure.payload.get('fanout_id')]
+        if any(op.get('status') == 'settled' and op.get('call_result_admitted_event_id')
+               and op.get('semantic_verdict') in {'rejected', 'blocked'} for op in semantic):
+            from zf.runtime.candidate_failure_checkpoint import aggregate_candidate_binding
+            try:
+                aggregate_candidate_binding(state_dir, events, failure_id=failure.id,
+                    run_id=_event_run_id(failure),
+                    task_id=str(failure.task_id or failure.payload.get('pdd_id') or ''))
+            except (ValueError, OSError, KeyError):
+                return 'unknown'
+            return 'mixed'
     if explicit:
         return explicit
     fanout = str(failure.payload.get('fanout_id') or '')

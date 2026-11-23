@@ -1,5 +1,38 @@
 # 8×8 执行与恢复链路修复
 
+后续 Kimi/Codex 调研实施见[无外部监工恢复与交付闭环](autonomous-recovery-closeout.md)。
+
+2026-11-21 环境污染补充：源码修复有两个执行边界——Worker 自行测试，以及 RM 的
+独立验收。两者均经 `repair_process_environment.isolated_repair_environment` 剥离
+父控制面的 `ZF_*`、Git/tmux 和 Python/pytest 定位，显式注入可信解释器、本地 `src`
+与一次性 workspace。Provider 的现有 sandbox 和凭据配置保持。真实子进程回归证明
+项目事件文件不被污染；后代进程清理使用下述独立边界，不能由环境隔离证明替代。
+
+NEW 验证准备期曾被测试 `zf init --force` 重置运行状态。17:09 UTC 恢复可信检查点
+（2818 条，截至16:22:19），保留原 session ID、六个已终结 TaskAttempt、引用 sidecar，
+隔离污染投影和后续进程结果，绑定安装后的消费游标并保持维护暂停。未从索引或其他
+Run 拼造账本，检查点后的原始差量完整性保持 unknown；不计入无监工通过。
+
+2026-11-21 完成任务保护：Plan派发先用拟议Task视图执行admission，capacity在落盘前检查，
+已拒绝派发不得先重开done任务。准确晚到批准只有package正文与显式端口匹配、Candidate
+仍为原提交、所有相关Task与原生/复用完成证据当前有效时才抑制重复派发；不授予Goal或Judge通过。
+integration receipt绑定捕获时的合同语义版本与authority token，Candidate写入前重查token；
+terminal核对两者、检查integration后的合同/派发事件，再以TaskStore CAS绑定authority、status和active_dispatch_id完成。
+`terminal_tasks`归类为Task状态准入冲突，kernel-origin的`fanout.cancelled`自身即交RM诊断，后续`task.fanout.rejected`只作同incident审计，禁止继承
+旧schema_gap去重规划。两次事件追加间崩溃可补齐诊断，不因cancel已存在永久静默。
+这组改动防止复发；14项既有受影响完成记录尚待独立、可审计的受控补偿。
+
+NEW于17:15从可信检查点恢复后的原Plan阶段继续，真实Planner冻结输入已经含TODO与
+SOURCE-PROMPT完整必读正文。恢复步骤包含参数纠正和transport bootstrap，均为人工介入。
+本次准备Run及旧失败窗口不改判无监工通过，新资格窗口仍未开始。
+
+终态历史补偿使用受控`stage-retrigger`的独立`restore_completed_tasks`分支，提前返回，
+不得与普通重发选项混用。仅补偿已拒绝Plan重放造成的done合同替换；精确Owner意图
+绑定不可变预览，核对暂停Run、当前Candidate、归档与原完成证明。存储层在原归档桶
+一次追加整批新authority，完成时间仍为原时间，历史记录不改写、索引不搬迁、无backlog
+中间态。旧格式execution binding经既有解析器规范化后计算新token，原历史body仍保留。消费者需携带completion_restore_ref，旧Verify identity不被伪造成新的验证；
+新authority或证据变化继续拒绝。无新业务trigger、task.done、Judge或Goal通过。
+
 本说明对应 [实施任务](../../tasks/active/2026-11-18-0001-eight-by-eight-recovery-closure.md)。基于 dev dda38a25 的隔离实验发现；原实验仅证明 Impl 峰值 8、Verify 峰值 5、总同时峰值 11，1/16 完成，未证明真实同时 8+8 或最终产品交付。
 
 ## 修复边界
@@ -63,6 +96,42 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 
 ## 最终 Candidate 的环境失败闭环（真实续测）
 
+### 已完成任务在 Plan 恢复后重复实施（2026-11-20）
+
+已终结的 Candidate fanout 也可能遗留暂停的 Reader operation，不能把聚合失败等同于
+所有环境占用已经释放。周期派发扫描在跳过终结 fanout 前，检查其活跃 operation；
+只有同 Run 的 Kernel 准入证明确认过期，才沿既有取消/transport 所有权路径释放旧
+持有者。保留原聚合结果，不补写 `fanout.cancelled` 覆盖失败，不重试旧 Reader，也不
+重置其 attempt 上限。当前代际和其他 Run 的持有者仍受保护。
+见[终结 Reader 清理](../../tasks/done/2026-11-21-0027-terminal-reader-owner-closeout.md)。
+
+连续 Plan 修订还需追溯更早的原生 Task 验收。第二次恢复不能要求上一代重新产生
+`task.done`：上一代可能只保存已批准的完成复用。预览以该代归档 Task 建立历史读视图，
+验证完整复用引用链，再绑定最初的 Verify/集成事件和原始任务派发代际；新代际的
+Candidate 继续校验当前合同与整条不可变链。破损引用、变更目标或原生证据缺失均拒绝。
+
+若标准开发任务只在既有 `candidate_verify` 最终命令追加 `producer_paths`，预览完整
+列出新增义务，受控动作还要求逐 Task 的 `candidate_evidence_review`，与精确 manifest
+摘要、批准引用及复用理由一同持久化。此范围不覆盖只读审计、Task 本地验收、命令或
+权限变化，也不允许删除既有证据。追加的产物仍必须由新 Candidate 阶段验证，旧 Task
+完成证明不构成该项通过。见[连续恢复任务](../../tasks/done/2026-11-21-0010-repeated-plan-completion-reuse.md)。
+
+真实实验的新 Plan 更新恢复基线与来源边界说明，原 16 项已完成，但完整 Task Map 的新代际令 runtime 全部重开。OA 的文字要求“保留完成证据”没有执行效力；pre_impl 为 shadow，所以不是 blocking gate 被绕过。
+
+受控 `stage-retrigger` 增加 `reuse_completed_plan=true`：先 `dry_run=true` 生成完整新旧合同、原 native Verify/integration、原 Candidate 与当前 Plan 审批绑定的 manifest。Owner 审阅精确 `manifest_digest` 后，以 `reviewed_digest`、`reuse_rationale`、`approval_ref` 执行。只支持原完整 Task 集合、原冻结提交、验收/执行合同不变的 Plan 导航更新；拒绝 terminal Run、目标移动、过期审批、活动 Task、未停止或有改动的重新派发工作区。导航材料的语义适用性由审核人负责，运行时不从 ID 或文件存在推断。
+
+运行时通过 TaskStore CAS 恢复原完成时间，保留旧 Task generation、native 回执和原 Candidate 基线；已停止的新 attempt 通过操作服务取消并结清，Task-stage 会话归档释放。`task.status_changed` 引用不可变复用证明，不制造新的 worker passed 或 task.done。Candidate 在新 Plan 下重新冻结，独立审核输入核验旧证明与当前合同的显式映射，合同/目标/证明再次变化时拒绝。Candidate、Judge、Goal 与交付结果均不继承。
+
+真实续测还确认 verify_only 重派会重绑定 TaskRef，只有 Task 状态恢复不足以重新冻结。预览同时检查 TaskRef/index；只允许同 Run/代际对精确 Candidate 的只读重绑定，经原 TaskRefManager 的 Git CAS 恢复原已集成目标。未知变化或 writer ref 不回退。已经执行的完成复用可用 `repair_task_refs=true` 加新的精确审核摘要完成此步骤，不重复发出 driving event；原 native 集成回执继续按真实 TaskRef 校验，不放宽 receipt hydration。
+
+操作顺序：完整 `zf stop` 关闭 transport 后，先 `zf start --no-watch --skip-workflow-inspect` 建立传输会话，再启动使用 `--control-plane-only` 的宿主监督 unit；只有 transport 保留的控制器重载才可直接启动该 unit。准备和受控恢复动作完成后再开启只读观察窗口。
+
+入口只解决经过显式审阅的恢复；OA 自动提交等价绑定决定仍属后续能力，不能将此人工恢复记作零介入。真实8×8续测已由新Plan原生冻结原候选，8个最终Reader实际running，16项业务Task未再次派发；这仅证明本恢复入口生效，最终Candidate/Judge/Goal/交付仍独立待验。
+
+后续真实Reader输入与结果准入仍报48条子任务旧身份冲突。共享 `candidate_currentness_issues` 现在重验同一不可变完成复用证明：当前Task完整合同/身份/完成态必须与审核一致，子项的复用ref和原Verify事件必须精确匹配，再以已审核原身份核对子项；不把旧任务伪装为新执行。未复用子项仍走原校验，目标/Plan/快照/current candidate门禁全部保留。`artifact index/recover` 和正式结果提交共用该入口，避免冻结接受而读取或提交拒绝。补修见 [Reader currentness闭环](../../tasks/done/2026-11-20-2205-plan-reuse-reader-currentness.md)。
+
+受控checkpoint准入还必须被实际Reader派发消费。周期恢复优先核对kernel redrive、原workflow.resume.planned、不可变request及当前fanout/child，实际started使用同一个已准入决定；已授权停止恢复不计为新的传输故障，不重置普通故障预算。只有同operation原请求的这一次准入能触发，不凭restart文本或次数推断授权。已正式准入的failed/abstained Reader可经child-rebuild生成新operation，需核验原control-result摘要和身份；原settled事实保留，业务passed/rejected不适用。见 [Reader断点派发闭环](../../tasks/done/2026-11-20-2215-reader-resume-dispatch-closure.md)。相关任务见 [Plan 完成复用修复](../../tasks/done/2026-11-20-2120-plan-completion-reuse.md)。
+
 16项任务完成后，最终8个reader中的7个在Docker socket受sandbox限制时结束回合，没有提交结构化失败；有界重试因此耗尽。调查进一步复现：即使按规范提交 `failed + abstained + verifier_execution_failure`，未完成产品必读材料仍导致准入失败，已有例外只接受 `reader_execution_failure`。这不应迫使agent把环境故障误报成输入故障，或先阅读全量产品材料再承认无法执行探针。
 
 `task_input_failure` 仅为 verification-result 增加准确的 `verifier_execution_failure` 类别，仍要求failed/abstained、非空summary与evidence refs；身份、目标、读账本完整性、显式提供的产品报告检查继续执行。不产生通过或产品拒绝，不扩展Impl的环境失败例外。已消费部分仍封存，状态明确记录incomplete。恢复后的语义结果仍需完成必读和完整产品验收。
@@ -122,3 +191,882 @@ Owner 随后明确纠正验证范围为原定 8×8，并要求取消 Planner 时
 本次合并交付已实施的修复，不把上述待验收项标成完成。任务保持active；原始事件、浏览器截图/WebM/trace和监工记录保留于实验worktree的 `reports/eight-by-eight-real-resumed-20261118/`，运行状态和私有凭据不进入Git。后续实际验证独立于源码合并继续评估。
 
 合并前最终影响闭包：`python scripts/dev-verify.py run --base dev --workers 4 --keep-going` → 9832 passed / 16 skipped / 1 failed，耗时352.24秒；唯一失败为 `test_workflow_synthesis.py::test_consumer_lock_contention_defers_without_reporting_failure`。在干净的dev基线 `dda38a25` 独立执行同一用例，同样抛出WorkflowSynthesisConsumerBusy，确认本批未引入该失败；未修改该源码/测试或隐藏退出码。自动流程继续完成premerge sentinel 53 passed及flow-smoke 10 passed。此为影响闭包，不是全量pytest或真实产品验收；三套分发skill的metadata与源码一致性也已核对。
+
+## Reader上下文重建与阶段工作记录
+
+新Candidate replan从上一触发器恢复基础输入时，旧OA决定、delta及指令只作为历史观察，
+当前请求显式携带的决定仍走原有身份校验。显式授权的新非OA stage代次同样隔离旧权限；
+普通重试和合法OA请求不降级、不换基线。旧引用仍可按摘要读取，原始事件保留。
+参见[前轮权限范围修复](../../tasks/done/2026-11-20-2325-replan-authority-context-scope.md)。
+
+Candidate失败涉及已完成Task时，路径归属只能定位前驱，不能代替继任任务的输入消费审核。
+若自动拼装的gap缺少前驱所要求的plan_input_selection，Run Manager在生成动作时即转入
+既有semantic replan，交Agent审阅当前合同、失败证据及替代范围；不复制旧selection、不增加
+attempt上限、不重开已完成Task。最终amend的消费合同门禁继续保留。
+参见[替代输入审核修复](../../tasks/done/2026-11-20-2320-candidate-replacement-input-review.md)。
+
+实际窗口发现必读齐全仍固定推荐reconstruct_required_inputs，压缩后反复全读。恢复投影用required_scope_count表示输入规模；historical_missing为0时交给Agent识别具体上下文缺口并继续，不再给出默认required批读命令。缺读、权限和输入版本门禁保留；历史不证明当前模型理解。Verifier在阅读完成和验收组完成时按既有WRC入口保存语义进度，恢复先读记录、按索引补正文，不用摘要替代首次必读或验收。
+
+原WRC在同operation受控重派后可读：当前请求、manifest、角色、fanout、候选及有效lease仍须验证；旧记录必须有原生发布/派发/attempt证据，新的启动须绑定发布之后的kernel redrive准入。只允许传输dispatch/canonical attempt/lease变化，原记录不改写、不授予执行或通过。参见[上下文进度恢复任务](../../tasks/active/2026-11-20-2303-reader-context-progress-recovery.md)。
+
+### 首次 Reader 尚未创建 call 的恢复
+
+目标 pin 在 durable call 准备之前可能等待环境；若超时，不应要求一个从未存在的
+operation ID。精确 `child-rebuild` 允许此唯一未准备情形省略 `target_operation_id`，
+仍绑定 Run、fanout、child、原 pending run_id 与失败事件，并验证 Kernel 原始等待、
+expected-child、无历史operation/派发、当前性和暂停边界。正常准备入口生成首次call，
+以真实失败为因果，不补造前序身份。已有call仍须提供精确operation，不修改attempt上限。
+RM建议、控制入口、执行及效果观察使用相同绑定；见
+[首次Reader恢复任务](../../tasks/done/2026-11-21-0037-unprepared-reader-wait-recovery.md)。
+
+### 控制器重启后的用量采样与活性
+
+磁盘读取器重发计费事件时，新的事件时间不代表Provider产生了新活动。仅当
+`usage_timestamp` 有效、不晚于观察时间且晚于已有心跳收据时，disk usage才刷新活性；
+通用activity兜底不抢先刷新该来源。计费记录保留，普通工具/实时usage不受此检查影响。
+这修复重放延期，不缩短既有失联阈值或长turn宽限。见
+[磁盘用量活性任务](../../tasks/active/2026-11-21-0051-disk-usage-liveness-replay.md)。
+
+### 同父任务 Reader 的失活恢复身份
+
+多个 Candidate Reader 可以绑定同一父 Task。失活信号和恢复不能从父任务最后一次
+派发推断当前 Reader 身份，否则较晚启动的 sibling 会让旧 Reader 永久 wait。
+已具备 typed operation 的 Reader 按自身 fanout child/dispatch 绑定进入既有有限
+respawn；在角色恢复锁内重检 operation、attempt、request hash、已准入结果和 Run
+暂停/终态。恢复沿原 provider session、冻结输入和工作记录继续，不重排共享 Task，
+也不把重新投递认定为产品通过。失败收据同样保留自身身份。
+见[实施任务](../../tasks/active/2026-11-21-0108-reader-stuck-dispatch-identity.md)。
+
+Reader transport重投可能更新外层TaskAttempt/dispatch，而嵌套payload保留原不可变call
+attempt与request hash。恢复信号、读权限续期及读取指引使用原call身份，transport
+收据仍指向最新派发；两层都必须与Kernel账本绑定。外/内operation、request hash、
+Run冲突及source-manifest digest不匹配时拒绝，不能以一次新transport重试重置必读或WRC。
+## Candidate超时交接
+
+真实timeout聚合曾只列最后一个pending Reader，遗漏此前已准入的拒绝/abstention；OA因此无法对账失败集合。修复在既有timeout入口保留全部失败成员和finding，并按各失败kind合并；超时child事件补齐call身份。
+
+旧账本不重写。Candidate恢复仅在精确kernel timeout因果、同fanout/child/role/transport→call、不可变请求与当前候选绑定成立时，补全遗漏成员。无result成员放入`unresolved_members`，保持outcome unknown；已准入结果仍留在`members`，不伪造control result、不授予通过。OA必须仍有至少一个有效语义拒绝作为主绑定；申请与apply均重核成员，后继只能进入既有Plan路径。执行/证据未知与产品语义结论分别由其owner处理。
+
+任务：[Candidate超时交接](../../tasks/done/2026-11-21-0148-candidate-timeout-semantic-handoff.md)。
+
+timeout兼容输入还须与kernel `fanout.started.expected_children`及role/stage闭合，每个预期成员都有终态；名单缺失、成员遗漏/额外/未决均拒绝。已有完成成员单列原事件事实，不生成产品verdict。原aggregate之后出现同fanout的新派发、终态或重开时旧checkpoint失效，申请与apply使用同一检查。旧显式infra timeout若同时含已准入negative，恢复分类经过完整候选绑定才得到mixed；绑定损坏保留unknown，避免宿主命令成功触发纯infra后继而掩盖反例。历史事件不修改。
+
+## 媒体捕获与读取尺寸一致性
+
+媒体投影沿用zf.yaml的host_verification.max_artifact_bytes/max_total_evidence_bytes，经过同一配置边界验证。Reader宿主恢复、OA失败输入、Candidate continuation均传入当前配置；无配置的独立调用保留20MiB/64MiB默认。先核验全部文件路径、base64、单文件/总量及digest，再发布只读投影和索引；不会重跑命令、改变原receipt或授予产品通过。真实23MB左右trace已在64MiB配置下合法捕获，读取端不能另用硬编码20MiB拒绝。
+
+任务：[配置媒体读取上限](../../tasks/active/2026-11-21-0230-configured-media-projection-limits.md)。
+
+## 历史preflight的usage按需输送
+
+Planner(workflow-read)和Critic(plan-synth)的新call装配对完整授权、已知plan-candidate-preflight.v1中的execution-usage-facts.v1复用既有摘要/明细投影。新plan-preflight-delivery.v1明确标注原preflight的ref/digest及可检索source；仅usage groups成为按需明细，所有业务字段、错误、verification条款和未知字段原样保留。原文件不改写。部分授权和未知schema不自动扩张或缩减。
+
+已有operation继续使用冻结输入：legacy全量输入不因升级被改变；已投影operation重放恢复其精确source集合，并校验原件与明细摘要。来源或授权变化仍进入request divergence检查。不能用新投影补写旧attempt的已读凭据，也不能把摘要视为业务验收。
+
+原件、派生摘要和usage明细均保留原access_scope，未授权角色/用途仍拒绝；导入描述符不能自行声明kernel专属plan_preflight_delivery。各旧candidate使用独立source身份，避免与当前review的usage来源混淆。
+
+任务：[历史preflight读取](../../tasks/active/2026-11-21-0244-previous-preflight-usage-delivery.md)。
+
+## Candidate对既有host事实的独立消费
+
+`reusable=false`限制Impl自检收据复用，不要求每个独立Reader重复已经合法完成的host命令。新Candidate call准备时，kernel从账本核验源operation完整身份、settled后执行的唯一因果链、审批、manifest、精确命令/合同/目标/世代、原收据和输出摘要，再冻结`candidate-host-evidence.v1`消费绑定。绑定包含新consumer身份和原source operation/attempt，纳入不可变request hash；已有call重放不补入事后事实。
+
+绑定、带输出的fact和媒体索引进入必读manifest，原收据、原输出及完整容器证据仍可按需查询。派生源保留源权限交集；部分授权不扩大成全文。缺输出、媒体或坏摘要保留不可用事实，不能支持通过。图片、ZIP和视频按字节/长度/SHA验证，不能当文本解码。
+
+独立Verify可在`host_execution_receipt_ids`引用本call冻结的receipt_id；既不填Impl的`reused_command_receipt_ids`，也不冒称自己的新probe。预检与正式准入重新核验原事件和证据，只有精确匹配且exit0的完整事实支持规范命令覆盖；AC矩阵、产品验收报告、读证明与Judge义务不变。新字段无合同、无consumer绑定、错身份或错目标均拒绝。读取事实不授予新命令、预算、镜像、网络或host权限。
+
+任务：[Candidate host证据消费](../../tasks/active/2026-11-21-0300-candidate-host-evidence-consumption.md)。真实新Candidate派发前，聚焦测试通过仅证明确定性链路，不代表本轮8×8最终成功。
+
+
+### 局部代次的 Candidate 逐 Task 证据（2026-11-21）
+
+原生 freezer 已可汇集同 Run 不同 Task Map 代次的已集成任务，但 Candidate authority
+默认按全局新代次检索全部 Verify，导致未重开任务报缺少当前 Verify。隔离真实 Git /
+集成 / freezer 已复现；Verify 输入由测试提供，不是实际 Provider 完成证据。
+
+修复由 Candidate 准备和结果 currentness 共用只读解析：以冻结事件前的逐 Task context、
+完整 roster、不可变 integration refs 和原 Verify admission 为来源，并核对当前 Task
+合同、完成状态、无活动 operation。此前经批准的 completion reuse 沿原 Candidate 与
+完整 predecessor 链逐行验证；变化的兄弟任务不再被当成仍须满足旧合同的 Task。
+不改写历史完成事件、旧目标或旧收据，不为新 Candidate 生成通过判定。
+
+保留任务的旧/新 Plan Task Map 整行必须相同。沿用原 integration 校验，重新检查
+TaskRef index、Git ref、rolling smoke 侧车与集成祖先；比较新候选与集成点之间的
+已声明写入/读取路径。只读任务从相等且已核验的 Task Map 行读取
+`verification_read_paths`，不能因 canonical `scope=[]` 而误拒，也不能把空集合
+当作输入未变。缺失、变化或无法核验均返回结构化拒绝，走正常修复/重新验收。
+
+新的 Candidate 仍绑定新 head、Plan package 和全局代次，并执行自己的命令、验收、
+Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命令拒绝、真实 Git ref
+变化、多轮复用链和只读输入；现场因 stage replan cap 等待 Owner，不能把隔离通过
+写成真实恢复通过。见[实施任务](../../tasks/active/2026-11-21-0346-retained-candidate-task-authority.md)。
+
+### 局部恢复 P0–P1 的入口修复（2026-11-21）
+
+实施清单：[局部恢复收敛与诊断闭环](../../tasks/active/2026-11-21-0514-scoped-recovery-p0-p1.md)。
+
+- 原 Planner 方法已要求保持范围外合同，但 preflight 没有对应拒绝项；Critic 才发现漂移。
+  现在 validate、submit 和聚合共用的 preflight 从绑定的原 Plan 及请求选择计算保留集合，
+  对同 Run、done、未刷新任务比较完整 Task Map 行。候选自行改 amend/选择不能豁免它们。
+  这是完成证据一致性检查，不把执行选择当作编辑授权；全局输入变化仍走原审查。
+  `previous_plan_candidate_refs` 中的被拒草稿不是权威基线。提交拒绝仍为 protocol repair，
+  不消耗语义返工轮次。
+- 原 OA Candidate 失败入口强制 `return_to_plan`，与 skill 的“普通缺陷走产品返工”不一致。
+  现在已准入 OA 可在精确 Reader target 下提交 `rework` + `candidate_repair`，显式判断
+  product_defect/合同不变，并提交标准 gap Tasks。窄路由只允许逐项复制原合同，改变新 ID、
+  冻结 head 的 base 和单一前任关系，经已有 ControlledActionService/amend 派发后继；
+  不重开 done Task、不授予 Reader 写权。blocked/unknown、错代次、改 AC/命令/范围、
+  缺少全部受影响任务或次数耗尽均拒绝。语义义务改变继续使用有范围的 Plan 修订。
+  canonical 行模式保留输入端口、entry、AC、命令及排除项；编译器只派生既有来源的复数别名、
+  successor lineage 和命令 producer 身份，不通过 legacy 默认值改写合同。
+  amendment/ready 以 checkpoint、Run、事件类型锁定，重放需完整 payload 和因果身份相等；
+  在发布后、OA 回执前退出时复用既有事件，不重复派发，也不重复消耗同一修复的次数。
+  若 ready 已发布，旧 Candidate 合法失效；恢复入口核验原 typed submit、Kernel admission、
+  action start、amendment、ready 和侧车摘要，只补已发生动作的 OA 回执。此路径不重新执行
+  旧 Candidate、不复活终态 Run；未发布 ready 的动作仍须经过当前版本与权限检查。
+- 完整恢复测试发现 `test.failed` 的 registry 只把质量失败交给产品返工，技术失败没有
+  RM pending action。现根据明确 `failure_kind=infra`、Candidate scope 和 fanout 身份
+  生成诊断请求；Task 局部、产品拒绝和未知类型不据此生成技术重试或通过结论。
+- Autoresearch 快速非零退出和轮询停止均读取所属子 Run 的事实；预算需要同 Run 的
+  kernel budget 因果事件，保留停止事件、原因、WRC、下一 Owner 和退出码。其他停止保留
+  unknown/child_run_stopped，不再统一丢成 runner_failed，也不擅自扩大预算/回答 Owner。
+
+验证分层：定向测试覆盖实际 Plan validate/submit、OA 结果准入/受控应用与拒绝、历史
+子退出观察；既有 Goal idle tick 验证仍有效，不另造监工循环。新增单账本 mock E2E
+使用真实 Git 探测和结果准入，经过 post-verify Reader 执行失败 → RM 诊断动作 → 测试
+Owner 明确批准已修输入 → 受控恢复 → 新控制器实例 → Reader → Thin Judge → Goal 收据。
+Provider 输出和 Owner 批准是测试 actor；测试通过不代表真实 Provider 的自主诊断质量，
+也不把最初失败的无监工 8×8 窗口改成通过。真实 Candidate/Judge/交付另记验收状态。
+
+### 真实恢复补充：旧触发退役与旧式 Goal 草稿（2026-11-21）
+
+真实恢复又复现两处缺口，不能仅凭上述隔离回归宣告恢复成功：
+
+- `draft-baseline --seed-goals` 原来把显式 Goal 定义加入旧式 Task Map，
+  但保留任务中的旧标签。派生 AC Goal 与旧标签不匹配，Planner 为通过校验而修改
+  保留行。现在仅在不改变任何 Task 绑定、Goal coverage 合法时注入显式定义；
+  否则保留 Task Map 原始字节，另提供只读参考 `baseline-goal-claims.json`。
+  该参考不是 Plan 输出端口，原派生 Goal 连续性检查继续执行，不放宽合同保持规则。
+- 已完成的 Owner Plan 新代次恢复，使同 Run/PDD 的更早 writer 意图失效。
+  以前这类旧队列会先执行 package admission，失败后自动产生新的全范围 Plan，
+  覆盖已经启动的局部恢复。现在在 writer admission 前核验既有受控恢复完整链，
+  抑制旧触发并记 `fanout.retrigger.suppressed`，不制造新的产品失败。
+  对已产生的错误 Plan，只沿同 Run/PDD 的原生 causation 追溯到旧 writer；
+  reader 启动、聚合和 synth 结果入口均使用该事实。已启动分支通过现有 fanout
+  cancellation 和 WorkflowOperationService 退役，历史结果仍保留，不成为新交付权限。
+  其他 Run/PDD、未完成或外部伪造的恢复、恢复之后的新 writer 不因本规则失效。
+
+恢复重试使用既有 `stage-retrigger` 重新发出被错误覆盖的原授权触发，保留其选择、
+Plan 输入和 stage 代次；不重新授予预算或扩大任务集合。真实旧事件、后代和正确恢复
+触发的只读回放分别验证“退役、退役、保持有效”；完整产品签收仍由后续正式结果证明。
+
+晚到的自动重派也按原意图排序：复用 stall copy 的完整 payload/Run/Task 身份比较，
+只承认 producer 声明的 metadata 和 task_id 回填；不能凭一个 original_trigger_event_id
+退役不同的新工作。抑制事件逐 stage 绑定，并分别结算原触发和副本，使既有停滞检测器
+看到已处理事实，不因缺少 stage_id 再次重派或把退休工作升级为新故障。
+
+真实Planner随后暴露基线导出遗漏：`execution_spec`、`task_execution_input`及
+`product_acceptance_spec`虽已绑定为Planner可读输入/可编写输出，却被CLI端口白名单拒绝，
+增加重新构造未变规格的风险。补齐这三个已存在的输出端口，复用相同的Planner身份、
+同Run/代次/Package、全文授权、ref/digest与私有草稿目录校验，逐字节导出。
+未分配或不存在的端口继续拒绝；需求、审批和Goal权威不成为可编辑导出。复制不产生
+阅读回执，也不证明语义修复或验收完成。
+实际派发简报与CLI共用可编辑端口清单，仅把当前manifest已分配且全文可读的端口列入
+导出命令；部分选择、未分配端口及需求/评审权威不会被简报扩成可编辑文件。
+
+后续Critic通过却未提供可读取的Markdown路径时，Plan Preview可从同一ready事件的精确
+Critic因果关系和reviewed generation，读取被审核合同绑定的唯一Planner报告及其Plan。
+要求同Run/fanout、合同完整身份、同Task Map引用及摘要、作者/正文摘要；描述符如声明
+局部选择则拒绝，沿用Operator Preview既有权限，不签发Worker读取能力。
+缺失、歧义或篡改均不恢复。此路径支持Critic使用source_id:digest定位符，不搜索目录，
+不借前轮Plan，也不修改Package、事件或审批；仅恢复已有正文的只读展示，Owner仍须审批。
+检测到绑定的typed审核合同但正文恢复校验失败时，禁止继续旧的无摘要路径兜底；
+没有typed合同的历史请求仍沿原有兼容入口。
+
+### 宿主发布在新 Task Map 上的恢复（2026-11-21）
+
+真实MEDIAN在新Map第1次Impl因Git索引只读提交blocked；旧Map已结束的第3次执行
+被错误解释为当前占用者，Run Manager反复defer。宿主effect绑定现在仅把已结束、
+Run/Map身份完整且不同的operation视为历史；当前范围的更高代次、任何活跃占用及
+身份不完整的较高代次继续拒绝。当前Run、Task合同、唯一dispatch、路径与摘要核验不变。
+
+类型化Impl结果的transport完成事件可以是`dev.build.done`，业务verdict仍是blocked。
+重试入口同时接受它和旧式`dev.blocked`，但必须仍是当前已settled且已准入的
+blocked/failed Impl，且canonical source精确属于该operation。宿主发布只生成一次
+Git effect及其回执，后续仍由Worker复核提交和独立Verify裁决；不把发布当作验收通过。
+
+
+### Owner 上调宿主采证额度后的接续
+
+`runtime.host_verification.max_executions_per_run`接受显式非负整数；启用时必须大于0。
+额度仍由Owner配置授权，Runtime不自动增额、不更换approval_ref重置计数。
+既有`preauthorized_probe_budget_exhausted`仅是可按当前额度重判的等待事实；其他
+escalation、未结算effect继续阻断。额度等待解除后产生的新失败必须独立记账。
+
+容器回执保存完整policy_snapshot及其摘要。消费者只兼容额度增加且其他策略字段
+全等的旧执行事实，缺字段/多字段/摘要不符拒绝。没有snapshot的历史回执最多匹配
+旧parser允许的1..100；更早无采集上限字段的回执仍须证明留存字节满足当前上限。
+所有Run、operation、冻结目标、命令和事件身份校验沿用原消费者，不由策略兼容替代。
+宿主证据准备完成后仍经受控Reader恢复与独立语义验证，不能由执行器宣告产品通过。
+
+现场记录与验证见[局部恢复实施任务](../../tasks/active/2026-11-21-0514-scoped-recovery-p0-p1.md)。
+
+
+静默入口也必须重判已解除的预算等待：旧kernel/Run Manager预算告警宽限期结束
+不能让tick提前返回并饿死已获授权的采证。仅当当前同Run/approval_ref尚有余量、
+同manifest无其他hold且没有未结算effect，静默判断允许RM重新检查。此判断只唤醒
+既有执行器，不签发权限或跳过operation/目标/合同校验；其他阻塞保持原有静默规则。
+
+
+### Candidate Reader 重试保持原冻结身份
+
+受控`stage-replan-new-generation`的Candidate infra重试创建新调度通知/operation，
+引用原始`candidate_snapshot_event_id`；不会因为重试事件ID变化而改变验收合同或目标。
+完整精确fanout来源保留空集合。历史复制native schema且漏两空数组的恢复通知，
+只能通过同Run失败fanout、真实授权请求、已完成受控动作及全字段一致性回到原native。
+不会改写旧事件、freeze receipt、Task完成证明或host receipt的source operation。
+
+派发、输入/结果准入、成功消费及resume投影共用解析；真正新freeze仍使旧结果过期。
+显式无效父ID不回退搜索；坏因果在resume投影表现为不可变更的阻塞checkpoint。
+恢复投影必须用完整账本核授权因果，不能用仅筛选失败的事件视图作为证明。
+Reader operation注册前已知执行失败记录infra，避免无依据进入产品质量返工。
+新Reader独立消费现有采证，原request不修改；主机命令成功仍不是Reader/Judge通过。
+
+## 2026-11-21：RM/OA 未完成监工闭环的实证复盘
+
+11:19 `evt-b789c87eae0b`聚合为2路passed、6路blocked；全部Reader执行已完成，
+失败分类dependency_blocked。浏览器命令已成功、7项原始产物齐全，但合同声明
+`ZF_EVIDENCE_DIR/desktop.png`与索引`desktop.png`直接比较，被标为不可消费。
+执行器只按当前operation查询完成回执，新Reader已绑定的19份事实未用于去重；
+11:03–11:10重复10条命令，实际用量110→120，随后预算告警`evt-dbb5bc038b70`。
+
+研究快照证明，11:19:44 RM已经有一个正式诊断待办，而非完全没有发现失败。
+continuation选择器把采证预算告警作为整个Run的等待门，实际动作准入又重复拦截；
+待办的workflow_rework路线也不符合resident RM诊断投递条件。11:21静默闸门进一步
+停止tick。Candidate诊断另有低优先fallback隐患，但本次并非被其他workflow待办
+遮蔽；修复/报告必须区分实际原因与额外回归覆盖。
+
+```text
+原链路：Reader blocked -> runtime重复采证 -> 额度耗尽
+                          -> RM诊断在队列 -> 整Run等待门 -> 静默
+修复后：Reader blocked -> 对账原效果 -> 输入改善证明 -> 受控Reader接续
+                          | 无改善/未知原因
+                          +-> 当前失败绑定的RM诊断 -> 有证据的修复建议
+                                -> 原修复/验证/应用权限门 -> 原断点接续
+```
+
+实现约束：
+
+- 声明输出根仅映射已知`ZF_EVIDENCE_DIR/`前缀；冻结和结果准入共用语义。
+  不做任意环境展开或basename模糊匹配，原始合同、receipt和request保持不可变。
+- 执行去重沿consumer冻结授权→原operation/request→完整effect/receipt验证，核
+  Run/Task Map/目标/合同/ACL/policy/source/dependency；不以同命令字符串替代证明。
+  已执行与媒体可消费分别判断；媒体交付错误不能驱动重新执行。
+- 交接要求新回执或原来不可消费的输入确实修复。无变化时不再开新一轮Reader；
+  未覆盖命令仍留下原升级记录，混合/语义失败仍留给语义Owner。
+- 同Run原生宿主预算告警只限制新宿主执行。选择器和动作准入共用同一窄例外：
+  核账本中的原生告警和当前Candidate infra失败，仅允许既有RM只读诊断。
+  任意文字reason、Agent自报Owner、其他人工gate、暂停或变更动作都不能据此放行。
+- 静默时只允许同Run、已证明输入改善、`allow_execution=False`的候选交接；
+  当前诊断请求及其既有deadline/响应消费保持可达。不改预算、不清旧告警。
+
+OA负责产品语义、合同范围及修复方案判断；本次应先由RM处理执行/输入交付故障。
+不能把OA改为绕过所有门的第二状态机。当前source_repair仍为disabled、proposal_only、
+never_during_active_run：即使诊断正确也没有自动源码发布权限，这是配置能力边界，
+与此次诊断队列被挡分开记录。真正无人闭环仍需受控修复发布配置及独立零人工窗口证明。
+
+实际只读预检：5路阻塞Reader可复用19/19原回执；lane1单独因dispatch retry身份
+校验拒绝，未降级放行。当前聚合诊断可进入选择器与动作准入，原预算告警仍保留。
+不得把这些预检、命令exit0或本轮人工补丁当作Reader/Judge/Goal正式签收。
+
+监工验证也有遗漏：此前只检查了19份回执被绑定及摘要不变，没有检查每份
+consumption_status，也没有覆盖“新Reader再次blocked后的真实reconcile”。本轮回归
+增加请求冻结→结果准入→blocked后对账→输入变化才交接，并核实际tick和动作准入。
+这比只增加监工角色或调高模型更直接地覆盖了此次故障。
+# 2026-11-21：自动修复实验前的边界核验
+
+Owner已批准原Run继续验收，同时补齐源码修复链，再开始新的零人工干预窗口。
+跟踪任务：`tasks/active/2026-11-21-1235-autonomous-source-repair-qualification.md`。
+当前代码与真实8×8签收分开记账；原窗口的人工介入事实保留。
+
+- Reader真实新增失败：lane3传入的base64 cursor解码后bundle摘要漏字符，原拒绝正确；
+  提供精确复制/当前会话仍可用时受控`--resume`的方法，不猜游标、不跳过必读。
+  lane4在正常事件持续append时两次前缀复核失效，已用独立进程复现；仅在前缀证明
+  期间取同一EventLog写锁，不在解码/工件读取期间锁全账本，继续保留改写与轮转拒绝。
+- 独立源码验证现在检查实际Git共同仓库、精确HEAD/base/单提交、干净索引/工作区、
+  实际完整差异与冻结scope，验证前后均核对并记录tested_candidate。应用入口同时
+  要求这份身份绑定；旧的仅有合同摘要的validation不能充当新的自动应用证明。
+- 缺少重启项目目录在应用前阻断。已应用但actuator尚未启动且spawn明确失败时，
+  仅对仍是原应用HEAD、干净且父提交正确的checkout执行保留历史的revert；有并发
+  编辑则拒绝回滚并保留needs_review。未知启动结果不擅自revert或再次cherry-pick。
+- 原检查点只在最新`loop.started`的runtime-load侧车验证状态目录、源码根、提交和
+  Python源码树摘要均匹配后恢复。仅`session.started`、旧版本、缺失/损坏侧车、
+  后续stopped或未知boot均不能证明加载成功。merging/等待重启超过120秒产出幂等
+  RM只读诊断动作；不是新的自动修复授权，也不声称进程永远存活。
+- 修复provider在dispatcher统一消费source_repair的显式backend/model/effort，
+  缺省保留调用方fallback。watchdog与兼容推荐生产者保留结构化验证命令；不把
+  verification prose解析成shell。dev-verify使用当前可信解释器和候选cwd；
+  必需人工文档审查缺证时失败，不把“记录了审查指令”标为passed。
+- resident接管修复时使用`zf self-repair run --accepted-only`，与正常RM消费同一
+  `run.manager.repair.accepted`事实；legacy/manual默认仍消费原autoresearch请求。
+  实际CLI→dispatcher测试使用真实临时Git，只替换provider进程，证明accepted-only
+  请求产生一次派发，未接受请求不混入，重放无重复。此前仅mock命令返回0漏掉该断链。
+- 审计文件只有同时匹配冻结governance_scope和Owner allow_paths才能发布。
+  默认授权不扩大。ignored的新backlog原本不参与publisher枚举，因此此前“必然
+  被审计文件挡住”的调研猜测已撤回；本次只对显式纳入候选的审计文件统一边界。
+
+尚待真实证明：source_repair仍关闭，自动发布/重启没有据以上单测冒充已启用。
+需完成隔离纵向验证及配置预检，再部署当前Reader修复，观察真实Reader/Judge/Goal/
+本地交付。新无监工资格窗口只有满足前置条件后才启动。120次原采证额度不变。
+
+
+13:00部署与后续实测：01acdbdb/f3dbea84已加载，控制面重启保留全部worker pane；
+配置与120采证额度不变。旧代码运行的Reader最终6通过、2执行失败，未进Judge。
+lane3自动retry生成了新candidate-host consumer摘要，却继承旧required_reads，形成
+悬空必读。新retry准备仅去掉同Reader不可变祖先清单可证明的candidate-host-execution派生条目，
+通过原调用路径从新清单重建；保留自定义选段与严格限制，既有失败请求/读回执不改。
+首次与多代retry均验证全部必读身份可解析，宿主执行不重复。原窗口仍非无人通过。
+RM正确诊断之后遇到全Run进度前置误过期，当前单独跟进，不以本读取修复声称解决。
+
+
+RM故障定位与处理：原建议evt-d8e74e6c5787的Reader目标仍当前，唯全Run进度摘要变化，
+致建议被误判过期。经kernel诊断请求中的确切故障事件证明后，回复前置收窄为该
+Reader的operation/request/attempt/结果、Run代际及Goal；兄弟lane进展不再使其失效。
+原请求、角色、失败事件或目标不匹配仍用原拒绝路径；不增加Agent修复权限。
+旧建议已superseded而案卷停留diagnosing时，仅严格更新的kernel infra失败可重新分诊。
+必须核原请求、指定响应者及kernel过期消费事实；未完成请求/人工等待不解除，
+变更动作不走此例外。该处理保留旧失败和旧建议，不把空队列解释为完成。
+
+
+旧式role-v1 TaskAttempt失败没有call request_hash。对它核kernel settlement回执与
+原admitted_call_result_ref、source_event_id和dispatch绑定，再采用Reader范围前置；
+不猜测或把ta-*当作call attempt。实账本原快照通过、已有新尝试后的旧目标拒绝。
+独立研究重点复核diagnose到resident reprompt的二次准入，最后335项闭包和原有人工门
+均通过。完整自动闭包5984/7skip，加最后格式/实际派发形态增量验证，非全仓pytest。
+
+
+### Reader missing-reads 与提交门禁声明统一（2026-11-21）
+
+真实lane3重试先收到“missing_reads=[]”，提交时却被退回30项必读。
+回放确认query旧路径只查事件内联required_reads，Reader声明实际在不可变request→policy
+sidecar中：旧查询required=0/missing=0，canonical required=40/missing=30。
+服务复用required_reads_for_attempt，通过唯一operation/attempt定位并校验sidecar；
+保留原有任务内联声明兼容。缺失、错误attempt、摘要损坏或歧义声明为unknown，
+missing_reads和required_read_count为null、protocol_repair_required=true，不能当全部读完。
+CLI与Web端使用同一服务。真正完整读取后才返回missing=[]。不修改门禁、消费账本或语义结果。
+4项CLI回归RED，加入Web一致性检查；真实回放与完整影响闭包随后记录。
+
+
+RC-QUERY最终验证：188项影响闭包（含CLI/Web入口与mock E2E）、sentinel53、
+flow smoke10通过。测试环境曾缺httpx；补齐项目dev/web依赖后重跑sentinel通过，
+没有把环境启动错误计作产品RED。独立只读review未发现阻断项。
+真实被拒绝sealed ledger摘要3d133cf3119088ee…回放：新查询required40/missing30，
+与提交门禁一致；旧查询0/0。未写业务状态或消费凭证。
+
+旧Run在13:59:52由lane3自动修正后正式passed；8/8 Reader通过，13:59:54产生
+`test.passed evt-059b07206036`，14:00自动进入post-verify discovery。
+这次补读与重新提交没有人工代交，之前的整轮人工介入记录仍保留，整体无人未通过。
+
+新Run规划阶段13:51失败：Planner未产出必需Plan且失败报告recommendation枚举不一致。
+RM在13:54自动诊断并接受修复evt-5fba52d8c454，已派发Luna隔离源码修复
+（/tmp/zf-self-repair/self-repair_recommendation-evt-1d0ac4bd0779-e890eeeb6f07e70a-a0），
+同时在原Run下发起缺失Plan语义诊断。当前只观察，不与其并发改动新harness HEAD；
+独立验证、应用与恢复仍待真实结果。Plan尚未批准，8×8资格窗口仍未开始。
+
+
+### 独立源码验证命令兼容修复（2026-11-21）
+
+新Run的原生Luna修复在14:02:37完成，14:04:19由受控publisher发布候选1d39f418；
+独立验证evt-77004db6fefb失败于command_not_allowlisted。冻结合同中的
+`PYTHONPATH=src uv run pytest ...`未被验证器接受，未运行合同测试，未应用候选。
+仅将已知pytest写法归一为可信解释器`sys.executable -m pytest`，保持候选cwd与
+PYTHONPATH=src；只接受既有固定环境值，不执行候选venv入口、不扩大shell/任意环境权限。
+冻结合同原文和原失败记录保留。非法引号也返回拒绝，不使验证器异常退出。
+3项真实RED后，252项影响闭包、53项sentinel、3项flow smoke测试通过；
+原生候选另由监工独立运行原合同96项通过，不等同正式自动验证receipt或自动应用。
+
+新发现SR-FAIL-FEEDBACK：失败队列进入needs_review后没有待执行动作，RM observing；
+14:16投影pending_actions=0、repair_closeout_pending。medium风险旧展示并非实际权限
+阻断：router在显式verified_checkpoint_apply授权及绑定满足时允许medium。
+下一步补失败到只读诊断路径并重新验证，不能用解析兼容修复声称运行已恢复。
+旧Run仍在post-verify discovery；新Run Plan未批准，资格窗口未开始。
+
+命令兼容最终自动影响闭包（dev-verify基线23782907）：1831 passed/7 skipped，
+sentinel 53 passed，flow mock 10 passed。没有全仓或真实Provider验收冒充。
+原生候选独立影响闭包539 passed；仍没有原生重验/应用receipt。
+
+
+SR-FAIL-FEEDBACK最小修复：`needs_review + validation.failed`现在派生一次只读RM诊断，
+checkpoint按失败验证event ID去重，携带原Run、queue/candidate、Git base/commit和合同
+摘要。保持失败队列、候选与原验证结果，不自动改成通过，不盲重试或自动rebase。
+已合并/丢弃候选不再开案。真实账本回放从0动作变成一个可派发diagnose-attention，
+精确绑定evt-77004db6fefb；该回放不写业务事件。1项RED后251项直接调用闭包通过，
+包含实际run_manager_tick派发诊断、重放去重和不产生apply/restart的断言。
+独立只读研究确认部署后旧候选会base漂移，必须保留旧失败，通过Agent新合同产生
+新候选；不将旧候选强行应用到新基线。controlled重验尚未从Agent输入完整接通，
+属于已记录后续缺口，不能把当前转诊修复称作完整自动修复闭环。
+
+SR-FAIL-FEEDBACK最终自动影响闭包：5931 passed/7 skipped（184秒），sentinel53、
+flow mock10通过；resident实际二次准入形态另3项通过。准备部署新隔离harness，
+保留旧候选及其失败，不动dev、不push。当前任务仍active，真实自动应用/恢复未证明。
+
+
+2026-11-21 14:24:45：新实验harness已加载d1b173b7，loop.started evt-d1a15de78209
+与runtime-load receipt一致，配置sha fadd068e…不变，全部worker pane/PID保留。
+14:21 Anchor的1800秒orphan计时升级产生evt-dd6422696838，叠加等待门。14:28监工
+依既有继续恢复授权，通过controlled human-decision-dismiss确认该计时告警，记录
+operator.intent evt-3e382fb5e1a5；未删失败、未改任务结果，属于准备期人工介入。
+14:29:55 runtime原生派发新的验证失败诊断evt-edb724d5b0ba（request rmd-d1244b1228c8ddfa）；
+14:33:47 RM返回evt-bf72aa9523ef，完整保留旧候选/旧失败，指出controlled重验入口缺失。
+因此已证明失败会回到RM，但尚未证明自动完成修复。
+
+新增两个复现与修复：
+- SR-SELECT：Autoresearch单飞槽忙时，普通attention占队首，空闲resident的后续诊断
+  被饿死；原逻辑只对no_progress特例让行。改为按实际可用执行角色选择：保留旧诊断，
+  优先已有合法可派发的resident/OA动作；人工门、pause、case和去重仍检查。
+  1项RED，292项定向调用闭包通过；独立只读review未发现放宽权限。
+- SR-CONT：原合同continuation的agent_recommendation是建议身份，不是workflow
+  checkpoint。真实Git apply+mock restart复现后，未知/缺失恢复动作改为绑定合入与
+  load receipt后的RM新诊断，原case保留在continuation，新诊断不复用已结束动作身份。
+  没有匹配新load receipt仍不恢复；1项RED，268项调用闭包通过。
+
+后续已确认能力缺口仍在本active批次：
+- [ ] SR-REVALIDATE：Agent在既有授权内请求重验 -> kernel依据queue/候选/原失败/冻结
+  合同重建验证动作，不能信任Agent重新传入的路径/命令/required标志；保留旧失败，
+  有界的新验证记录通过后才回到apply检查。
+- [ ] SR-DISPOSITION：旧候选因基线变化不可直接应用 -> 受控记录替代/丢弃关系，
+  保留提交与失败，不以新候选存在就关闭原业务故障。
+- [ ] SR-POLICY：medium风险和实际预授权apply准入展示一致，避免把已授权恢复误写为
+  必须再次请Owner授权；真正缺失执行入口应报告能力缺口，不冒充权限限制。
+
+新资格窗口仍未开始，旧Run42项post-verify必读已读齐，正式discovery/Judge/Goal待结果。
+
+SR-SELECT/SR-CONT最终自动影响闭包：5944 passed/7 skipped，sentinel53、flow mock10
+通过；独立只读review未发现阻断项。新Run的RM当前已返回human请求，因为缺少受控
+重验入口；这不是新授权自动出现。下一步补kernel重建入口及当前基线漂移检查，
+不让Agent重传命令/合同、不靠不断换失败ID重置次数。每候选+冻结合同+可信验证器
+版本最多一次，失败ID仅校验当前性。旧失败与新结果均留账。
+
+
+SR-REVALIDATE实现记录：复用repair-closeout-validate，已同时接入真实RM recommendation
+消费与ControlledActionService；Agent/操作员只给queue_id、原失败event ID和合同digest，
+kernel重建原worktree/base/commit/命令/required合同，忽略调用者传入的替代计划或路径。
+仍检查source_repair启用、当前Owner路径范围、原失败当前性、pause/human/case门、
+冻结合同与候选前后Git身份。每候选+合同+可信验证器源码digest仅一次；更换失败event
+不能重置次数。原始失败保留，新结果携带previous_validation_event_id和validator_digest。
+只有绑定成功的新结果才能使needs_review回到closeout_required，错误来源/旧候选/
+旧失败/merged/discarded不恢复。活跃harness HEAD偏离冻结base时，验证前即明确失败
+repair_validation_live_base_changed，避免用旧候选测试通过冒充可应用的新候选。
+原生RM入口另有RED，已验证重复tick只执行一次且不采用Agent注入命令。
+这仍不等同真实自动应用或最终无人验收通过。
+
+旧Run补充：post-verify discovery已正式passed并进入最终Judge；14:35与14:42两次
+提交被child_authorities的contract_revision/task_map_generation当前性门拒绝，
+14:45:10 operation失败evt-91d70f6f1c21（output_repair_exhausted）。原16业务任务和
+8Reader结果未改，不能把Judge的尝试算通过。独立研究正在对照不可变输入与门禁，
+核查旧权限版本来自Agent输出还是派发上下文绑定。
+
+
+2026-11-21 15:02 UTC复核补充：SR-REVALIDATE首轮自动影响闭包6397 passed/9 skipped、
+sentinel53、flow mock10通过；独立只读review发现RM入口覆盖了当前诊断的recovery_case_id。
+已用真实tick复现：原诊断case为blocked却执行验证。修复后保留已绑定诊断case，
+Run/Task与冻结continuation矛盾即拒绝；操作员入口仍只采信原失败case。
+新测试先证明case_blocked，再验证命令执行次数为0；相关闭包107 passed。
+
+SR-JUDGE-REUSE：旧Run的42条拒绝来自14项已审核复用任务各3项身份。Candidate准入
+已验证复用链并比较prior_identity，但Thin Judge直接与当前Task身份比较；第二次
+Agent修改输出child_authorities没有作用，因为门禁读取不可变snapshot。
+已抽取共用child authority校验；Judge先绑定当前冻结Candidate的Run/目标/generation/
+Plan package，再核验完整复用证明、原Verify/整合及当前合同，普通任务继续校验当前身份。
+不修改快照或原生结果，不以存在reuse字段放行。相关直接调用测试66 passed；
+旧Run原始b8f5f2e1提交只读回放从42条错误变为0，尚未正式重试，不代表Judge通过。
+篡改证明、当前合同、普通任务合同、Candidate目标、generation或原Verify ID均拒绝。
+SR-REVALIDATE+SR-JUDGE-REUSE最终自动影响闭包与部署结果待记录；任务保持active。
+
+最终review收口：RM仅继承已成功绑定的durable request原字段；无request或无case的
+request不得用自报case绕开原失败门。相关109测试通过。Judge另外绑定准确closure
+fact ref/digest和snapshot，从其kernel-admitted Verify追溯原native Candidate event、
+freeze ref/digest及完整child authorities；新freeze同内容不能偷用旧验收，相同snapshot
+的新closure有独立回归。Judge最终直接调用闭包68通过。独立只读review无剩余阻塞。
+旧原生Judge的语义意见为blocked：产品旅程通过，但8+8真实重叠、自恢复、零介入证据
+不足；本轮只修机械误拒，恢复后仍由Judge如实裁决，不能把旧窗口改判无监工成功。
+
+本批自动影响闭包6562 passed/9 skipped，sentinel53、flow mock10通过；自动测试采集后
+补充的closure pin回归及最终helper另跑直接调用闭包68 passed，恢复入口最终109 passed。
+原始Judge结果完整_goal_closure_issues只读回放为0问题，其语义blocked原样保留。
+以上是确定性/模拟与历史证据回放，不是新的real-provider无监工资格通过。待真实恢复。
+
+
+15:12–15:15 UTC真实部署与恢复：实现提交539bd829（fix: preserve recovery and retained
+verification authority）已分别fast-forward到两个实验harness分支，未合dev/未push。
+两次runtime-load均证明源码539bd829；配置摘要不变、全部Worker pane/PID保留。
+旧Run按既有Owner授权解除本次修复请求等待，精确恢复Judge，原生派发evt-0679d912c398，
+新operation为wop-prd-lanes-final-judge-prd-trig-evt-60082029-retr-bf26469e5409。
+Judge新会话启动Luna，按既有授权在tmux切换6.1 Sol high并确认；单列人工模型介入，
+未把它计入无监工窗口。旧业务/Reader证据保留，最终语义裁决待正式回执。
+
+新Run首次受控重验遇到human解除尚未进入当前投影，门禁拒绝且未执行命令。
+只读确认gate为空、case admitted后才再次调用；evt-131cc16f41e8以
+repair_validation_live_base_changed失败，results为空，冻结候选未应用。
+原候选1d39f418/旧合同/evt-77004db6fefb原失败均保留；当前基线不允许强行rebase/apply。
+RM已经收到另一条恢复诊断，新增验证失败应由调度继续交给原生RM。
+资格窗口仍未开始；SR-DISPOSITION与真实自动apply→restart→resume仍未签收。
+
+
+15:27–15:34 UTC原生恢复实测：RM自行产生两项repair建议并派发Luna workers。
+原枚举修复候选22630368由独立验证evt-30e3183682a9通过，runtime应用为3d9b917f，
+merge回执evt-944b7e8dd7ab；systemd自行重启，evt-fd1659b0e696的runtime-load匹配
+applied commit/source tree/state，repaired_runtime_observed=True。根会话未代替本轮
+生成候选、应用或启动重启。原业务Planner尚未恢复，不能将四步当作五步闭环通过。
+CLI包装事件注册候选dfb5f95c受并行前一项应用影响，验证拒绝live_base_changed，保留失败。
+另有watchdog候选b3e965a4验证通过，但缺少continuation，保持应用门拒绝。
+
+发现SR-WAKE：15:27:12 repair-closeout-validate失败后，post-repair诊断和新失败诊断
+均可派发、门禁为空，但self-event被NOOP过滤且不在快速恢复输入集合，实际到15:32:17
+才由300秒Supervisor周期唤醒。4条真实tick入口RED已复现；仅将kernel-origin、带
+queue+contract绑定的repair-closeout-validate/apply成功或失败收据作为新输入。普通
+bookkeeping、blocked、未绑定或worker事件不快唤醒；cursor消费后不重复循环。
+
+SR-STRICT：strict repair_contract_required队列原来可因human确认/普通业务进展消失，
+且terminal_run_passed可绕过它。修复只针对strict非merged/discarded行；legacy不变。
+初始fixture缺resume_original_workflow已更正，对642ec609实跑RED为3失败/3通过。
+两个修复的直接调用及相关mock闭包236通过，独立review和自动影响闭包待完成。
+当前还存在活跃原生repair worker，暂不部署根会话更新去改变其冻结基线。
+
+15:40 UTC：SR-WAKE/SR-STRICT 自动影响闭包6149 passed/7 skipped，sentinel53、flow mock10通过；独立只读review未发现阻断项，确认cursor取执行前快照，不吞掉执行中产生的后继回执。仍不代表原业务恢复或无监工资格通过。原生第三个repair worker已终结，候选6aea45e2同样因live_base_changed被拒绝，尚未应用。
+
+
+15:41–15:56 UTC增量：559f9f00提交SR-WAKE/STRICT；将原生应用3d9b917f并入本隔离修复分支，合并提交604b25ab（未合dev/未push），38项交叉测试通过。NEW于15:41:14受控部署604b25ab，停前/停后均无活跃源码repair worker，全部Worker pane/PID保持，配置摘要fadd068e…与120额度不变；备份before-repair-wake-deploy。此部署是准备期人工介入。
+
+RM原生建议evt-3ecdc71f434a选择精确从已完成Scan evt-35aeed9fff80重触发缺失prd-plan。原恢复尚需owner审批，不宣称五步无人闭环。按既有授权经共享审批服务提交evt-a36f394ab063，仅批准hdec-049cf7fbfe66；未批准尚未生成的Plan，另一个side failure-closeout审批不动。15:46:24内核stage-retrigger applied evt-ba56da6bcd1d，15:46:29请求新Planner wop-prd-plan-planner-trig-evt-3ca27989-rework-af2db023aeda，实际running。8×8资格仍未开始。
+
+SR-WAKE补充：上述审批15:42:04→15:46:24才消费，真实入口RED证明human.escalation.acknowledged不在快速输入集合。将其作为唤醒输入，审批自身的token/当前性/授权准入不变。
+SR-DISPOSITION：新增受控动作repair-closeout-dispose，仅允许严格failed旧候选由已admitted、验证且应用的明确关联替代候选接替。CAS queue/合同/当前失败，核对替代请求原失败链、合同、验证、apply及Run/Task范围。只发append-only处置，不改Git、不删除旧证据、不恢复业务。原请求case准入后另查独立处置case，处置回执不改变原案卷。无此入口RED7失败/11通过；直接回归287通过后，独立review指出resident案卷覆盖，已收窄并强化不变性断言。兼容旧operator验证未设origin只允许完整external intent→同绑定RM planned→failed链，worker仍拒绝；实际旧evt-131cc16f41e8只读预检可通过，未执行收尾。
+SR-POLICY：medium路径风险只给policy_evaluation_required，审批需求未知；high原审批提示保持，实际source-repair准入未改。
+SR-BOOT：原生3d9b917f在15:27有精确boot证明；root升级604b25ab后15:46又误报原repair_restart_outcome_unknown。历史证明与当前resume门分离，历史精确证明只用于分类repair_runtime_binding_changed，不放行当前未知版本。RED1失败/3通过。未篡改旧事件或把根会话升级算作原生自恢复。
+
+16:10 UTC：补齐SR-DISPOSITION历史链的前次失败/source commit绑定与双case拒绝回归；测试fixture曾把首次失败误标为重验，现通过真实ControlledActionService生成合法失败重验链，不把fixture错误记为生产缺陷。最终直接调用闭包341 passed。首轮自动闭包在补用例时出现xdist收集不一致，7个collection error，该轮无效；冻结候选后重跑，禁止以此宣称验证通过。
+
+SR-FREEZE：原生CLI候选续作evt-3e61598caa20多次因repair_contract_freeze_failed拒绝，原因是当前可信sys.executable位于harness目录，被字符串检查误当旧工作区测试目标。保留全部失败，先识别受控pytest命令，仅豁免可信解释器argv[0]，其余测试/config参数仍拒绝原目录，未知解释器与shell形式保持原安全检查。真实冻结入口RED1失败/1通过，修复后直接闭包包含此项。
+
+NEW第二项原生修复（Supervisor已dismissed attention投影）已自行应用为f5eb24e7并重启，根会话未代替该项应用；待核对独立收据、保留到根修复分支。Planner首轮重触发passed后，合成评审16:07 rejected：必读bundle缺精确docs/prd/TODO.md与SOURCE-PROMPT.md，不能凭Planner摘要独立审阅。运行时已自动派发下一Planner代际，尚未解决此authority-input缺口，不能批准Plan或宣称无人8×8开始。
+
+16:22 UTC：冻结提交c7e403ac加原生f5eb24e7整合为4ab2e751，自动影响闭包7143 passed/9 skipped。随后sentinel52通过/1失败，定位原生Supervisor修复使supervisor_attention.py超过1000行；未绕过哨兵、未将失败当通过。沿同一职责提取supervisor_human_decisions.py（79行），原文件990行，行为不变。最终增量自动闭包111 passed、sentinel53、flow mock10通过。7143是在提取前的冻结候选运行，提取后的证据是111+53+10，不称为全pytest或真实无人E2E。
+
+旧Run最终Judge15:57:15正式settled/blocked，准入evt-7bf557eee79e、结果bf040c32…，69必读全部完成。产品验收passed，19目标声明closed、1 blocked；明确未获得16任务Plan的准确审批（evt-1695fe7d4282）。此外监工仍保留原无人窗口失败、真实8+8重叠和故障恢复未证明，不能因后来审批或本次机械门修复宣称原轮无人通过。旧Run尚无Goal完成或本地交付通过。
+
+新Plan第二轮16:17:08正式abstained，missing primary authority bodies仍在；RM16:17:13自行进入语义诊断rmd-ffb913102f3bd820。只读研究确认：trigger artifact_refs与Task spec已声明TODO但plan handoff未消费；SOURCE-PROMPT只在正文引用中，未显式声明为原文输入。应由上游声明并冻结两份正文再进入新审阅输入；不递归猜链接，不靠重复Planner改文案掩盖输入缺失。此后续项尚未修复。
+
+16:23 UTC f2e927da已部署新隔离控制面。显式处置evt-1a6b5db55281关闭旧枚举失败候选，
+保留原失败和案卷；约2秒后RM动作，快速唤醒真实生效。CLI续作自动派发，但其独立
+影响验证在16:30因最终Writer briefing 12681字节超过12288失败（2751通过），没有应用。
+RM随后自行诊断并派发新隔离续作，不放宽长度检查或改写旧候选。
+
+Plan正文传递修复增加以下通用合同：
+- Plan handoff从已绑定的requirement-spec.v1读取明确source_refs（含Task spec），以及
+  显式requirement_authority/source_document输入；将正文冻结进入当前Plan输入和必读。
+  普通artifact_refs、中间矩阵和Markdown链接不被批量提升为需求权威。
+- 已有digest必须匹配；缺失的明确本地正文拒绝。access_scope和allowed_paths保持，
+  不因为成为必读就扩大访问或选段。当前需求及合法owner amendment的语义优先级不变。
+- stage-retrigger可携带supplemental_input_refs，每项必须是已存在且sha256匹配的state
+  sidecar；受控动作绑定请求来源，仅追加新trigger输入。RM建议归一/转发保留此字段，
+  身份冲突拒绝。原Request、旧attempt、失败和审批门不变；反馈中的路径不会被自动读取。
+
+回归先8项RED；首个收窄候选自动影响闭包3216 passed/2 skipped、sentinel53通过。
+独立review提出allowed_paths保持和RM字段转发缺口，已补回归；最终验证另记。
+真实Plan manifest在隔离状态目录回放，原版本TODO正文0份，新候选1份且必读；
+SOURCE-PROMPT仍需通过受控补充明确交付，不能宣称现有Run已恢复或完整正文已到达。
+
+最终Plan修复核验：重复同ref+digest但读取限制冲突时拒绝，不选择较宽声明；畸形
+选段及scope限制拒绝，明确Task spec摘要校验。独立复核无阻断。冻结版自动影响闭包
+6150 passed/9 skipped、sentinel53、flow10；最后纯验证分支增补后直接110、sentinel53、
+flow10通过。完整受控恢复到新Plan输入/必读的回归已覆盖；尚未部署，不等同真实恢复。
+
+16:41:51 OLD当前完整Plan准确批准evt-fd09060d18a6，保留原无人失败。其后审批重放
+重开14个历史done Task，并把terminal_tasks拒绝错误路由为schema_gap重新规划。
+16:44:47受控暂停OLD evt-67ef2172796f，NEW继续。旧审批去重又被本次fanout.cancelled
+排除，旧同图trigger重新请求审批；需要修复完成状态保护及恢复路由，未重写历史。
+
+SR-ENV真实事故：原生候选b7f3334a/f507a4eb独立验证继承controller的ZF_PROJECT_ROOT、
+ZF_STATE_DIR、ZF_WORKSPACE_HOME等。16:46:52测试force-init清空NEW原账本及Kanban，
+16:51观察主账本从3067条降为66条、anchor被5个测试Task替代。配置摘要fadd068e保持。
+控制器、相关4个私有tmux会话及autoresearch sidecar已停止；事故文件保全到独立报告目录。
+16:22:19检查点含2818条原始事件；索引另124条覆盖前观察不等于完整权威账本，禁止
+直接把投影提升为恢复真相。后续恢复必须标明检查点和未证明的差量，不能声明无损或无人成功。
+
+验证器修复：实际子进程剥离继承的ZF_/GIT_/TMUX及Python/pytest上下文，为每份验证计划
+创建独立临时workspace，并固定可信解释器和候选src；计划结束自动清理。实际pytest子进程
+回归先RED后GREEN，证明运行项目定位/控制凭证不继承，写入隔离workspace且测试后删除。
+直接调用42、自动影响闭包1823 passed/7 skipped、sentinel53、flow mock10通过。
+一次人工focused命令含不存在的测试文件，未执行测试；已更正，不算产品失败或通过。
+
+源码修复进程治理：Worker与RM独立验证通过同一私有Linux subreaper执行命令。
+正常结束、命令超时、调用Worker死亡均先清理后代再报告终态；独立setsid/double-fork
+后代仍被收养。只枚举直接子进程，父进程退出后逐轮收养其后代；pidfd加PPid/出生时间复核限定信号目标，Python未编译pidfd时使用libc
+同名接口，无法建立能力时不执行命令。直接子进程表与后代表均空才证明清理完成。
+清理收据随Worker结果或验证step持久化，unknown不能成为成功，optional step同样
+阻止验证通过及后续命令。该机制不是文件系统sandbox；supervisor自身丢失/超时保持
+unknown，不宣称强杀宿主或不可中断内核任务后仍能完全清理。
+
+聚合恢复请求不能只依赖首次事件消费。已准入的kernel-origin aggregate rebuild若因
+Run临时blocked被原reducer拒绝，idle replay及Run重新active/resumed时从账本重查
+未完成请求；项目暂停、未知Run、取消/最终终态仍不执行。继续复用原source/manifest/
+Candidate currentness/子项终态校验及完成去重，不再开Worker或发新审批。
+
+重建聚合的发布使用精确outbox：首次生成完整事件并冻结sidecar后，才追加引用它的
+aggregate.completed；正常发布、原reducer再次调用和周期恢复共用同一body、event ID与
+因果链。冻结后、aggregate后、publication后三断点均可恢复且不重复聚合/派发。校验器
+拒绝事件明确origin=kernel；只有精确ID/type/body的kernel拒绝能停止重发，不能当成功。
+取消fanout和失效Candidate继续拒绝；native还比较原冻结身份，不能仅以同head复用。
+partial_task_continuation明确绑定当前baseline事件及自身continuation ref/commit，不能
+误当已冻结Candidate，也不能跨baseline重放。旧complete缺outbox仍保持unknown。
+
+原请求带source_event_id时，恢复还必须核对该精确、更早、kernel同Run证据所绑定的
+冻结版本；不能用fanout启动时才出现的新freeze替换它。相同绑定上的后续test.passed
+不使原准入决定失效。最终199项直接调用及sentinel53/flow10通过；更早冻结版自动
+11697通过/10跳过、serial4，不等同真实无监工资格通过。
+
+历史前缀决定Candidate选择；受控repair副本的授权归一可使用完整账本中较晚的动作
+完成回执，但不能重新选择最新Candidate。真实controlled repair两种副本正例与新
+freeze反例通过。最终252直接调用/候选恢复mock、sentinel53、flow10通过，独立复核
+无剩余确定阻断。
+
+### 最终 Goal 消费历史完成补偿（2026-11-21）
+
+真实 OLD Judge 的 `output_repair_exhausted` 并非产品验收失败：14 个历史完成 Task
+经 Owner 审核补偿后，Goal 仍复制补偿前已准入 Candidate Verify 的不可变 children，
+缺少新增的 `completion_restore_ref`，严格 currentness 因此拒绝。不能要求 Reader
+改写冻结合同，也不能为解决证明格式问题重新执行已完成业务。
+
+Goal 准入先保留原 Candidate、freeze receipt、Candidate Verify 准入和完整 children
+的精确绑定，再读取受控补偿链生成仅供当前校验的内存视图。补偿必须具有精确的
+manifest、Owner intent、原 mutation、当前 replacement 和同一 Candidate 绑定；
+仅补充历史 child 缺少的 restore ref，原身份、复用证明和 Verify 事件仍逐项校验。
+现有 ref 不被覆盖，原快照及账本不改写；新 Candidate Verify 合同仍必须显式携带
+完整证明。后续真正的合同变化、伪造来源或缺失证据继续拒绝。
+
+### Reader 提交协议耗尽的终态交接（2026-11-21）
+
+另一真实停顿是 `result submit` 拒绝后仅持久化 operation failed；未准入的语义
+事件不会发布，因而普通 fanout 结果处理器没有输入。loss sweep 随后发现 Provider
+已停，但 failed operation 不能重派，形成空转。恢复 sweep 现先将精确
+`output_repair_exhausted` 的内核失败投影到 `fanout.child.failed`，再交既有失败
+处理链。持久 request、当前 dispatch、原 invalid envelope、Run/operation/hash/
+attempt/role 必须一致；原 CLI 空 origin 的 invalid 仅在精确内核因果及不可变
+attempt envelope 同时存在时兼容。新 invalid 明确写 kernel origin。失配、过期、
+暂停/终止 Run 不恢复；不发布产品 verdict，不重开 failed operation，也不增加额度。
+
+
+### 产品闭环与实验资格的时间边界
+
+本次8×8原始要求将四项结论分别评估：产品交付、真实8 Impl与8 Task Verify重叠、
+预声明故障的原生恢复、批准后零人工恢复。完整窗口在同Run本地交付后结束，外部
+验证session只读采集原始事件与Provider证据；RM/OA仍是恢复行动参与者，不因此
+成为新增资格收据生产者。产品Candidate/Judge/Goal只能要求当时已存在的证据，
+不能把未来交付或完整零介入窗口作为自身前置条件。产品通过不代表实验通过；
+缺少任何独立资格证明仍为未证明或失败。所有原始标准及来源映射必须在Plan和
+资格协议保留，不能仅以mandatory=false隐藏义务。
+
+20:02 UTC记录了监工反馈自身造成的反例：先前额外指定RM生产生命周期收据，
+并将完整资格挂到业务验收，引发反复规划与循环前置。受控新代际明确纠正这条
+工程假设而未改变用户要求；计划尚未批准，无人窗口未开始。后续审核必须逐项
+对照原文及实际入口，不能把人工建议、配置项或未来产物视为已有履约证明。
+
+### 2026-11-22：账号恢复与纯 Plan Critic 的结构权限
+
+主 Codex 登录文件在 09:19 UTC 更新；Luna high 与 6.1-sol high 的隔离最小请求
+均返回 READY。该证据只证明这两个模型当前可调用，不证明所有旧进程自动更新登录。
+旧 Run 的 Judge 重试已受控派发；原生 turn_context 确认本轮实际模型为 6.1-sol/high。
+OLD 原配置仍将 Judge/RM 写为 Luna，dispatch 级会话轮换丢失此前 tmux 临时选择，
+因此持久化用户既有模型授权后仅重载控制面，保留完成任务与候选。新配置 SHA
+4bbe77ae…；原无人窗口仍失败。报告 `account-rotation-checkpoint-resume.json`。
+
+NEW 的 20:41 package 拒绝不是矩阵收集错误：Synth 的审核合同绑定当前 Planner，
+却在已通过结果中选择上一版 task_map_ref，导致新矩阵与旧 Task AC 不一致。矩阵门禁
+正确拒绝。纯 PRD Critic 的模板仍预填第二份计划结构，且提交预检只验证身份/裁决，
+没有执行「Critic 不生产结构」约束，是此次应修复的 Harness 缺口。
+
+新派发的 pure-aggregator Plan Synth 将 verdict-only 权限冻结在 operation request
+的 result_identity 中。PRD/Issue 模板与 Refactor 一致，不再预填结构产物；result
+validate、submit 与正式准入拒绝非空 task map、计划正文、结构 refs/ports 等输出。
+历史引用仍可用于 evidence_refs，语义裁决、风险、owner questions 和正文覆盖声明仍由
+Agent 决定。内核保留当前 Planner 的已准入结构；不替 Agent 选择通过意见。旧请求
+保持原冻结合同，不能篡改已 settled 结果，恢复需走合法的新尝试/代次。
+
+验证：直接调用18通过；自动闭包5200通过/7跳过，旧Refactor mock结构越权用例修正
+为Critic只裁决后，相关E2E与新边界20通过；sentinel53及flow mock10通过。仍须现场
+新派发证明request绑定和正常package产出；这些测试不代表新8×8无人资格通过。
+
+
+### 账号轮换后的驻留恢复与失败实验保全
+
+2026-11-22的现场证明：共享登录文件已更新且新CLI可调用，不代表原驻留进程能够
+refresh旧token。NEW Run Manager先经受控reprompt明确返回账号切换错误，再由
+既有resident-only重启执行器重新读取登录；首轮observe-only并产出新的原生观察
+事件。该路径保持业务Workflow、冻结材料及原失败记录。账号探针、重启成功和观察
+事件各自证明对应事实，不替代任务完成或无人工干预证明。
+
+OLD最终Judge正式拒绝整体实验，19项产品claim关闭不能修复历史批准时序和人工
+介入。操作员受控暂停失败Run，保留其最终裁决；NEW继续使用独立Run完成准备与
+准确Plan审批。新Planner从声明的12份冻结材料恢复，新Synth权限须由本轮实际
+request和正式package验证；截至本次记录尚未进入正式无监工资格窗口。
+
+历史自修复候选还需检查当前基线、完整continuation和最新验证绑定。准备期允许
+在既有用户授权内修复/部署，但不能用旧候选验证结果跳过漂移检查，不能为消除
+人工门而编造checkpoint或完成事件。
+
+
+### quiescent 唤醒后的投影刷新窗口
+
+Watchdog先于正常RM tick执行。长时间静止后首次唤醒，旧投影尚未来得及刷新，
+不能仅因静止期间的mtime年龄立即派发源码修复。使用最近quiescent退出时刻与投影
+mtime中的较新者计算陈旧时间，沿用原600秒阈值；601秒仍无刷新继续报警。
+这不证明Agent健康或任务成功，也不豁免tick失败、死pane等独立检查。
+当前HEAD复现原误报后移植原生候选b3e965a4的最小修复，另外验证边界到期。
+旧候选本身的合同/验证/基线记录保持，不把本地移植冒充其controlled apply。
+
+
+### 恢复读取的真实放大与正文未交付（2026-11-22）
+
+NEW Planner冻结34个必读occurrence，正文合计461458 bytes，去重后31组443082
+bytes；旧候选15项198612 bytes，当前补充结构162560 bytes。原生09:52:21、
+09:59:10、10:06:08发生compaction，已观察到`--resume`以
+`delivery_predates_compaction`退回full并重读前缀。当前会话边界检查不能删除；
+历史账本仍参与读取覆盖，但不证明模型当前记忆。通过当前工作记录、精确游标及
+授权缺口读取继续，按需重建实际决策需要的正文，不能无限重启完整bundle。
+
+另发现10:06:55/10:07:05 Worker在JS循环内调用读取，却仅向模型输出来源、页码
+和游标；10:06:39输出限制1000 tokens存在截断风险。宿主账本增长不证明模型
+消费了正文。准备期已发精确绑定worker.reply要求补回受影响完整页，不改冻结
+manifest、必读政策和权限。通用读取方法补入Planner/Task Map skill并同步两种
+Provider分发副本；真实正文补读及结果准入仍须后续核验，不宣称已解决消费质量。
+
+### 完整输入交付的可选冻结合同
+
+真实Synth于2026-11-22 10:25准入passed，但两份必读选段存在正文缺口：旧实现只要求
+宿主读取账本覆盖，将Provider观察视为非阻断诊断。新增PrdFlow/IssueFlow/RefactorFlow
+参数`spec.inputDeliveryMode: observed`，编译到result_protocol并写入Run合同与新operation
+request。未配置或`produced`保持旧行为；同operation重试沿用首次冻结要求，不能借
+配置切换改变合同，不能追溯改变已settled结果。
+
+启用后，成功提交必须具备完整历史工具输出证据：来源版本/occurrence、选段正文、
+页区间、actor/operation/attempt/dispatch、不可变输出及原生Codex会话witness一致。
+截断、元数据摘要、丢失/损坏证明和不支持观察的Provider均为未知，不能贡献覆盖。
+只验证已声明的required selections，缺口可以在同attempt通过完整补读弥补；历史完整
+证明在compaction或会话轮换后仍有效，不声称模型当前理解或记忆。原有已绑定
+reader执行失败仍可报告，不将无法读取强制转换为产品失败。
+
+`result validate`及submit预检只读，不封存账本、不写witness、不消耗submit binding；
+正式准入独立复核。runtime terminal入口也从canonical operation获取request，不能
+由worker的宽松policy降级。Task Pipeline读取当前kernel派发的政策，不错误复用首次
+placement政策；模式仍由原operation冻结。
+
+`artifact recover`保留host历史读取计数，另列`provider_delivery`的完整证据缺口与
+下一步；两者不能混用。validate对缺失selection给出有界单源补读命令，要求返回完整
+工具正文并按next_page_start继续，不要求重读所有输入。text page通过统一解析器
+处理，修复原JSONDecodeError；这仅修复观察器格式兼容，不能补造真实缺失正文。
+
+首次新回归证明摘要与截断原本可成功submit；独立review补充runtime terminal降级
+路径RED。初步110项直接测试通过，包括冻结/重试、canonical入口、失败报告、证据
+篡改、compaction/轮换、只读恢复、公共配置与Run合同。需继续完成自动影响闭包、
+隔离部署及新的真实受控审核，不能把这些确定性检查当作无人8×8通过。
+
+完成当前代码闭包：8383通过/14跳过；首次结构门发现准入文件超过1000行，按输入
+政策职责提取后最终直接121、sentinel53、flow mock10通过。真实封存证据只读反事实
+回放中，Planner34/34完整，Synth41/44可证明；不将新政策追溯强加为旧运行时裁决。
+当前Task恢复入口传递operation身份，handoff摘要保留provider_delivery及缺证提示，
+避免RM只看到host历史缺口为零。剩余OA账号恢复、已通过同候选重审入口和历史
+repair收尾尚未完成，不宣称真实8×8或全部恢复链通过。
+
+
+## 2026-11-22 最终审核恢复闭环
+
+本轮真实 Run `workflow-ddd320aa0dc7c2ef` 的16个Task均已完成，真实8 Impl +8 Verify
+重叠88.551秒；最终Reader第二轮4 rejected、4 abstained，未进入Judge和交付。
+原无人窗口以 `failed_to_complete_unattended_delivery` 关闭，再由受控run-pause暂停。
+修复后恢复属于有监工介入的观察段，不回写原窗口为通过。
+
+现场三个直接原因：通用stage retry在mixed聚合上重复生成冻结身份，导致原本合法的
+host收据不再适用；容器执行后采证异常只留下inspect_before_retry，丢失退出码与具体
+文件错误；verification门禁和quiescent主tick同时挡住只读诊断。另有已完整交付的
+Reader压缩后再次遍历完整bundle，及结果枚举错误信息不够精确的问题。
+
+- R1：当前mixed/semantic Candidate聚合由既有OA semantic_failure checkpoint接管。
+  RM首次tick就绑定Run、锚点、当前冻结版本和全部失败成员，不等待通用重试耗尽。
+  证据绑定损坏保留诊断owner，禁止退回通用重试；已发布请求去重，目标版本失效后
+  新请求绑定当前objective。旧失败和rejected/abstained原样保留。
+- R2：新增显式opt-in的`autonomous_actions: [rebind]`能力，默认权限不变，本次真实
+  项目尚未启用。仅blocking semantic_failure的Candidate aggregate可用；OA必须
+  逐一评估所有失败成员，声明合同未改、verification_recovery及max_replays=1。
+  控制入口再次核对裁决、配置快照、全部成员、当前合同及门禁。只有静态role名单
+  支持，children/affinity需另行证明等价；每个冻结输入最多一次，不靠新请求重置。
+  新Reader仍独立读取和验收。产品修复继续原Task/Plan路径，不能把产品失败改成通过。
+  发布后崩溃只补确认已发生效果，不再次派发；冻结字段与本次恢复授权分别校验。
+- R3/R4：采证失败也写入有界stdout、exit code、path/type/size/limit等机械事实；
+  必需媒体不全保持failed。历史无收据失败由精确kernel start/failure对进入诊断，
+  结论保持unknown。每个未解决manifest独立诊断身份及recovery_case指纹；同Run已验证unknown host门禁
+  允许只读诊断互相推进，其他门禁和执行副作用继续阻塞。主tick、超时有界reprompt、
+  配置的resident实例回复均沿既有consumer；preflight通过不能掩盖continuation门禁。
+- R5：同一消费者已有完整observed输出但发生压缩时，required --resume返回
+  context_recovery、historical_delivery=complete、current_memory=unknown，引导WRC及
+  精确缺口读取。缺页/无见证仍补读，显式完整复核可用。正式准入没有降级。
+  Product Acceptance枚举错误精确指出字段及passed/rejected/blocked。
+
+验证覆盖：实际RM首tick→OA checkpoint；裁决→受控恢复→新Reader读取/预检/准入
+消费原host收据且不重执行；collector四类错误；unknown门禁→主tick与超时重派；
+完整/缺页/损坏输出恢复。Agent判断和容器执行在确定性测试中为scripted/mock边界。
+真实Provider、全8成员重派、Judge及最终交付仍以恢复后的现场证据为准。
+对应活动任务：`tasks/active/2026-11-22-1348-candidate-recovery-closeout.md`。
+
+现场暂停后另复现两条误报：14:11 orphaned_task、14:14 goal idle rescans exhausted。
+原入口未识别Run级run.paused。已将Run/项目暂停接入两处计时入口，orphan按暂停
+区间并集扣时；恢复后不把暂停时长算作任务无人处理。既有误报仅由Owner授权的
+human-decision-dismiss精确确认，不自动清除其他门禁或改写历史。
+
+
+本批最终源码验证：影响闭包12185通过/18跳过，sentinel53通过，flow mock10通过。
+完整变更路径参数及回执保存于活动任务所列路径；这是确定性测试层，不等于真实
+8×8无人窗口通过。模型矩阵、现场配置权限与采证限额未更改。
+# OA 断点投递补充（2026-11-22）
+
+`ec46ef3e` 部署后，原 Run 在 14:45 UTC 恢复，RM 已生成并消费宿主采证诊断
+（evt-59d8ad5cccc9 / evt-7516fe0ee1b6）。旧 browser exit/stdout 缺失仍为 unknown；
+原无人窗口保持 failed，16/16 Task 不等于最终交付。
+
+OA 恢复的 Codex session 同时显示旧 token-refresh inline 错误和后来成功的 READY
+准备探针，导致 tmux 把历史文字误判为当前门。仅严格完成 footer 之前的确切旧
+inline 错误可过滤；一般 login、额度、权限、trust 提示及 footer 后的新错误仍拦截。
+footer 只划分屏幕历史，不证明账号有效或产品验收。
+
+精确 `provider_interactive_blocked` 来自 tmux 输入前检查。新诊断持久保留
+`input_not_sent` 和 `interactive_prompt_marker`；旧收据仅兼容这一已知前置 class，
+不从 error 文本猜测，显式 `input_not_sent=false` 不得恢复。原失败链绑定到当前
+operation/request/dispatch/Run 后，current config/Plan/Task/goal/Candidate 均复核，
+门解除且 provider 空闲时发布原 checkpoint 的一次 retry。实际发送前在既有 operation
+guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不再重复发送。
+暂停/终止、已有结果、失效绑定或发送状态未知时不适用；再失败转 blocked 保留诊断。
+
+## 首次 Reader 恢复的媒体预检（2026-11-23）
+
+首次host采证交接与已有host绑定的后续恢复使用同一产物检查；不能因首次request没有
+`candidate_host_evidence_ref`就直接认定输入改善。命令退出0后，声明产物必须在经摘要、
+来源和版本校验的媒体索引中存在，才允许原生Reader恢复。非法/缺失路径保留原失败给
+现有诊断owner，不重新执行已完成命令、不修改已冻结输入、不代替产品验收。
+
+真实现场目录声明`artifacts/evidence/browser/`与容器证据根下文件不一致；预检不负责
+猜测目录映射或改写合同。该差异由Reader/RM/OA及合同Owner通过现有流程纠正，已有
+浏览器执行和媒体仍是原目标历史事实。测试覆盖实际`resume_reader_after_probes`入口的
+有/无request首次恢复、合法文件、非法声明和缺失文件，以及重复tick不重派。
+
+## 普通 probe 与已授权 host 来源的准入边界（2026-11-23）
+
+真实复评曾把19条只引用host bundle的普通probe接纳为通过，绕过
+`host_execution_receipt_ids`的来源/媒体校验。现在实际预检和结果提交入口都对
+普通passed probe核对当前冻结host图中的ref、来源alias及事件身份；词法等价的
+绝对路径、文件URI和fragment保留同一来源。命中者必须改用既有专用host回执入口，
+不得重命名为新执行事实，也不会自动补receipt ID或降低unavailable的效力。
+
+这项校验不靠command相同、存在host绑定或正文关键词推断来源。独立probe引用自身
+证据，以及blocked诊断引用不可用host事实，保持原有合同；host材料仍可供独立AC/产品
+判断。它不声称证明所有未提供可验证来源的普通probe都真实执行。先前admission保留
+历史，使用已有失败聚合与受控恢复生成新的独立判词，不改写append-only事件。

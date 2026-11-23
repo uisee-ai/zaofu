@@ -41,6 +41,8 @@ def apply_agent_usage_liveness(
     previous_task_id = ""
     previous_source = ""
     kernel_ts, previous = registry.get_last_heartbeat(instance_id)
+    if payload.get("source") == "disk_reader" and not _fresh_disk_sample(event, kernel_ts):
+        return
     if isinstance(previous, dict):
         previous_state = str(previous.get("state") or "").strip().lower()
         previous_task_id = str(
@@ -185,3 +187,31 @@ def _fanout_task_state(
             return "active"
         return "terminal"
     return ""
+
+
+def _fresh_disk_sample(event: ZfEvent, previous_receipt: str | None) -> bool:
+    """A new accounting event cannot make an old provider sample fresh."""
+    def parse(value: str) -> datetime:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return result.replace(tzinfo=timezone.utc) if result.tzinfo is None else result
+    try:
+        sample = parse(event.payload["usage_timestamp"])
+        observed = min(parse(event.ts), datetime.now(timezone.utc))
+        return sample <= observed and (not previous_receipt or sample > parse(previous_receipt))
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def apply_usage_fallback_liveness(registry: RoleSessionRegistry, event: ZfEvent) -> None:
+    """Keep the same sample guard when richer task-context lookup fails."""
+    instance_id = str(event.actor or "").strip()
+    if not instance_id:
+        return
+    kernel_ts, previous = registry.get_last_heartbeat(instance_id)
+    if event.payload.get("source") == "disk_reader" and not _fresh_disk_sample(event, kernel_ts):
+        return
+    registry.record_heartbeat(instance_id, {
+        **(previous if isinstance(previous, dict) else {}),
+        "instance_id": instance_id, "last_action_ts": event.ts,
+        "source": "agent.usage", "event_id": event.id,
+    })

@@ -358,8 +358,10 @@ def test_cancel_worker_repair_action_terminates_and_blocks_respawn(
     assert applied[-1].payload["worker_id"] == "dev"
 
 
+@pytest.mark.parametrize("recovery_action", ["", "child-rebuild"])
 def test_rerun_fanout_child_repair_action_dispatches_retry(
     state_dir: Path,
+    recovery_action: str,
     config: ZfConfig,
 ) -> None:
     TaskStore(state_dir / "kanban.json").add(
@@ -387,6 +389,7 @@ def test_rerun_fanout_child_repair_action_dispatches_retry(
         task_id="TASK-1",
         fanout_id="fanout-1",
         fanout_child_id="dev-child",
+        recovery_action=recovery_action,
     )
     transport = _RepairTransport()
 

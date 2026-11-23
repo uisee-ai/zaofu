@@ -190,6 +190,59 @@ def test_concurrent_append_keeps_proven_snapshot_and_reads_tail_next_time(tmp_pa
     assert decoded == ["archived", "active", "new-tail"]
 
 
+def _try_append_while_prefix_is_verified(path, result):
+    from zf.core.state.locks import locked_path
+
+    try:
+        with locked_path(path, timeout_seconds=0):
+            with path.open("ab") as stream:
+                stream.write(_row("concurrent-hook", "codex.hook.post_tool_use"))
+        result.put("appended")
+    except TimeoutError:
+        result.put("deferred")
+
+
+def test_busy_append_does_not_starve_prefix_verification(tmp_path, monkeypatch):
+    import multiprocessing
+    import zf.runtime.artifact_context_events as module
+
+    path, log = _fixture(tmp_path)
+    view = ArtifactContextEvents(log)
+    read_file = view._read_file
+    prefix_hash = module._prefix_hash
+    context = multiprocessing.get_context("fork")
+    outcomes = []
+
+    def append_after_scan(target, signature):
+        result = read_file(target, signature)
+        if target == path:
+            log.append(ZfEvent(id="tail", type="task.dispatched"))
+        return result
+
+    def append_during_hash(stream, size):
+        digest = prefix_hash(stream, size)
+        result = context.Queue()
+        process = context.Process(target=_try_append_while_prefix_is_verified, args=(path, result))
+        process.start()
+        process.join(timeout=5)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            pytest.fail("event writer did not complete its bounded lock attempt")
+        assert process.exitcode == 0
+        outcomes.append(result.get(timeout=1))
+        result.close()
+        return digest
+
+    monkeypatch.setattr(view, "_read_file", append_after_scan)
+    monkeypatch.setattr(module, "_prefix_hash", append_during_hash)
+    assert [e.id for e in view.read_all()] == ["archived", "active"]
+    assert outcomes == ["deferred"]
+    monkeypatch.setattr(view, "_read_file", read_file)
+    monkeypatch.setattr(module, "_prefix_hash", prefix_hash)
+    assert [e.id for e in view.read_all()] == ["archived", "active", "tail"]
+
+
 def test_next_authorization_consumes_terminal_appended_during_prior_snapshot(tmp_path, monkeypatch):
     from zf.runtime.artifact_read_capability import ArtifactReadCapabilityError, _require_current_operation
 

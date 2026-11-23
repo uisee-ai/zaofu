@@ -11,8 +11,11 @@ class HostVerificationConfig:
     approval_ref: str = ''
     image: str = ''
     commands: list[str] = field(default_factory=list)
+    recollect_commands: list[str] = field(default_factory=list)
     max_executions_per_run: int = 0
     timeout_seconds: int = 180
+    max_artifact_bytes: int = 20 * 1024 * 1024
+    max_total_evidence_bytes: int = 64 * 1024 * 1024
 
 
 def parse_host_verification(raw) -> HostVerificationConfig:
@@ -21,6 +24,11 @@ def parse_host_verification(raw) -> HostVerificationConfig:
     if not isinstance(raw, dict) or set(raw) - set(HostVerificationConfig.__dataclass_fields__):
         raise ValueError('runtime.host_verification contains unknown keys or is not a mapping')
     policy = HostVerificationConfig(**raw)
+    if (type(policy.max_artifact_bytes) is not int
+            or not 1 <= policy.max_artifact_bytes <= 64 * 1024 * 1024
+            or type(policy.max_total_evidence_bytes) is not int
+            or not policy.max_artifact_bytes <= policy.max_total_evidence_bytes <= 128 * 1024 * 1024):
+        raise ValueError('host verification evidence limits require 1..64MiB per file and at most 128MiB total')
     if policy.network not in {'none', 'host'}:
         raise ValueError('host verification network must be none or explicitly authorized host')
     if not isinstance(policy.protected_files, dict) or any(
@@ -33,9 +41,13 @@ def parse_host_verification(raw) -> HostVerificationConfig:
         raise ValueError('runtime.host_verification.enabled must be boolean')
     if not isinstance(policy.commands, list) or any(not isinstance(c, str) or not c.strip() for c in policy.commands):
         raise ValueError('host verification commands must be nonempty exact command strings')
-    if (type(policy.max_executions_per_run) is not int or not 0 <= policy.max_executions_per_run <= 100
+    if (not isinstance(policy.recollect_commands, list)
+            or any(not isinstance(c, str) or c not in policy.commands for c in policy.recollect_commands)
+            or len(set(policy.recollect_commands)) != len(policy.recollect_commands)):
+        raise ValueError('host verification recollect_commands must be unique preauthorized commands')
+    if (type(policy.max_executions_per_run) is not int or policy.max_executions_per_run < 0
             or type(policy.timeout_seconds) is not int or not 1 <= policy.timeout_seconds <= 900):
-        raise ValueError('host verification requires bounded executions (0..100) and timeout (1..900)')
+        raise ValueError('host verification requires a nonnegative execution budget and timeout (1..900)')
     if policy.enabled and (not isinstance(policy.approval_ref, str) or not policy.approval_ref.strip()
             or not isinstance(policy.image, str) or not re.fullmatch(r'(?:[^\s]+@)?sha256:[a-f0-9]{64}', policy.image)
             or not policy.commands or not policy.max_executions_per_run):

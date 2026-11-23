@@ -22,6 +22,7 @@ def validate_verification_submission(
     profile_id: str,
     revision: str,
     delivery: Mapping[str, Any],
+    events: list | None = None,
 ) -> dict[str, Any]:
     """Reuse admission validators without creating sidecars or consuming a lease.
 
@@ -69,7 +70,8 @@ def validate_verification_submission(
         source_event_id="", persist=False,
     )
     errors = [dict(issue) for issue in adapted.issues]
-    errors.extend(typed_admission_issues_for(state_dir, adapted, semantic_submit=True))
+    errors.extend(typed_admission_issues_for(state_dir, adapted, semantic_submit=True,
+        operation=operation, events=events))
     if adapted.payload.get('failure_class') == 'verifier_execution_failure':
         from zf.runtime.sidecar_refs import hydrate_sidecar_ref
         from zf.runtime.task_input_failure import recovery_input_issues

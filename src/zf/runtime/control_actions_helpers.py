@@ -585,6 +585,8 @@ def validate_shared_action_payload(
         if stage is None:
             return f"execution pattern {pattern_id!r} is not declared in zf.yaml"
     if action == "stage-replan-new-generation":
+        if 'review_only' in payload and not isinstance(payload['review_only'], bool):
+            return 'review_only must be boolean'
         repaired_failure = _required_text(payload, "repaired_failure_event_id")
         if not repaired_failure and not _required_text(payload, "escalation_event_id"):
             return "escalation_event_id is required"

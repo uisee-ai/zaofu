@@ -19,19 +19,14 @@ from zf.runtime.artifact_input_index import load_attempt_source_manifest
 from zf.runtime.artifact_read_capability import authorize_artifact_read_from_environment
 from zf.runtime.plan_candidate_ports import read_plan_port_bytes
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+from zf.runtime.plan_artifact_ports import PLAN_DRAFT_PORTS
 from zf.runtime.sidecar_refs import sidecar_path
-
-
-# These JSON bodies are edited by the Planner. Approvals, claims and source
-# requirements are issued by their own authorities.
-_DRAFT_PORTS = ("task_map", "test_matrix", "source_index", "source_inventory",
-                "acceptance_matrix", "real_e2e_matrix", "capability_matrix", "coverage_ledger")
 
 
 def register(sub):
     parser = sub.add_parser("draft-baseline", help="Export pinned Plan ports as a tar stream for local editing")
     parser.add_argument("--attempt", required=True)
-    parser.add_argument("--port", action="append", required=True, choices=_DRAFT_PORTS, help="Logical port name, repeat to include more")
+    parser.add_argument("--port", action="append", required=True, choices=PLAN_DRAFT_PORTS, help="Logical port name, repeat to include more")
     parser.add_argument("--workspace", action="store_true", help="Create an editable private draft in this Planner workdir")
     parser.add_argument("--seed-goals", action="store_true", help="Preserve pinned goals in a local task map draft")
     parser.set_defaults(func=run)
@@ -73,20 +68,27 @@ def draft_files(state, manifest, identity, names, *, seed_goals=False):
         return raw
 
     for name in dict.fromkeys(names):
-        if name not in _DRAFT_PORTS:
+        if name not in PLAN_DRAFT_PORTS:
             raise ValueError(f"unknown editable port: {name}")
         raw = assigned_bytes(name)
         if seed_goals and name == "task_map":
             from zf.runtime.goal_claim_set import validate_goal_claim_set
+            from zf.runtime.task_map_goal_coverage import validate_goal_coverage
 
-            goals = validate_goal_claim_set(json.loads(assigned_bytes("goal_claim_set")),
+            goal_bytes = assigned_bytes("goal_claim_set")
+            goals = validate_goal_claim_set(json.loads(goal_bytes),
                 workflow_run_id=package["workflow_run_id"], task_map_generation=package["task_map_generation"])
             task_map = json.loads(raw)
-            # Keep explicit mapping and verification fields intact. A legacy map
-            # can derive its contracts from criteria that the revision will edit.
             if not task_map.get("goal_claims"):
-                task_map["goal_claims"] = goals["claims"]
-                raw = json.dumps(task_map, ensure_ascii=False, indent=2).encode() + b"\n"
+                candidate = {**task_map, "goal_claims": goals["claims"]}
+                coverage, errors = validate_goal_coverage(candidate, task_map.get("tasks", []))
+                if not errors and not coverage["diagnostics"]:
+                    raw = json.dumps(candidate, ensure_ascii=False, indent=2).encode() + b"\n"
+                else:
+                    # A legacy map may contain inert labels while its admitted
+                    # claims derive from ACs. Do not force a mapping migration
+                    # that changes completed Task rows merely to make a draft.
+                    yield "baseline-goal-claims.json", goal_bytes
         yield f"{name}.json", raw
 
 
@@ -122,7 +124,15 @@ def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
     except BaseException:
         shutil.rmtree(draft)
         raise
-    return {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+    result = {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+    if "baseline-goal-claims.json" in result["files"]:
+        result["goal_seeding"] = {
+            "status": "legacy_derived_preserved",
+            "reference_only": "baseline-goal-claims.json",
+            "reason": "Explicit seeding would change Task bindings. Keep completed rows intact; "
+                      "the normal derived-claim continuity checks still apply. This reference is not a Plan output port.",
+        }
+    return result
 
 
 def run(args):

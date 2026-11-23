@@ -143,6 +143,18 @@ class ReaderDispatchRecoveryMixin:
                 from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
 
                 operation = operations.get(str(latest_dispatch.payload.get("operation_id") or ""), {})
+                from zf.runtime.reader_checkpoint_dispatch import pending_reader_restart
+
+                restart = pending_reader_restart(self.state_dir, events, operation, latest_dispatch)
+                if restart is not None:
+                    self._set_worker_state(role_instance, "idle", reason="admitted_reader_restart", force=True)
+                    if self._retry_fanout_child(
+                        manifest=manifest, child=child, previous_dispatch=latest_dispatch,
+                        attempt=len(child_dispatches), provider_session_replaced=True,
+                        recovery_decision_event=restart,
+                    ):
+                        return True
+                    continue
                 amendment = pending_reader_budget_amendment(events, operation)
                 if amendment is not None:
                     dispatch_payload = latest_dispatch.payload

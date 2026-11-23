@@ -207,7 +207,9 @@ def validate_product_acceptance_report(
     _check_expected(report, expected, subject="Product Acceptance report")
     verdict = str(report.get("verdict") or "")
     if verdict not in {"passed", "rejected", "blocked"}:
-        raise ProductAcceptanceError("Product Acceptance report has invalid verdict")
+        raise ProductAcceptanceError(
+            "product_acceptance_report.verdict must be one of: passed, rejected, blocked"
+        )
 
     expected_journeys = {
         str(item.get("journey_id") or ""): item

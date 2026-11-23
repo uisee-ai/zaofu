@@ -2345,6 +2345,11 @@ class FanoutCoordinationMixin(
         stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
+        from zf.runtime.writer_replan_frontier import suppress_retired_plan_branch
+        if suppress_retired_plan_branch(self, event, stage_ids=[
+            stage.id for stage in stages if stage.attempt_domain == "plan"
+        ]):
+            return False
         if suppress_stale_task_pipeline_generation(
             self,
             trigger_event=event,
@@ -3288,6 +3293,9 @@ class FanoutCoordinationMixin(
             return
         if stage_barrier_blocks_dispatch(self, event):
             return
+        from zf.runtime.writer_replan_frontier import suppress_retired_writer_trigger
+        if suppress_retired_writer_trigger(self, event, stage_ids=[stage.id for stage in stages]):
+            return
         from zf.runtime.plan_artifact_package_runtime import admit_task_map_trigger_package
         event = admit_task_map_trigger_package(self, event, stages)
         if event is None:
@@ -3404,6 +3412,10 @@ class FanoutCoordinationMixin(
                     reason=str(exc),
                 )
                 continue
+            from zf.runtime.plan_completed_approval import suppress_completed_plan_approval
+
+            if suppress_completed_plan_approval(self, trigger_event=event, loaded=loaded, stage_id=stage.id):
+                continue
             pre_impl = pre_impl_dispatch_fence(
                 self,
                 stage_id=stage.id,
@@ -3509,6 +3521,7 @@ class FanoutCoordinationMixin(
                 # the regular scheduler may dispatch them outside writer fanout.
                 source_gate_checked = False
                 source_gate = None
+                proposed_admission = None
                 if getattr(stage, "synthesize_canonical_tasks", False):
                     source_gate = self._writer_source_index_gate(
                         loaded=loaded,
@@ -3534,20 +3547,29 @@ class FanoutCoordinationMixin(
                         trace_id=trace_id,
                     ):
                         return
-                    self._ensure_writer_tasks_canonical(loaded)
-                if (
-                    not blocking_task_pipeline
-                    and not use_affinity
-                    and len(task_items) > len(roles)
-                ):
-                    raise RuntimeError(
-                        "writer fanout has more tasks than writer role instances"
+                    from types import SimpleNamespace
+
+                    proposed = self._ensure_writer_tasks_canonical(loaded, preview_only=True)
+                    proposed_admission = admit_writer_fanout(
+                        task_store=SimpleNamespace(get=lambda task_id: proposed.get(task_id)
+                                                   or self.task_store.get(task_id)),
+                        loaded=loaded,
                     )
-                admission = admit_writer_fanout(
-                    task_store=self.task_store,
-                    loaded=loaded,
-                )
+                    if proposed_admission.passed:
+                        if (not blocking_task_pipeline and not use_affinity
+                                and len(proposed_admission.task_items) > len(roles)):
+                            raise RuntimeError("writer fanout has more tasks than writer role instances")
+                        self._ensure_writer_tasks_canonical(loaded)
+                admission = proposed_admission
+                if admission is None or admission.passed:
+                    admission = admit_writer_fanout(
+                        task_store=self.task_store,
+                        loaded=loaded,
+                    )
                 if admission.passed:
+                    if (not blocking_task_pipeline and not use_affinity
+                            and len(admission.task_items) > len(roles)):
+                        raise RuntimeError("writer fanout has more tasks than writer role instances")
                     # B4 (doc 91 P1): source-index 双向锚门。普通
                     # product-delivery 路径在 admission 之后、孵化之前跑;
                     # synthesize_canonical_tasks 路径已在 canonical seed 之前跑。
@@ -5561,16 +5583,23 @@ class FanoutCoordinationMixin(
             )
         ):
             return
-        if any(
-            item.type == "fanout.aggregate.completed"
-            and isinstance(item.payload, dict)
-            and str(item.payload.get("fanout_id") or "") == fanout_id
-            and str(item.payload.get("rebuild_of") or "") == source_event_id
-            for item in events
-        ):
+        from zf.runtime.fanout_aggregate_recovery import candidate_binding_current
+        from zf.runtime.run_scope import resolve_run_for_event
+
+        if any(item.type == "fanout.cancelled" and item.origin in {"", "kernel"}
+               and item.payload.get("fanout_id") == fanout_id for item in events):
             return
         stale_reason, _superseded_by = self._fanout_identity_stale_reason(fanout_id)
-        if stale_reason:
+        if stale_reason or not candidate_binding_current(self, events, source, resolve_run_for_event(events, event)):
+            return
+        existing = next((item for item in events if item.type == "fanout.aggregate.completed"
+            and item.payload.get("fanout_id") == fanout_id
+            and item.payload.get("rebuild_of") == source_event_id), None)
+        if existing is not None:
+            if existing.payload.get("rebuild_publication_ref"):
+                from zf.runtime.reader_aggregate_publication import publish_prepared
+
+                publish_prepared(self, existing, events)
             return
         children = [
             child
@@ -5784,13 +5813,26 @@ class FanoutCoordinationMixin(
             if derived_failure_kind:
                 aggregate_payload.setdefault("failure_kind", derived_failure_kind)
                 failure_recovery.setdefault("failure_kind", derived_failure_kind)
-        aggregate_event = self.event_writer.append(ZfEvent(
-            type="fanout.aggregate.completed",
-            actor="zf-cli",
+        aggregate_event = ZfEvent(
+            type="fanout.aggregate.completed", actor="zf-cli", origin="kernel",
             payload=aggregate_payload,
             causation_id=rebuild_request.id if rebuild_request is not None else None,
             correlation_id=trace_id,
-        ))
+        )
+        if rebuild_request is not None and publish_event and publish_event not in {
+            LANE_STAGE_HANDOFF_SUCCESS_EVENT, LANE_STAGE_HANDOFF_FAILURE_EVENT,
+        }:
+            from zf.runtime.reader_aggregate_publication import freeze_publication, publication_payload
+
+            publication = ZfEvent(type=publish_event, actor="zf-cli", origin="kernel",
+                payload=publication_payload(manifest=manifest, artifact_payload=artifact_payload,
+                final_status=final_status, publish_event=publish_event, rebuild_request=rebuild_request,
+                rebuild_of=rebuild_of, recovery_generation=recovery_generation,
+                failure_recovery=failure_recovery, failure_findings=failure_findings,
+                aggregate_payload=aggregate_payload),
+                causation_id=aggregate_event.id, correlation_id=trace_id)
+            aggregate_event.payload['rebuild_publication_ref'] = freeze_publication(self, publication)
+        aggregate_event = self.event_writer.append(aggregate_event)
         from zf.runtime.research_delivery import settle_research_delivery
 
         settle_research_delivery(self, aggregate_event, manifest, artifact_payload, None)
@@ -5837,67 +5879,17 @@ class FanoutCoordinationMixin(
                         extra_payload=extra_payload,
                     )
                 return
-            publish_payload = {
-                "fanout_id": fanout_id,
-                "trace_id": trace_id,
-                "stage_id": stage_id,
-                "pdd_id": pdd_id,
-                "feature_id": feature_id,
-                "status": final_status,
-                "target_ref": manifest.get("target_ref", ""),
-                "child_count": len(children),
-                **artifact_payload,
-            }
-            if rebuild_request is not None:
-                publish_payload.update({
-                    "rebuild_of": rebuild_of,
-                    "rebuild_request_event_id": rebuild_request.id,
-                    "recovery_generation": recovery_generation,
-                })
-            if final_status == "failed":
-                publish_payload.update(failure_recovery)
-                publish_payload.setdefault("findings", failure_findings)
-                publish_payload.setdefault(
-                    "failed_children",
-                    aggregate_payload.get("failed_children", []),
-                )
-                # R5: judge.failed reached the operator with an empty reason.
-                # The aggregate knows which children failed and what they
-                # reported — say so instead of shipping "".
-                if not str(publish_payload.get("reason") or "").strip():
-                    failed_children = publish_payload.get("failed_children") or []
-                    first_message = ""
-                    if failure_findings and isinstance(failure_findings[0], dict):
-                        first_message = str(
-                            failure_findings[0].get("message") or "",
-                        )[:160]
-                    publish_payload["reason"] = (
-                        f"{len(failed_children)}/{len(children)} children failed"
-                        + (f": {first_message}" if first_message else "")
-                    )
-                # publish_event is config-driven (the stage's failure_event may
-                # name any contract event, e.g. lane.stage.failed). Forge the
-                # contract's required keys present — value may be empty, same
-                # rule as the lane-pipeline emitter — else a blocking
-                # discriminator replaces the failure with discriminator.failed
-                # and rework never sees it (R6: verify-timeout wedged 25min).
-                from zf.core.config.schema_profiles import union_required_keys
+            from zf.runtime.reader_aggregate_publication import publication_payload, publish_prepared
 
-                target_ref = str(publish_payload.get("target_ref") or "")
-                for key in union_required_keys(publish_event):
-                    if key == "task_id" and target_ref.startswith("task/"):
-                        publish_payload.setdefault(
-                            "task_id", target_ref.split("/", 1)[1],
-                        )
-                    else:
-                        publish_payload.setdefault(key, "")
-            published = self.event_writer.append(ZfEvent(
-                type=publish_event,
-                actor="zf-cli",
-                payload=publish_payload,
-                causation_id=aggregate_event.id,
-                correlation_id=trace_id,
-            ))
+            publish_payload = publication_payload(manifest=manifest, artifact_payload=artifact_payload,
+                final_status=final_status, publish_event=publish_event, rebuild_request=rebuild_request,
+                rebuild_of=rebuild_of, recovery_generation=recovery_generation,
+                failure_recovery=failure_recovery, failure_findings=failure_findings,
+                aggregate_payload=aggregate_payload)
+            published = (publish_prepared(self, aggregate_event) if rebuild_request is not None
+                else self.event_writer.append(ZfEvent(
+                    type=publish_event, actor="zf-cli", payload=publish_payload,
+                    causation_id=aggregate_event.id, correlation_id=trace_id)))
             if final_status == "completed" and publish_event == "verify.passed":
                 self._bridge_verify_passed_to_parity_scan(published)
             elif (
@@ -6344,6 +6336,7 @@ class FanoutCoordinationMixin(
                 continue
             pending_children = [str(child.get("child_id") or "") for child in timed_out]
             for child in timed_out:
+                from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
                 child_failure = self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",
@@ -6360,6 +6353,7 @@ class FanoutCoordinationMixin(
                         ),
                         "timeout_seconds": timeout_seconds,
                         "failure_kind": "infra",
+                        **{key: value for key, value in reader_dispatch_call_identity(child).items() if value},
                     },
                     correlation_id=str(manifest.get("trace_id") or ""),
                 ))
@@ -6429,6 +6423,18 @@ class FanoutCoordinationMixin(
             except Exception:
                 return False
         from zf.runtime.reader_failure_supersession import reader_manifest_replacement_admission
+
+        from zf.runtime.writer_replan_frontier import retired_plan_branch
+        trigger_event = next((event for event in events
+                              if event.id == manifest.get("trigger_event_id")), None)
+        retired_by = retired_plan_branch(events, trigger_event, self.config) if trigger_event else None
+        if retired_by is not None:
+            self._cancel_superseded_fanout_manifest(
+                fanout_id=str(manifest.get("fanout_id") or ""), manifest=manifest,
+                reason="plan_branch_descends_from_retired_writer_trigger",
+                superseded_by=retired_by.id, source="authorized_plan_recovery_frontier",
+            )
+            return True
 
         replacement = reader_manifest_replacement_admission(events, manifest)
         if replacement is not None:
@@ -7009,6 +7015,9 @@ class FanoutCoordinationMixin(
             return
         manifest = self._fanout_manifest(fanout_id)
         if not manifest:
+            return
+        from zf.runtime.plan_critic_reassessment import reassessment_result_current
+        if not reassessment_result_current(self, manifest, event):
             return
         stale_reason, superseded_by = self._fanout_identity_stale_reason(fanout_id)
         if stale_reason:
@@ -8053,6 +8062,7 @@ class FanoutCoordinationMixin(
         )
         from zf.core.workflow.runner_policy import pure_aggregator_policy_plan
         from zf.runtime.plan_execution_review import plan_review_briefing
+        from zf.runtime.plan_review_claims import review_claim_briefing
 
         runner_policy = pure_aggregator_policy_plan(self.config, role)
         runner_policy_lines: list[str] = []
@@ -8201,6 +8211,13 @@ class FanoutCoordinationMixin(
                 "plan_ports": [],
                 "evidence_refs": [],
             })
+            if runner_policy.get("applies"):
+                # Pure PRD/Issue critics have the same verdict-only authority
+                # as Refactor critics; do not seed a second structural Plan.
+                for body in (completion_payload, completion_payload["report"]):
+                    for key in ("plan_artifact_ref", "artifact_refs", "plan_md",
+                                "task_map_ref", "backlog_ref", "source_index_ref", "plan_ports"):
+                        body.pop(key, None)
         if call_payload:
             # Bind identities in advance, but require the agent to author its verdict.
             for body in (completion_payload, completion_payload["report"]):
@@ -8267,6 +8284,7 @@ class FanoutCoordinationMixin(
                 "Do not emit the configured success or failure event directly.",
                 "",
                 *runner_policy_lines,
+                *review_claim_briefing(str(call_payload.get("plan_review_evidence_policy") or "")),
                 *scope_summary_lines,
                 *research_handoff_lines,
                 *source_lines,

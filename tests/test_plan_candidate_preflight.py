@@ -382,6 +382,7 @@ def test_valid_candidate_delivers_execution_facts_to_actual_critic_caller(tmp_pa
         "children": [],
     }, "wait_for_all", "plan-critic")
     assert harness.critic_dispatch_attempted
+    assert captured["plan_synth_verdict_only"] is True
     source = next(r for r in captured["input_refs"] if r["source_id"] == "plan-execution-review")
     assert hydrate_sidecar_ref(harness.state_dir, source).payload["graph"]["task_count"] == 1
     usage = hydrate_sidecar_ref(harness.state_dir, source).payload["usage_observations"]

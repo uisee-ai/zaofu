@@ -16,6 +16,9 @@ Switch to gpt-6-luna for lower usage?
 enter select · esc back
 """
 BANNER = "Heads up, you have less than 5% of your weekly limit left. Run /status."
+REFRESH_ERROR = ("■ Your access token could not be refreshed because you have since "
+                 "logged out or signed in to another account. Please sign in again.")
+COMPLETED = "\n• READY\n\n  Worked for 6s • 09:52\n\n› Ask Codex to do anything\n"
 
 
 class Pane:
@@ -66,6 +69,34 @@ def test_hard_quota_failure_takes_precedence_over_model_chooser():
 def test_old_quota_error_does_not_mask_a_resumed_active_turn():
     screen = "■ You’ve hit your usage limit.\n◦ Working (1m • esc to interrupt)"
     assert provider_interactive_prompt_marker(screen) == ""
+
+
+def test_resumed_historical_inline_auth_error_does_not_block_next_dispatch():
+    pane = Pane(REFRESH_ERROR + COMPLETED)
+    transport = TmuxTransport(pane)
+    assert transport.wait_ready("orchestrator", r"[›>]", timeout=1)
+    transport.send_task("orchestrator", Path("briefing.md"), "checkpoint",
+                        context=DispatchContext(backend="codex"))
+    assert pane.inputs == ["clear", "checkpoint"]
+
+
+def test_wrapped_historical_inline_auth_error_can_be_retired():
+    import textwrap
+
+    assert provider_interactive_prompt_marker(textwrap.fill(REFRESH_ERROR, width=45) + COMPLETED) == ""
+
+
+@pytest.mark.parametrize("screen,marker", [
+    (REFRESH_ERROR + "\n› Ask Codex to do anything", "login_required"),
+    (COMPLETED + REFRESH_ERROR, "login_required"),
+    ("Please sign in" + COMPLETED, "login_required"),
+    ("Do you trust the files?" + COMPLETED, "trust_prompt"),
+    (CHOOSER + COMPLETED, "quota_model_switch"),
+    ("You’ve hit your usage limit" + COMPLETED, "usage_limit_reached"),
+    (REFRESH_ERROR + COMPLETED + CHOOSER, "quota_model_switch"),
+])
+def test_completed_footer_never_waives_a_current_or_distinct_gate(screen, marker):
+    assert provider_interactive_prompt_marker(screen) == marker
 
 
 @pytest.mark.parametrize("old_prompt", [CHOOSER, "Please sign in", "Do you trust the files?"])

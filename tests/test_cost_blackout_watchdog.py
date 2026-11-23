@@ -59,6 +59,81 @@ def test_no_blackout_when_usage_fresh(tmp_path: Path) -> None:
     ) is False
 
 
+def test_startup_grace_ignores_historical_usage_before_new_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    monkeypatch.setattr("time.time", lambda: now.timestamp())
+    state_dir, log, writer = _env(tmp_path)
+    run_id = "run-new-dispatch"
+    log.append(ZfEvent(
+        type="run.goal.started",
+        ts=(now - timedelta(hours=2)).isoformat(),
+        correlation_id=run_id,
+        payload={"run_id": run_id},
+    ))
+    log.append(ZfEvent(
+        type="agent.usage",
+        ts=(now - timedelta(minutes=58)).isoformat(),
+        correlation_id=run_id,
+        payload={"run_id": run_id},
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        ts=(now - timedelta(seconds=7)).isoformat(),
+        correlation_id=run_id,
+        payload={"run_id": run_id},
+    ))
+
+    assert _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=TickServiceState(),
+        intervals=TickServiceIntervals(
+            cost_blackout_stale_s=900,
+            cost_blackout_startup_grace_s=60,
+            cost_blackout_cooldown_s=0,
+        ),
+    ) is False
+    assert not [event for event in log.read_all() if event.type == "cost.usage.blackout"]
+
+
+def test_startup_grace_expires_at_fixed_clock_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    monkeypatch.setattr("time.time", lambda: now.timestamp())
+    state_dir, log, writer = _env(tmp_path)
+    run_id = "run-grace-boundary"
+    log.append(ZfEvent(
+        type="agent.usage",
+        ts=(now - timedelta(minutes=58)).isoformat(),
+        correlation_id=run_id,
+        payload={"run_id": run_id},
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        ts=(now - timedelta(seconds=60)).isoformat(),
+        correlation_id=run_id,
+        payload={"run_id": run_id},
+    ))
+
+    assert _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=TickServiceState(),
+        intervals=TickServiceIntervals(
+            cost_blackout_stale_s=900,
+            cost_blackout_startup_grace_s=60,
+            cost_blackout_cooldown_s=0,
+        ),
+    ) is True
+
+
 def test_no_blackout_without_dispatch_or_idle_run(tmp_path: Path) -> None:
     state_dir, log, writer = _env(tmp_path)
     # 无派发

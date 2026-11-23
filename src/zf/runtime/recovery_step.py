@@ -12,6 +12,62 @@ IDENTITY_FIELDS = (
 )
 
 
+def has_new_reader_diagnosis_input(
+    events: Iterable[ZfEvent], action: Mapping[str, Any], state: Mapping[str, Any],
+) -> bool:
+    """A repaired child consumes its diagnosed input, not later fanout failures.
+
+    Keep the case identity and allow only diagnosis of a newer kernel input.
+    Active effects, human waits and execution permissions remain separate gates.
+    """
+    from zf.runtime.reader_diagnosis_scope import has_retired_reader_diagnosis
+
+    events = list(events)
+    if has_retired_reader_diagnosis(events, action, state):
+        return True
+    if state.get("status") != "resolved" or not (
+        action.get("action") == "diagnose-attention"
+        or (action.get("action") == "resident-agent-reprompt"
+            and action.get("request_kind") == "recovery_diagnosis")
+    ):
+        return False
+    sources = action.get("source_event_ids") or []
+    if len(sources) != 1:
+        return False
+    ordered = list(events)
+    by_id = {event.id: (index, event) for index, event in enumerate(ordered)}
+    current = by_id.get(sources[0])
+    receipt = by_id.get(str(state.get("last_event_id") or ""))
+    if not current or not receipt:
+        return False
+    event = current[1]
+    body = event.payload or {}
+    if (event.origin != "kernel" or body.get("failure_kind") != "infra"
+            or not body.get("fanout_id") or not body.get("workflow_run_id")
+            or action.get("workflow_run_id") != body["workflow_run_id"]):
+        return False
+    effect = receipt[1]
+    if (effect.origin != "kernel" or effect.type != "run.manager.action.effect.passed"
+            or effect.payload.get("action") != "child-rebuild"
+            or any(effect.payload.get(key) != body[key]
+                   for key in ("workflow_run_id", "fanout_id"))):
+        return False
+    diagnosis = next((e for e in reversed(ordered[:receipt[0]]) if
+        e.origin == "kernel" and e.type == "run.manager.action.planned"
+        and e.payload.get("recovery_case_id") == state.get("recovery_case_id")
+        and e.payload.get("action") == "resident-agent-reprompt"
+        and e.payload.get("request_kind") == "recovery_diagnosis"), None)
+    previous_ids = diagnosis.payload.get("source_event_ids") or [] if diagnosis else []
+    previous = by_id.get(previous_ids[0]) if len(previous_ids) == 1 else None
+    if not previous or previous[0] >= current[0]:
+        return False
+    prior = previous[1]
+    return (prior.origin == "kernel" and prior.type == event.type
+            and prior.payload.get("failure_kind") == "infra"
+            and all(prior.payload.get(key) == body[key]
+                    for key in ("workflow_run_id", "fanout_id")))
+
+
 def triage_completion_matches(event: ZfEvent, request: Mapping[str, Any]) -> bool:
     """Only admitted completion of the exact task generation can retire triage."""
     if event.origin != 'kernel' or event.type not in {'task.done', 'task.done.accepted'}:
@@ -138,7 +194,9 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
             bound[key] = value
     bound["checkpoint_id"] = f"recommendation:{event.id}"
     bound["recorded_event_id"] = event.id
-    return bound
+    from zf.runtime.reader_diagnosis_scope import bind_reader_diagnosis_scope
+
+    return bind_reader_diagnosis_scope(events, request, bound)
 
 
 def recommendation_target_current(events, action: Mapping[str, Any]) -> bool:

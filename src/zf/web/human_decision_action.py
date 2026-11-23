@@ -36,7 +36,11 @@ def submit_human_decision(
         escalation = _human_escalations_by_token(events).get(token)
         if not escalation:
             return _conflict(action, requested_action, "human decision is unavailable")
-        if not any(str(escalation.get(key) or "").strip() for key in ("checkpoint_id", "approval_command")):
+        has_contract = any(
+            str(escalation.get(key) or "").strip()
+            for key in ("checkpoint_id", "approval_command")
+        )
+        if not has_contract and action != "human-decision-dismiss":
             return _conflict(action, requested_action, "human decision needs contract verification")
         if token not in {row["decision_token"] for row in _pending_human_decisions(events)}:
             return _conflict(action, requested_action, "human decision is no longer current")
@@ -54,6 +58,17 @@ def submit_human_decision(
             body = event.payload if isinstance(event.payload, dict) else {}
             if _human_decision_event_token(event, body) == token:
                 return _conflict(action, requested_action, "human decision was already submitted")
+        if not has_contract:
+            # Reuse the existing owner-bound legacy dismissal; it cannot approve
+            # a recovery action or change the failed task's outcome.
+            from zf.runtime.control_actions import ControlledActionService
+
+            return ControlledActionService(
+                writer.event_log.path.parent, writer, actor="web", source="operator-inbox",
+            ).execute(
+                action=action, requested_action=requested_action,
+                payload={**payload, "decision_token": token}, requested=requested,
+            )
         decision = DECISIONS[action]
         acknowledged = writer.emit(
             "human.escalation.acknowledged",

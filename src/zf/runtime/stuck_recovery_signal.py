@@ -31,7 +31,12 @@ def emit_stuck_signal(
         f"{role.stuck_threshold_seconds:.0f}s"
     )
     task = runtime._active_task_for_instance(role.instance_id)
-    dispatch = (
+    from zf.runtime.reader_stuck_recovery import reader_stuck_dispatch
+
+    reader_dispatch = reader_stuck_dispatch(runtime, role)
+    from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
+    reader_identity = reader_dispatch_call_identity(reader_dispatch.payload) if reader_dispatch else {}
+    dispatch = reader_dispatch or (
         runtime._latest_dispatch_event_for_task(task.id) if task is not None else None
     )
     foreign_dispatch = False
@@ -50,6 +55,10 @@ def emit_stuck_signal(
         dispatch_id = str(dispatch_payload.get("dispatch_id") or task_dispatch_id or "")
         briefing = str(dispatch_payload.get("briefing") or "")
 
+    if reader_dispatch is not None:
+        dispatch_id = str(reader_dispatch.payload.get("dispatch_id")
+                          or reader_dispatch.payload.get("run_id") or "")
+
     causal_event = trigger_event or dispatch
     session_id = _role_session_id(runtime, role.instance_id)
     event = ZfEvent(
@@ -66,6 +75,10 @@ def emit_stuck_signal(
             "threshold_seconds": role.stuck_threshold_seconds,
             "task_id": task.id if task is not None else "",
             "dispatch_id": dispatch_id,
+            **reader_identity,
+            **({key: reader_dispatch.payload.get(key, "") for key in (
+                "fanout_id", "child_id",
+            )} if reader_dispatch is not None else {}),
             "briefing": briefing,
             "pane_current_command": runtime._pane_current_command(role.instance_id),
             "role_session_id": session_id,

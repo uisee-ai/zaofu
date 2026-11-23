@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import yaml
 
-from zf.core.config.loader import ConfigError, load_config
+from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import isolated_project_subprocess_env
 from zf.core.state.session import SessionStore, ZfNotInitialized
 
@@ -23,9 +23,8 @@ def stop_experiment_runtime(
     if not config_path.is_file():
         return {"status": "not_started"}
     try:
-        config = load_config(config_path)
-        state = (root / config.project.state_dir).resolve()
-        state.relative_to(root)
+        from zf.autoresearch.owned_runtime_state import owned_runtime_state
+        state = owned_runtime_state(root)
         if not (state / "session.yaml").is_file():
             return {"status": "not_started"}
         session = SessionStore(state / "session.yaml").load()
@@ -40,4 +39,5 @@ def stop_experiment_runtime(
                 "returncode": outcome.returncode,
                 "reason": "" if outcome.returncode == 0 else "runtime_stop_failed"}
     except (OSError, ValueError, TypeError, ConfigError, ZfNotInitialized, yaml.YAMLError, subprocess.TimeoutExpired) as exc:
-        return {"status": "retained", "reason": type(exc).__name__}
+        return {"status": "retained", "reason": type(exc).__name__,
+                "phase": "runtime_cleanup", "next_owner": "run_manager"}

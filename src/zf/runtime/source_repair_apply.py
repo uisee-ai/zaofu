@@ -117,6 +117,8 @@ def apply_verified_checkpoint_repair(
         _git(root, "cherry-pick", "--abort")
         return _blocked("repair_cherry_pick_failed", detail=applied["stderr"])
     applied_commit = _git_text(root, "rev-parse", "HEAD")
+    from zf.runtime.load_receipt import source_tree_sha256
+
     return {
         "ok": True,
         "status": "applied",
@@ -124,6 +126,8 @@ def apply_verified_checkpoint_repair(
         "base_commit": required["base_commit"],
         "repair_commit": required["repair_commit"],
         "applied_commit": applied_commit,
+        "source_root": str(root),
+        "source_tree_sha256": source_tree_sha256(root),
         "checkpoint_id": required["checkpoint_id"],
         "safe_resume_action": required["safe_resume_action"],
         "validation_event_id": required["validation_event_id"],
@@ -155,7 +159,8 @@ def _matches_any(path: str, patterns: list[str]) -> bool:
 
 
 def _is_git_root(path: Path) -> bool:
-    return path.is_dir() and bool(_git_text(path, "rev-parse", "--show-toplevel"))
+    top = _git_text(path, "rev-parse", "--show-toplevel") if path.is_dir() else ""
+    return bool(top) and Path(top).resolve() == path.resolve()
 
 
 def _git_text(cwd: Path, *args: str) -> str:

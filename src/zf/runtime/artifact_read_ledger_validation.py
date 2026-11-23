@@ -57,17 +57,49 @@ def validate_required_reads(
         return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ledger", "message": str(exc)}]
     except Exception as exc:  # descriptor errors become admission issues
         return [{"field": "input_consumption.read_ledger_ref", "code": "invalid_ref", "message": str(exc)}]
+    return validate_read_rows(state_dir, policy=policy, rows=rows)
+
+
+def validate_read_rows(state_dir: Path, *, policy: Mapping[str, Any],
+                       rows: list[dict[str, Any]],
+                       allow_ephemeral_observations: bool = False) -> list[dict[str, str]]:
+    """Shared pure coverage check for preflight and sealed result admission."""
     issues: list[dict[str, str]] = []
+    delivery = policy.get("delivery_evidence")
+    if delivery:
+        try:
+            if not isinstance(delivery, Mapping) or delivery.get("mode") != "observed":
+                raise ValueError("invalid input delivery evidence policy")
+            from zf.runtime.input_delivery_evidence import delivered_rows
+
+            rows = delivered_rows(state_dir, dict(policy), rows,
+                                  allow_ephemeral_observations=allow_ephemeral_observations)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return [{"field": "input_consumption.delivery", "code": "input_delivery_unavailable",
+                     "message": str(exc)}]
     required = policy.get("required_reads")
     for index, item in enumerate(required if isinstance(required, list) else []):
         if not isinstance(item, Mapping):
             issues.append({"field": f"required_reads[{index}]", "code": "invalid_policy"})
             continue
         if not required_read_satisfied(rows, item):
+            message = f"{item.get('source_id')}/{item.get('artifact_id')} {item.get('json_path') or '$'}"
+            if delivery:
+                import shlex
+                from zf.runtime.cli_command import zf_cli_cmd
+
+                command = shlex.join(["artifact", "read", "--attempt", str(policy["attempt_id"]),
+                    "--source", str(item.get("source_id") or ""),
+                    "--artifact", str(item.get("artifact_id") or ""),
+                    "--json-path", str(item.get("json_path") or "$"),
+                    "--page-start", "0", "--page-size", "2048", "--reason", "recovery"])
+                message += (f" lacks complete provider delivery evidence. Re-read this selection with "
+                            f"{zf_cli_cmd()} {command}; return the full tool body and follow next_page_start "
+                            "until null. Host read counts alone do not prove delivery. Revalidate in this attempt.")
             issues.append({
                 "field": f"required_reads[{index}]",
-                "code": "required_read_missing",
-                "message": f"{item.get('source_id')}/{item.get('artifact_id')} {item.get('json_path') or '$'}",
+                "code": "required_input_delivery_missing" if delivery else "required_read_missing",
+                "message": message,
             })
     return issues
 

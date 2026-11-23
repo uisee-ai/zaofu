@@ -6,6 +6,60 @@ from zf.core.events import ZfEvent
 from zf.runtime.reader_replan_index import ReaderReplanIndex
 
 
+def admitted_reader_retrigger_owns_failure(
+    stage: Any, failure: ZfEvent, index: ReaderReplanIndex,
+) -> bool:
+    """A kernel-admitted explicit successor owns recovery, never the verdict.
+
+    Retain the failed generation and findings. Its successor's own failures are
+    separate inputs; an unrelated busy Reader or a claimed redrive is no proof.
+    """
+    def run(event: ZfEvent) -> str:
+        p = event.payload
+        return str(p.get('workflow_run_id') or p.get('run_id') or p.get('trace_id')
+                   or event.correlation_id or '')
+
+    failure_position = index.positions.get(failure.id, -1)
+    fanout = failure.payload.get('fanout_id')
+    identity = run(failure)
+    if failure_position < 0 or not fanout or not identity:
+        return False
+    starts = index.rows('fanout.started')
+    origins = [index.by_id.get(e.payload.get('trigger_event_id')) for position, e in starts
+        if position < failure_position and e.origin == 'kernel'
+        and e.payload.get('fanout_id') == fanout and e.payload.get('stage_id') == stage.id
+        and run(e) == identity]
+    if len(origins) != 1 or origins[0] is None:
+        return False
+    original = origins[0]
+    if original.type != stage.trigger or run(original) != identity:
+        return False
+    for position, admission in starts:
+        if (position <= failure_position or admission.origin != 'kernel'
+                or admission.payload.get('stage_id') != stage.id or run(admission) != identity):
+            continue
+        child = index.by_id.get(admission.payload.get('trigger_event_id'))
+        if child is None or not failure_position < index.positions[child.id] < position:
+            continue
+        seen: set[str] = set()
+        while child is not None and child.id not in seen:
+            if (child.type != stage.trigger or run(child) != identity
+                    or any(child.payload.get(k) != original.payload.get(k)
+                           for k in ('pdd_id', 'feature_id', 'task_id', 'task_map_generation'))
+                    or child.task_id != original.task_id):
+                break
+            seen.add(child.id)
+            parent_id = child.payload.get('redrive_of')
+            parent = index.by_id.get(parent_id)
+            if (not parent_id or child.payload.get('rework_of') != parent_id or parent is None
+                    or index.positions[parent.id] >= index.positions[child.id]):
+                break
+            if parent.id == original.id:
+                return True
+            child = parent
+    return False
+
+
 def admitted_candidate_plan_recovery_owns_failure(stage: Any, failure: ZfEvent) -> bool:
     """Keep an admitted Plan-port blocker on the candidate recovery route."""
     return getattr(stage, "trigger", "") == "candidate.ready" and admitted_plan_blocker(failure)

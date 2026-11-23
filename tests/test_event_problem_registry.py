@@ -208,6 +208,11 @@ def test_failure_envelopes_do_not_create_recovery_actions() -> None:
         ZfEvent(type="runtime.action.failed", payload={
             "action": "question-resolve",
         }),
+        ZfEvent(type="cli.action.failed", payload={
+            "action": "repair-closeout-validate",
+            "requested_action": "repair-closeout-validate",
+            "reason": "repair_revalidation_blocked",
+        }),
         ZfEvent(type="web.action.failed", payload={
             "action": "question-resolve",
         }),
@@ -221,6 +226,11 @@ def test_failure_envelopes_do_not_create_recovery_actions() -> None:
         spec_for_event(event.type).event_class == "projection_only"
         for event in events
     )
+    cli_failure = spec_for_event("cli.action.failed")
+    assert cli_failure is not None
+    assert cli_failure.problem_class == "failure_envelope"
+    assert cli_failure.effective_notification_policy == "trace_only"
+    assert cli_failure.effective_recovery_policy == "none"
 
 
 def test_channel_question_dedup_rejection_stays_with_bounded_kernel_retry() -> None:

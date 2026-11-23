@@ -9,7 +9,7 @@ import pytest
 from zf.core.config.host_verification import HostVerificationConfig, parse_host_verification
 from zf.runtime.host_verification import container_command, verify_in_container, reconcile_host_verification
 from tests.test_task_host_actions import case, approve
-from zf.runtime.task_host_manifest import preview
+from zf.runtime.task_host_manifest import digest, preview
 
 IMAGE = 'sha256:' + 'a' * 64
 
@@ -60,6 +60,8 @@ def test_container_verification_copies_no_git_or_state_and_preserves_target(case
     result, output = verify_in_container(service, root, manifest, policy())
     assert result['status'] == 'completed'
     assert result['execution_origin'] == 'preauthorized_container'
+    assert result['policy_snapshot'] == asdict(policy())
+    assert result['policy_digest'] == digest(result['policy_snapshot'])
     assert result['source_stable'] and output == 'probe passed'
     assert len(calls) == 1
 

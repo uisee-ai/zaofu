@@ -143,6 +143,11 @@ Approve 时返回当前 plan/task-map refs、revision、摘要和 residual risks
 `required_change`、`done_when` 和 evidence refs。不要修改 task map；同一 Planner
 根据这些项修订。
 
+没有 finding 时，在既有 summary 中说明实际核对的本版条款、入口/证据生产关系和
+审查维度，不能只写“计划合理”。末尾保留“未验证项”及原因、影响和下一责任方；
+规划时尚未执行的产品验证按既定后继责任记录，不冒充已通过，也不据此要求提前执行。
+只提出可返工的修订要求，不替 Planner 改计划，不通过新会话或压缩清除原有义务。
+
 纯聚合 Plan Critic 也必须显式返回顶层 `plan_content_profile`；这是本次语义审查的结论，
 不属于应留空的 task map、plan ports 等结构化计划正文。对照确切 authority 核对 PRD
 目标/范围、SDD 入口/合同/失败语义、TDD 预期结果/验证责任/证据路径以及 Decision
@@ -252,6 +257,11 @@ Before emitting a verdict, check:
 
 ## Judge 输入范围
 
+恢复复验的阻塞结论必须锚定原始需求及当前获准合同，说明具体输入、预期和证据；不能把
+个人偏好的算法、极端边界限制或更严格协议当成既有要求。改动范围决定补验范围，最终
+Goal 仍对账全部义务。技术性空输出/格式错误与有效 rejected/blocked 是不同结果：前者
+修复结果交付，后者进入对应问题恢复，不靠重复调用 Judge 等待一个通过答案。
+
 按当前 profile 的必读政策从 `artifact index --attempt <id>` 定位合同、目标版本
 与独立 Verify 结果，核对证据是否属于当前 Task/target。Integration acceptance
 review 和 Thin Judge/Goal closure 有各自范围；不得把 Impl 的
@@ -264,7 +274,7 @@ Impl 自检和目录可见性都不能代替独立验收结论。
 历史当作 Judge 当前记忆，也不能凭恢复包越过受控准入或重新绑定。
 
 `artifact recover` 的 `authorizes_execution=false` 表示报告本身不授予执行权限，
-不是对当前合法派发的否决；`current_memory=unknown` 和 `reconstruction_required`
+不是对当前合法派发的否决；`current_memory=unknown` 和 `required_scope_count`
 范围总数不会因读取变为已知或零。不要等这些字段变化或检查点自动出现。先核验当前
 身份/租约/版本及真实暂停要求，再补足缺失必读和遗忘正文，按当前角色推进检查；
 来源不可读或需要重绑定仍走受控恢复。历史收据不能证明当前理解。

@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from zf.core.safety import assert_owned_workdir
+from zf.runtime.candidate_plan_recovery import candidate_recovery_superseded
 from zf.runtime.candidate_verification_authority import _latest_frozen_candidate
 from zf.runtime.run_admission import build_run_admission_projection
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -70,6 +71,8 @@ def binding(service, op, request, events, operations):
             or request.get('target_commit') != target.get('target_commit')
             or result.get('target_commit') != target.get('target_commit')):
         raise ValueError('candidate freeze or target is no longer current')
+    if candidate_recovery_superseded(events, freeze, op['workflow_run_id']):
+        raise ValueError('candidate recovery target superseded')
     descriptor = freeze.payload.get('freeze_receipt_ref') or {}
     if (descriptor.get('ref') != target.get('freeze_receipt_ref')
             or descriptor.get('sha256') != target.get('freeze_receipt_digest')):

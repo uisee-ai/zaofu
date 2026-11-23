@@ -14,7 +14,7 @@ from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
 from zf.runtime.task_contract_snapshot import TaskContractSnapshotError
 
 
-def _prepared_candidate(tmp_path, *, feedback=False):
+def _prepared_candidate(tmp_path, *, feedback=False, prepare=True):
     seeded_runtime = _runtime(tmp_path)
     seeded = _seed_frozen_candidate(seeded_runtime)
     role = RoleConfig(name="verify", backend="mock", role_kind="reader")
@@ -42,6 +42,8 @@ def _prepared_candidate(tmp_path, *, feedback=False):
         payload["rework_feedback"] = [{"message": "Use bound host receipt", "source_event_id": "host-evidence"}]
     child = FanoutChild(child_id="verify", role_instance="verify",
                         target_ref=seeded["candidate_head"], payload=payload)
+    if not prepare:
+        return runtime, role, context, payload
     prepared = runtime._prepare_reader_fanout_child_operation(
         context=context, child=child, role=role, causation_id="evt-candidate-ready",
     )

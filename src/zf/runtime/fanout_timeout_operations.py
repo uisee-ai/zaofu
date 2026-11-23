@@ -229,6 +229,17 @@ class FanoutTimeoutOperationsMixin:
             }
             for child_id in pending_children
         ]
+        from zf.runtime.fanout_failure_findings import fanout_failure_findings
+        from zf.runtime.failure_kind import aggregate_failure_kind
+        current_children = {e.payload.get('child_id'): e for e in self.event_log.read_all()
+                            if e.type in {'fanout.child.failed', 'fanout.child.completed',
+                                          'fanout.child.cancelled', 'fanout.child.dispatched'}
+                            and e.origin == 'kernel' and e.payload.get('fanout_id') == fanout_id}
+        failed = {key: event.payload for key, event in current_children.items()
+                  if event.type == 'fanout.child.failed'}
+        failed_children = sorted(set(pending_children) | set(failed))
+        failure_kind = aggregate_failure_kind(list(failed.values()) + [{'failure_kind': FAILURE_KIND_INFRA}])
+        findings = fanout_failure_findings(self, manifest) + runtime_findings
         if not has_aggregate_started:
             self.event_writer.append(ZfEvent(
                 type="fanout.aggregate.started",
@@ -254,11 +265,11 @@ class FanoutTimeoutOperationsMixin:
                 "reason": "timeout",
                 "success_event": "",
                 "failure_event": failure_event,
-                "failed_children": pending_children,
+                "failed_children": failed_children,
                 "pending_children": pending_children,
                 "timeout_seconds": timeout_seconds,
-                "failure_kind": FAILURE_KIND_INFRA,
-                "findings": runtime_findings,
+                "failure_kind": failure_kind,
+                "findings": findings,
             },
             causation_id=causation_id,
             correlation_id=trace_id,
@@ -295,11 +306,11 @@ class FanoutTimeoutOperationsMixin:
                     "reason": "timeout",
                     "target_ref": manifest.get("target_ref", ""),
                     "child_count": len(children),
-                    "failed_children": pending_children,
+                    "failed_children": failed_children,
                     "pending_children": pending_children,
                     "timeout_seconds": timeout_seconds,
-                    "failure_kind": FAILURE_KIND_INFRA,
-                    "findings": runtime_findings,
+                    "failure_kind": failure_kind,
+                    "findings": findings,
                 },
                 causation_id=aggregate_event.id,
                 correlation_id=trace_id,

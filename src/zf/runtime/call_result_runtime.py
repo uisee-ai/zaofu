@@ -226,6 +226,10 @@ def prepare_call_operation(
             runtime, payload=payload, workflow_run_id=workflow_run_id,
             task_id=task_id, source_event_id=causation_id,
         )
+        from zf.runtime.candidate_host_consumption import prepare_candidate_host_consumption
+
+        prepare_candidate_host_consumption(runtime, payload=payload,
+            operation_id=operation_id, attempt_id=attempt_id)
     payload["handoff_authority_contract"] = build_handoff_authority_contract(
         payload,
         output_profile_id=output_profile_id,
@@ -314,6 +318,10 @@ def prepare_call_operation(
 
     from zf.core.workflow.flow_metadata import flow_metadata_for
     configured_review = flow_metadata_for(runtime.config, payload=payload).get("plan_review", {})
+    if output_profile_id in {"workflow-read", "plan-synth"}:
+        from zf.runtime.previous_preflight_delivery import prepare_previous_preflight_delivery
+
+        prepare_previous_preflight_delivery(runtime, payload=payload, operation_id=operation_id)
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_replay import pin_replayed_review_usage, remove_replayed_scoped_read_projection
 
@@ -426,11 +434,23 @@ def prepare_call_operation(
         check_review_input_budget(runtime.config, stage_id, payload["plan_review_optimization"])
     if required_reads:
         payload["required_reads"] = required_reads
+        from zf.runtime.input_delivery_contract import operation_delivery_mode
+
+        input_delivery_mode = operation_delivery_mode(runtime, operation_id, payload)
+        payload.pop("input_delivery_mode", None)
+        if input_delivery_mode == "observed":
+            payload["input_delivery_mode"] = input_delivery_mode
         policy = build_input_consumption_policy(
             workflow_run_id=workflow_run_id,
             attempt_id=attempt_id,
             required_reads=required_reads,
         )
+        if input_delivery_mode == "observed":
+            policy["delivery_evidence"] = {
+                "mode": "observed", "operation_id": operation_id,
+                "dispatch_id": dispatch_id, "consumer_actor": str(payload.get("role_instance") or ""),
+                "source_manifest_ref": dict(source_descriptor),
+            }
         policy_descriptor = write_input_consumption_policy(
             runtime.state_dir,
             policy,
@@ -473,6 +493,8 @@ def prepare_call_operation(
         ),
         "source_manifest_digest": str(source_descriptor.get("sha256") or ""),
         "read_policy_digest": str(payload.get("input_consumption_policy_digest") or ""),
+        **({"input_delivery_mode": payload["input_delivery_mode"]}
+           if payload.get("input_delivery_mode") else {}),
         "input_consumption_policy_ref": (
             dict(payload["input_consumption_policy_ref"])
             if isinstance(payload.get("input_consumption_policy_ref"), Mapping)
@@ -520,6 +542,8 @@ def prepare_call_operation(
                 "plan_revision",
                 "plan_synth_contract_ref",
                 "plan_synth_contract_digest",
+                "plan_synth_verdict_only",
+                "plan_review_evidence_policy",
                 "reviewed_plan_candidate_digest",
                 "pdd_id",
                 "feature_id",
@@ -616,6 +640,8 @@ def prepare_call_operation(
             )
         },
     }
+    if payload.get("candidate_host_evidence_ref"):
+        request["candidate_host_evidence_ref"] = dict(payload["candidate_host_evidence_ref"])
     pinned_write_scopes = list(dict.fromkeys(
         str(scope).strip()
         for scope in (workdir_write_scopes or [])

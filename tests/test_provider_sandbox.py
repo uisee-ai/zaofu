@@ -43,3 +43,34 @@ def test_timeout_stops_before_launch_and_preserves_diagnostic(tmp_path, monkeypa
     monkeypatch.setattr("zf.runtime.provider_sandbox.subprocess.run", run)
     result = probe_codex_sandbox(tmp_path)
     assert result["returncode"] == 124 and "stalled help" in result["stderr"]
+
+
+def test_configured_probe_checks_shared_substrate_once_for_restricted_roles(tmp_path, monkeypatch):
+    from zf.core.config.schema import ProviderSessionConfig, RoleConfig, ZfConfig
+    from zf.runtime.provider_sandbox import probe_configured_codex_sandbox
+
+    config = ZfConfig(roles=[
+        RoleConfig(name=name, backend="codex", provider_session=ProviderSessionConfig(sandbox="workspace-write"))
+        for name in ("dev", "verify")
+    ] + [RoleConfig(name="legacy", backend="codex"), RoleConfig(name="test", backend="mock")])
+    calls = []
+    def probe(root):
+        calls.append(root)
+        return {"returncode": 0, "phase": "launch", "stderr": "", "stdout": ""}
+    monkeypatch.setattr("zf.runtime.provider_sandbox.probe_codex_sandbox", probe)
+
+    result = probe_configured_codex_sandbox(config, tmp_path)
+    assert result["roles"] == ["dev", "verify"]
+    assert result["probe"]["returncode"] == 0
+    assert calls == [tmp_path]
+
+
+def test_configured_probe_preserves_unrestricted_and_mock_policies(tmp_path, monkeypatch):
+    from zf.core.config.schema import RoleConfig, ZfConfig
+    from zf.runtime.provider_sandbox import probe_configured_codex_sandbox
+
+    def unexpected(_root):
+        pytest.fail("unrestricted or mock configuration must not launch a sandbox probe")
+    monkeypatch.setattr("zf.runtime.provider_sandbox.probe_codex_sandbox", unexpected)
+    config = ZfConfig(roles=[RoleConfig(name="legacy", backend="codex"), RoleConfig(name="test", backend="mock")])
+    assert probe_configured_codex_sandbox(config, tmp_path) is None

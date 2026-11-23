@@ -5965,6 +5965,15 @@ def test_verified_checkpoint_apply_emits_receipt_restart_and_waits_for_rebind(
         type="session.started",
         payload={"control_plane_only": True, "workers_preserved": True},
     ))
+    from zf.runtime.sidecar_refs import write_sidecar_json
+
+    receipt = merged.payload["apply_receipt"]
+    load_ref = write_sidecar_json(state_dir, "diagnostics/runtime-load/repaired.json", {
+        "schema_version": "runtime-load.v1", "state_dir": str(state_dir.resolve()),
+        "source_root": receipt["source_root"], "source_revision": receipt["applied_commit"],
+        "source_tree_sha256": receipt["source_tree_sha256"],
+    }, kind="runtime-load", schema_version="runtime-load.v1", created_by="zf-cli", required=True)
+    log.append(ZfEvent(type="loop.started", origin="kernel", payload={"runtime_load_ref": load_ref}))
     projection = build_run_manager_projection(
         state_dir,
         events=log.read_all(),

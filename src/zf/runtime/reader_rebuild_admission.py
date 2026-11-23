@@ -12,9 +12,9 @@ from zf.runtime.workflow_operation import reduce_workflow_operations
 
 def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[str, Any]) -> str:
     required = ("fanout_id", "fanout_child_id", "workflow_run_id",
-                "target_operation_id", "active_attempt_id", "source_event_id")
+                "active_attempt_id", "source_event_id")
     if any(not payload.get(k) for k in required):
-        return "reader rebuild requires exact fanout, child, Run, operation, attempt and failure"
+        return "reader rebuild requires exact fanout, child, Run, attempt and failure"
     if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
         return "reader rebuild ledger integrity is unknown"
     run = build_run_admission_projection(events).runs.get(payload["workflow_run_id"])
@@ -31,15 +31,38 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
             or children[-1].type != "fanout.child.failed" or children[-1].origin != "kernel"):
         return "reader rebuild failure is no longer current"
     failed = children[-1]
+    if not payload.get("target_operation_id"):
+        from zf.runtime.reader_unprepared_wait import unprepared_wait_error
+        return unprepared_wait_error(events, payload)
     operation = reduce_workflow_operations(events).get(payload["target_operation_id"], {})
     if (operation.get("operation_type") != "fanout_reader_child"
-            or operation.get("status") not in {"failed", "suspended", "requested"}
+            or (operation.get("status") not in {"failed", "suspended", "requested"}
+                and not _settled_execution_failure(state_dir, events, operation, failed))
             or operation.get("workflow_run_id") != payload["workflow_run_id"]
             or (payload.get("task_id") and payload["task_id"] != operation.get("task_id"))
             or operation.get("active_attempt_id") != payload["active_attempt_id"]
-            or failed.payload.get("run_id") != payload["active_attempt_id"]
             or failed.payload.get("role_instance") != operation.get("role_instance")):
         return "reader rebuild operation binding is stale"
+    dispatch = next((e for e in reversed(children) if e.type == "fanout.child.dispatched"), None)
+    if dispatch is None:
+        # A never-delivered environment wait has only its durable call identity.
+        if failed.payload.get("run_id") != payload["active_attempt_id"]:
+            return "reader rebuild operation binding is stale"
+    else:
+        # Infrastructure retries replace transport dispatch/TaskAttempt identities
+        # while preserving the durable call attempt in the nested call payload.
+        data = dispatch.payload
+        call = data.get("payload")
+        if (dispatch.origin != "kernel" or not isinstance(call, dict)
+                or failed.payload.get("run_id") != data.get("run_id")
+                or data.get("operation_id") != operation.get("operation_id")
+                or data.get("workflow_run_id") != operation.get("workflow_run_id")
+                or data.get("role_instance") != operation.get("role_instance")
+                or any(call.get(key) != operation.get(field) for key, field in (
+                    ("operation_id", "operation_id"), ("request_hash", "request_hash"),
+                    ("workflow_run_id", "workflow_run_id"), ("attempt_id", "active_attempt_id"),
+                ))):
+            return "reader rebuild transport/call binding is stale"
     try:
         request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
     except (ValueError, KeyError, OSError):
@@ -48,6 +71,31 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
             or request.get("child_id") != payload["fanout_child_id"]):
         return "reader rebuild request targets another child"
     return ""
+
+
+def _settled_execution_failure(state_dir: Path, events: list[ZfEvent],
+                               operation: dict[str, Any], failed: ZfEvent) -> bool:
+    """Retry an admitted inability to evaluate, never a product verdict."""
+    ref = operation.get("admitted_control_result_ref") or {}
+    if (operation.get("status") != "settled" or operation.get("semantic_verdict") != "abstained"
+            or not ref or failed.payload.get("control_result_ref") != ref):
+        return False
+    admitted = next((e for e in reversed(events) if e.type == "workflow.call.result.admitted"
+        and e.origin == "kernel" and e.payload.get("operation_id") == operation.get("operation_id")
+        and e.payload.get("request_hash") == operation.get("request_hash")
+        and e.payload.get("semantic_verdict") == "abstained" and e.payload.get("control_result_ref") == ref), None)
+    if admitted is None:
+        return False
+    try:
+        result = hydrate_sidecar_ref(state_dir, ref).payload
+        return (result.get("schema_version") == "verification-result.v1"
+            and result.get("execution_status") == "failed" and result.get("verdict") == "abstained"
+            and result.get("failure_class") in {"reader_execution_failure", "verifier_execution_failure"}
+            and result.get("attempt_id") == operation.get("active_attempt_id")
+            and all(result.get(k) == operation.get(k) == failed.payload.get(k)
+                for k in ("operation_id", "request_hash", "workflow_run_id", "task_id")))
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 def reader_rebuild_effect_matches(event: ZfEvent, action: dict[str, Any],
@@ -76,6 +124,10 @@ def reader_rebuild_effect_matches(event: ZfEvent, action: dict[str, Any],
     if not preceding:
         return False
     dispatch = preceding[-1].payload
+    if not action.get("target_operation_id"):
+        return bool(dispatch.get("operation_id") and body.get("run_id") == dispatch.get("run_id")
+                    and dispatch.get("retry_of_run_id") == action.get("active_attempt_id")
+                    and preceding[-1].causation_id == action.get("source_event_id"))
     return bool(dispatch.get("run_id") and body.get("run_id") == dispatch["run_id"]
                 and dispatch.get("operation_id") != action.get("target_operation_id")
                 and (dispatch.get("payload") or {}).get("retry_of_operation_id") == action.get("target_operation_id"))

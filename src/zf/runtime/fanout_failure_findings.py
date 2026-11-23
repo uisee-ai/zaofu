@@ -237,12 +237,29 @@ def _fanout_failure_payloads(
     except Exception:
         events = []
     fanout_id = str(manifest.get("fanout_id") or "")
-    for event in events:
+    current_failures = {
+        str(child.get("child_id") or ""): child
+        for child in manifest.get("children", []) or []
+        if isinstance(child, dict) and child.get("status") == "failed"
+    }
+    seen_children: set[str] = set()
+    for event in reversed(events):
         if event.type != "fanout.child.failed":
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
-        if str(payload.get("fanout_id") or "") == fanout_id:
-            payloads.append(payload)
+        child_id = str(payload.get("child_id") or "")
+        child = current_failures.get(child_id)
+        if (str(payload.get("fanout_id") or "") != fanout_id or child is None
+                or child_id in seen_children):
+            continue
+        if child.get("run_id") and payload.get("run_id") != child["run_id"]:
+            continue
+        if child.get("last_event_id") and event.id != child["last_event_id"]:
+            continue
+        # History remains in the ledger; only the current failed attempt can
+        # contribute fallback findings or select the next recovery route.
+        seen_children.add(child_id)
+        payloads.append(payload)
     return payloads
 
 

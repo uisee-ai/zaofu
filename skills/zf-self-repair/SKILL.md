@@ -1,6 +1,6 @@
 ---
 name: zf-self-repair
-description: "ZaoFu AUTHORIZED self-repair playbook for Claude or Codex. Use ONLY when the operator has authorized auto-repair through a verified kernel dispatch, control-plane policy, or explicit environment override and an autoresearch bug_candidate / supervisor attention names a harness self-bug to fix. Turns a detected harness failure into a tracked loop: write a backlog, fix in an isolated worktree, verify with the candidate's success criteria, then mark the backlog done with the commit hash — or, on red verify or over the attempt cap, leave it un-merged and escalate. Never merges an unverified change; the backlog + commit trail is the audit record the operator follows."
+description: "ZaoFu AUTHORIZED self-repair playbook for Claude or Codex. Use ONLY when the operator has authorized auto-repair through a verified kernel dispatch, control-plane policy, or explicit environment override and an autoresearch bug_candidate / supervisor attention names a harness self-bug to fix. Turns a detected harness failure into a tracked loop: write a backlog, fix in an isolated worktree, verify with the candidate's success criteria, then hand off a clean candidate and active audit record for independent validation — or, on red verify or over the attempt cap, leave it un-merged and escalate. Never merges an unverified change; the backlog + commit trail is the audit record the operator follows."
 ---
 
 # ZaoFu Self-Repair (authorized, tracked)
@@ -16,15 +16,14 @@ When the operator has **authorized** auto-repair, this skill runs the loop:
 
 ```
 detect (bug_candidate) → write backlog → fix in isolated worktree → verify
-  → green: mark backlog done + commit hash → kernel mints
-           autoresearch.repair.closeout.required → operator applies via
-           zf-self-repair-apply-closeout (human apply gate)
-  → red / over cap:  leave un-merged, mark backlog blocked, human.escalate
+  → green: active audit + clean candidate → authorized publisher/commit
+           → independent validation → policy-gated apply/restart/continuation
+  → red / over cap: leave un-merged, retain active audit with blocker and owner
 ```
 
 The safety is NOT "trust the fix". It is **authorization + auditability +
 isolation + a hard verify gate + a bounded cap**: every auto-repair is opt-in,
-leaves a backlog created→done trail with a commit hash, is verified in
+leaves an active audit and an independently bound candidate commit, is verified in
 isolation before any merge, and is one `git revert` away from undo. This turns
 an irreversible "harness silently rewrites its own kernel" into an auditable,
 reversible automatic PR.
@@ -109,19 +108,32 @@ the test that codifies the fix (TDD: red → green).
 Run the candidate's `success_criteria` (the focused `pytest` target) + any
 relevant regression. It MUST be green. If RED:
 - do NOT commit-to-live / merge.
-- mark the backlog `> 状态: blocked` with the failing output.
+- keep the backlog `> 状态: active`, recording the failing output and next owner.
 - emit / request `human.escalate` (reuse the bounded-cap path).
 - stop. A red self-repair is a refusal, not a retry-forever.
 
-### 5. Close + commit (only on green) — COMMIT-ONLY, never push/merge
+### 5. Hand off the verified candidate — never push/merge
+
+遵循当前冻结合同和发布权限：`scope` 授权修复源码，`governance_scope` 只授权审计
+记录，最终还须受 `zf.yaml` 的 `source_repair.allow_paths/deny_paths` 限制。
+审计记录保持 active，并记录已执行验证、待独立验证/应用，不提前伪造 commit 或 done。
+若当前 provider 不能写 Git 管理区，不绕过 sandbox、不修改权限；完成源码、测试和
+审计记录后明确交接，正常退出。已显式启用的 kernel publisher 会对退出 worker 的
+冻结范围做独立检查并发布一个候选提交，再运行独立验证。没有此授权则报告所缺权限。
+
+有隔离 Git 提交权限时，按下面纪律提交源码、测试和审计记录为一个候选；提交后
+不要再修改审计文件制造脏工作树。最终 done/hash 状态由签收流程记录，不以“退出0”
+代替独立验证。`proposal_only` 仍待Owner应用；`verified_checkpoint_apply` 仅在既有
+Owner配置授权、绑定验证和安全重启前提均满足时由Runtime应用，Worker不自行应用。
 - Commit via the **[[zf-harness-commit-push]]** discipline (inspect → classify →
   secret-scan → explicit `git add -- <path>` → conventional prefix; never
   `git add -A` / `--amend` / `--no-verify` / force) — but **run its COMMIT step
   only, NOT its push step (step 6).** A self-repair commits to its isolated
   worktree branch and stops there.
 - Message names the fingerprint + candidate id, ends with the Co-Authored-By line.
-- Mark the backlog `> 状态: done (<commit> "<title>")` and `git mv` it to
-  `tasks/` per `[[zf-backlog-batch-closeout]]`.
+- 将已批准审计条目用 `mv` 从未跟踪的 `backlogs/` 移到 `tasks/` 后一起提交；
+  源路径已跟踪才使用 `git mv`。忽略的已批准路径按明确 pathspec `git add -f`，
+  不将未经批准的候选打包。
 - **Do NOT merge to the live `src/zf`, and do NOT push to any remote.** The
   verified fix stays on the isolated branch as the deliverable. The authorization
   gates whether the loop RUNS, NOT whether the agent merges to live or pushes.
@@ -136,14 +148,14 @@ relevant regression. It MUST be green. If RED:
   `risk_classification`, `verification_plan`, and a `continuation` block
   (restart/resume policy). The Feishu projection maps this event to an
   **approval** card (`src/zf/integrations/feishu/projection.py` `_ROUTING`). That is the
-  human apply gate. The operator then runs **`[[zf-self-repair-apply-closeout]]`**
+  human apply gate under `proposal_only`. The operator then runs **`[[zf-self-repair-apply-closeout]]`**
   to review the branch + backlog trail, merge / cherry-pick, and tear down the
   isolated worktree/branch. This skill (`zf-self-repair`) NEVER applies the
   closeout itself.
 
 ## Reuse (do not re-derive)
 - `[[zf-harness-self-improve]]` — backlog authoring conventions (step 2).
-- `[[zf-backlog-batch-closeout]]` — implement → mark done → archive (steps 3-5).
+- `[[zf-backlog-batch-closeout]]` — audit and eventual independently verified closeout; not early worker completion.
 - `[[zf-harness-commit-push]]` — the COMMIT discipline for step 5 (secret-scan,
   explicit paths, conventional prefix, no force). Self-repair uses its commit
   step ONLY — never its push step (the isolated branch is the deliverable).
@@ -165,16 +177,15 @@ detector itself (make it not false-positive) rather than "mark resolved + stop".
 See memory `[[self_repair_candidate_can_be_false_positive]]`.
 
 ## Output / evidence (what the operator tracks)
-A one-line result: `<fingerprint> → <backlog path> → <done|blocked> → <commit|escalated>`.
-The durable trail is the backlog (created→done/blocked) + the commit + the
-events — auditable and revertable. Never report a fix "done" without a green
-verify and a commit hash.
+A one-line result: `<fingerprint> → <audit path> → <candidate_ready|blocked> → <candidate commit|publisher pending|diagnosis owner>`.
+The audit file remains active until independent closeout; record actual checks and
+remaining obligations. A worker handoff or exit code is not a product verdict.
 
 ## Hard NOs
 - No merge / "done" without a green verify.
 - No retry past the cap — escalate.
-- No scope beyond `src/zf/**` + `tests/**`.
+- No scope beyond the frozen repair/governance contract and Owner path policy.
 - No writing runtime truth, no second control plane, no credentials.
 - No merge to the live `src/zf` and no push to any remote — commit-only, on the
-  isolated branch; the operator applies (the human apply gate).
+  isolated branch; the authorized controlled apply path owns deployment.
 - No backlog-skip: the backlog audit trail is the safety mechanism, not optional.

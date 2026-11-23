@@ -33,12 +33,23 @@ def active_codex_turn_from_events(
 
     active: dict[tuple[str, str], ZfEvent] = {}
     recycling_turns: set[tuple[str, str]] | None = None
+    cancellations: dict[str, str] = {}
+    stopping_turns: dict[tuple[str, ...], set[tuple[str, str]]] = {}
     for event in events:
         if event.type == "loop.stopped":
             active.clear()
             recycling_turns = None
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.origin == "kernel" and event.type in {"fanout.cancelled", "run.cancelled"}:
+            cancellations[event.id] = event.type
+        stop_key = _confirmed_stop_key(event, instance_id, cancellations)
+        if stop_key is not None:
+            if payload.get("to") == "cancelling":
+                stopping_turns[stop_key] = set(active)
+            elif payload.get("to") == "idle" and payload.get("provider_stop_confirmed") is True:
+                for key in stopping_turns.pop(stop_key, set()):
+                    active.pop(key, None)
         if (
             event.type == "role.lifecycle.suspended"
             and event.origin == "kernel"
@@ -132,6 +143,30 @@ def active_codex_turn_from_events(
         "started_at": latest_event.ts,
         "age_s": age_s,
     }
+
+
+def _confirmed_stop_key(
+    event: ZfEvent, instance_id: str, cancellations: dict[str, str],
+) -> tuple[str, ...] | None:
+    """Pair only kernel cancellation receipts; preserve turns born during stop."""
+    p = event.payload if isinstance(event.payload, dict) else {}
+    if (event.type != "worker.state.changed" or event.origin != "kernel"
+            or event.actor != instance_id or p.get("instance_id") != instance_id):
+        return None
+    sources = {
+        "superseded_reader_fanout_closeout": ("fanout_cancelled_event_id", "fanout.cancelled"),
+        "run_cancel_reconciliation": ("run_cancelled_event_id", "run.cancelled"),
+    }
+    source = p.get("source")
+    if not isinstance(source, str) or source not in sources:
+        return None
+    cancel_key, cancel_type = sources[source]
+    fields = ("dispatch_id", "operation_id", "request_hash", "active_attempt_id", cancel_key)
+    values = tuple(p.get(key) for key in fields)
+    if (not all(isinstance(value, str) and value for value in values)
+            or cancellations.get(values[-1]) != cancel_type):
+        return None
+    return (source, *values)
 
 
 def _parse_event_ts(value: object) -> datetime | None:

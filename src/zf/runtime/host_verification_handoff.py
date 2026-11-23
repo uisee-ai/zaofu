@@ -89,21 +89,24 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
                 if c.get('command') in policy.commands}
     if not required:
         return required, {}, False
-    receipts = {}
-    failed_probe = False
+    from zf.runtime.host_verification_retained import retained_reader_probes
+    receipts = retained_reader_probes(service, operation, contract, policy, events)
+    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()]
+    failed_probe = any(row.get('exit_code') != 0 or row.get('status') == 'failed' for row in retained)
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
                 or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'):
             continue
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
-        if (receipt.get('policy_digest') == digest(asdict(policy))
+        from zf.runtime.host_verification_policy import policy_receipt_matches
+        if (policy_receipt_matches(service.state_dir, policy, receipt)
                 and receipt.get('execution_origin') == 'preauthorized_container'
                 and receipt.get('command_id') in required
                 and receipt.get('status') in {'completed', 'failed'}
                 and type(receipt.get('exit_code')) is int and receipt.get('source_stable') is True):
             receipts[receipt['command_id']] = p['receipt_ref']
-            failed_probe = failed_probe or receipt['exit_code'] != 0
+            failed_probe = failed_probe or receipt['exit_code'] != 0 or receipt['status'] == 'failed'
     return required, receipts, failed_probe
 
 
@@ -127,6 +130,11 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         stage, _ = reader_stage_for_failure(service.config, events, failure)
         if stage is None:
             continue
+        from zf.runtime.reader_failure_repair import repaired_failure_kind
+        if repaired_failure_kind(service.state_dir, events, failure) != 'infra':
+            # Successful commands do not resolve mixed or semantic findings.
+            # Their existing semantic owner retains the aggregate and receipts.
+            return False
         supplemental = operator_candidate_receipts(service, operation, contract, events)
         receipts = {**supplemental, **receipts}
         unverified = {c['command_id'] for c in contract['verification_commands']} - receipts.keys()
@@ -146,8 +154,16 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                         'owner_route': 'run_manager', 'blocking_scope': 'verification',
                         'resume_condition': 'bound execution receipts for the complete frozen command contract'}))
             return False
+        from zf.runtime.host_verification_retained import reader_probe_inputs_improved
+        try:
+            improved = reader_probe_inputs_improved(service, operation, contract, policy, receipts)
+        except (ValueError, OSError, KeyError, TypeError):
+            improved = False  # Keep the failure visible to its diagnosis owner.
+        if not improved:
+            return False
         from zf.runtime.host_evidence_media import materialize_container_media
-        indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image)
+        indices = materialize_container_media(service.state_dir, list(receipts.values()), image=policy.image,
+                                             policy=policy)
         media = (' Read-only media indices (paths relative to state_dir, source/digests bound): '
                  + ', '.join(str(service.state_dir / ref['ref']) for ref in indices)
                  + '. Open the indexed image files directly with the image viewer; do not extract to scratch '

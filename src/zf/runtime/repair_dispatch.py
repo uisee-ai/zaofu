@@ -60,10 +60,11 @@ def pending_repair_dispatches(
     *,
     request_types: tuple[str, ...] = (DISPATCH_REQUESTED,),
 ) -> list[RepairRequest]:
-    """Repair request events that don't yet have a matching dispatched."""
+    """Unconsumed requests; a blocked dispatch needs diagnosis, not a tick retry."""
     accepted_request_types = set(request_types)
     dispatched: set[tuple[str, int]] = set()
     requests: dict[tuple[str, int], RepairRequest] = {}
+    blocked: set[str] = set()
     for event in events:
         etype = getattr(event, "type", "")
         payload = getattr(event, "payload", {}) or {}
@@ -72,6 +73,11 @@ def pending_repair_dispatches(
         key = _key(payload)
         if etype == DISPATCHED:
             dispatched.add(key)
+        elif etype == "autoresearch.repair.dispatch_blocked" and getattr(event, "origin", "") == "kernel":
+            request = requests.get(key)
+            if (request and payload.get("candidate_id") == request.candidate_id
+                    and payload.get("source_request_id", request.event_id) == request.event_id):
+                blocked.add(request.event_id)
         elif etype in accepted_request_types:
             repair = payload.get("repair_task_payload")
             requests[key] = RepairRequest(
@@ -82,7 +88,8 @@ def pending_repair_dispatches(
                 repair_task_payload=repair if isinstance(repair, dict) else {},
                 event_id=str(getattr(event, "id", "")),
             )
-    return [req for key, req in requests.items() if key not in dispatched]
+    return [req for key, req in requests.items()
+            if key not in dispatched and req.event_id not in blocked]
 
 
 def repair_branch_name(req: RepairRequest, *, namespace: str = "") -> str:
@@ -338,7 +345,7 @@ def build_repair_briefing(
     return (
         f"# Authorized self-repair — {req.candidate_id}\n\n"
         "Follow the **zf-self-repair** skill exactly: write backlog → fix → "
-        "verify → done. Read skills/zf-self-repair/SKILL.md in this isolated checkout.\n"
+        "verify → candidate handoff. Read skills/zf-self-repair/SKILL.md in this isolated checkout.\n"
         "Scope paths and verification cwd refer to THIS checkout, never the source harness.\n"
         "The bound contract's source_event_id identifies the kernel dispatch authorization; "
         "verify that grant in the parent ZF_STATE_DIR ledger. Do not infer authorization "
@@ -350,8 +357,9 @@ def build_repair_briefing(
         f"- candidate artifact: {req.candidate_path}\n\n"
         f"- immutable repair contract: {contract_ref} ({contract_digest})\n\n"
         "Steps: ① write the backlog FIRST (`> 状态: active`) ② make the surgical "
-        "fix within scope ③ run verification ④ on GREEN commit + mark the backlog "
-        "`done` with the commit hash. If sandbox denies Git metadata, leave the verified patch "
+        "fix within scope ③ run verification ④ on GREEN keep the audit record active for "
+        "independent validation/apply and hand off one clean candidate; never modify it after commit "
+        "to invent a done/hash receipt. If sandbox denies Git metadata, leave the verified patch "
         "uncommitted and report the exact denial; the separately authorized runtime publisher "
         "may commit it after exit. Never disable sandbox or request broader filesystem access. "
         "On RED or over the attempt cap leave it "

@@ -615,12 +615,18 @@ def prepared_operation_from_checkpoint_event(
     operation = load_workflow_operation(runtime.event_log, operation_id)
     retry_attempt = int(payload.get("checkpoint_dispatch_retry_attempt") or 0)
     status = str((operation or {}).get("status") or "")
+    from zf.runtime.orchestrator_unsent_recovery import unsent_checkpoint_retry
+
+    unsent_retry = bool(operation and unsent_checkpoint_retry(
+        runtime, event, operation, runtime.event_log.read_all(),
+    )) if payload.get("unsent_failure_event_id") else False
     retryable_status = (
         retry_attempt == 1
         and status in {"suspended", "failed"}
         and (
             status == "suspended"
             or "pane_dead" in str((operation or {}).get("reason") or "")
+            or unsent_retry
         )
     )
     if operation is None or (status != "requested" and not retryable_status):

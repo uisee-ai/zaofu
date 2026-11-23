@@ -92,6 +92,7 @@ def validate_plan_candidate_semantic(
 
 def validate_plan_synth_result(
     *,
+    state_dir: Path,
     registry: ControlResultAdapterRegistry,
     event_type: str,
     operation: Mapping[str, Any],
@@ -137,6 +138,11 @@ def validate_plan_synth_result(
         )
     _normalized, adapter_issues = adapter.normalize(event)
     errors = [dict(item) for item in adapter_issues]
+    from zf.runtime.plan_synth_output_binding import plan_synth_output_binding_issues
+
+    errors.extend(plan_synth_output_binding_issues(identity, semantic))
+    from zf.runtime.plan_review_claims import review_claim_issues
+    errors.extend(review_claim_issues(state_dir, request, semantic))
 
     execution_status = str(semantic.get("status") or "completed").lower()
     if execution_status not in {"completed", "failed", "failure"}:

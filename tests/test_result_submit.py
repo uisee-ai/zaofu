@@ -37,7 +37,7 @@ from zf.cli.result import _print_error
 def _runtime(tmp_path: Path):
     project_root = tmp_path / "project"
     state_dir = project_root / ".zf"
-    state_dir.mkdir(parents=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
     log = EventLog(state_dir / "events.jsonl")
     return SimpleNamespace(
         project_root=project_root,
@@ -225,7 +225,7 @@ def _plan_candidate() -> dict:
     }
 
 
-def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str = ""):
+def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str = "", validation_setup=None):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"][
         "semantic_submit_profiles"
@@ -255,6 +255,8 @@ def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str =
             "metadata": {"flow_kind": "issue"},
         },
     }
+    if validation_setup is not None:
+        payload["plan_candidate_validation"]["manifest"]["trigger_payload"].update(validation_setup(runtime))
     prepared = prepare_call_operation(
         runtime,
         payload=payload,
@@ -278,7 +280,7 @@ def _running_plan_candidate_operation(tmp_path: Path, *, result_semantics: str =
     return runtime, prepared, service, token_path.read_text().strip()
 
 
-def _running_plan_synth_operation(tmp_path: Path):
+def _running_plan_synth_operation(tmp_path: Path, *, verdict_only: bool = False, extra_payload=None):
     runtime = _runtime(tmp_path)
     token_path = provision_role_submit_credential(
         runtime.state_dir,
@@ -297,10 +299,12 @@ def _running_plan_synth_operation(tmp_path: Path):
         "output_profile_id": "plan-synth",
         "output_profile_revision": "1",
         "plan_revision": "plan-r1",
+        "plan_synth_verdict_only": verdict_only,
         "plan_synth_contract_ref": "artifacts/contracts/plan-r1.json",
         "plan_synth_contract_digest": "a" * 64,
         "reviewed_plan_candidate_digest": "a" * 64,
     }
+    payload.update(extra_payload or {})
     prepared = prepare_call_operation(
         runtime,
         payload=payload,

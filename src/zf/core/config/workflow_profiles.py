@@ -17,6 +17,8 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from zf.core.config.input_delivery import input_delivery_parameter
+
 from zf.core.events.module_parity import (
     MODULE_PARITY_SCAN_COMPLETED,
     MODULE_PARITY_SCAN_FAILED,
@@ -42,6 +44,7 @@ _KNOWN_PARAM_KEYS = frozenset({
     "schemaProfile", "schema_profile",
 })
 _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
+    "inputDeliveryMode", "input_delivery_mode",
     "objectiveRef", "objective_ref",
     "targetRef", "target_ref",
     "sourceRoot", "source_root",
@@ -67,6 +70,7 @@ _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
     "productAcceptanceMode", "product_acceptance_mode",
 })
 _COMMON_PRODUCT_FLOW_KEYS = frozenset({
+    "inputDeliveryMode", "input_delivery_mode",
     "flowProfile", "flow_profile",
     "lanes", "laneCount", "lane_count",
     "backend",
@@ -912,6 +916,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         "result_protocol": {
             "mode": "blocking",
             "semantic_submit_profiles": _semantic_submit_profiles_param(params),
+            **input_delivery_parameter(params),
         },
         "artifact_package": {
             "mode": _artifact_package_mode_param(params),
@@ -1092,6 +1097,7 @@ def _controller_metadata(
         "result_protocol": {
             "mode": "blocking",
             "semantic_submit_profiles": _semantic_submit_profiles_param(params),
+            **input_delivery_parameter(params),
         },
         "artifact_package": {
             "mode": _artifact_package_mode_param(params),

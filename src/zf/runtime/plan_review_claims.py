@@ -1,0 +1,135 @@
+"""Validate current-source citations, not the semantics of Plan criticism."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Mapping
+
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+POLICY = 'current-evidence-v1'
+
+
+def review_claim_briefing(policy: str) -> list[str]:
+    if policy != POLICY:
+        return []
+    return [
+        '## Current review evidence', '',
+        'Each fix_item, explicitly blocking finding, and blocking owner question must carry '
+        '`basis: {obligation, requirement_evidence: [...], current_evidence: [...]}`. '
+        'Name the existing requirement or approved decision, observed gap, minimum repair and done_when. '
+        'Each citation uses current input-index `source_id`, `artifact_id`, `sha256`, `json_path`, '
+        'and either exact `observed_value` (JSON) or `quote` (text, optional character start/end). '
+        'current_evidence must cite this candidate’s child inputs; historical sources may support '
+        'comparison but cannot establish the current value. Before rejecting, reread disputed current '
+        'fields, especially after historical reads or compaction. Unsupported improvement suggestions '
+        'remain nonblocking; missing necessary evidence remains a gap. Mechanical checks validate '
+        'citations, not your interpretation. An accurate citation alone never proves a Plan passed.', '',
+    ]
+
+
+def review_claim_issues(
+    state_dir: Path, request: Mapping[str, Any], result: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    identity = request.get('result_identity') or {}
+    if identity.get('plan_review_evidence_policy') != POLICY:
+        return []  # Previously frozen requests retain their original contract.
+    report = result.get('report') if isinstance(result.get('report'), Mapping) else {}
+    def value(key: str) -> Any:
+        return report.get(key) or result.get(key)
+    if result.get('execution_status') == 'failed' or (
+            not result.get('execution_status') and result.get('status') in {'failed', 'failure'}):
+        return []  # An execution failure is not a product/Plan rejection.
+    issues: list[dict[str, str]] = []
+    def error(field: str, message: str) -> None:
+        issues.append({'field': field, 'code': 'plan_review_evidence_invalid', 'message': message})
+    def items(key: str) -> list:
+        rows = value(key) or []
+        if not isinstance(rows, list):
+            error(key, 'Blocking evidence items must be an array')
+            return []
+        return rows
+    rows = [*items('fix_items'),
+            *[x for x in items('findings') if isinstance(x, Mapping) and x.get('blocking') is True],
+            *[x for x in items('owner_decision_items') if isinstance(x, Mapping) and x.get('blocking') is not False]]
+    rejected = value('verdict') == 'rejected' or value('recommendation') in {'reject', 'needs_rework'}
+    if rejected and not rows:
+        error('fix_items', 'A rejection requires a blocking item with current evidence and obligation basis')
+    if not rows:
+        return issues
+    try:
+        from zf.runtime.artifact_read_ledger import _safe_component
+        attempt = _safe_component(str(request.get('active_attempt_id') or ''))
+        digest = _safe_component(str(request.get('source_manifest_digest') or ''))
+        manifest = hydrate_sidecar_ref(state_dir, {
+            'ref': f'artifacts/attempts/{attempt}/source-manifests/{digest}.json', 'sha256': digest,
+        }).payload
+        contract = hydrate_sidecar_ref(state_dir, {
+            'ref': identity['plan_synth_contract_ref'], 'sha256': identity['plan_synth_contract_digest'],
+        }).payload
+        if manifest.get('attempt_id') != attempt:
+            raise ValueError('review manifest belongs to a different attempt')
+        children = {str(row['child_id']) for row in contract['child_bindings']}
+        current = {row['source_id'] for row in contract['source_bindings']
+                   if any(row['source_id'] == f'child-result-{child}'
+                          or row['source_id'].startswith((f'child-{child}-', f'child-artifact-{child}-'))
+                          for child in children)}
+        for binding in contract['source_bindings']:
+            matches = [s for s in manifest['sources'] if s.get('source_id') == binding['source_id']]
+            if len(matches) != 1 or any(matches[0].get(k) != binding.get(k) for k in ('ref', 'sha256', 'artifact_id')):
+                raise ValueError('Review contract and source manifest bindings differ')
+        for index, row in enumerate(rows):
+            field = f'blocking_items[{index}].basis'
+            basis = row.get('basis') if isinstance(row, Mapping) else None
+            if not isinstance(basis, Mapping) or not str(basis.get('obligation') or '').strip():
+                error(field, 'Name the existing requirement/approved obligation; advice cannot create one')
+                continue
+            for name in ('requirement_evidence', 'current_evidence'):
+                citations = basis.get(name)
+                if not isinstance(citations, list) or not citations:
+                    error(f'{field}.{name}', 'Provide exact current manifest source, digest, selector and observed value/quote')
+                    continue
+                for citation in citations:
+                    try:
+                        _check_citation(state_dir, manifest, citation,
+                                        current=current if name == 'current_evidence' else None,
+                                        role=str(request.get('role_instance') or ''))
+                    except (ValueError, OSError, KeyError, TypeError) as exc:
+                        error(f'{field}.{name}', str(exc))
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        error('review_context', str(exc))
+    return issues
+
+
+def _check_citation(
+    state_dir: Path, manifest: Mapping[str, Any], citation: Any, *, current: set[str] | None, role: str,
+) -> None:
+    from zf.runtime.artifact_read_snapshot import open_selection
+    if not isinstance(citation, Mapping) or not all(citation.get(key) for key in
+            ('source_id', 'artifact_id', 'sha256', 'json_path')):
+        raise ValueError('Citation requires source_id, artifact_id, sha256 and json_path')
+    if current is not None and citation['source_id'] not in current:
+        raise ValueError('Historical/context input cannot prove the current candidate state')
+    selection = open_selection(state_dir, manifest=manifest, row=citation,
+                               identity={'actor': role, 'role': role})
+    if 'observed_value' in citation:
+        # Exact structured values only; no inference from arbitrary prose.
+        from zf.runtime.artifact_source_versions import read_source_version
+        from zf.runtime.artifact_read_ledger import _select_json_path
+        from zf.runtime.sidecar_refs import sidecar_path
+        raw, _ = read_source_version(state_dir, selection.source,
+                                    path=sidecar_path(state_dir, selection.source['ref']))
+        actual = _select_json_path(json.loads(raw), citation['json_path'])
+        if type(actual) is not type(citation['observed_value']) or actual != citation['observed_value']:
+            raise ValueError('observed_value differs from the bound current selection')
+    else:
+        quote = citation.get('quote')
+        if not isinstance(quote, str) or not quote.strip():
+            raise ValueError('Cite an exact quote or an observed_value; a path alone is not evidence')
+        # Selectors and optional offsets keep the check bounded to the cited evidence.
+        start = citation.get('start', 0)
+        end = citation.get('end', selection.chars)
+        if not isinstance(start, int) or not isinstance(end, int):
+            raise ValueError('Citation offsets must be integer character positions')
+        if quote not in selection.read(start, end):
+            raise ValueError('Quoted text is absent from the bound selection')

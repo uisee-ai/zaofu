@@ -16,10 +16,12 @@ from zf.runtime.task_host_manifest import digest
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=')
 
 
-def media_receipt(state, *, file_changes=None, evidence_changes=None):
+def media_receipt(state, *, file_changes=None, evidence_changes=None, data=PNG, max_artifact_bytes=None):
     p = policy()
-    entry = {'path': 'desktop.png', 'sha256': hashlib.sha256(PNG).hexdigest(),
-             'base64': base64.b64encode(PNG).decode()}
+    if max_artifact_bytes is not None:
+        p.max_artifact_bytes = max_artifact_bytes
+    entry = {'path': 'desktop.png', 'sha256': hashlib.sha256(data).hexdigest(),
+             'base64': base64.b64encode(data).decode()}
     entry.update(file_changes or {})
     evidence = write_sidecar_json(state, 'artifacts/container-evidence.json', {
         'image': p.image, 'target_commit': 'a' * 40, 'files': [entry],
@@ -34,9 +36,12 @@ def media_receipt(state, *, file_changes=None, evidence_changes=None):
     return p, receipt
 
 
-def test_reader_handoff_materializes_existing_media_without_another_probe(recovery):
+@pytest.mark.parametrize('large_media', [False, True])
+def test_reader_handoff_materializes_existing_media_without_another_probe(recovery, large_media):
     service, failure, original = recovery
-    p, receipt = media_receipt(service.state_dir)
+    data = b'x' * (21 * 1024 * 1024) if large_media else PNG
+    p, receipt = media_receipt(service.state_dir, data=data,
+                              max_artifact_bytes=64 * 1024 * 1024 if large_media else None)
     operation = {'operation_id': 'op-reader', 'workflow_run_id': 'run-1'}
     service.writer.emit('fanout.child.dispatched', payload={**operation, 'fanout_id': 'f1'})
     service.writer.emit(failure.type, correlation_id='run-1', payload=failure.payload)
@@ -48,7 +53,7 @@ def test_reader_handoff_materializes_existing_media_without_another_probe(recove
     assert len(indices) == 1, 'Reader needs a bound media index, not Base64-only evidence'
     index = json.loads(indices[0].read_text())
     image = service.state_dir / index['files'][0]['ref']
-    assert image.read_bytes() == PNG
+    assert image.read_bytes() == data
     assert not image.stat().st_mode & 0o222
     trigger = [e for e in service.writer.event_log.read_all() if e.type == original.type][-1]
     assert str(indices[0]) in trigger.payload['operator_feedback'][0]
@@ -122,3 +127,17 @@ def test_tampered_parent_evidence_is_rejected(tmp_path):
     (tmp_path / 'artifacts/container-evidence.json').write_text('{}')
     with pytest.raises(ValueError):
         materialize_container_media(tmp_path, [ref], image=p.image)
+
+
+@pytest.mark.parametrize('limit', ['file', 'total'])
+def test_configured_media_limits_reject_before_projection(tmp_path, limit):
+    from zf.runtime.host_evidence_media import materialize_container_media
+    entry = {'path': 'one.png', 'base64': base64.b64encode(b'abcdef').decode(),
+             'sha256': hashlib.sha256(b'abcdef').hexdigest()}
+    p, ref = media_receipt(tmp_path, evidence_changes={
+        'files': [entry, {**entry, 'path': 'two.png'}]})
+    p.max_artifact_bytes = 5 if limit == 'file' else 6
+    p.max_total_evidence_bytes = 10
+    with pytest.raises(ValueError, match='limit'):
+        materialize_container_media(tmp_path, [ref], image=p.image, policy=p)
+    assert not (tmp_path / 'artifacts/container-media').exists()

@@ -143,6 +143,10 @@ def project_handoff_summary(
             elif recovery_inputs.get("historical_missing"):
                 missing = [{"kind": "required_reads", "message":
                             f"当前执行仍缺 {recovery_inputs['historical_missing']} 项必要输入读取证据"}]
+    delivery = recovery_inputs.get("provider_delivery") or {}
+    if task and task.status not in {"done", "cancelled"} and delivery.get("status") in {"incomplete", "unavailable"}:
+        missing.append({"kind": "provider_input_delivery", "message":
+                        "必要正文交付证据不完整或不可核验；请检查 input_recovery.provider_delivery"})
     from zf.runtime.task_handoff_receipt import handoff_receipt_projection
 
     return redact_obj({
@@ -150,7 +154,7 @@ def project_handoff_summary(
         "pipeline": pipeline,
         "input_recovery": {key: value for key, value in recovery_inputs.items()
                            if key in {"status", "identity", "required_visible", "historical_missing",
-                                      "reconstruction_required", "current_memory", "next_action", "checkpoint"}},
+                                      "required_scope_count", "current_memory", "next_action", "checkpoint", "provider_delivery"}},
         "work_record": recovery_inputs.get("work_record", {"status": "unavailable", "authorizes_execution": False}),
         "schema_version": "handoff-summary.v1",
         "generated_at": now.isoformat(),

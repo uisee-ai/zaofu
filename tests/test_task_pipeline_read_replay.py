@@ -53,7 +53,7 @@ def test_replay_proves_stronger_reads_and_digest_bound_alias_dedup(tmp_path):
     assert proof["current_request"]["request"]["required_reads"] == strengthened(request)["required_reads"]
 
 
-@pytest.mark.parametrize("mutation", ["target", "contract", "generation", "digest", "missing", "prefix", "truncated", "bounded", "minimum"])
+@pytest.mark.parametrize("mutation", ["target", "contract", "generation", "digest", "missing", "prefix", "truncated", "bounded", "minimum", "delivery"])
 def test_replay_does_not_hide_contract_changes_or_weaker_reads(tmp_path, mutation):
     _, request, _, ensure = setup_service(tmp_path)
     current = strengthened(request)
@@ -66,6 +66,7 @@ def test_replay_does_not_hide_contract_changes_or_weaker_reads(tmp_path, mutatio
     elif mutation == "truncated": current["required_reads"][0]["allow_truncated"] = True
     elif mutation == "bounded": current["required_reads"][0]["max_items"] = 1
     elif mutation == "minimum": current["required_reads"][0]["min_returned_bytes"] = 0
+    elif mutation == "delivery": current["input_delivery_mode"] = "observed"
     assert ensure(current).status == "divergent"
 
 

@@ -89,6 +89,7 @@ def evaluate_plan_candidate_preflight(
         state_dir=state_dir,
         project_root=project_root,
         errors=errors,
+        ports_materialized=ports_materialized,
     )
     task_map, producer = _task_map_candidate(
         candidates,
@@ -130,6 +131,7 @@ def evaluate_plan_candidate_preflight(
 
         raw_tasks = task_map.get("tasks")
         tasks = [task for task in raw_tasks if isinstance(task, Mapping)] if isinstance(raw_tasks, list) else []
+        selected_ids = None
         try:
             selected, _, _, _ = select_writer_task_items(
                 dict(task_map), writer_task_items(dict(task_map)), trigger,
@@ -154,6 +156,11 @@ def evaluate_plan_candidate_preflight(
             errors=errors,
         )
         if prior_task_map:
+            from zf.runtime.plan_preserved_tasks_preflight import preserved_task_errors
+
+            if selected_ids is not None:
+                errors.extend(preserved_task_errors(state_dir=state_dir, previous=prior_task_map,
+                    current=task_map, trigger=trigger))
             from zf.runtime.plan_requirement_amendment import amended_task_map_baseline
             try:
                 prior_task_map = amended_task_map_baseline(state_dir,

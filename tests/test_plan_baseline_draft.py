@@ -15,21 +15,24 @@ from zf.runtime.plan_artifact_package import write_plan_artifact_package
 from zf.runtime.plan_replan_authority_inputs import replan_authority_sources
 
 
+@pytest.mark.parametrize("draft_port", [
+    "test_matrix", "execution_spec", "task_execution_input", "product_acceptance_spec",
+])
 @pytest.mark.parametrize("change", [
     "none", "wrong_role", "terminal", "no_credential", "run", "generation", "package",
     "acl", "selection", "descriptor", "bytes", "missing",
     "workspace_ok", "workspace_cwd", "workspace_symlink", "workspace_partial",
 ])
-def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, capsysbinary, change):
+def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, capsysbinary, change, draft_port):
     state = tmp_path / "custom-state"
     package = _package(state)
-    matrix = _fixture_port(state, "test_matrix", "换行\n")
+    matrix = _fixture_port(state, draft_port, "换行\n")
     package["produced"].append(matrix)
     desc = write_plan_artifact_package(state, package)
     metadata = dict(workflow_run_id="run-1", task_map_generation=package["task_map_generation"],
                     plan_artifact_package_ref=desc["ref"], plan_artifact_package_digest=desc["sha256"])
     sources = replan_authority_sources(state_dir=state, project_root=tmp_path, payload=metadata, context={})
-    selected = next(s for s in sources if s["source_id"] == "baseline-plan-port-test_matrix")
+    selected = next(s for s in sources if s["source_id"] == f"baseline-plan-port-{draft_port}")
     if change == "acl":
         selected["access_scope"] = {"roles": ["private-role"]}
     elif change == "selection":
@@ -77,20 +80,20 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
         if change == "workspace_symlink":
             (project / "artifacts").symlink_to(tmp_path)
     args = ["plan", "--state-dir", str(state), "draft-baseline", "--attempt", "a1", "--port", "task_map",
-                   "--port", "source_index" if change in ("missing", "workspace_partial") else "test_matrix", "--port", "task_map"]
+                   "--port", "source_index" if change in ("missing", "workspace_partial") else draft_port, "--port", "task_map"]
     status = main([*args, "--workspace"] if workspace else args)
     stdout, stderr = capsysbinary.readouterr()
     if change == "none":
         assert status == 0, stderr
         with tarfile.open(fileobj=io.BytesIO(stdout)) as files:
-            assert files.getnames() == ["task_map.json", "test_matrix.json"]
+            assert files.getnames() == ["task_map.json", f"{draft_port}.json"]
             for name in files.getnames():
                 port = next(p for p in package["produced"] if p["logical_name"] == name[:-5])
                 assert files.extractfile(name).read() == (state / port["ref"]).read_bytes()
     elif change == "workspace_ok":
         assert status == 0, stderr
         output = json.loads(stdout)
-        path = project / output["draft_dir"] / "test_matrix.json"
+        path = project / output["draft_dir"] / f"{draft_port}.json"
         assert path.read_bytes() == (state / matrix["ref"]).read_bytes()
         path.write_text("edited")
         assert main([*args, "--workspace"]) == 0
@@ -103,7 +106,7 @@ def test_planner_drafts_exact_bytes_or_emits_no_archive(tmp_path, monkeypatch, c
     assert not list((state / "artifacts/attempts/a1").glob("read-ledger*.jsonl"))
 
 
-@pytest.mark.parametrize("case", ["legacy", "explicit", "denied", "wrong_generation", "changed_bytes"])
+@pytest.mark.parametrize("case", ["legacy", "legacy_refs", "seedable", "explicit", "denied", "wrong_generation", "changed_bytes"])
 def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
     from zf.cli.plan_baseline_draft import draft_files
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
@@ -115,6 +118,10 @@ def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
         task_map["goal_claims"] = [{"goal_claim_id": "A", "text": "保留验收", "mandatory": True}]
     goals = build_goal_claim_set(task_map, workflow_run_id="run-1", goal_id="goal-1",
                                 task_map_generation="other" if case == "wrong_generation" else "g1")
+    if case == "legacy_refs":
+        task_map["tasks"][0]["goal_claim_ids"] = ["GOAL-LEGACY"]
+    elif case == "seedable":
+        task_map["tasks"][0]["goal_claim_ids"] = [goals["claims"][0]["goal_claim_id"]]
     for name, body in (("task_map", task_map), ("goal_claim_set", goals)):
         port = next(item for item in package["produced"] if item["logical_name"] == name)
         descriptor = write_immutable_json_sidecar(tmp_path, body, root="fixtures/seed",
@@ -136,8 +143,15 @@ def test_seed_goals_edits_only_an_authorized_local_copy(tmp_path, case):
         with pytest.raises(ValueError):
             list(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))
         return
-    seeded = dict(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))["task_map.json"]
-    if case == "explicit":
+    files = dict(draft_files(tmp_path, manifest, identity, ["task_map"], seed_goals=True))
+    seeded = files["task_map.json"]
+    if case in {"legacy", "legacy_refs"}:
+        assert seeded == raw
+        assert json.loads(files["baseline-goal-claims.json"]) == goals
+        from zf.runtime.task_map_goal_coverage import validate_goal_coverage
+        coverage, errors = validate_goal_coverage(json.loads(seeded), task_map["tasks"])
+        assert not errors and not coverage["diagnostics"]
+    elif case == "explicit":
         assert seeded == raw
     else:
         assert json.loads(seeded) == {**task_map, "goal_claims": goals["claims"]}

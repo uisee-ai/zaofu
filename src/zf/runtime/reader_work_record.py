@@ -132,6 +132,39 @@ def reader_checkpoint_entry(state_dir: Path, events: list, manifest: dict, actor
     }
 
 
+def _same_record_input(events: list, published: Any, previous: dict, current: dict) -> bool:
+    if previous == current:
+        return True
+    transport = {"dispatch_id", "canonical_attempt_id", "lease_id"}
+    if (set(previous) != set(current)
+            or any(previous[k] != current[k] for k in current if k not in transport)):
+        return False
+    position = next((i for i, e in enumerate(events) if e.id == published.id), -1)
+    if position < 0:
+        return False
+    # The original kernel publication was admitted under this exact transport.
+    delivered = any(e.type == "fanout.child.dispatched" and e.origin == "kernel"
+        and e.payload.get("operation_id") == previous["operation_id"]
+        and e.payload.get("run_id") == previous["dispatch_id"]
+        and e.payload.get("lease_id") == previous["lease_id"]
+        for e in events[:position])
+    attempt = any(e.type == "task.attempt.started" and e.origin == "kernel"
+        and e.payload.get("attempt_id") == previous["canonical_attempt_id"]
+        and e.payload.get("lease_id") == previous["lease_id"]
+        and e.payload.get("operation_id") == previous["operation_id"]
+        for e in events[:position])
+    later = [e for e in events[position + 1:] if e.payload.get("operation_id") == current["operation_id"]]
+    started = next((e for e in reversed(later) if e.type == "workflow.operation.started"), None)
+    if not delivered or not attempt or started is None or started.origin != "kernel":
+        return False
+    return any(e.type == "workflow.operation.redrive_admitted" and e.origin == "kernel"
+        and e.payload.get("recovery_decision_owner") == "kernel_replay"
+        and e.payload.get("source_attempt_id") == current["attempt_id"]
+        and e.payload.get("recovery_decision_event_id") == started.causation_id
+        and all(e.payload.get(k) == current[k] for k in ("workflow_run_id", "task_id", "request_hash"))
+        for e in later[:later.index(started)])
+
+
 def current_reader_work_record(state_dir: Path, events: list, manifest: dict, actor: str) -> dict:
     """A projection for an already authorized input-recovery consumer."""
     unavailable = {"status": "unavailable", "authorizes_execution": False}
@@ -149,9 +182,11 @@ def current_reader_work_record(state_dir: Path, events: list, manifest: dict, ac
                     or event.actor != actor or event.payload.get("operation_id") != binding["operation_id"]):
                 continue
             record = hydrate_sidecar_ref(state_dir, event.payload["work_record_ref"]).payload
-            if record.get("schema_version") != "worker-work-record.v1" or record.get("binding") != binding:
+            previous = record.get("binding") or {}
+            if (record.get("schema_version") != "worker-work-record.v1"
+                    or not _same_record_input(events, event, previous, binding)):
                 return unavailable
-            if any(event.payload.get(k) != v for k, v in binding.items()):
+            if any(event.payload.get(k) != v for k, v in previous.items()):
                 return unavailable
             for evidence in record["evidence_refs"]:
                 hydrate_sidecar_ref(state_dir, evidence)

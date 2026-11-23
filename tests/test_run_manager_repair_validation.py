@@ -1,6 +1,7 @@
 """Independent repair verification consumes the frozen checkout command contract."""
 import shlex
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,10 @@ from zf.runtime.run_manager_repair_validation import execute_repair_verification
 
 @pytest.mark.parametrize('entrypoint, frozen_legacy', [
     ('pytest', False), ('.venv/bin/pytest', False), ('.venv/bin/pytest', True),
+    ('PYTHONPATH=src uv run pytest', False),
+    ('PYTHONPATH=src uv run pytest', True),
+    ('env PYTHONPATH=src uv run pytest', True),
+    ('uv run pytest', True),
 ])
 def test_independent_validator_runs_frozen_shared_python_in_candidate(tmp_path, entrypoint, frozen_legacy):
     root = tmp_path / 'repair'
@@ -40,8 +45,68 @@ def test_independent_validator_runs_frozen_shared_python_in_candidate(tmp_path, 
     f'env PYTHONPATH=src {shlex.quote(sys.executable)} -c "raise RuntimeError()"',
     '.venv/bin/pytest-other tests/test_probe.py',
     '/outside/pytest tests/test_probe.py',
+    'PYTHONPATH=/outside uv run pytest tests/test_probe.py',
+    'PYTHONPATH=src uv run --with arbitrary pytest tests/test_probe.py',
+    'PYTHONPATH=src uv run pytest tests/test_probe.py && touch unauthorized',
+    'LD_PRELOAD=/outside.so uv run pytest tests/test_probe.py',
+    "PYTHONPATH=src uv run pytest 'unterminated",
 ])
 def test_independent_validator_rejects_unbound_interpreter_or_environment(tmp_path, command):
     result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{'command': command}])
     assert not result['ok']
     assert result['reason'] == 'command_not_allowlisted'
+
+
+@pytest.mark.parametrize('mode', ['plan', 'run'])
+def test_impact_validation_uses_own_interpreter_without_path_python(tmp_path, monkeypatch, mode):
+    (tmp_path / 'scripts').mkdir()
+    (tmp_path / 'scripts/dev-verify.py').write_text('import sys\nprint(sys.executable)\n')
+    monkeypatch.setenv('PATH', '/nonexistent')
+    result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{
+        'command': f'python scripts/dev-verify.py {mode} --base abc123'}])
+    assert result['ok']
+    assert sys.executable in result['results'][0]['stdout_tail']
+
+
+def test_required_manual_review_is_not_a_pass_without_evidence(tmp_path):
+    result = execute_repair_verification_plan(worktree=str(tmp_path), verification_plan=[{
+        'kind': 'docs_review', 'command': 'review changed markdown', 'required': True}])
+    assert not result['ok']
+    assert result['reason'] == 'manual_review_evidence_required'
+
+
+def test_verification_subprocess_cannot_inherit_live_control_context(tmp_path, monkeypatch):
+    root = tmp_path / 'isolated-repair'
+    (root / 'tests').mkdir(parents=True)
+    live = tmp_path / 'live'
+    live.mkdir()
+    (live / 'sentinel').write_text('unchanged')
+    inherited = {
+        'ZF_PROJECT_ROOT': str(live), 'ZF_STATE_DIR': str(live / 'state'),
+        'ZF_WORKSPACE_HOME': str(live), 'ZF_WEB_ACTION_TOKEN': 'test-only-no-real-secret',
+        'ZF_ACTIVE_TASK_ID': 'live-task', 'ZF_CLI_CMD': 'wrong-cli',
+        'ZF_PYTHON': '/untrusted/python', 'TMUX_TMPDIR': str(live), 'TMUX': 'live-session',
+        'GIT_DIR': str(live / '.git'), 'GIT_WORK_TREE': str(live),
+        'PYTEST_ADDOPTS': '--deliberately-invalid-parent-option',
+    }
+    for key, value in inherited.items():
+        monkeypatch.setenv(key, value)
+    (root / 'tests/test_environment.py').write_text('''import os
+import sys
+from pathlib import Path
+def test_environment():
+    allowed = {'ZF_WORKSPACE_HOME', 'ZF_PYTHON'}
+    assert {k for k in os.environ if k.startswith('ZF_')} == allowed
+    assert all(k not in os.environ for k in ('TMUX', 'TMUX_TMPDIR', 'GIT_DIR', 'GIT_WORK_TREE'))
+    assert os.environ['ZF_PYTHON'] == sys.executable
+    home = Path(os.environ['ZF_WORKSPACE_HOME'])
+    assert home.is_dir()
+    (home / 'test-state').write_text('isolated')
+    Path('workspace-location').write_text(str(home))
+''')
+    result = execute_repair_verification_plan(worktree=str(root), verification_plan=[{
+        'command': 'python -m pytest -q -c /dev/null --no-cov tests/test_environment.py'}])
+    assert result['ok'], result
+    assert (live / 'sentinel').read_text() == 'unchanged'
+    assert list(live.iterdir()) == [live / 'sentinel']
+    assert not Path((root / 'workspace-location').read_text()).exists()

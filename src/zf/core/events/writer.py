@@ -160,6 +160,7 @@ class EventWriter:
         failure = ZfEvent(
             type="discriminator.failed",
             actor="zf-cli",
+            origin="kernel",
             task_id=event.task_id,
             causation_id=event.causation_id,
             correlation_id=event.correlation_id,

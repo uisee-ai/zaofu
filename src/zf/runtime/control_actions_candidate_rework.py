@@ -14,6 +14,7 @@ from zf.runtime.candidate_rework_identity import (
     _candidate_rework_identity_payload,
 )
 from zf.runtime.replan_resynth import replan_semantic_context
+from zf.runtime.candidate_rework_publication import publish_candidate_rework
 
 
 class CandidateReworkActionsMixin:
@@ -268,13 +269,14 @@ class CandidateReworkActionsMixin:
                     amend.get("task_map_generation") or ""
                 ),
             )
-            amended = self.writer.emit(
+            amended = publish_candidate_rework(self,
                 "task_map.amended",
                 actor="zf-cli",
                 causation_id=str(payload.get("source_event_id") or "") or requested.id,
                 correlation_id=str(payload.get("trace_id") or "") or requested.correlation_id,
                 payload={
                     "schema_version": "task-map-amended.v1",
+                    "resume_checkpoint_ref": str(payload.get("checkpoint_id") or ""),
                     **amended_identity,
                     "pdd_id": str(payload.get("pdd_id") or ""),
                     "feature_id": str(payload.get("feature_id") or ""),
@@ -375,7 +377,7 @@ class CandidateReworkActionsMixin:
             event_payload["supersedes_task_map_generation"] = (
                 superseded_generation
             )
-        event = self.writer.emit(
+        event = publish_candidate_rework(self,
             "task_map.ready",
             actor="zf-cli",
             causation_id=str(payload.get("source_event_id") or "") or requested.id,
@@ -720,6 +722,7 @@ def _write_gap_task_map_amend(
             **payload,
             **rework_summary,
         }),
+        preserve_task_rows=rework_summary.get("preserve_task_rows") is True,
     )
 
 

@@ -50,9 +50,10 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
                if isinstance(row, Mapping) and "$" in (row.get("allowed_paths") or ["$"])}
         if {"plan-rework-package", "baseline-plan-port-task_map"} <= ids:
             from zf.runtime.cli_command import zf_cli_cmd
+            from zf.runtime.plan_artifact_ports import PLAN_DRAFT_PORTS
 
             args = ["plan", "draft-baseline", "--workspace", "--attempt", attempt]
-            for name in ("task_map", "test_matrix", "source_index"):
+            for name in PLAN_DRAFT_PORTS:
                 if f"baseline-plan-port-{name}" in ids:
                     args.extend(["--port", name])
             if "baseline-plan-port-goal_claim_set" in ids:

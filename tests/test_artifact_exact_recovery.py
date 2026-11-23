@@ -29,7 +29,7 @@ def test_exact_cli_read_is_visible_to_authenticated_recover(tmp_path, monkeypatc
     assert result["required_visible"] == 2
     assert result["historical_missing"] == 0
     assert result["current_memory"] == "unknown"
-    assert result["reconstruction_required"] == 2
+    assert result["required_scope_count"] == 2
     assert result["authorizes_execution"] is False
     rows = [json.loads(line) for line in active_read_ledger_path(tmp_path, "a").read_text().splitlines()]
     assert all(row["operation_id"] == "op" for row in rows)

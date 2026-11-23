@@ -444,9 +444,12 @@ def reader_stage_lineage_payload(
             if trigger is not None and isinstance(trigger.payload, dict)
             else {}
         )
-        for key, value in trigger_payload.items():
-            if value not in (None, "", [], {}):
-                lineage[key] = value
+        if fanout_id:
+            lineage = dict(trigger_payload)
+        else:
+            for key, value in trigger_payload.items():
+                if value not in (None, "", [], {}):
+                    lineage[key] = value
     return lineage
 
 
@@ -494,10 +497,19 @@ def plan_reader_stage_replan(
     from zf.runtime.reader_replan_ownership import (
         active_candidate_replan_owns_failure,
         admitted_candidate_plan_recovery_owns_failure,
+        admitted_reader_retrigger_owns_failure,
     )
 
+    if admitted_reader_retrigger_owns_failure(stage, failure_event, index):
+        return None, "owned_by_admitted_reader_retrigger"
     if admitted_candidate_plan_recovery_owns_failure(stage, failure_event):
         return None, "owned_by_candidate_plan_recovery"
+
+    if not authorized_generation and trigger_type == "candidate.ready":
+        from zf.runtime.candidate_aggregate_review import candidate_review_binding
+
+        if candidate_review_binding(state_dir, config, events, failure_event) is not None:
+            return None, "owned_by_candidate_semantic_review"
 
     if (
         getattr(stage, "attempt_domain", "") != "plan"
@@ -790,6 +802,14 @@ def plan_reader_stage_replan(
             value = failure_payload.get(key) or source_identity_payload.get(key)
             if value not in (None, ""):
                 origin_payload[key] = value
+    if (authorized_generation and authorization_event_id and authorization_ref
+            and origin_payload.get("replan_classification")
+            and origin_payload["replan_classification"] != "oa_semantic_return_to_plan"):
+        # An explicitly authorized new non-OA request does not reuse the
+        # previous request's decision. Ordinary and OA retries retain it.
+        from zf.runtime.replan_resynth import retain_prior_replan_context
+
+        retain_prior_replan_context(origin_payload)
     _bind_current_plan_package_identity(
         origin_payload,
         events=events,

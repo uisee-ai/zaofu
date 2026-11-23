@@ -280,8 +280,27 @@ For an execution replan, start from the files bound to this Planner attempt.
 After the required reads, use the literal `zf plan draft-baseline --workspace`
 command in the Controlled Artifact Inputs briefing. It creates editable files
 in a new private directory under your own `artifacts/plan` and prints their
-paths. With `--seed-goals`, a legacy task map starts with the bound Goal Claim Set made explicit. Keep its historical obligations. Edit the current behavior, affected consumers and evidence in this draft; use the failure report to identify the observed change. Select the assigned ports you need. For a pending Plan rejected by the
+paths. With `--seed-goals`, the tool makes the bound claims explicit only when
+the existing Task bindings already cover them. Otherwise it preserves the legacy
+map and adds `baseline-goal-claims.json` as a reference, not an output port.
+Do not rename retained Task goal IDs to force this format migration; normal
+derived-claim continuity still protects the approved obligations. Keep historical
+obligations and edit only the affected behavior, consumers and evidence in this
+draft. Select the assigned ports you need. For a pending Plan rejected by the
 Owner, carry the rejection forward when reusing its files.
+The export also supports assigned `execution_spec`, `task_execution_input` and
+`product_acceptance_spec` ports. Copy these bodies before making local changes;
+do not reconstruct unchanged specifications from memory. Select only ports
+present in the assigned package; a supported name does not mean that this
+baseline contains it. Source requirements and approval/claim authority remain
+read-only inputs, not editable draft ports.
+
+Use the paths returned by this invocation for editing and result output refs.
+Exporting a draft does not replace an existing `artifacts/plan/task_map.json`:
+that file may still contain a rejected prior attempt. Either point the result
+refs at the new draft or explicitly copy its selected files to your owned output
+paths before editing. Compare unselected Task rows with the pinned draft before
+authoring the remaining Plan; restore exact rows instead of normalizing them.
 
 Edit stable Task/AC/scenario rows and update all consumers of the changed
 contract, including downstream CLI/API assertions, command owners and evidence
@@ -438,6 +457,24 @@ unresolved relevant ownership falls back to the existing complete-read policy.
 After session rotation or compaction, use the current attempt's pinned policy,
 read receipts and authorized recovery paths; previous output is historical
 observation, not proof of current model comprehension.
+
+Keep the continuation cursor and semantic work record separate from current
+memory. If `--required --resume` reports `delivery_predates_compaction` and
+starts a full delivery, do not repeatedly restart the entire bundle. Inspect
+`artifact recover` and `attempt missing-reads` for the current binding, then
+continue an exact retained cursor or read the authorized missing selections.
+Re-read any additional source needed to reconstruct the current decision; a
+historical receipt cannot establish that its content remains in context. Save
+the last fully delivered page/cursor, reviewed claims and open questions in the
+available work-record path. Preserve every required row and all admission gates.
+
+Return complete `items[].content` to the model. A host-side loop that prints
+only source IDs, page counts or cursors does not deliver the body, even if the
+CLI wrote read-ledger rows. Such rows and `missing_reads=[]` cannot prove model
+consumption. Replay hidden or truncated ranges through the authorized read
+command with complete bounded output; never fabricate receipts or substitute
+metadata for the required body. If full delivery cannot be established, report
+the concrete input blocker instead of a passed reading or review claim.
 
 
 Keep whole-file hydration limits separate from selected partition size. When

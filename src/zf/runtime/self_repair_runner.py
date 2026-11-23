@@ -70,15 +70,15 @@ def _spawn_command(backend: str, *, worktree: Path, briefing: str,
     raise ValueError("unsupported self-repair backend")
 
 
-def _repair_provider_settings(state_dir: Path) -> tuple[str, str]:
+def _repair_provider_settings(state_dir: Path) -> tuple[str, str, str]:
     from zf.core.config.loader import ConfigError
     from zf.core.config.project_context import resolve_project_context
     try:
         context = resolve_project_context(explicit_state_dir=state_dir, load_config_with_explicit=True)
     except (ConfigError, OSError):
-        return "", ""
+        return "", "", ""
     config = context.config.runtime.run_manager.source_repair
-    return config.model, config.model_reasoning_effort
+    return config.backend, config.model, config.model_reasoning_effort
 
 
 def harness_root(arg: str | None = None) -> Path:
@@ -117,7 +117,8 @@ def dispatch_pending_self_repairs(
     hroot = harness_root(root)
     base_commit = _git_stdout(hroot, "rev-parse", "HEAD")
     state_dir = Path(writer.event_log.path).parent
-    model, effort = _repair_provider_settings(state_dir) if spawn else ("", "")
+    repair_backend, model, effort = _repair_provider_settings(state_dir) if spawn else ("", "", "")
+    backend = repair_backend or backend
     base = Path(tmp_root) if tmp_root else Path(tempfile.gettempdir())
     prepared = 0
     for req in pending:
@@ -140,10 +141,12 @@ def dispatch_pending_self_repairs(
                     "attempt": req.attempt,
                     "candidate_id": req.candidate_id,
                     "reason": "repair_contract_freeze_failed",
+                    "source_request_id": req.event_id,
                     "error": str(exc),
                     "branch": branch,
                     "worktree": str(worktree),
                 },
+                origin="kernel",
             ))
             continue
         worktree.parent.mkdir(parents=True, exist_ok=True)
@@ -165,10 +168,12 @@ def dispatch_pending_self_repairs(
                     "attempt": req.attempt,
                     "candidate_id": req.candidate_id,
                     "reason": "worktree_add_failed",
+                    "source_request_id": req.event_id,
                     "stderr": result.stderr or "",
                     "branch": branch,
                     "worktree": str(worktree),
                 },
+                origin="kernel",
             ))
             continue
         briefing = build_repair_briefing(
@@ -676,7 +681,8 @@ def _classify_closeout_risk(
         "changed_file_count": len(files),
         "commits_ahead": commits_ahead,
         "controlled_apply_allowed": risk == "low",
-        "human_approval_required": risk != "low",
+        "human_approval_required": True if risk == "high" else False if risk == "low" else None,
+        "authority": "advisory; configured controlled apply policy decides",
     }
 
 

@@ -20,7 +20,7 @@ from zf.runtime.context_delivery import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def fixture(state, source_body='{"requirement":"complete original source"}'):
+def fixture(state, source_body='{"requirement":"complete original source"}', *, text_format=False):
     admission, operations = _runtime(state)
     source = state / "artifacts/input.json"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +53,10 @@ def fixture(state, source_body='{"requirement":"complete original source"}'):
     output, rows = prepare_required_read(state, manifest=manifest, rows=required,
         identity={"actor": "verify-1", "role": "verify", "provider": "codex",
                   "purpose": "task-verify", "operation_id": "op-1"})
+    if text_format:
+        from zf.runtime.artifact_text_page import render_text_page
+
+        output = render_text_page(json.loads(output))
     emit_artifact_output(state, output, rows, io.StringIO())
     sid = str(uuid4())
     transcript = state / "native.jsonl"
@@ -88,8 +92,9 @@ def next_delivery(f, sid=None):
         execution_binding=f.binding, previous_receipt_descriptor=previous)[0]
 
 
-def test_real_admission_binds_late_session_without_changing_original_receipt(tmp_path):
-    f = fixture(tmp_path)
+@pytest.mark.parametrize("text_format", [False, True])
+def test_real_admission_binds_late_session_without_changing_original_receipt(tmp_path, text_format):
+    f = fixture(tmp_path, text_format=text_format)
     before = (tmp_path / f.receipt["ref"]).read_bytes()
     result = admit(f)
     assert result.admitted, result.issues

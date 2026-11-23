@@ -107,6 +107,7 @@ class TaskRefManager:
         workdir: str = "",
         pdd_id: str = "",
         feature_id: str = "",
+        expected_current_commit: str | None = None,
     ) -> TaskRefResult:
         """Admit an exact no-patch TaskRef for a write-free pipeline entry."""
 
@@ -162,7 +163,8 @@ class TaskRefManager:
             return TaskRefResult(status="existing", payload=dict(existing))
 
         self._git("check-ref-format", f"refs/heads/{task_ref}")
-        self._git("update-ref", f"refs/heads/{task_ref}", full_commit)
+        cas = [expected_current_commit] if expected_current_commit is not None else []
+        self._git("update-ref", f"refs/heads/{task_ref}", full_commit, *cas)
         entry = self._upsert_index(
             task_id=normalized_task_id,
             source_commit=full_commit,

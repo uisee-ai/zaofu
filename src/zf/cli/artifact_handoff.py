@@ -47,6 +47,10 @@ def run_evidence(args):
         result = {'content': content[args.page_start:end], 'sha256': ref['sha256'], 'ref': ref,
             'page_start': args.page_start, 'page_end': end, 'page_total': len(content),
             'next_page_start': end if end < len(content) else None, 'authorizes_execution': False}
+        if not args.event:
+            # Validated navigation metadata is useful before reading a large index.
+            result['source_operation'] = body['binding']['operation_id']
+            result['previous_operation'] = body.get('previous_operation')
     except (ConfigError, OSError, ValueError, KeyError, TypeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

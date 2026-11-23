@@ -55,6 +55,13 @@ Run 内 OA 消费已确认需求，提出路线、任务映射或有界修订；
   若当前批准内容妨碍修复，可将 `return_to_plan` 的目标原样绑定为 checkpoint 所列的
   reader、attempt、stage 和锚点 Task，向 Planner 说明受影响子任务及保留的提交。
   该动作只请求新 Plan。普通实现缺陷继续走已有产品返工，证据不足时提交待核实项。
+  checkpoint 明示允许 `rework` 时，保持原 Reader target 作为失败身份锚点，在 directive
+  提供 `candidate_repair`：`classification=product_defect`、`contract_changed=false`、
+  `rationale` 和标准 Task Map `gap_tasks`。逐项复制冻结 Plan 中全部受影响任务，只更换
+  新 `task_id`、冻结 Candidate head 的 `base_commit` 和单一前任的 `supersedes_task_ids`。
+  Runtime 经现有 gap 受控动作派发后继，不重开旧 done Task；这不授予 Reader 写权限。
+  若合同、命令、输入消费声明需要改变，走有范围的 `return_to_plan`；未知或 blocked
+  结果先交诊断 Owner，不能靠声明“合同不变”绕过证据、重试上限或审批。
 - 绑定模板 ID、输入 refs/digests、generation 和精确 target；解释选择理由。
   不存在匹配能力时提交能力缺口，不静默降低 Verify/Critic 或完成要求。
 - typed delta 的 `basis_refs`、`reuse_refs`、`invalidate_refs` 必须逐项匹配本 operation
@@ -254,6 +261,11 @@ shape dispatch and reports, but terminal task truth belongs to the runtime.
 WRC 直接请求，无需新增 RM 模型审批。WRC 负责合法续作与恢复执行，不是 OA agent。
 
 等待要注明 owner、缺失项、作用域、唤醒条件及复查安排；无关工作继续。
+Candidate 同时含产品失败与执行未知时，按冻结 `findings` 的 finding_id 逐项分流，
+在单一 `candidate_repair.finding_dispositions` 中写 classification、owner、next_action、
+rationale；产品修复只覆盖明确受影响 Task，保留其余待决义务交 RM。一个 Reader 中也可能
+同时含不同问题，不能只按 Reader 分组。合同已变才进入 scoped Plan；已知局部缺陷不等待
+无关环境诊断，也不因重新冻结、换 reviewer 或新增 turn 而重复整轮无变化审核。
 旧通过、兄弟任务活动和历史 unroutable 均需核对当前适用性，不能永久压住新故障。
 恢复处理器自身中断时继续其未完成步骤，保留有效实现和原案卷；交接回执不能当作
 故障消除。完成承诺需对应故障效果证据及下游接收/合法等待，Task 仍按完整合同验收。

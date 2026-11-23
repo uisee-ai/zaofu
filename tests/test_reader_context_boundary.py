@@ -1,13 +1,104 @@
 """Reader context changes must fence the old process before replacing identity."""
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from zf.core.config.loader import ConfigError, load_config
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task, TaskContract
 from tests.test_role_lifecycle_runtime import _runtime, _seed_reader_fanout_context
+from tests.continuity_prd_fixture import configuration
+from zf.runtime.orchestrator import Orchestrator
+
+
+def test_configured_planner_reuses_same_root_after_controller_reload(tmp_path):
+    runtime, _, transport = _runtime(tmp_path)
+    path = tmp_path / "zf.yaml"
+    path.write_text(yaml.safe_dump_all(configuration(
+        tmp_path, harness=Path(__file__).resolve().parents[1],
+    )))
+    role = next(r for r in load_config(path).roles if r.instance_id == "planner")
+    runtime.config.roles = [role]
+    _seed_reader_fanout_context(runtime, role, transport,
+                                task_id="TASK-SAME", trace_id="workflow-same")
+    session_id = runtime._role_lifecycle_registry().get(role.instance_id)
+    recovered = Orchestrator(runtime.state_dir, runtime.config, transport,
+                             project_root=tmp_path)
+    recovered._set_worker_state(role.instance_id, "idle", force=True)
+    assert recovered._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="plan-rework", stage_id="plan",
+        child_id=role.instance_id, run_id="new-attempt",
+        trace_id="workflow-same", task_id="TASK-SAME",
+    )
+    assert recovered._role_lifecycle_registry().get(role.instance_id) == session_id
+    assert not transport.terminated
+    assert not transport.spawned
+
+
+@pytest.mark.parametrize("previous_trace,current_trace", [
+    ("", "new-run"), ("old-run", ""), ("", ""),
+])
+def test_unknown_run_identity_does_not_inherit_cached_session(
+    tmp_path, previous_trace, current_trace,
+):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport,
+                                task_id="SAME", trace_id=previous_trace)
+    assert runtime._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="plan-rework", stage_id="plan",
+        child_id=role.instance_id, run_id="new-attempt",
+        trace_id=current_trace, task_id="SAME",
+    )
+    assert transport.terminated == [role.instance_id]
+    assert runtime._role_lifecycle_registry().get(role.instance_id) is None
+
+
+def test_unbound_cached_session_is_not_adopted_by_new_root(tmp_path):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport, task_id="", trace_id="")
+    assert runtime._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="plan-rework", stage_id="plan",
+        child_id=role.instance_id, run_id="new-attempt",
+        trace_id="new-run", task_id="NEW",
+    )
+    assert transport.terminated == [role.instance_id]
+    assert runtime._role_lifecycle_registry().get(role.instance_id) is None
+
+
+def test_missing_current_task_does_not_bypass_old_context_isolation(tmp_path):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport,
+                                task_id="OLD", trace_id="same-run")
+    assert runtime._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="plan-rework", stage_id="plan",
+        child_id=role.instance_id, run_id="new-attempt",
+        trace_id="same-run", task_id="",
+    )
+    assert transport.terminated == [role.instance_id]
+    assert runtime._role_lifecycle_registry().get(role.instance_id) is None
+
+
+@pytest.mark.parametrize("current_trace", ["old-run", "new-run", ""])
+def test_taskless_workflow_requires_run_bound_context(tmp_path, current_trace):
+    runtime, role, transport = _runtime(tmp_path)
+    _seed_reader_fanout_context(runtime, role, transport, task_id="", trace_id="old-run")
+    session_id = runtime._role_lifecycle_registry().get(role.instance_id)
+    ready = runtime._ensure_fanout_role_dispatchable(
+        role=role, fanout_id="plan-synth", stage_id="plan",
+        child_id=role.instance_id, run_id="new-attempt",
+        trace_id=current_trace, task_id="",
+    )
+    assert ready is bool(current_trace)
+    if current_trace == "new-run":
+        assert transport.terminated == [role.instance_id]
+        assert runtime._role_lifecycle_registry().get(role.instance_id) is None
+    else:
+        assert not transport.terminated
+        assert not transport.spawned
+        assert runtime._role_lifecycle_registry().get(role.instance_id) == session_id
 
 
 def test_sibling_preregistration_does_not_rotate_one_reader_for_queued_tasks(

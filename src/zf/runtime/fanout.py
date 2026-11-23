@@ -618,6 +618,11 @@ class FanoutManifestProjector:
                 _apply_report_payload(child, payload)
             elif event.type == "fanout.aggregate.started":
                 prior_aggregate = manifest.get("aggregate") or {}
+                if (event.origin == 'kernel' and payload.get('recovery_kind') == 'plan_critic_reassessment'
+                        and payload.get('review_checkpoint_ref')):
+                    manifest.pop('synth', None)
+                    manifest.update(status='running', review_key=payload['review_key'],
+                        review_checkpoint_ref=payload['review_checkpoint_ref'], review_request_event_id=event.id)
                 manifest["aggregate"] = {
                     "status": "started",
                     "mode": _payload_str(payload, "mode"),

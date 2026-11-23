@@ -12,15 +12,16 @@ IDENTITY = ('workflow_run_id', 'task_id', 'operation_id', 'active_attempt_id',
             'lease_id', 'dispatch_id', 'request_hash', 'task_map_generation', 'operation_generation')
 
 
-def capture_host_evidence(state_dir: Path, source: dict, events: list) -> list[dict]:
-    """Freeze completed controlled probes, never unfinished effects or verdicts.
+def host_execution_facts(state_dir: Path, source: dict, events: list) -> list[dict]:
+    """Read authenticated completed effects without writing or granting execution.
 
     Host assistance requires a settled operation. Its receipts therefore occur
     after the native-tool cutoff, but before the successor handoff is frozen.
     Reading these historical facts grants no new command or execution authority.
     """
     expected = {key: source.get(key) for key in IDENTITY}
-    if not all(expected.values()):
+    if (any(value in (None, '') for key, value in expected.items() if key != 'operation_generation')
+            or type(expected['operation_generation']) is not int or expected['operation_generation'] < 0):
         return []
     settled = next((i for i, e in enumerate(events)
         if e.type == 'workflow.operation.settled' and e.origin == 'kernel'
@@ -95,11 +96,18 @@ def capture_host_evidence(state_dir: Path, source: dict, events: list) -> list[d
             body['source_ref'] = output
         except (KeyError, TypeError, AttributeError, ValueError, OSError):
             body.update(status='unavailable', output=None, reason='host_output_missing_or_invalid')
-        body = redact_obj(body)
+        entries.append(redact_obj(body))
+    return entries
+
+
+def capture_host_evidence(state_dir: Path, source: dict, events: list) -> list[dict]:
+    """Freeze the shared authenticated facts for the existing Task handoff."""
+    entries = []
+    for body in host_execution_facts(state_dir, source, events):
         ref = write_immutable_json_sidecar(state_dir, body, root='task-handoffs/tool-output',
             kind='task_tool_observation', schema_version='task-tool-observation.v1',
-            created_by='kernel', source_event_id=event.id)
-        entries.append({'event_id': event.id, 'command_preview': body['command'][:160],
+            created_by='kernel', source_event_id=body['event_id'])
+        entries.append({'event_id': body['event_id'], 'command_preview': body['command'][:160],
                         'command_truncated': len(body['command']) > 160,
                         'status': body['status'], 'ref': ref})
     return entries

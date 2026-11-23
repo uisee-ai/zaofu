@@ -515,7 +515,9 @@ def test_full_refactor_chain_reaches_judge_passed(tmp_path: Path):
         log,
         orch,
         fanout_id=plan_fanout,
-        report=plan_result,
+        # The pure critic reviews; the Planner remains the structural producer.
+        report={"review_artifact_ref": plan_result["review_artifact_ref"],
+                "plan_intent": plan_result["plan_intent"]},
     )
     plan_ready = _last_of(log, "zaofu.refactor.plan.ready")
     assert plan_ready.payload.get("artifact_gate") == "passed"

@@ -253,6 +253,7 @@ def _command_for_repair_request(
         "zf.cli.main",
         "self-repair",
         "run",
+        "--accepted-only",
         "--state-dir",
         str(state_dir),
     ]
@@ -547,9 +548,11 @@ def run_resident_once(
                 "status": "incomplete", "failure_class": "diagnosis_runner_failed",
                 "reason": "diagnostic runner exited without a completed diagnosis",
                 "reproduction_status": "incomplete",
+                "runner_returncode": proc.returncode,
             }
         diagnosis_ref = {}
         if diagnosis:
+            diagnosis = {**diagnosis, "runner_returncode": proc.returncode}
             from zf.runtime.sidecar_refs import write_sidecar_json
             diagnosis_ref = write_sidecar_json(Path(state_dir),
                 f"diagnostics/autoresearch/{action.loop_request_id}-partial.json", diagnosis,

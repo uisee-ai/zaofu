@@ -131,9 +131,28 @@ def is_dispatch_paused(
 
 
 def active_request_age_seconds(
-    events: list[ZfEvent], *, created_at: datetime, now: datetime,
+    events: list[ZfEvent], *, created_at: datetime, now: datetime, run_id: str = "",
 ) -> float:
     """Exclude explicit dispatch pauses from a request response deadline."""
+    if run_id:
+        from dataclasses import replace
+        # Normalize only this Run's lifecycle into the existing pause clock.
+        # Global and Run pauses may overlap, so subtract their union below.
+        run_paused = False
+        project_paused = False
+        normalized = []
+        for event in events:
+            before = run_paused or project_paused
+            if event.type in PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES:
+                project_paused = event.type in PAUSE_EVENT_TYPES
+            elif event.type in {"run.paused", "run.resumed"} and (
+                event.payload.get("workflow_run_id") or event.payload.get("run_id") or event.correlation_id
+            ) == run_id:
+                run_paused = event.type == "run.paused"
+            after = run_paused or project_paused
+            if before != after:
+                normalized.append(replace(event, type="dispatch.paused" if after else "dispatch.resumed"))
+        events = normalized
     created_at = created_at.replace(tzinfo=created_at.tzinfo or timezone.utc)
     paused_at: datetime | None = None
     excluded = 0.0
@@ -153,6 +172,16 @@ def active_request_age_seconds(
     if paused_at is not None:
         excluded += max(0.0, (now - max(created_at, paused_at)).total_seconds())
     return max(0.0, (now - created_at).total_seconds() - excluded)
+
+
+def is_run_dispatch_paused(events: list[ZfEvent], run_id: str) -> bool:
+    """Project holds and this Run's admitted pause suppress liveness timers."""
+    from zf.runtime.run_admission import build_run_admission_projection
+
+    entry = build_run_admission_projection(events).runs.get(run_id)
+    project_paused = next((e.type in PAUSE_EVENT_TYPES for e in reversed(events)
+                          if e.type in PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES), False)
+    return project_paused or bool(entry and entry.status == "paused")
 
 
 def _read_events(state_dir: Path) -> list[ZfEvent]:

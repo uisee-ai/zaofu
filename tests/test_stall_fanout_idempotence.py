@@ -69,3 +69,16 @@ def test_recovery_guard_does_not_suppress_other_scope(tmp_path, difference):
         "trigger_event_id": original.id, "fanout_id": "fanout-original",
     }))
     assert not suppress_handled_stall_trigger(runtime, trigger_event=recovery, stage_id="review-candidate")
+
+
+def test_stall_copy_identity_accepts_the_producers_declared_task_backfill():
+    from zf.runtime.fanout_retrigger_guard import stall_trigger_original
+    from zf.runtime.stall_detector import StallFinding, stall_redispatch_event
+
+    original = ZfEvent(type="task_map.ready", correlation_id="RUN-1",
+        payload={"pdd_id": "PDD-1", "task_id": "TASK-1"})
+    finding = StallFinding(trigger=original.type, stage_id="impl", success_event="candidate.ready",
+        feature_id="PDD-1", fingerprint="stall:task-backfill", trigger_event_id=original.id)
+    retry = stall_redispatch_event(finding, [original])
+    assert retry is not None and retry.task_id == "TASK-1"
+    assert stall_trigger_original([original, retry], retry) == original

@@ -5,7 +5,6 @@ snapshot and declared dependencies, no credentials, Git metadata or Docker socke
 """
 from __future__ import annotations
 
-import base64
 from dataclasses import asdict
 import hashlib
 import os
@@ -56,7 +55,7 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
     if any(source_digests.get(path) != expected for path, expected in policy.protected_files.items()):
         raise ValueError('preauthorized verification input was modified or removed')
     name = 'zf-probe-' + manifest['manifest_digest'][:24]
-    artifacts = []
+    evidence_ref = None
     with tempfile.TemporaryDirectory(prefix='zf-container-probe-') as temporary:
         folder = Path(temporary)
         source, output = folder / 'source', folder / 'output'
@@ -99,29 +98,32 @@ def verify_in_container(service, root: Path, manifest: dict, policy) -> tuple[di
             # The Docker client may exit while its container stays alive.
             _run_container(['docker', 'rm', '-f', name], timeout=15)
             code, text = 124, 'preauthorized container probe timed out'
-        for artifact in sorted(output.rglob('*')):
-            if artifact.is_dir() and not artifact.is_symlink():
-                continue
-            if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_size > 20 * 1024 * 1024:
-                raise ValueError('container evidence must be regular files under 20 MiB')
-            data = artifact.read_bytes()
-            artifacts.append({'path': str(artifact.relative_to(output)),
-                'sha256': hashlib.sha256(data).hexdigest(), 'base64': base64.b64encode(data).decode()})
-        evidence_ref = write_sidecar_json(service.state_dir,
-            f'artifacts/task-host-actions/{manifest["manifest_digest"]}/container-evidence.json',
-            {'image': policy.image, 'target_commit': manifest['head'], 'files': artifacts},
-            kind='container_evidence', schema_version='container-evidence.v1',
-            created_by=service.actor, required=True)
+        from zf.runtime.host_evidence_collection import collect_container_evidence
+
+        artifacts, collection_error = collect_container_evidence(output, policy)
+        if collection_error is None:
+            evidence_ref = write_sidecar_json(service.state_dir,
+                f'artifacts/task-host-actions/{manifest["manifest_digest"]}/container-evidence.json',
+                {'image': policy.image, 'target_commit': manifest['head'], 'files': artifacts},
+                kind='container_evidence', schema_version='container-evidence.v1',
+                created_by=service.actor, required=True)
     stable = (git(root, 'rev-parse', 'HEAD') == manifest['head'] and source_files(root) == manifest['files']
               and not git(root, 'status', '--porcelain', '--untracked-files=all'))
-    return {'status': 'completed' if code == 0 and stable else 'failed',
+    raw_output = text.encode('utf-8')
+    output_limit = 1024 * 1024
+    return {'status': 'completed' if code == 0 and stable and collection_error is None else 'failed',
+        'evidence_status': 'collection_failed' if collection_error else 'collected',
+        'collection_error': collection_error,
+        'output_bytes': len(raw_output), 'output_truncated': len(raw_output) > output_limit,
         'exit_code': code, 'source_stable': stable, 'target_commit': manifest['head'],
         'command_id': command['command_id'], 'command': command['command'],
         'command_digest': command['command_digest'], 'execution_origin': 'preauthorized_container',
-        'image': policy.image, 'policy_digest': digest(asdict(policy)), 'evidence_ref': evidence_ref}, text
+        'image': policy.image, 'policy_digest': digest(asdict(policy)),
+        'policy_snapshot': asdict(policy), 'evidence_ref': evidence_ref}, raw_output[:output_limit].decode('utf-8', errors='replace')
 
 
-def reconcile_host_verification(service) -> int:
+def reconcile_host_verification(service, *, allow_execution: bool = True,
+                                workflow_run_id: str | None = None) -> int:
     policy = getattr(service.config.runtime, 'host_verification', None)
     if not policy or not policy.enabled:
         return 0
@@ -130,8 +132,12 @@ def reconcile_host_verification(service) -> int:
         if is_dispatch_paused(service.state_dir, events=events):
             return 0
         operations = reduce_workflow_operations(events)
-        candidate_probe_owners: set[tuple[str, ...]] = set()
+        from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
+        eligible = []
+        candidate_probe_owners = {}
         for operation_id, operation in operations.items():
+            if workflow_run_id and operation.get('workflow_run_id') != workflow_run_id:
+                continue
             if operation.get('status') != 'settled' or operation.get('semantic_verdict') not in {'blocked', 'failed', 'abstained'}:
                 continue
             from zf.runtime.host_verification_handoff import reader_probe_handoff_complete
@@ -139,6 +145,8 @@ def reconcile_host_verification(service) -> int:
                 continue
             try:
                 _, request, contract, _ = binding(service, operation_id)
+                if not allow_execution and contract.get('authority_scope') != 'candidate':
+                    continue
                 if contract.get('authority_scope') == 'candidate':
                     result = hydrate_sidecar_ref(service.state_dir,
                         operation.get('admitted_control_result_ref') or {}).payload
@@ -155,24 +163,40 @@ def reconcile_host_verification(service) -> int:
                          request.get('result_identity', {}).get('contract_snapshot_digest'))
                 if not all(group):
                     group = ()
-                if group and group in candidate_probe_owners:
-                    continue
+            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
+            eligible.append((operation_id, operation, contract, group, failed_probe, receipts))
+            # Choose from the complete cohort before processing any sibling.
+            # A later failure can precede the existing owner in operation order.
+            starts = [index for index, event in enumerate(events)
+                if group and event.origin == 'kernel'
+                and event.type == 'runtime.action.attempt.started'
+                and event.payload.get('action') == 'task-host-assist'
+                and event.payload.get('kind') == 'verify'
+                and event.payload.get('workflow_run_id') == operation.get('workflow_run_id')
+                and event.payload.get('operation_id') == operation_id]
+            if group and (starts or receipts):
+                rank = (0, min(starts), operation_id) if starts else (1, 0, operation_id)
+                if group not in candidate_probe_owners or rank < candidate_probe_owners[group]:
+                    candidate_probe_owners[group] = rank
+
+        for operation_id, operation, contract, group, failed_probe, receipts in eligible:
+            owner = candidate_probe_owners.get(group)
+            if owner and owner[-1] != operation_id:
+                continue
             from zf.runtime.task_host_verification_handoff import resume_task_after_probes
             if resume_task_after_probes(service, operation, contract, policy, events):
                 return 1
-            from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
-            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
-            if group and receipts:
-                # One exact Candidate cohort owns the probes while awaiting its
-                # aggregate; sibling Readers must not repeat the same effects.
-                candidate_probe_owners.add(group)
+            if not allow_execution:
+                continue
             if failed_probe:
                 # The aggregate failure may still await a sibling Reader. Keep
                 # this failure for handoff; do not spend its remaining probes.
                 continue
             for command in contract['verification_commands']:
+                if command['command_id'] in receipts:
+                    continue
                 if command.get('command') not in policy.commands:
                     continue
                 try:
@@ -183,15 +207,30 @@ def reconcile_host_verification(service) -> int:
                          and e.type.startswith('runtime.action.attempt.')]
                 if prior:
                     if not any(e.type == 'runtime.action.attempt.completed' for e in prior):
-                        _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
-                    continue
-                if any(e.type == 'human.escalate' and e.payload.get('host_manifest_digest') == manifest['manifest_digest']
-                       for e in events):
+                        from zf.runtime.host_probe_recollection import recollection_manifest
+                        try:
+                            recollected = recollection_manifest(service, manifest, events, policy)
+                            if recollected:
+                                apply(service, recollected, approval_ref=policy.approval_ref,
+                                    reviewed_digest=recollected['manifest_digest'], readonly_snapshot=True,
+                                    recollection_base=manifest,
+                                    verifier=lambda root, body: verify_in_container(service, root, body, policy))
+                                return 1
+                        except (ValueError, OSError, subprocess.SubprocessError):
+                            pass  # The exact failure stays available for RM diagnosis.
+                        if command['command'] not in policy.recollect_commands:
+                            _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
                     continue
                 run = operation['workflow_run_id']
                 used = sum(e.type == 'runtime.action.attempt.started'
                     and e.payload.get('workflow_run_id') == run and e.payload.get('approval_ref') == policy.approval_ref
                     for e in events)
+                escalations = [e for e in events if e.type == 'human.escalate'
+                    and e.payload.get('host_manifest_digest') == manifest['manifest_digest']]
+                # An exhausted allowance is rechecked against the current owner
+                # config. Unknown effects and other escalation reasons stay held.
+                if any(e.payload.get('reason') != 'preauthorized_probe_budget_exhausted' for e in escalations):
+                    continue
                 if used >= policy.max_executions_per_run:
                     _escalate_once(service, events, manifest, 'preauthorized_probe_budget_exhausted')
                     return 0
@@ -202,13 +241,18 @@ def reconcile_host_verification(service) -> int:
                 except BlockingIOError:
                     continue  # a live resource owner is a defer, not permission to steal its workspace
                 except (ValueError, OSError, subprocess.SubprocessError) as exc:
-                    _escalate_once(service, events, manifest, str(exc))
+                    if command['command'] not in policy.recollect_commands:
+                        _escalate_once(service, events, manifest, str(exc))
+                    # Opt-in unknown probes already have a durable RM diagnosis
+                    # route and one independent observation. Do not create a
+                    # human gate before that authorized route can run.
                 return 1  # one bounded effect per tick, never an unbounded queue
     return 0
 
 
 def _escalate_once(service, events, manifest, reason):
     if any(e.type == 'human.escalate' and e.payload.get('host_manifest_digest') == manifest['manifest_digest']
+           and e.payload.get('reason') == reason
            for e in events):
         return
     service.writer.emit('human.escalate', actor='run-manager',

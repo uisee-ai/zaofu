@@ -9,7 +9,9 @@ from typing import Any
 
 from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_artifact_ports import canonical_plan_port_name, coerce_plan_port_descriptors
-from zf.runtime.sidecar_refs import DEFAULT_HYDRATE_LIMIT_BYTES, SidecarRefError, sidecar_path
+from zf.runtime.sidecar_refs import (
+    DEFAULT_HYDRATE_LIMIT_BYTES, SidecarRefError, safe_sidecar_ref, sidecar_path,
+)
 from zf.runtime.task_map import resolve_artifact_file
 
 
@@ -31,6 +33,26 @@ def read_plan_port_bytes(path: Path, name: str) -> bytes:
         raw = handle.read(DEFAULT_HYDRATE_LIMIT_BYTES + 1)
     check_plan_port_size(name, len(raw))
     return raw
+
+
+def _producer_port_path(ref: str, *, state_dir: Path, project_root: Path) -> Path:
+    """Read a bound sidecar or this producer's file before Kernel relocation."""
+    try:
+        safe_sidecar_ref(ref)
+    except SidecarRefError:
+        canonical = None
+    else:
+        canonical = sidecar_path(state_dir, ref)
+    if canonical is not None and canonical.exists():
+        return canonical  # Never repair an existing binding from a local alias.
+    relative = Path(ref)
+    if ".." in relative.parts:
+        raise ValueError("producer plan port must not traverse parent directories")
+    root = project_root.resolve()
+    source = (root / relative).resolve()
+    if not source.is_relative_to(root):
+        raise ValueError("producer plan port escapes the producer project root")
+    return source
 
 
 def prepared_plan_port_path_errors(
@@ -69,6 +91,7 @@ def plan_port_bodies(
     state_dir: Path,
     project_root: Path,
     errors: list[dict[str, str]],
+    ports_materialized: bool = True,
 ) -> dict[str, Mapping[str, Any]]:
     selected: dict[str, tuple[dict[str, Any], str, bool]] = {}
     sources = [(dict(trigger), "trigger_payload"), *(
@@ -138,11 +161,10 @@ def plan_port_bodies(
                 descriptor.get("sha256") or descriptor.get("digest") or ""
             ).strip()
             if explicit:
-                # Package admission hydrates explicit descriptors as sidecars;
-                # only direct *_ref inputs are materialized from project paths.
                 if not expected:
                     raise ValueError("explicit plan port requires ref/sha256 or an inline body")
-                path = sidecar_path(state_dir, ref)
+                path = (sidecar_path(state_dir, ref) if ports_materialized else
+                        _producer_port_path(ref, state_dir=state_dir, project_root=project_root))
             else:
                 path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
             raw = read_plan_port_bytes(path, name)

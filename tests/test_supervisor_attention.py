@@ -312,6 +312,206 @@ def test_attention_lifecycle_resolves_after_causal_stage_retry_starts() -> None:
     assert updated[0]["quiesced_by"] == "later_progress"
 
 
+def test_applied_human_dismissals_resolve_only_their_escalation_attention() -> None:
+    escalations = [
+        ZfEvent(
+            id="evt-escalate-one",
+            type="human.escalate",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={"decision_token": "token-1", "run_id": "run-1"},
+        ),
+        ZfEvent(
+            id="evt-escalate-two",
+            type="human.escalate",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={"decision_token": "token-2", "run_id": "run-1"},
+        ),
+        ZfEvent(
+            id="evt-escalate-new",
+            type="human.escalate",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={"decision_token": "token-new", "run_id": "run-1"},
+        ),
+    ]
+    applied = [
+        ZfEvent(
+            id="evt-applied-one",
+            type="run.manager.human_decision.applied",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={
+                "source_escalation_event_id": "evt-escalate-one",
+                "decision_token": "token-1",
+                "decision": "dismissed",
+                "next_route": "none",
+            },
+        ),
+        ZfEvent(
+            id="evt-applied-two",
+            type="run.manager.human_decision.applied",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={
+                "source_escalation_event_id": "evt-escalate-two",
+                "decision_token": "token-2",
+                "decision": "dismissed",
+                "next_route": "none",
+            },
+        ),
+        ZfEvent(
+            id="evt-ack-only",
+            type="human.escalation.acknowledged",
+            task_id="TASK-1",
+            correlation_id="run-1",
+            payload={
+                "escalation_event_id": "evt-escalate-new",
+                "decision_token": "token-new",
+                "status": "dismissed",
+            },
+        ),
+    ]
+    source_items = build_attention_items(
+        events=escalations[:2],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    updated = apply_attention_lifecycle(
+        source_items,
+        [*escalations, *applied],
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    by_fingerprint = {item["fingerprint"]: item for item in updated}
+    assert by_fingerprint["run_manager_human_decision:token-1"]["status"] == "resolved"
+    assert by_fingerprint["run_manager_human_decision:token-1"]["lifecycle_event_id"] == "evt-applied-one"
+    assert by_fingerprint["run_manager_human_decision:token-2"]["status"] == "resolved"
+    repeated = next(item for item in updated if item["fingerprint"] == "repeated:human.escalate:TASK-1")
+    assert repeated["status"] == "resolved"
+
+    new_item = build_attention_items(
+        events=[escalations[2]],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )[0]
+    new_attention = apply_attention_lifecycle(
+        [new_item], [*escalations, *applied], now=datetime(2026, 7, 7, tzinfo=timezone.utc)
+    )
+    assert new_attention[0]["status"] == "open"
+
+
+def test_applied_human_dismissal_requires_matching_token_task_and_run() -> None:
+    escalation = ZfEvent(
+        id="evt-escalate",
+        type="human.escalate",
+        task_id="TASK-1",
+        correlation_id="run-1",
+        payload={"decision_token": "token-1", "run_id": "run-1"},
+    )
+    mismatched = ZfEvent(
+        id="evt-applied",
+        type="run.manager.human_decision.applied",
+        task_id="TASK-OTHER",
+        correlation_id="run-other",
+        payload={
+            "source_escalation_event_id": "evt-escalate",
+            "decision_token": "token-other",
+            "decision": "dismissed",
+            "next_route": "none",
+        },
+    )
+    item = build_attention_items(
+        events=[escalation],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )[0]
+
+    updated = apply_attention_lifecycle(
+        [item], [escalation, mismatched], now=datetime(2026, 7, 7, tzinfo=timezone.utc)
+    )
+
+    assert updated[0]["status"] == "open"
+
+
+def test_applied_human_dismissal_uses_complete_ordered_history() -> None:
+    escalation = ZfEvent(
+        id="evt-escalate-old",
+        type="human.escalate",
+        task_id="TASK-OLD",
+        correlation_id="run-old",
+        payload={"decision_token": "token-old", "run_id": "run-old"},
+    )
+    decision = ZfEvent(
+        id="evt-applied-old",
+        type="run.manager.human_decision.applied",
+        task_id="TASK-OLD",
+        correlation_id="run-old",
+        payload={
+            "source_escalation_event_id": "evt-escalate-old",
+            "decision_token": "token-old",
+            "decision": "dismissed",
+            "next_route": "none",
+        },
+    )
+    later_events = [
+        ZfEvent(id=f"evt-later-{index}", type="loop.heartbeat")
+        for index in range(600)
+    ]
+    item = build_attention_items(
+        events=[escalation],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )[0]
+
+    updated = apply_attention_lifecycle(
+        [item], [escalation, decision, *later_events],
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    assert updated[0]["status"] == "resolved"
+    assert updated[0]["lifecycle_event_id"] == "evt-applied-old"
+
+
+def test_human_dismissal_before_escalation_does_not_resolve_attention() -> None:
+    escalation = ZfEvent(
+        id="evt-escalate-later",
+        type="human.escalate",
+        task_id="TASK-1",
+        payload={"decision_token": "token-1"},
+    )
+    decision = ZfEvent(
+        id="evt-applied-earlier",
+        type="run.manager.human_decision.applied",
+        task_id="TASK-1",
+        payload={
+            "source_escalation_event_id": "evt-escalate-later",
+            "decision_token": "token-1",
+            "decision": "dismissed",
+            "next_route": "none",
+        },
+    )
+    item = build_attention_items(
+        events=[escalation],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )[0]
+
+    updated = apply_attention_lifecycle(
+        [item], [decision, escalation],
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    assert updated[0]["status"] == "open"
+
+
 def test_attention_lifecycle_keeps_failure_open_before_retry_starts() -> None:
     item = {
         "fingerprint": "failure:semantic-flow:issue_triage_failed:run-1",

@@ -3,11 +3,10 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from zf.core.events.model import ZfEvent
-from zf.core.task.store import TaskStore
 from zf.runtime.candidate_verification_authority import _latest_frozen_candidate
 from zf.runtime.candidate_result_binding import same_task_map_generation
 from zf.runtime.task_contract_snapshot import (
-    TaskContractSnapshotError, current_task_contract_identity,
+    TaskContractSnapshotError,
     hydrate_target_snapshot, hydrate_task_contract_snapshot,
 )
 
@@ -93,7 +92,10 @@ def candidate_currentness_issues(
         )]
 
     workflow_run_id = str(identity.get("workflow_run_id") or "")
-    current_candidate = _latest_frozen_candidate(list(events), workflow_run_id)
+    try:
+        current_candidate = _latest_frozen_candidate(list(events), workflow_run_id)
+    except ValueError as exc:
+        return [_currentness_issue("control_result.contract_snapshot_ref", "stale_contract_snapshot", str(exc))]
     if current_candidate is None:
         return [_currentness_issue(
             "control_result.target_commit",
@@ -216,42 +218,8 @@ def candidate_currentness_issues(
                 "stale_contract_snapshot",
                 "candidate contract completed_task_ids do not match current freeze",
             ))
-    task_store = TaskStore(state_dir / "kanban.json")
-    for child in contract_snapshot.get("child_authorities") or []:
-        if not isinstance(child, Mapping):
-            continue
-        authority_revision = str(
-            child.get("contract_authority_revision") or ""
-        )
-        if not authority_revision:
-            continue
-        child_task_id = str(child.get("task_id") or "")
-        current_task = task_store.get(child_task_id)
-        if current_task is None:
-            issues.append(_currentness_issue(
-                "control_result.contract_snapshot_ref",
-                "stale_task_authority",
-                f"candidate child {child_task_id!r} is absent from TaskStore",
-            ))
-            continue
-        try:
-            current_identity = current_task_contract_identity(current_task)
-        except TaskContractSnapshotError as exc:
-            issues.append(_currentness_issue(
-                "control_result.contract_snapshot_ref",
-                "stale_task_authority",
-                str(exc),
-            ))
-            continue
-        for field, expected in current_identity.items():
-            actual = str(child.get(field) or "")
-            if str(expected) != actual:
-                issues.append(_currentness_issue(
-                    f"control_result.child_authorities.{field}",
-                    "stale_task_authority",
-                    (
-                        f"candidate child {child_task_id!r} expects "
-                        f"{expected}, got {actual or '<missing>'}"
-                    ),
-                ))
+    from zf.runtime.candidate_child_authority import candidate_child_authority_issues
+
+    issues.extend(candidate_child_authority_issues(state_dir, list(events), current_candidate,
+                                                  contract_snapshot.get("child_authorities") or []))
     return issues

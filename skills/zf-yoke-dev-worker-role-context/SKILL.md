@@ -129,7 +129,7 @@ briefing，再按下表触发；同一会话中已完整读过且版本未变的
   片段；必要时可以重读，不能把减少重复读取理解为禁止恢复语义。保留补读范围及
   理由，不默认重读整个全局材料集合；只有来源确实不可读或合同矛盾时才据实报告阻塞。
 - `artifact recover` 是信息投影：`authorizes_execution=false` 不表示禁止当前派发，
-  `current_memory=unknown` 不会因读取变为已知，`reconstruction_required` 是输入范围
+  `current_memory=unknown` 不会因读取变为已知，`required_scope_count` 是输入范围
   总数，不是剩余待读数；不要循环读取等待 true/0，也不等待检查点自动出现。
   先检查 `status`、当前身份/工作区/租约和实际暂停或重绑定要求；合法派发下补齐
   缺失必读，并从绑定原文恢复当前遗忘的条款/接口后，推进最小检查和原合同工作。

@@ -324,6 +324,13 @@ def run_standard_tick_services(
         )
         mark_quiescent_transition(event_writer, _q_events, status=_q_status)
         if _q_status.quiescent:
+            from zf.runtime.quiescent_reader_recovery import reconcile_quiescent_reader_handoff
+
+            handed_off = reconcile_quiescent_reader_handoff(
+                state_dir=state_dir, config=config, writer=event_writer,
+                project_root=project_root, events=_q_events,
+                escalation_id=_q_status.escalate_event_id,
+            )
             from zf.runtime.escalation_terminal import (
                 converge_unrecoverable_escalations,
             )
@@ -334,7 +341,7 @@ def run_standard_tick_services(
                 task_store=getattr(orchestrator, "task_store", None),
                 request_autoresearch=True,
             )
-            if not terminalized:
+            if not terminalized and not handed_off:
                 observability_result = _run_observability_tick()
                 return TickServiceResult(
                     goal_dossier_delivery=goal_dossier_delivery,
@@ -796,7 +803,9 @@ def _is_run_manager_noop_input(event: ZfEvent) -> bool:
     if event_type in _RUN_MANAGER_NOOP_INPUT_EVENTS:
         return True
     if event_type.startswith("run.manager."):
-        return event_type not in _RUN_MANAGER_REACTIVE_SELF_EVENTS
+        from zf.runtime.recovery_tick_wake import is_recovery_input
+
+        return event_type not in _RUN_MANAGER_REACTIVE_SELF_EVENTS and not is_recovery_input(event)
     return False
 
 
@@ -1566,13 +1575,9 @@ def _emit_cost_blackout_if_needed(
     if now_wall - state.last_blackout_emit_at < intervals.cost_blackout_cooldown_s:
         return False
     events = read_runtime_events(event_log, state_dir)
-    last_dispatch = next(
-        (
-            event for event in reversed(events)
-            if event.type in ("task.dispatched", "fanout.child.dispatched")
-        ),
-        None,
-    )
+    from zf.runtime.cost_dispatch_liveness import last_open_cost_dispatch
+
+    last_dispatch = last_open_cost_dispatch(events)
     if last_dispatch is None:
         return False
     # A terminal from the same run closes the accounting surface.  Do not let
@@ -1592,12 +1597,19 @@ def _emit_cost_blackout_if_needed(
         return False
     last_dispatch_ts = last_dispatch.ts
     last_usage_ts = None
-    for event in events:
+    dispatch_index = next(
+        (index for index, event in enumerate(events) if event is last_dispatch),
+        -1,
+    )
+    has_usage_after_dispatch = False
+    for index, event in enumerate(events):
         if event.type != "agent.usage":
             continue
         if dispatch_scope and _scope(event) != dispatch_scope:
             continue
         last_usage_ts = event.ts
+        if index > dispatch_index:
+            has_usage_after_dispatch = True
 
     def _epoch(ts: str | None) -> float | None:
         if not ts:
@@ -1612,7 +1624,7 @@ def _emit_cost_blackout_if_needed(
     if dispatch_epoch is None:
         return False  # 本窗无派发,无成本可盲
     if (
-        usage_epoch is None
+        not has_usage_after_dispatch
         and now_wall - dispatch_epoch < intervals.cost_blackout_startup_grace_s
     ):
         return False  # 新 worker 启动早期 session/usage 文件可能尚未落盘

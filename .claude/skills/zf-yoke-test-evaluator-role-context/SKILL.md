@@ -54,6 +54,14 @@ amendment are separate role capabilities supplied by the workflow profile.
   remaining work, not an execution failure. If an invalid page-size option is
   corrected and reads succeed, continue with the accepted size/default; the
   recovered error does not justify a terminal failed/abstained result.
+  Copy `next_cursor` exactly from the last completely delivered page; never
+  reconstruct its encoded digest. If the cursor is invalid, compare the failed
+  argument with that output and retry the exact value once. If the cursor was
+  lost but the earlier material remains usable in this session, use the same
+  authorized read command with `--required --resume` and no `--cursor`; consume
+  the returned body and continuation. If prior material is unavailable, reread
+  the missing content. Report an execution failure only if that bounded recovery
+  remains blocked, retaining both the first error and recovery result.
   Each page retains its own authorization,
   validation, and receipt.
   Avoid one model round trip for each tiny page and avoid restarting page one
@@ -74,6 +82,11 @@ amendment are separate role capabilities supplied by the workflow profile.
   时也适用。不等最终交付才大范围回查历史；未检查的条款不提前填通过，也不提前提交。
   续跑只使用既有授权记录位置，不新增 scratch 字段、产品文件或写权限。记录帮助恢复，
   不替代当前必读正文、独立检查或正式准入；无新进展不重复抄录。
+- 必读材料完成后、每组检查完成后，使用当前 `artifact recover` 的
+  `work_record_publish` 入口保存有界语义进度；方法见 verification checklist。
+  不等待压缩通知才保存。恢复先读取已绑定WRC；`historical_missing=0` 时按具体
+  上下文缺口查原文并继续剩余检查，不因WRC缺失或unknown字段自动重读整套材料。
+  未发布成功不得声称已有检查点；既有scratch、读取和结果准入权限保持。
 - For `verification-result.v1`, an environment/provider execution failure uses
   exactly `execution_status: failed` and `verdict: abstained`, with truthful
   failure_class and evidence. `blocked` and `inconclusive` are not execution_status
@@ -316,7 +329,7 @@ to perform a meaningful independent evaluation.
 必须交回受控重绑定路径，不能自行切到新包继续验收。
 
 `artifact recover` 的 `authorizes_execution=false` 表示报告本身不授予执行权限，
-不是对当前合法派发的否决；`current_memory=unknown` 和 `reconstruction_required`
+不是对当前合法派发的否决；`current_memory=unknown` 和 `required_scope_count`
 范围总数不会因读取变为已知或零。不要等这些字段变化或检查点自动出现。先核验当前
 身份/租约/版本及真实暂停要求，再补足缺失必读和遗忘正文，按当前角色推进检查；
 来源不可读或需要重绑定仍走受控恢复。历史收据不能证明当前理解。
@@ -330,5 +343,11 @@ reused_command_receipt_ids 明确引用，不伪称本次独立执行，也不�
 采证。恢复时核对账本 `runtime.action.attempt.completed`、receipt_ref/output_ref摘要、
 Run/Task/合同、固定 target、命令、source_stable与退出码，并重新独立审查业务断言。
 如需新探测仍提出具体需求；不能用 Impl 的宿主回执冒充 Verify 自己的独立执行证据。
-结果注明 execution_origin=operator_authorized_host及原执行身份；新结果使用当前派发
-身份。宿主动作不发 test.passed/task.done，也不代替 Verify/Judge 的语义判断。
+结果按真实回执注明 execution_origin：人工授权为 operator_authorized_host，预授权
+容器为 preauthorized_container；保留原执行身份，新结果使用当前派发身份。命令
+reusable=false 限制的是 Impl 命令缓存抵扣，不能据此抹去当前候选恢复链上内核授权
+执行的独立宿主事实。多路 Reader 或受控接续消费这些事实时，仍须逐项核对候选、
+合同、命令、授权、来源与摘要，注明引用而非声称亲自重跑；仅同 Run 或退出码为零
+不足以通过验收。历史缺证结论与新收据并列保留，独立判断缺口是否已补足；分歧交
+给有权语义角色裁决，不擅自扩大原始验收范围。宿主动作不发 test.passed/task.done，
+也不代替 Verify/Judge 的语义判断。

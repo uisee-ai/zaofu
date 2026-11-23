@@ -140,6 +140,9 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if provider_summary_ref is not None:
             payload["provider_operation_summary_ref"] = provider_summary_ref
         policy = self._input_policy(payload, input_policy)
+        from zf.runtime.input_delivery_contract import admission_delivery_policy
+
+        policy, policy_issues = admission_delivery_policy(self.state_dir, self.event_log.read_all(), operation or {}, policy)
         from zf.runtime.task_input_failure import incomplete_task_input_failure
 
         reader_failed = adapted.payload.get("execution_status") == "failed" and (
@@ -202,7 +205,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             correlation_id=event.correlation_id or "",
             execution_status="failed" if reader_failed else "",
         )
-        issues = [dict(item) for item in adapted.issues]
+        issues = [dict(item) for item in adapted.issues] + policy_issues
         from zf.runtime.task_input_failure import recovery_input_issues
 
         if policy and ledger_descriptor:
@@ -211,7 +214,8 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
                 result=adapted.payload, ledger_descriptor=ledger_descriptor,
             ))
         issues.extend(provider_summary_issues)
-        issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit))
+        issues.extend(typed_admission_issues_for(self.state_dir, adapted, semantic_submit,
+            operation=operation, events=self.event_log.read_all()))
         if require_semantic_submit and not semantic_submit:
             issues.append({
                 "field": "result_submit",
@@ -280,7 +284,9 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         if policy and ledger_descriptor:
             issues.extend(
                 issue for issue in read_issues
-                if not (reader_failed and issue.get("code") == "required_read_missing")
+                if not (reader_failed and issue.get("code") in {
+                    "required_read_missing", "required_input_delivery_missing",
+                })
             )
         elif policy:
             issues.append({
@@ -494,6 +500,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             invalid = self.event_writer.append(ZfEvent(
                 type="workflow.call.result.invalid",
                 actor="zf-cli",
+                origin="kernel",
                 task_id=event.task_id,
                 payload={
                     **operation_identity,
@@ -657,16 +664,9 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         payload: Mapping[str, Any],
         explicit: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
-        if explicit:
-            return dict(explicit)
-        raw = payload.get("input_consumption_policy")
-        if isinstance(raw, Mapping):
-            return dict(raw)
-        descriptor = payload.get("input_consumption_policy_ref")
-        if isinstance(descriptor, Mapping):
-            hydrated = hydrate_sidecar_ref(self.state_dir, dict(descriptor))
-            return dict(hydrated.payload) if isinstance(hydrated.payload, dict) else {}
-        return {}
+        from zf.runtime.input_delivery_contract import legacy_input_policy
+
+        return legacy_input_policy(self.state_dir, payload, explicit)
 
     def _ensure_sealed_ledger(
         self,

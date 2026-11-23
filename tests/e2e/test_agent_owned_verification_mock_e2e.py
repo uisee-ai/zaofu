@@ -124,6 +124,7 @@ def test_light_profile_mock_e2e_exact_verify(
     tmp_path: Path,
     monkeypatch,
     discovery_closeout: bool,
+    reader_recovery_hook=None,
 ) -> None:
     monkeypatch.setenv("ZF_CLI_CMD", "zf")
     workflow_run_id = "evt-light-entry-148"
@@ -214,6 +215,8 @@ def test_light_profile_mock_e2e_exact_verify(
             stage.roles.append("dev-lane-1")
         elif stage.id == "prd-lanes-verify":
             stage.roles.append("verify-lane-1")
+    if reader_recovery_hook is not None:
+        config.runtime.run_manager.resident_agent.enabled = True
     assert config.workflow.impl_self_check_required is True
     assert config.workflow.candidate_quality_source == "task_contract_required"
     assert config.workflow.flow_metadata["topology"] == "light"
@@ -724,6 +727,10 @@ def test_light_profile_mock_e2e_exact_verify(
         discovery_manifest = _manifest(
             state_dir, discovery_dispatch.payload["fanout_id"],
         )
+        if reader_recovery_hook is not None:
+            orchestrator, discovery_manifest = reader_recovery_hook(
+                orchestrator, discovery_manifest, submitter, submit_tokens,
+            )
         discovery_payload = _dispatch_payload(discovery_manifest["children"][0])
         discovery_sources = hydrate_sidecar_ref(
             state_dir, discovery_payload["attempt_source_manifest"],
@@ -885,7 +892,9 @@ def test_light_profile_mock_e2e_exact_verify(
     assert receipt["delivery"]["status"] == "settled"
     assert len([item for item in events if item.type == "impl.self_check.completed"]) == 2
     assert len([item for item in events if item.type == "verify.child.completed"]) == 2
-    assert not [item for item in events if item.type in {"test.failed", "judge.failed"}]
+    assert not [item for item in events if item.type == "judge.failed"]
+    assert not [item for item in events if item.type == "test.failed"]
+    assert len([item for item in events if item.type == "flow.discovery.failed"]) == (1 if reader_recovery_hook else 0)
     assert len([
         item for item in events
         if item.type == "workflow.call.result.admitted"

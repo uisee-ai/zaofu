@@ -29,21 +29,33 @@ def test_common_first_dispatch_entry_respects_bound_profile_and_required_reads(t
     assert 'scope unavailable' in render_attempt_source_briefing(payload,state_dir=tmp_path)
 
 
-def test_replan_planner_sees_one_executable_draft_command(tmp_path):
+@pytest.mark.parametrize('supplemental', [False, True])
+def test_replan_planner_sees_one_executable_draft_command(tmp_path, supplemental):
     import shlex
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
     source = dict(attempt_id="current", plan_artifact_package_digest="a" * 64,
                   sources=[{"source_id": name} for name in ("plan-rework-package", "baseline-plan-port-task_map",
                                                             "baseline-plan-port-source_index")])
+    expected_ports = ["task_map", "source_index"]
+    if supplemental:
+        expected_ports.extend(["execution_spec", "task_execution_input", "product_acceptance_spec"])
+        source["sources"].extend({"source_id": f"baseline-plan-port-{name}"} for name in expected_ports[2:])
+        source["sources"].extend([
+            {"source_id": "baseline-plan-port-acceptance_matrix", "allowed_paths": ["$.acceptance[0]"]},
+            {"source_id": "baseline-plan-port-requirement_spec"},
+            {"source_id": "baseline-plan-port-plan_critique"},
+        ])
     descriptor = write_immutable_json_sidecar(tmp_path, source, root="attempts", kind="manifest",
                                               schema_version="attempt-source-manifest.v1", created_by="test")
     payload = dict(attempt_id="current", attempt_source_manifest_ref=descriptor["ref"],
                    attempt_source_manifest_digest=descriptor["sha256"])
     rendered = render_attempt_source_briefing(payload, state_dir=tmp_path, role_name="planner")
     cmd = next(l.split("`")[1] for l in rendered.splitlines() if "draft-baseline" in l)
-    assert shlex.split(cmd)[-9:] == ["plan", "draft-baseline", "--workspace", "--attempt", "current",
-                                     "--port", "task_map", "--port", "source_index"]
+    from zf.cli.main import build_parser
+    tokens = shlex.split(cmd)
+    args = build_parser(command="plan").parse_args(tokens[tokens.index("plan"):])
+    assert args.port == expected_ports and args.attempt == "current" and args.workspace
     assert not any(ch in cmd for ch in "|><;")
     assert "draft-baseline" not in render_attempt_source_briefing(payload, state_dir=tmp_path, role_name="critic")
     assert "draft-baseline" not in render_attempt_source_briefing({**payload, "attempt_id": "stale"},

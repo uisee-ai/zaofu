@@ -203,7 +203,8 @@ def _publish_entry(runtime, invoked, receipt, existing):
         old_receipt = _json(state, fact["receipt_ref"])
         if old_receipt.get("execution_origin") == "preauthorized_container" and old_receipt.get("evidence_ref"):
             media_indices.extend(materialize_container_media(
-                state, [fact["receipt_ref"]], image=old_receipt.get("image", "")))
+                state, [fact["receipt_ref"]], image=old_receipt.get("image", ""),
+                policy=runtime.config.runtime.host_verification))
     feedback = (
         "This is an owner-approved verification continuation, not a fresh Impl run. "
         "Completed Tasks retain their source Run and independent verification identity. "

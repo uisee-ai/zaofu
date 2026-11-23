@@ -545,6 +545,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",
+                    origin="kernel",
                     payload={
                         "fanout_id": context.fanout_id,
                         "trace_id": context.trace_id,
@@ -552,6 +553,9 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                         "child_id": child.child_id,
                         "run_id": run_id,
                         "role_instance": child.role_instance,
+                        "failure_kind": "infra",
+                        "failure_class": "reader_execution_failure",
+                        "failure_scope": "operation_preregistration",
                         "reason": f"durable operation preregistration failed: {exc}",
                     },
                     causation_id=causation_id,

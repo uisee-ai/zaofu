@@ -46,9 +46,13 @@ def actor_from_workdir_cwd(state_dir: Path, payload: dict) -> str:
 
 
 def bash_command_looks_mutating(command: str) -> bool:
+    from zf.cli.literal_python_read import literal_python_read_query
+
     if _literal_shell_patch(command) is not None:
         return True
     if _literal_controlled_result_stdin(command):
+        return False
+    if literal_python_read_query(command):
         return False
     normalized = f" {_NON_MUTATING_REDIRECTION_RE.sub(' ', command).strip()} "
     if " zf task-doc ingest " in normalized:

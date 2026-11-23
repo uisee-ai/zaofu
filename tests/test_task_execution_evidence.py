@@ -95,13 +95,27 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture, ho
         payload={**source, 'attempt_id': 'a0', 'workdir': str(root)})
     hook = replace(hook, correlation_id='run-1')
     settled = replace(settled, task_id='TASK-1', payload=source)
-    for event in (requested, dispatched, hook, settled, *extra):
+    result_ref = write_immutable_json_sidecar(runtime.state_dir, {
+        **{key: source[key] for key in ('workflow_run_id', 'task_id', 'operation_id')},
+        'evidence_refs': ['event:' + hook.id]}, root='results', kind='test',
+        schema_version='test.v1', created_by='kernel')
+    admitted = ZfEvent(type='workflow.call.result.admitted', origin='kernel', task_id='TASK-1',
+        payload={**source, 'control_result_ref': result_ref, 'semantic_verdict': 'blocked'})
+    for event in (requested, dispatched, hook, admitted, settled, *extra):
         runtime.event_writer.append(event)
     dispatch_task()
     body = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]['payload']['task_handoff_ref']).payload
     index = hydrate_sidecar_ref(runtime.state_dir, body['execution_evidence_ref']).payload
     assert [e['event_id'] for e in index['entries']] == [hook.id, *([completed.id] if host else [])]
     assert 'handoff-evidence' in body['execution_evidence_read']
+    cited = hydrate_sidecar_ref(runtime.state_dir, body['cited_execution_evidence_ref']).payload
+    assert [row['event_id'] for row in cited['entries']] == [hook.id]
+    assert any(row['source_id'] == 'task-handoff-cited-evidence'
+               for row in prepared[-1]['payload']['input_refs'])
+    descriptor = body['cited_execution_evidence_ref']
+    dispatch_task()
+    replay = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]['payload']['task_handoff_ref']).payload
+    assert replay['cited_execution_evidence_ref'] == descriptor
     reads = body['host_execution_evidence_reads']
     assert len(reads) == int(host)
     if host:
@@ -147,8 +161,13 @@ def evidence_handoff(tmp_path, monkeypatch, request):
             'authorizes_execution': False, 'business_completed': False, 'execution_evidence_ref': index}
         oldref = write_immutable_json_sidecar(state, old, root='task-handoffs', kind='task_handoff',
             schema_version='task-handoff.v1', created_by='kernel')
+        middle_index = write_immutable_json_sidecar(state, {
+            'binding': {'workflow_run_id': 'r', 'task_id': 'T7', 'operation_id': 'middle'},
+            'entries': [{'event_id': f'current-{i}', 'command_preview': 'current observation'} for i in range(40)],
+        }, root='task-handoffs/tool-index', kind='task_tool_index',
+            schema_version='task-tool-index.v1', created_by='kernel')
         body = {**old, 'target': {**old['target'], 'operation_id': 'op'}, 'source': {'operation_id': 'middle'},
-                'execution_evidence_ref': None, 'previous_handoff_ref': oldref}
+                'execution_evidence_ref': middle_index, 'previous_handoff_ref': oldref}
         ref = write_immutable_json_sidecar(state, body, root='task-handoffs', kind='task_handoff',
             schema_version='task-handoff.v1', created_by='kernel')
         manifest, descriptor = source_manifest_from_payload(state_dir=state, project_root=tmp_path,
@@ -160,6 +179,22 @@ def evidence_handoff(tmp_path, monkeypatch, request):
     monkeypatch.setenv('ZF_ROLE_INSTANCE', 'dev-1')
     monkeypatch.setenv('ZF_RESULT_SUBMIT_TOKEN', token)
     return state, hook, log
+
+
+def test_first_index_page_locates_predecessor_without_exhausting_unrelated_history(evidence_handoff, capsys):
+    from zf.cli.main import main
+    state, hook, _ = evidence_handoff
+    command = ['artifact', 'handoff-evidence', '--operation', 'op', '--state-dir', str(state)]
+    assert main(command) == 0
+    page = json.loads(capsys.readouterr().out)
+    assert page['next_page_start'] is not None
+    assert page['source_operation'] == 'middle'
+    assert page['previous_operation'] == 'old'
+    assert main([*command, '--source-operation', page['previous_operation'], '--event', hook.id]) == 0
+    observed = json.loads(capsys.readouterr().out)
+    assert hydrate_sidecar_ref(state, observed['ref']).payload['event_id'] == hook.id
+    assert observed['next_page_start'] is not None  # Selected evidence still needs complete paging.
+    assert not observed['authorizes_execution']
 
 
 def test_authenticated_cli_can_page_original_evidence_across_multiple_attempts(evidence_handoff, capsys, monkeypatch):

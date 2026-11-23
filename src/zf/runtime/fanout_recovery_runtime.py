@@ -23,6 +23,10 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
         return
     if runtime._reconcile_partial_reader_timeouts(events):
         return
+    from zf.runtime.reader_protocol_terminal import reconcile_protocol_failed_readers
+
+    if reconcile_protocol_failed_readers(runtime, events):
+        return
     from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
 
     if reconcile_exhausted_reader_operations(runtime, events):
@@ -55,6 +59,12 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
 
     recovery_snapshot = build_reader_fanout_recovery_snapshot(runtime, events)
     if not recovery_snapshot.consistent:
+        return
+    from zf.runtime.terminal_reader_closeout import retire_superseded_terminal_readers
+
+    if retire_superseded_terminal_readers(
+        runtime, events, list(recovery_snapshot.manifests), recovery_snapshot=recovery_snapshot,
+    ):
         return
     if not has_nonterminal_reader_fanouts(
         runtime,

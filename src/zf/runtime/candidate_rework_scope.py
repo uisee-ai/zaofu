@@ -9,6 +9,7 @@ from typing import Any
 
 from zf.core.task.store import TaskStore
 from zf.runtime.artifact_refs import resolve_runtime_artifact_ref
+from zf.runtime.gap_replacement_validation import require_replacement_input_selection
 from zf.runtime.candidate_rework_identity import (
     _TASK_MAP_GENERATION_BOUND_IDENTITY_KEYS,
 )
@@ -126,7 +127,7 @@ def prepare_candidate_rework_scope(
             "requires_replan": True,
         }
 
-    if unowned_paths or terminal_owner_ids:
+    if (unowned_paths or terminal_owner_ids) and not summary.get("gap_tasks"):
         rework_items = _source_rework_items(events, source_event_id)
         gap_task = _replacement_gap_task(
             pdd_id=pdd_id,
@@ -139,6 +140,23 @@ def prepare_candidate_rework_scope(
             task_items=task_items,
         )
         if gap_task:
+            predecessors = [
+                item for item in task_items
+                if str(item.get("task_id") or "") in owner_ids
+            ]
+            try:
+                require_replacement_input_selection(gap_task, predecessors)
+            except ValueError as exc:
+                # Path ownership cannot decide a successor's consumption
+                # policy. Let the existing semantic planner review it before
+                # attempting the guarded Task Map amendment.
+                summary["scope_replan_reason"] = str(exc)
+                return {
+                    "anchor": rebound,
+                    "failed_task_ids": [],
+                    "rework_summary": summary,
+                    "requires_replan": True,
+                }
             summary["gap_tasks"] = [gap_task]
             summary["path_owner_task_ids"] = []
             return {

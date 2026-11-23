@@ -14,6 +14,7 @@ from zf.runtime.environment_exec import resource_locks
 from zf.runtime.environment_resources import environment_lock_plan
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json, write_sidecar_text
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.task_host_manifest import binding, dependency_digest, digest, git, preview, source_files
 from zf.runtime.task_host_quiescence import unrelated_task_turn_isolated
 from zf.runtime.workflow_git_readiness import git_environment
@@ -78,7 +79,8 @@ def _verify(root: Path, manifest: dict) -> tuple[dict, str]:
             "execution_origin": "operator_authorized_host"}, text
 
 
-def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, verifier=None, readonly_snapshot: bool = False) -> dict:
+def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, verifier=None,
+          readonly_snapshot: bool = False, recollection_base: dict | None = None) -> dict:
     if not approval_ref.strip() or reviewed_digest != manifest.get("manifest_digest"):
         raise ValueError("explicit approval_ref and exact reviewed manifest digest required")
     body = {k: v for k, v in manifest.items() if k != "manifest_digest"}
@@ -108,11 +110,27 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
         with resource_locks(environment_lock_plan(root), mode):
             current = preview(service, operation_id=manifest["operation_id"], kind=manifest["kind"],
                               paths=manifest["paths"], command_id=(manifest.get("command") or {}).get("command_id", ""))
-            if current != manifest:
+            if recollection_base is not None:
+                from zf.runtime.host_probe_recollection import recollection_manifest
+                from zf.runtime.pause_lifecycle import is_dispatch_paused
+                if is_dispatch_paused(state, events=events):
+                    raise ValueError("probe recollection cannot bypass dispatch pause")
+                policy = service.config.runtime.host_verification
+                checked = recollection_manifest(service, current, events, policy)
+                if (not readonly_snapshot or verifier is None or current != recollection_base
+                        or checked != manifest):
+                    raise ValueError("independent probe recollection is no longer authorized")
+            elif current != manifest:
                 raise ValueError("host manifest is stale; review a new preview")
             fields = {"action": ACTION, "manifest_digest": reviewed_digest,
                       "operation_id": manifest["operation_id"], **manifest["identity"],
                       "approval_ref": approval_ref, "kind": manifest["kind"]}
+            fields['manifest_ref'] = write_immutable_json_sidecar(state, manifest,
+                root='task-host-manifests', kind='task_host_manifest',
+                schema_version='task-host-manifest.v1', created_by=service.actor)
+            if recollection_base is not None:
+                fields.update(recollection_of_start_id=manifest['recollection_of_start_id'],
+                              original_manifest_digest=manifest['original_manifest_digest'])
             start = service.writer.emit("runtime.action.attempt.started", actor=service.actor,
                 task_id=fields["task_id"], correlation_id=fields["workflow_run_id"], payload=fields)
             prefix = f"artifacts/task-host-actions/{reviewed_digest}"

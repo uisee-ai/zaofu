@@ -165,6 +165,30 @@ def test_spawn_without_backend_is_blocked_not_guessed(tmp_path):
     assert blocked[-1].payload["reason"] == "self_repair_backend_not_configured"
 
 
+@pytest.mark.parametrize('request_type', ['run.manager.repair.accepted', 'run.manager.source_repair.dispatch_requested', 'autoresearch.repair.dispatch_requested'])
+def test_all_repair_consumers_honor_explicit_source_provider_model(tmp_path, request_type):
+    from types import SimpleNamespace
+    from zf.core.config.schema import ZfConfig
+
+    config = ZfConfig()
+    config.runtime.run_manager.backend = 'claude-code'
+    policy = config.runtime.run_manager.source_repair
+    policy.backend, policy.model, policy.model_reasoning_effort = 'codex', 'gpt-6-luna', 'high'
+    log, writer = _writer(tmp_path)
+    request = _dispatch_requested()
+    request.type = request_type
+    with patch('zf.core.config.project_context.resolve_project_context', return_value=SimpleNamespace(config=config)), patch(
+        'zf.runtime.self_repair_runner.subprocess.run', return_value=MagicMock(returncode=0, stderr='')),\
+        patch('zf.runtime.self_repair_runner.subprocess.Popen'):
+        assert dispatch_pending_self_repairs([request], writer, root=str(tmp_path), spawn=True,
+            backend='claude-code', tmp_root=str(tmp_path), request_types=(request_type,)) == 1
+    spawned = next(e for e in log.read_all() if e.type == 'autoresearch.repair.spawned')
+    argv = json.loads(sidecar_path(tmp_path, spawned.payload['launch_ref']['ref']).read_text())['argv']
+    assert argv[0] == 'codex'
+    assert argv[argv.index('--model') + 1] == 'gpt-6-luna'
+    assert 'model_reasoning_effort="high"' in argv
+
+
 def test_no_pending_is_no_op(tmp_path):
     log, writer = _writer(tmp_path)
     n = dispatch_pending_self_repairs([], writer, root=str(tmp_path), tmp_root=str(tmp_path))
@@ -306,6 +330,7 @@ def test_closeout_required_emitted_when_repair_worktree_has_commit(tmp_path):
     assert closeout.payload["auto_merge"] is False
     assert closeout.payload["risk_classification"]["risk"] == "high"
     assert closeout.payload["risk_classification"]["human_approval_required"] is True
+    assert closeout.payload["risk_classification"]["authority"].startswith("advisory")
     assert closeout.payload["changed_files"] == ["fix.txt"]
     assert closeout.payload["verification_plan"][0]["command"] == "git diff --check"
     assert closeout.payload["verification_plan"][1]["command"] == "pytest x"
@@ -526,14 +551,17 @@ def test_closeout_calls_authorized_kernel_publisher_before_independent_validatio
     policy = config.runtime.run_manager.source_repair
     policy.enabled = policy.publish_candidate = True
     policy.apply_policy = 'verified_checkpoint_apply'
-    policy.allow_paths = ['src/zf/**']
+    policy.allow_paths = ['src/zf/**', 'tasks/**']
     monkeypatch.setattr('zf.core.config.project_context.resolve_project_context', lambda **kwargs: SimpleNamespace(config=config))
     (worktree / 'src/zf').mkdir(parents=True)
     (worktree / 'src/zf/fixed.py').write_text('fixed = True\n')
+    (worktree / 'tasks').mkdir()
+    (worktree / 'tasks/repair-audit.md').write_text('> 状态: active\n\n修复交接，待独立验证。\n')
     assert emit_self_repair_closeouts([dispatched, spawned], writer, root=str(root)) == 1
     closeout = next(e for e in log.read_all() if e.type == CLOSEOUT_REQUIRED)
     assert closeout.payload['repair_commit'] != base
     assert closeout.payload['repair_contract_digest'] == dispatched.payload['repair_contract_digest']
+    assert 'tasks/repair-audit.md' in closeout.payload['changed_files']
     assert _git(root, 'rev-parse', 'HEAD') == base
     assert not any(e.type == 'run.manager.repair.merge.merged' for e in log.read_all())
 

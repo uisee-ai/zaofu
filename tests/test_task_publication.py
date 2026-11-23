@@ -12,7 +12,7 @@ from zf.runtime.task_host_manifest import git
 from zf.runtime.task_publication import reconcile_task_publication
 
 
-def prepare(case, *, failure_class='host_publication_required'):
+def prepare(case, *, failure_class='host_publication_required', event_type='dev.blocked'):
     service, root, identity = case
     service.config = ZfConfig()
     service.config.runtime.task_publication = TaskPublicationConfig(
@@ -23,7 +23,7 @@ def prepare(case, *, failure_class='host_publication_required'):
     ref = write_sidecar_json(service.state_dir, 'artifacts/blocked.json', body,
         kind='call_control_result', schema_version='implementation-result.v1', created_by='test',
         source_event_id='blocked')
-    service.writer.append(ZfEvent(id='blocked', type='dev.blocked', task_id='T1',
+    service.writer.append(ZfEvent(id='blocked', type=event_type, task_id='T1',
         payload={**identity, 'control_result_ref': ref}))
     service.writer.append(ZfEvent(type='workflow.call.result.admitted', payload={**identity,
         'semantic_verdict': 'blocked', 'control_result_ref': ref}))

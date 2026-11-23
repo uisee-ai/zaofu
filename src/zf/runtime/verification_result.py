@@ -182,6 +182,11 @@ def validate_verification_result(
             f"invalid execution_status {execution_status!r}; allowed: completed, failed; "
             "environment failure uses failed with verdict=abstained"
         )
+    host_ids = result.get("host_execution_receipt_ids", [])
+    if (not isinstance(host_ids, list)
+            or any(not isinstance(item, str) or not item.strip() for item in host_ids)
+            or len(set(host_ids)) != len(host_ids)):
+        raise VerificationResultError("host_execution_receipt_ids must be unique nonempty strings")
     if execution_status == "failed":
         if verdict != "abstained":
             raise VerificationResultError(
@@ -201,7 +206,7 @@ def validate_verification_result(
         reused = _string_list(result.get("reused_command_receipt_ids"))
         probes = result.get("probe_receipts")
         probes = probes if isinstance(probes, list) else []
-        if not reused and not probes:
+        if not reused and not probes and not host_ids:
             raise VerificationResultError(
                 "passed verdict requires a reused command or probe receipt"
             )
@@ -590,6 +595,9 @@ def validate_verification_acceptance(
     contract_snapshot: Mapping[str, Any],
 ) -> None:
     """Bind row ownership and required outcomes to a caller-validated stage."""
+    from zf.runtime.candidate_finding_partition import validate_obligation_results
+
+    validate_obligation_results(result, contract_snapshot)
     if str(result.get("execution_status") or "") == "failed":
         return
     criteria = contract_snapshot.get("acceptance_criteria")

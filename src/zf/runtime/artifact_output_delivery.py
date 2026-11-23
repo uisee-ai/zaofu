@@ -43,7 +43,8 @@ def emit_artifact_output(
         })
 
 
-def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]], *,
+                              persist_observations: bool = True) -> list[dict[str, Any]]:
     """Enrich sealed evidence from the registry-bound Codex transcript only.
 
     Hook output is producer-side and cannot establish this observation. Other
@@ -61,6 +62,8 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
     result = []
     for original in rows:
         row = dict(original)
+        # This key is created only by this invocation's read-only observer.
+        row.pop("_provider_observation", None)
         if row.get("production_status") != "stdout_flushed":
             result.append(row)
             continue
@@ -108,16 +111,18 @@ def observe_artifact_delivery(state_dir: Path, rows: list[dict[str, Any]]) -> li
                 # Tool wrappers add timing/exit metadata. Require the entire
                 # exact output at line boundaries, never a prefix or summary.
                 if complete_output_observed(bodies[digest], text):
-                    observed = write_immutable_json_sidecar(
-                        state_dir, {"schema_version": "provider-output-observation.v1",
-                                    "session_id": session_id, "call_id": call_id,
-                                    "timestamp": timestamp, "output": text, "raw_output": raw_text},
-                        root="provider-output-observations", kind="provider_output_observation",
-                        schema_version="provider-output-observation.v1", created_by="read-ledger-seal",
-                    )
+                    proof = {"schema_version": "provider-output-observation.v1",
+                             "session_id": session_id, "call_id": call_id,
+                             "timestamp": timestamp, "output": text, "raw_output": raw_text}
+                    if persist_observations:
+                        row["provider_observation_ref"] = write_immutable_json_sidecar(
+                            state_dir, proof, root="provider-output-observations", kind="provider_output_observation",
+                            schema_version="provider-output-observation.v1", created_by="read-ledger-seal",
+                        )
+                    else:
+                        row["_provider_observation"] = proof
                     row.update(provider_delivery_status="observed_in_transcript",
-                               provider_session_id=session_id, provider_call_id=call_id,
-                               provider_observation_ref=observed)
+                               provider_session_id=session_id, provider_call_id=call_id)
                     break
         except (OSError, ValueError, KeyError, TypeError):
             pass

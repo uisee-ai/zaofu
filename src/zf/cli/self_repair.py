@@ -33,6 +33,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     run.add_argument("--state-dir", required=True, help="Run state dir with the dispatch_requested events")
     run.add_argument("--harness-root", default=None, help="ZaoFu repo root (default: detected from zf package)")
     run.add_argument("--spawn", action="store_true", help="Spawn a headless agent to run the playbook")
+    run.add_argument("--accepted-only", action="store_true", help="Consume only Run Manager accepted repair requests")
     run.add_argument(
         "--backend",
         default="",
@@ -57,6 +58,8 @@ def run_cmd(args: argparse.Namespace) -> int:
         root=getattr(args, "harness_root", None),
         spawn=getattr(args, "spawn", False),
         backend=getattr(args, "backend", ""),
+        request_types=("run.manager.repair.accepted",) if getattr(args, "accepted_only", False)
+            else ("autoresearch.repair.dispatch_requested",),
     )
     if n == 0:
         print("no pending self-repair dispatches")

@@ -379,6 +379,25 @@ class CallResultAuthorityMixin:
                     code,
                     f"dispatch pinned {expected_value}, got {actual_value or '<missing>'}",
                 ))
+        if plan_synthesis_result and expected.get("plan_synth_verdict_only") is True:
+            from zf.runtime.plan_synth_output_binding import plan_synth_output_binding_issues
+            from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+            try:
+                body = hydrate_sidecar_ref(self.state_dir, dict(control_result)).payload
+            except (ValueError, OSError) as exc:
+                issues.append(_currentness_issue(
+                    "control_result", "plan_synth_output_binding_unavailable", str(exc),
+                ))
+            else:
+                issues.extend(plan_synth_output_binding_issues(expected, body))
+                if expected.get("plan_review_evidence_policy"):
+                    from zf.runtime.plan_review_claims import review_claim_issues
+                    try:
+                        request = hydrate_sidecar_ref(self.state_dir, dict(operation["request_ref"])).payload["request"]
+                        issues.extend(review_claim_issues(self.state_dir, request, body))
+                    except (ValueError, OSError, KeyError, TypeError) as exc:
+                        issues.append(_currentness_issue("control_result", "plan_review_evidence_invalid", str(exc)))
         return issues
 
     def _latest_candidate_for_run(self, workflow_run_id: str) -> ZfEvent | None:
@@ -644,41 +663,11 @@ class CallResultAuthorityMixin:
                 "stale_task_authority",
                 "Goal closure snapshot requires a non-empty Task authority set",
             )]
-        issues: list[dict[str, str]] = []
-        store = TaskStore(self.state_dir / "kanban.json")
-        for child in children if isinstance(children, list) else []:
-            if not isinstance(child, Mapping):
-                continue
-            task_id = str(child.get("task_id") or "")
-            task = store.get(task_id) if task_id else None
-            if task is None:
-                issues.append(_currentness_issue(
-                    "control_result.contract_snapshot_ref",
-                    "stale_task_authority",
-                    f"Goal closure child {task_id!r} is absent from TaskStore",
-                ))
-                continue
-            try:
-                current = current_task_contract_identity(task)
-            except TaskContractSnapshotError as exc:
-                issues.append(_currentness_issue(
-                    "control_result.contract_snapshot_ref",
-                    "stale_task_authority",
-                    str(exc),
-                ))
-                continue
-            for field, expected in current.items():
-                actual = str(child.get(field) or "")
-                if str(expected) != actual:
-                    issues.append(_currentness_issue(
-                        f"control_result.child_authorities.{field}",
-                        "stale_task_authority",
-                        (
-                            f"Goal closure child {task_id!r} expects "
-                            f"{expected}, got {actual or '<missing>'}"
-                        ),
-                    ))
-        return issues
+        from zf.runtime.candidate_child_authority import goal_child_authority_issues
+
+        return goal_child_authority_issues(self.state_dir, self.event_log.read_all(),
+                                          snapshot=snapshot, result=result)
+
 
 
 def _currentness_issue(field: str, code: str, message: str) -> dict[str, str]:

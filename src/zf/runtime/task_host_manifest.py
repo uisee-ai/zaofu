@@ -16,7 +16,7 @@ from zf.runtime.task_contract_snapshot import (
 )
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
 from zf.runtime.workflow_git_readiness import git_read
-from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.workflow_operation import TERMINAL_OPERATION_STATUSES, reduce_workflow_operations
 
 
 def digest(value: object) -> str:
@@ -60,11 +60,19 @@ def binding(service, operation_id: str) -> tuple[dict, dict, dict, Path]:
     context = task_pipeline_generation_contexts(events).get(op["task_id"], {})
     if any(context.get(k) != op.get(k) for k in ("workflow_run_id", "task_map_generation")):
         raise ValueError("task generation is no longer current")
-    if any(other.get("task_id") == op["task_id"] and other.get("operation_id") != operation_id
-           and (other.get("status") in {"requested", "reserved", "running", "suspended"}
-                or int(other.get("operation_generation") or 0) > int(op["operation_generation"]))
-           for other in operations.values()):
-        raise ValueError("another operation owns the task")
+    for other in operations.values():
+        if other.get("task_id") != op["task_id"] or other.get("operation_id") == operation_id:
+            continue
+        # Counters restart for each admitted Run/Task Map. Only known, ended
+        # foreign scopes are historical; live or ambiguous ownership still blocks.
+        keys = ("workflow_run_id", "task_map_generation")
+        historical = (other.get("status") in TERMINAL_OPERATION_STATUSES
+                      and all(other.get(k) for k in keys)
+                      and any(other.get(k) != op.get(k) for k in keys))
+        if (other.get("status") in {"requested", "reserved", "running", "suspended"}
+                or (not historical
+                    and int(other.get("operation_generation") or 0) > int(op["operation_generation"]))):
+            raise ValueError("another operation owns the task")
     request = hydrate_sidecar_ref(service.state_dir, op["request_ref"]).payload["request"]
     identity = request["result_identity"]
     contract = hydrate_task_contract_snapshot(service.state_dir, descriptor_from_payload(identity),
@@ -135,6 +143,29 @@ def dependency_digest(service, root: Path) -> str:
     return digest(rows)
 
 
+def publication_hooks(root: Path) -> list[dict]:
+    """Recognize only the exact guard installed by this trusted runtime."""
+    from zf.core.workspace.git_hooks import PRE_COMMIT_HOOK
+
+    # --git-path resolves a hooks-directory symlink; inspect the default entry itself.
+    hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "hooks"
+    error = "Git hooks require separate review; this host action does not bypass them"
+    if git_read(root, "config", "--get", "core.hooksPath").stdout.strip() or hooks.is_symlink():
+        raise ValueError(error)
+    rows = []
+    for path in sorted(hooks.glob("*")):
+        if not path.is_file() or not os.access(path, os.X_OK) or path.name.endswith(".sample"):
+            continue
+        if path.is_symlink() or path.name != "pre-commit":
+            raise ValueError(error)
+        content = path.read_bytes()
+        if content != PRE_COMMIT_HOOK.encode():
+            raise ValueError(error)
+        rows.append({"name": path.name, "sha256": hashlib.sha256(content).hexdigest(),
+                     "mode": path.stat().st_mode})
+    return rows
+
+
 def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = None,
             command_id: str = "") -> dict:
     op, request, contract, root = binding(service, operation_id)
@@ -151,11 +182,7 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
         # the interactive shell's author environment or global Git config.
         git(root, "var", "GIT_AUTHOR_IDENT")
         git(root, "var", "GIT_COMMITTER_IDENT")
-        hooks = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks"))
-        if (git_read(root, "config", "--get", "core.hooksPath").stdout.strip()
-                or any(p.is_file() and os.access(p, os.X_OK) and not p.name.endswith(".sample")
-                       for p in hooks.glob("*"))):
-            raise ValueError("Git hooks require separate review; this host action does not bypass them")
+        hooks = publication_hooks(root)
         scopes = request.get("workdir_write_scopes") or []
         for name in names:
             _relative(root, name)
@@ -190,4 +217,6 @@ def preview(service, *, operation_id: str, kind: str, paths: list[str] | None = 
             "branch": git(root, "rev-parse", "--abbrev-ref", "HEAD"),
             "paths": names, "command": command, "files": source_files(root),
             "dependency_digest": dependency_digest(service, root)}
+    if kind == "commit":
+        body["git_hooks"] = hooks
     return {**body, "manifest_digest": digest(body)}

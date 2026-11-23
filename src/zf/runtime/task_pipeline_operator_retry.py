@@ -77,10 +77,13 @@ def _retryable_operation(
         "source_event_id"
     )
     source = next((e for e in events if e.id == source_id), None)
+    # Typed Impl submission keeps dev.build.done as its transport completion;
+    # the admitted semantic verdict above, not that event name, authorizes retry.
+    source_types = {"task.pipeline.verify.completed"} if stage == "verify" else {"dev.blocked", "dev.build.done"}
     if (
         not operation.get("call_result_admitted_event_id")
         or source is None
-        or source.type != ("task.pipeline.verify.completed" if stage == "verify" else "dev.blocked")
+        or source.type not in source_types
         or source.payload.get("operation_id") != operation_id
     ):
         raise ValueError("blocked result lacks an admitted canonical source")

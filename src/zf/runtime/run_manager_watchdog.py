@@ -187,7 +187,13 @@ def _health_findings(
                 projection_path.stat().st_mtime,
                 tz=timezone.utc,
             )
-            age = int((now - mtime).total_seconds())
+            # Tick services run this watchdog before the normal Run Manager
+            # tick. A quiescent wake can therefore make an old projection
+            # look stale for one pass, before that tick has a chance to
+            # refresh it. Treat the wake as the freshness floor.
+            latest_wake = _latest_quiescent_exit(events)
+            freshness_at = max(mtime, latest_wake) if latest_wake else mtime
+            age = int((now - freshness_at).total_seconds())
             if age > max_projection_stale_seconds:
                 findings.append(("projection_stale", {
                     "path": str(projection_path),
@@ -253,6 +259,7 @@ def _source_repair_payload(
                 "phase": "zaofu_self_repair",
                 "behavior": f"Run Manager watchdog detected {reason}",
                 "verification": "PYTEST_ADDOPTS=--no-cov uv run pytest tests/test_run_manager.py tests/test_run_manager_watchdog.py tests/test_tick_services.py -q",
+                "verification_commands": ["pytest tests/test_run_manager.py tests/test_run_manager_watchdog.py tests/test_tick_services.py -q --no-cov"],
                 "verification_tiers": ["static", "runtime"],
                 "scope": scope,
                 "acceptance": "focused verification passes and runtime truth is not edited directly",
@@ -318,6 +325,14 @@ def _parse_ts(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _latest_quiescent_exit(events: list[ZfEvent]) -> datetime | None:
+    for event in reversed(events):
+        if event.type != "run.goal.quiescent.exited":
+            continue
+        return _parse_ts(event.ts)
+    return None
 
 
 def _fingerprint_seen(events: list[ZfEvent], fingerprint: str) -> bool:

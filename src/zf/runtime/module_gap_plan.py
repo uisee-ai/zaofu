@@ -73,6 +73,7 @@ def write_gap_task_map_amend_artifact(
     successor_base_commit: str = "",
     replacement_context: dict[str, Any] | None = None,
     admission_metadata: Mapping[str, Any] | None = None,
+    preserve_task_rows: bool = False,
 ) -> dict[str, Any]:
     from zf.runtime.task_map import validate_task_map_payload
 
@@ -109,6 +110,7 @@ def write_gap_task_map_amend_artifact(
         gap_plan_ref=gap_plan_ref,
         supersedes_task_ids=supersedes_task_ids,
         successor_base_commit=successor_base_commit,
+        preserve_task_rows=preserve_task_rows,
     )
     amended_gap_ids = set(
         _string_list((amended.get("amend") or {}).get("gap_task_ids"))
@@ -316,6 +318,7 @@ def build_gap_task_map_amend(
     gap_plan_ref: str = "",
     supersedes_task_ids: list[str] | None = None,
     successor_base_commit: str = "",
+    preserve_task_rows: bool = False,
 ) -> dict[str, Any]:
     """Return a full task-map with gap tasks appended.
 
@@ -324,6 +327,10 @@ def build_gap_task_map_amend(
     simple while callers can dispatch only the new gap task ids.
     """
 
+    if preserve_task_rows:
+        from zf.runtime.canonical_gap_rows import canonical_gap_rows
+
+        gap_tasks = canonical_gap_rows(base_task_map, gap_tasks, target_commit=successor_base_commit)
     validation = validate_module_gap_plan_payload(_validation_payload(gap_tasks))
     if not validation.passed:
         raise ValueError("gap plan validation failed: " + "; ".join(validation.errors))
@@ -340,7 +347,7 @@ def build_gap_task_map_amend(
         envelope_supersedes=_string_list(supersedes_task_ids),
         successor_base_commit=successor_base_commit,
     )
-    gap_tasks = [
+    gap_tasks = gap_tasks if preserve_task_rows else [
         _inherit_replacement_mechanical_identity(task, base_tasks_by_id)
         for task in gap_tasks
     ]
@@ -385,7 +392,7 @@ def build_gap_task_map_amend(
             if repair_replayed_goal_claims(existing, proposed, has_lineage=bool(_task_contract_list(raw, "supersedes_task_ids"))):
                 appended.append(task_id)
             continue
-        tasks.append(_gap_task_to_task_map_item(raw, wave=next_wave))
+        tasks.append(deepcopy(raw) if preserve_task_rows else _gap_task_to_task_map_item(raw, wave=next_wave))
         existing_ids.add(task_id)
         appended.append(task_id)
     require_replacement_goal_coverage(base_tasks_by_id, tasks, superseded_task_ids)

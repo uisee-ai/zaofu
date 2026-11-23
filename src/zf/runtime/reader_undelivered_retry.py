@@ -37,6 +37,12 @@ def undelivered_retry_anchor(
         and op.get('parent_stage_id') == p['stage_id']
         and op.get('role_instance') == p['role_instance']
         and op.get('active_attempt_id') == p['run_id']]
+    if not candidates:
+        from zf.runtime.reader_unprepared_wait import unprepared_wait_error
+        error = unprepared_wait_error(events, {"fanout_id": p["fanout_id"],
+            "fanout_child_id": p["child_id"], "workflow_run_id": run_id,
+            "active_attempt_id": p["run_id"], "source_event_id": failed.id})
+        return None if error else failed
     if len(candidates) != 1:
         return None
     op = candidates[0]

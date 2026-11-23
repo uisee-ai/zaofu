@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
     same_task_map_generation,
@@ -121,19 +122,29 @@ def prepare_candidate_verification_authority(
         )
 
     missing_verify: set[str] = set()
+    from zf.runtime.candidate_retained_tasks import candidate_child_proofs
+
+    try:
+        reused = candidate_child_proofs(runtime, events, candidate)
+    except ValueError as exc:
+        raise CandidateVerificationAuthorityError(str(exc)) from exc
     child_authorities: list[dict[str, Any]] = []
     child_snapshots: list[dict[str, Any]] = []
     for child_task_id in completed_task_ids:
+        reuse = reused.get(child_task_id)
+        child_generation = str(reuse["task_map_generation"]) if reuse else generation
         verification = _latest_task_verification(
             events,
             workflow_run_id=evidence_run_id,
             task_id=child_task_id,
-            task_map_generation=generation,
+            task_map_generation=child_generation,
             target_commit=task_commits[child_task_id],
         )
         if verification is None:
             missing_verify.add(child_task_id)
             continue
+        if reuse and verification.id != reuse["verification_event_id"]:
+            raise CandidateVerificationAuthorityError("reused Task verification changed: " + child_task_id)
         if inherited_proofs:
             current_task = runtime.task_store.get(child_task_id)
             if (verification.id != inherited_proofs[child_task_id]["verification_event_id"]
@@ -153,7 +164,7 @@ def prepare_candidate_verification_authority(
         expected_contract = {
             "workflow_run_id": evidence_run_id,
             "task_id": child_task_id,
-            "task_map_generation": generation,
+            "task_map_generation": child_generation,
         }
         contract_snapshot = hydrate_task_contract_snapshot(
             Path(runtime.state_dir),
@@ -170,7 +181,7 @@ def prepare_candidate_verification_authority(
                     f"candidate task {child_task_id!r} has no current TaskStore authority"
                 )
             try:
-                current_identity = current_task_contract_identity(current_task)
+                current_identity = reuse["prior_identity"] if reuse else current_task_contract_identity(current_task)
             except Exception as exc:
                 raise CandidateVerificationAuthorityError(
                     f"candidate task {child_task_id!r} authority is unreadable: {exc}"
@@ -204,6 +215,9 @@ def prepare_candidate_verification_authority(
             },
         )
         child_authorities.append({
+            **({"completion_reuse_ref": reuse["completion_reuse_ref"]} if reuse and reuse.get("completion_reuse_ref") else {}),
+            **({"retained_task_evidence": reuse["retained_task_evidence"]} if reuse and reuse.get("retained_task_evidence") else {}),
+            **({"completion_restore_ref": reuse["completion_restore_ref"]} if reuse and reuse.get("completion_restore_ref") else {}),
             "task_id": child_task_id,
             "target_commit": task_commits[child_task_id],
             "verification_event_id": verification.id,
@@ -283,6 +297,11 @@ def prepare_candidate_verification_authority(
             ),
         },
     )
+    from zf.runtime.candidate_finding_partition import retained_candidate_obligations
+
+    obligations = retained_candidate_obligations(events, run_id=workflow_run_id, task_id=anchor_task_id)
+    if obligations:
+        aggregate["candidate_recovery_obligations"] = obligations
     contract_descriptor = write_task_contract_snapshot(
         Path(runtime.state_dir),
         aggregate,
@@ -337,6 +356,8 @@ def prepare_candidate_verification_authority(
 def _latest_frozen_candidate(
     events: list[ZfEvent],
     workflow_run_id: str,
+    *,
+    authority_events: list[ZfEvent] | None = None,
 ) -> ZfEvent | None:
     for event in reversed(events):
         if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
@@ -350,7 +371,7 @@ def _latest_frozen_candidate(
         if event_run_id != workflow_run_id:
             continue
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
-            return event
+            return native_freeze_for_recovery(events if authority_events is None else authority_events, event)
     return None
 
 
@@ -359,8 +380,9 @@ def frozen_candidate_for_payload(
     workflow_run_id: str,
     *,
     payload: Mapping[str, Any],
+    authority_events: list[ZfEvent] | None = None,
 ) -> ZfEvent | None:
-    """Resolve the exact triggering freeze before falling back to latest."""
+    """Select within events; later authority receipts may validate that exact copy."""
 
     trigger_payload = payload.get("trigger_payload")
     trigger_payload = (
@@ -379,7 +401,7 @@ def frozen_candidate_for_payload(
         or ""
     ).strip()
     if not candidate_event_id and not freeze_id:
-        return _latest_frozen_candidate(events, workflow_run_id)
+        return _latest_frozen_candidate(events, workflow_run_id, authority_events=authority_events)
     candidates = {
         event.id: event
         for event in events
@@ -401,14 +423,14 @@ def frozen_candidate_for_payload(
         if str(body.get("schema_version") or "") == "candidate-freeze-receipt.v1":
             if freeze_id and str(body.get("freeze_id") or "") != freeze_id:
                 return None
-            return current
+            return native_freeze_for_recovery(events if authority_events is None else authority_events, current)
         parent_id = str(
             body.get("candidate_snapshot_event_id")
             or body.get("candidate_event_id")
             or ""
         ).strip()
         current = candidates.get(parent_id) if parent_id else None
-    if freeze_id:
+    if freeze_id and not candidate_event_id:
         for event in reversed(events):
             if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
                 continue
@@ -424,7 +446,7 @@ def frozen_candidate_for_payload(
                 == "candidate-freeze-receipt.v1"
                 and str(body.get("freeze_id") or "") == freeze_id
             ):
-                return event
+                return native_freeze_for_recovery(events if authority_events is None else authority_events, event)
     return None
 
 

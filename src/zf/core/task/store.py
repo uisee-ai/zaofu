@@ -452,6 +452,7 @@ class TaskStore:
         updates: dict,
         expected_status: str | None = None,
         expected_blocked_by: list[str] | None = None,
+        expected_active_dispatch_id: str | None = None,
     ) -> tuple[Task | None, bool]:
         """Patch non-authority Task fields only while the contract CAS token matches."""
 
@@ -476,6 +477,9 @@ class TaskStore:
                     return self._to_task(dict(record)), False
                 if expected_blocked_by is not None and record.get("blocked_by", []) != expected_blocked_by:
                     return self._to_task(dict(record)), False
+                if (expected_active_dispatch_id is not None
+                        and str(record.get("active_dispatch_id") or "") != expected_active_dispatch_id):
+                    return self._to_task(dict(record)), False
                 current = str(record.get("contract_authority_revision") or "")
                 if current != str(expected_authority_revision or ""):
                     return self._to_task(dict(record)), False
@@ -491,6 +495,48 @@ class TaskStore:
                 self._save_raw(raw)
                 return self._to_task(dict(record)), True
         return None, False
+
+    def compare_and_restore_terminal_batch(
+        self, *, expected: list[Task], replacements: list[Task],
+    ) -> bool:
+        """Append one reviewed terminal revision batch in its existing archive.
+
+        The caller owns recovery authorization and evidence. One archive write
+        is atomic; the terminal index does not move, and no Task becomes active.
+        A replay accepts only the complete old or complete exact new batch.
+        """
+        from zf.core.task.authority import authority_revision_for
+
+        ids = [task.id for task in expected]
+        if not ids or len(ids) != len(set(ids)) or ids != [task.id for task in replacements]:
+            raise ValueError("terminal restore requires matching unique Task sets")
+        for old, new in zip(expected, replacements):
+            if (old.status != "done" or new.status != "done" or old.active_dispatch_id
+                    or new.active_dispatch_id or not new.completed_at
+                    or new.contract_authority_sequence != old.contract_authority_sequence + 1
+                    or new.contract_authority_revision != authority_revision_for(
+                        task_id=new.id, contract=new.contract, execution_binding=new.execution_binding,
+                        sequence=new.contract_authority_sequence)):
+                raise ValueError("terminal restore requires inactive done Tasks and forward authority")
+        with self._locked():
+            if set(ids) & {row.get("id") for row in self._load_raw()}:
+                return False
+            index = self._load_terminal_index()
+            buckets = {index.get(task_id) for task_id in ids}
+            if len(buckets) != 1 or None in buckets:
+                raise ValueError("terminal restore requires one existing archive bucket")
+            date = next(iter(buckets))
+            path = self._archive_file(date)
+            archived = self._load_archive_file(path)
+            current = {row.get("id"): self._to_task(row) for row in archived if row.get("id") in ids}
+            actual = [asdict(current[task_id]) if task_id in current else None for task_id in ids]
+            new_records = [asdict(task) for task in replacements]
+            if actual == new_records:
+                return True
+            if actual != [asdict(task) for task in expected]:
+                return False
+            atomic_write_text(path, json.dumps([*archived, *new_records], ensure_ascii=False, indent=2) + "\n")
+            return True
 
     def patch_contract_fields(
         self,

@@ -19,6 +19,12 @@ def special_action_policy(
     preflight = special_action_preflight(action, payload)
     if preflight is None:
         return None
+    if action == "repair-closeout-dispose":
+        return {
+            "decision": "auto_decide" if preflight["status"] == "passed" else "needs_diagnosis",
+            "executable": preflight["status"] == "passed", "preflight": preflight,
+            "reason": "retire only a failed candidate with its bound applied replacement",
+        }
     if action in REPAIR_CLOSEOUT_ACTIONS:
         if preflight["status"] == "blocked":
             return {
@@ -68,6 +74,15 @@ def special_action_preflight(
 ) -> dict[str, Any] | None:
     """Validate repair-specific actions without importing the main router."""
 
+    if action == "repair-closeout-dispose":
+        failures = ["missing_" + key for key in (
+            "checkpoint_id", "queue_id", "repair_contract_digest", "previous_validation_event_id",
+            "replacement_queue_id", "replacement_contract_digest", "replacement_acceptance_event_id",
+            "replacement_apply_event_id", "reason",
+        ) if not payload.get(key)]
+        return _preflight_result(payload=payload, failures=failures,
+            checkpoint_id=str(payload.get("checkpoint_id") or ""),
+            safe_action="repair_closeout_dispose", expected=["run.manager.repair.merge.discarded"])
     if action not in (
         REPAIR_CLOSEOUT_ACTIONS
         | REPAIR_CLOSEOUT_APPLY_ACTIONS
@@ -130,6 +145,10 @@ def special_action_preflight(
             validation = validation if isinstance(validation, dict) else {}
             if str(validation.get("repair_contract_digest") or "") != contract_digest:
                 failures.append("repair_validation_contract_mismatch")
+            from zf.runtime.repair_validation_binding import validation_matches_candidate
+
+            if not validation_matches_candidate(payload):
+                failures.append("repair_validation_candidate_mismatch")
         if not str(payload.get("continuation_checkpoint_id") or ""):
             failures.append("missing_continuation_checkpoint_id")
         if not str(payload.get("continuation_safe_resume_action") or ""):
@@ -165,6 +184,8 @@ def special_action_preflight(
 
 
 def special_expected_downstream_events(safe_action: str) -> set[str] | None:
+    if safe_action == "repair_closeout_dispose":
+        return {"run.manager.repair.merge.discarded"}
     if safe_action == "repair_closeout_validate":
         return {"run.manager.action.applied"}
     if safe_action == "fanout_aggregate_rebuild":
