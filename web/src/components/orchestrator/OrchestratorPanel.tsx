@@ -1,6 +1,7 @@
 // OrchestratorPanel + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { clearQuestionDraft, planQuestionDraftKey } from "../common/questionDraft";
 import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
+import type { dashboardActionAccess } from "../../app/dashboardActionAccess";
 import type { ActionResponse, RecentEvent, Snapshot, WebChatArtifact, WebChatChildActivity, WebChatInteraction, WebChatQueueItem, WebChatRuntime } from "../../api/types";
 import { referencedTaskId, withImplicitTaskReference } from "./kanbanTaskReference";
 import {
@@ -414,7 +415,7 @@ export function OrchestratorPanel({
   onSaveToken,
   onUnlockSession,
   snapshot,
-  tokenPresent,
+  access,
 }: {
   actionResult: ActionResponse | null;
   activeProjectId: string;
@@ -432,7 +433,7 @@ export function OrchestratorPanel({
   onSaveToken: (token: string) => void;
   onUnlockSession: (passcode: string) => Promise<{ ok: boolean; status: string; reason?: string }>;
   snapshot: Snapshot | null;
-  tokenPresent: boolean;
+  access: ReturnType<typeof dashboardActionAccess>;
 }) {
   const headlessProjectId = kanbanAgentProjectId(
     activeProjectId,
@@ -532,18 +533,12 @@ export function OrchestratorPanel({
   const [headlessHasNewBelow, setHeadlessHasNewBelow] = useState(false);
 
   const allowedActions = snapshot?.runtime.actions?.allowed ?? [];
-  const webSession = snapshot?.runtime.web_session;
+  const { actionReady, actionState, hasToken, mutationEnabled, passcodeRequired, sessionActionReady, showTokenRow } = access;
   const agentSurface = snapshot?.runtime.agent_surface;
   const appliedAgentProfile = recordValue(webChatRuntime?.agent_profile?.profile);
   const permissionProfile = textValue(
     appliedAgentProfile?.permission_profile || agentSurface?.permission_profile,
   ).trim() || "workspace_writer";
-  // A project snapshot is intentionally token-agnostic and may report
-  // mutation_enabled=false when it was hydrated without the browser token.
-  // A locally saved token is the explicit fallback authorization for this
-  // surface, so it must participate in the same gate as the snapshot flag.
-  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
-    || tokenPresent;
   const headlessConversationId = kanbanAgentConversationId(headlessProjectId);
   const webChatInteractionDraftKey = interactionDraftStorageKey(
     headlessProjectId,
@@ -551,24 +546,17 @@ export function OrchestratorPanel({
     headlessThreadKey,
   );
   webChatResourceIdentityRef.current = `${headlessProjectId}:${headlessConversationId}:${headlessThreadKey}`;
-  const sessionActionReady = Boolean(webSession?.actions_enabled);
-  const tokenFallbackAvailable = webSession?.mode === "token_required"
-    || Boolean(webSession?.token_fallback_enabled);
-  const passcodeRequired = webSession?.mode === "remote_passcode" && !sessionActionReady;
-  const showTokenRow = mutationEnabled && !sessionActionReady && tokenFallbackAvailable && !tokenPresent;
-  const tokenRequired = showTokenRow && !tokenPresent;
-  const actionReady = sessionActionReady || (mutationEnabled && tokenPresent);
-  const actionState = actionReady
-    ? "active"
-    : mutationEnabled
-      ? (passcodeRequired ? "passcode needed" : tokenRequired ? "token needed" : "locked")
-      : "read only";
   const canUseAction = (action: string) => actionReady && allowedActions.includes(action);
+  const awaitingAccess = !snapshot || !access.mode;
+  const chatAccessHint = awaitingAccess ? "正在读取会话权限…"
+    : passcodeRequired ? "请先解锁当前会话。"
+    : showTokenRow ? "Save a valid action token to send messages."
+    : actionReady ? "当前项目未开放 Agent 对话。" : "当前会话仅可阅读对话。";
   const modelSelection = useKanbanModelSelection(headlessProjectId, headlessThreadKey, operatorBackend,
     visible && canUseAction("chat-orchestrator"),
     context.taskId && !composerDraft.unreferencedTasks.includes(context.taskId) ? context.taskId : "");
   useEffect(() => {
-    if (pendingGateMessage === null || !snapshot) return;
+    if (pendingGateMessage === null || awaitingAccess) return;
     const parked = pendingGateMessage;
     setPendingGateMessage(null);
     if (parked.projectId !== headlessProjectId || parked.threadId !== headlessThreadKey) return;
@@ -579,10 +567,10 @@ export function OrchestratorPanel({
     if (actionReady && allowedActions.includes("chat-orchestrator")) {
       void submitHeadlessMessage(parked.message);
     } else {
-      setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
+      setOperatorError(chatAccessHint);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingGateMessage, snapshot, actionReady]);
+  }, [pendingGateMessage, awaitingAccess, actionReady]);
   // 8001 regression (operator report 2026-07-16): when the selected project is
   // dead (root deleted -> snapshot 404s forever) the parked message became a
   // black hole — cleared textarea, never sent, no feedback. Bound the park:
@@ -1144,6 +1132,21 @@ export function OrchestratorPanel({
     };
     const targetBackend = options.backendOverride ?? boundDiscussionBackend ?? operatorBackend;
     if (!message || !isChatBackend(targetBackend)) return;
+    if (!canUseAction("chat-orchestrator")) {
+      // First-message race (operator report 2026-07-16): before the snapshot
+      // arrives the gate reads "read only" and the send silently bounced.
+      // Park the message and let the snapshot effect below flush it instead
+      // of erroring on a gate that is merely unknown.
+      if (awaitingAccess) {
+        setPendingGateMessage({ message, projectId: headlessProjectId, threadId: headlessThreadKey,
+          attachmentVersions: webChatAttachments.map((item) => item.version_id) });
+        setOperatorError("");
+        return;
+      }
+      setOperatorError(chatAccessHint);
+      headlessInputRef.current?.focus();
+      return;
+    }
     const permissionResolution = await resolveKanbanTurnPermission({
       override: options.permissionProfileOverride,
       projectId: headlessProjectId,
@@ -1166,21 +1169,6 @@ export function OrchestratorPanel({
     }
     if (activeThreadBusy && !options.force && !isPlanDiscussion) {
       await queueHeadlessMessage(message, requestPatch, targetBackend, turnPermissionProfile);
-      return;
-    }
-    if (!canUseAction("chat-orchestrator")) {
-      // First-message race (operator report 2026-07-16): before the snapshot
-      // arrives the gate reads "read only" and the send silently bounced.
-      // Park the message and let the snapshot effect below flush it instead
-      // of erroring on a gate that is merely unknown.
-      if (!snapshot) {
-        setPendingGateMessage({ message, projectId: headlessProjectId, threadId: headlessThreadKey,
-          attachmentVersions: webChatAttachments.map((item) => item.version_id) });
-        setOperatorError("");
-        return;
-      }
-      setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
-      headlessInputRef.current?.focus();
       return;
     }
     // 2026-07-03 racing-codex e2e round 2 finding (T3 refinement): guarding
@@ -2139,13 +2127,13 @@ export function OrchestratorPanel({
       : "readonly";
   const fullscreen = panelMode === "fullscreen";
   const headlessCanChat = canUseAction("chat-orchestrator");
-  const headlessEmptyTitle = taskThread ? "还没有任务对话" : headlessCanChat ? "What should we work through?" : "Action token needed";
+  const headlessEmptyTitle = taskThread ? "还没有任务对话" : headlessCanChat ? "What should we work through?" : showTokenRow ? "Action token needed" : "Agent 对话";
   const headlessEmptyBody = headlessCanChat
     ? "Ask about this project, shape a plan, or prepare a controlled action."
-    : "Save a valid action token to send messages. Existing replies will still appear here.";
+    : chatAccessHint;
   const headlessPlaceholder = taskThread ? "询问或补充这张任务…"
     : !headlessCanChat
-    ? "Save action token to send..."
+    ? (showTokenRow ? "Save action token to send..." : chatAccessHint)
     : headlessPlanDiscussion
       ? `Ask about ${headlessPlanDiscussion.header || "this plan"}...`
     : taskRefOn && context.taskId
@@ -2243,7 +2231,7 @@ export function OrchestratorPanel({
           </div>
         </div>
         <div className="agent-header-actions">
-          {webSession?.mode === "remote_passcode" && sessionActionReady ? (
+          {access.mode === "remote_passcode" && sessionActionReady ? (
             <button className="agent-lock-button" type="button" onClick={onLockSession}>
               Lock
             </button>
@@ -2672,15 +2660,10 @@ export function OrchestratorPanel({
               // operatorError but the input had no visible block, and the
               // experience read as "first message hangs, refresh fixes it".
               <div
-                className={`headless-composer-alert ${snapshot ? "blocked" : "connecting"}`}
-                role={snapshot ? "alert" : "status"}
+                className={`headless-composer-alert ${awaitingAccess ? "connecting" : "blocked"}`}
+                role={awaitingAccess ? "status" : "alert"}
               >
-                {snapshot
-                  ? (taskThread ? "当前仅可阅读对话，获得操作权限后可发送消息。" : `${activeBackendTitle} is ${actionState}. Save a valid action token to send messages.`)
-                  // Gate not resolved yet (first snapshot in flight): saying
-                  // "read only, save a token" here was a lie that flashed on
-                  // every panel open. Messages typed now park and auto-send.
-                  : "Connecting — messages send automatically once ready."}
+                {chatAccessHint}
               </div>
             ) : null}
             {!webChatAnswering ? (
@@ -2743,7 +2726,7 @@ export function OrchestratorPanel({
                   </div>
                   <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
                     catalogSupported={operatorBackend === "codex-headless"} unlocked={canUseAction("chat-orchestrator")}
-                    onReauthorize={tokenPresent ? () => onSaveToken("") : undefined}
+                    onReauthorize={hasToken ? () => onSaveToken("") : undefined}
                     onSwitchToCodex={headlessBackendOptions.some((item) => item.id === "codex-headless" && item.available !== false)
                       ? () => selectOperatorBackend("codex-headless") : undefined} />
                   {activeDurableTurn ? (
@@ -2764,11 +2747,11 @@ export function OrchestratorPanel({
                   ) : (
                     <ComposerSubmitButton
                       className="headless-send-button"
-                      disabled={!headlessMessage.trim() || composerDraft.uploading || Boolean(permissionEscalation)}
+                      disabled={!headlessMessage.trim() || composerDraft.uploading || Boolean(permissionEscalation) || (!awaitingAccess && !headlessCanChat)}
                       iconSize={21}
                       status={deriveComposerStatus(activeHeadlessRun?.status ?? (hasDurableTurns ? "idle" : activeHeadlessThread?.status), headlessSubmitting)}
                       onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}
-                      title={canUseAction("chat-orchestrator") ? "Send" : `${actionState}; save action token first`}
+                      title={headlessCanChat ? "Send" : chatAccessHint}
                       onClick={() => void submitHeadlessMessage()}
                     />
                   )}

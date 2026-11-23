@@ -170,3 +170,60 @@ test("a task refresh preserves drafts and shows the latest bound acceptance evid
   expect(writes).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+for (const mode of ["local_account", "controller_session", "read_only"]) {
+  test(`task and board honor the current ${mode} session over a cached token snapshot`, async ({ page }) => {
+    const writable = mode !== "read_only";
+    const { writes } = await installUiFixture(page, { locked: true, snapshot: { runtime: {
+      mode: "live", actions: { mutation_enabled: true, allowed: ["chat-orchestrator"] },
+      web_session: { mode: "token_required", actions_enabled: false },
+    } } });
+    await page.route("**/api/web-session", route => route.fulfill({ json: {
+      mode, actions_enabled: writable, unlocked: true, username: "zaofu",
+      local_account: mode === "local_account", controller_managed: mode !== "local_account",
+    } }));
+    await page.goto("/?project=ui-review&page=board&task=UI-101");
+    const panel = page.getByRole("region", { name: "任务 Agent" });
+    const input = panel.locator("textarea.headless-input");
+    await expect(input).toBeVisible();
+    await expect(page.getByPlaceholder("action token", { exact: true })).toHaveCount(0);
+    await input.fill("检查当前任务");
+    const send = panel.getByRole("button", { name: "Send message" });
+    if (writable) await expect(send).toBeEnabled();
+    else {
+      await expect(send).toBeDisabled();
+      await input.press("Enter");
+      await expect(panel.getByRole("alert")).toContainText("当前会话仅可阅读对话");
+      expect(writes).toEqual([]);
+    }
+    await expect(send).not.toHaveAttribute("title", /token/i);
+    await page.getByRole("button", { name: "返回看板" }).click();
+    await expect(page.locator(".board-access")).toHaveCount(0);
+  });
+}
+
+test("long task references keep property labels and values aligned at each viewport", async ({ page }, info) => {
+  const task = { ...uiTasks[0]!, blocked_by: ["TASK-DATASET"], fanout: { workflow_run_id: "workflow-run-" + "abcdef".repeat(12) },
+    links: { trace: "task:trace-" + "12345".repeat(12), candidate: "PDD-0123456789" } };
+  await installUiFixture(page, { snapshot: { tasks: [task] } });
+  await page.route("**/tasks/UI-101", route => route.fulfill({ json: {
+    task, contract: { acceptance: "返回时恢复筛选", acceptance_criteria: ["返回时恢复筛选"] }, events: [],
+  } }));
+  await page.goto("/?project=ui-review&page=board&task=UI-101");
+  const properties = page.getByRole("complementary", { name: "任务属性" });
+  for (const width of [1440, 960, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 390) await page.getByRole("button", { name: "属性", exact: true }).click();
+    await expect(properties).toBeVisible();
+    const label = properties.locator("dt").filter({ hasText: /^状态$/ });
+    const value = properties.locator("dd").first();
+    const labelBox = (await label.boundingBox())!;
+    const valueBox = (await value.boundingBox())!;
+    expect(valueBox.width).toBeGreaterThan(95);
+    expect(Math.abs(valueBox.y - labelBox.y)).toBeLessThan(5);
+    expect(valueBox.height).toBeLessThan(36);
+    expect(await properties.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await expect(page.getByText("返回时恢复筛选", { exact: true })).toHaveCount(1);
+    await page.screenshot({ path: info.outputPath(`layout-${width}.png`) });
+  }
+});

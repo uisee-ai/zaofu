@@ -134,6 +134,7 @@ import {
   projectionSelectionForPage,
   resolvePageCompatibility,
 } from "./pageCompatibility";
+import { dashboardActionAccess } from "./dashboardActionAccess";
 import { isRefreshNoiseEventType, isTaskBusinessEvent } from "./refreshEventPolicy";
 import { createChannelActionAdapter } from "./channelActionAdapter";
 import { useChannelDiagnostics } from "./useChannelDiagnostics";
@@ -275,16 +276,6 @@ interface NewChannelDraft {
 
 const SettingsRoute = lazy(() => import("../components/settings/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const TerminalDrawer = lazy(() => import("../components/terminal/TerminalDrawer"));
-
-interface RuntimeActionState {
-  actionReady: boolean;
-  actionState: string;
-  mutationEnabled: boolean;
-  passcodeRequired: boolean;
-  sessionActionReady: boolean;
-  showTokenRow: boolean;
-  tokenRequired: boolean;
-}
 
 interface HeadlessActionProposal {
   action: string;
@@ -584,39 +575,6 @@ function canonicalChatBackend(backend: OperatorBackend): OperatorBackend {
   return backend;
 }
 
-function runtimeActionState(
-  snapshot: Snapshot | null,
-  tokenPresent: boolean,
-  fallbackWebSession: RuntimeSummary["web_session"] | null,
-): RuntimeActionState {
-  const webSession = snapshot?.runtime.web_session ?? fallbackWebSession;
-  const mutationEnabled = webSession?.mode !== "read_only" && (Boolean(snapshot?.runtime.actions?.mutation_enabled)
-    || Boolean(webSession && webSession.mode !== "read_only")
-    || tokenPresent);
-  const sessionActionReady = Boolean(webSession?.actions_enabled);
-  const tokenFallbackAvailable = Boolean(tokenPresent)
-    || webSession?.mode === "token_required"
-    || Boolean(webSession?.token_fallback_enabled);
-  const passcodeRequired = webSession?.mode === "remote_passcode" && !sessionActionReady;
-  const showTokenRow = mutationEnabled && !sessionActionReady && tokenFallbackAvailable && !tokenPresent;
-  const tokenRequired = showTokenRow && !tokenPresent;
-  const actionReady = sessionActionReady || (mutationEnabled && tokenPresent);
-  const actionState = actionReady
-    ? "active"
-    : mutationEnabled
-      ? (passcodeRequired ? "passcode needed" : tokenRequired ? "token needed" : "locked")
-      : "read only";
-  return {
-    actionReady,
-    actionState,
-    mutationEnabled,
-    passcodeRequired,
-    sessionActionReady,
-    showTokenRow,
-    tokenRequired,
-  };
-}
-
 export function App() {
   const initial = useMemo(() => readInitialQuery(), []);
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProject[]>([]);
@@ -712,7 +670,7 @@ export function App() {
       .catch(() => { if (!cancelled) setSessionError(true); });
     return () => { cancelled = true; };
   }, [sessionAttempt]);
-  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  const sessionMode = webSessionStatus?.mode;
   useEffect(() => {
     if (!sessionMode || sessionMode === "read_only") return;
     setWelcomeError(false);
@@ -774,8 +732,8 @@ export function App() {
     return null;
   }, [selectedTaskId, boardSource, taskDetail]);
   const actionGate = useMemo(
-    () => runtimeActionState(snapshot, webActionTokenPresent, webSessionStatus),
-    [snapshot, webActionTokenPresent, webSessionStatus],
+    () => dashboardActionAccess(webSessionStatus, webActionTokenPresent),
+    [webActionTokenPresent, webSessionStatus],
   );
   const activeProject = useMemo(
     () => workspaceProjects.find((project) => project.project_id === activeProjectId) ?? null,
@@ -2205,7 +2163,7 @@ export function App() {
         activeProjectId={activeProjectId} context={orchestratorContext} events={events} focusSignal={orchestratorFocusSignal}
         onAction={submitAction} onLockSession={() => void lockSession()} onOpenChannelThread={openChannelThread}
         onOpenTask={openTask} onSaveToken={saveWebActionToken} onUnlockSession={unlockSession}
-        snapshot={snapshot} tokenPresent={webActionTokenPresent} actionResult={actionResult}
+        snapshot={snapshot} access={actionGate} actionResult={actionResult}
       />}
       skillsSummary={snapshot?.skills ?? null}
       task={selectedTask}
@@ -2362,7 +2320,7 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel readOnly={(snapshot?.runtime.web_session ?? webSessionStatus)?.mode === "read_only"} projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+            <PlanApprovalPanel readOnly={sessionMode === "read_only"} projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
               inboxCountEpoch.current += 1;
               setInboxPendingCount(inbox?.summary.unread ?? null);
             }} />
@@ -2573,7 +2531,7 @@ export function App() {
               onSaveToken={saveWebActionToken}
               onUnlockSession={unlockSession}
               snapshot={snapshot}
-              tokenPresent={webActionTokenPresent}
+              access={actionGate}
             />
         </div>
       ) : null}
@@ -2604,7 +2562,7 @@ export function App() {
           accessMode={
             actionGate.passcodeRequired
               ? "passcode"
-              : actionGate.mutationEnabled
+              : actionGate.showTokenRow
                 ? "token"
                 : "unavailable"
           }
@@ -2727,7 +2685,7 @@ function ProjectInitPanel({
       </div>
       {!actionReady ? (
         <p className="empty-text compact-error">
-          Set the Web action token before initializing this Project.
+          Project initialization requires a writable Dashboard session.
         </p>
       ) : null}
     </section>
