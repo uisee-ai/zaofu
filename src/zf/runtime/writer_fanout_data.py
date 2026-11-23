@@ -190,9 +190,11 @@ class WriterFanoutDataMixin:
         manifest: dict,
         success_event: str,
         extra_payloads: list[dict] | None = None,
+        reviewed_children: list[dict] | None = None,
     ) -> dict:
         """Project generic reader-fanout handoff fields from payload/report data."""
-        child_payloads = self._fanout_child_payloads(manifest)
+        child_payloads = (self._fanout_child_payloads(manifest) if reviewed_children is None
+                          else reviewed_children)
         payloads = [
             payload for payload in (extra_payloads or [])
             if isinstance(payload, dict)
@@ -201,7 +203,8 @@ class WriterFanoutDataMixin:
         evidence_refs = self._collect_payload_list(payloads, "evidence_refs")
         report_refs = self._collect_payload_list(payloads, "report_refs")
         inventory_refs = self._collect_payload_list(payloads, "inventory_refs")
-        for child in manifest.get("children", []) or []:
+        report_children = (manifest.get("children") or []) if reviewed_children is None else reviewed_children
+        for child in report_children:
             if not isinstance(child, dict):
                 continue
             for key in ("report_path", "result_path"):
@@ -613,6 +616,8 @@ class WriterFanoutDataMixin:
                     payload["open_p0_p1_findings"] = synthesis.open_findings
             elif "open_p0_p1_gap_count" not in payload:
                 payload["open_p0_p1_gap_count"] = len(gap_tasks)
+        if reviewed_children is not None:
+            return payload
         payload = self._relocate_reader_fanout_artifact_refs(
             payload=payload,
             payload_sources=payloads,
@@ -851,14 +856,7 @@ class WriterFanoutDataMixin:
 
     @staticmethod
     def _dedupe_strings(values: list[str]) -> list[str]:
-        out: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            if value in seen:
-                continue
-            seen.add(value)
-            out.append(value)
-        return out
+        return list(dict.fromkeys(values))
 
     def _git_commit(self, ref: str) -> str:
         ref = ref or "HEAD"

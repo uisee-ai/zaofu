@@ -7074,6 +7074,21 @@ class FanoutCoordinationMixin(
                 if not artifact_projection.ok:
                     final_status = "failed"
                     recommendation = "reject"
+            elif success_event == "task_map.ready" and payload.get("plan_synth_verdict_only") is True:
+                from zf.runtime.reviewed_plan_handoff import reviewed_plan_children
+
+                try:
+                    producers = reviewed_plan_children(self, manifest, payload)
+                    artifact_payload = self._generic_fanout_success_payload(
+                        manifest=manifest, success_event=success_event,
+                        extra_payloads=[payload], reviewed_children=producers,
+                    )
+                except (OSError, ValueError) as exc:
+                    final_status, recommendation = "failed", "reject"
+                    artifact_payload = self._contract_failure_payload({
+                        "failure_class": "plan_artifact_package_protocol",
+                        "attempt_domain": "protocol_repair", "semantic_rework_cost": 0,
+                    }, f"reviewed Plan handoff failed: {exc}")
             else:
                 artifact_payload = self._generic_fanout_success_payload(
                     manifest=manifest,
