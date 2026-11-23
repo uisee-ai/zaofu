@@ -50,3 +50,27 @@ Kimi e12cad1a：持久任务通知去重、执行结果分类、压缩后索引�
 执行层以已验证 1de62173 为增量基线；没有将历史 dev 全分支测试重复执行，也未声称 full pytest 或真实 provider 最终验收通过。
 证据：reports/autonomous-closeout/verification-final.json、verification-final.log、host-final.log、obligation-dispatch-final.log。
 原失败影响闭包 verification.json/verification.log 保留，未覆盖成通过。
+
+
+## 已提交与原断点实际恢复
+
+实施提交：`1c59398c fix: close autonomous recovery handoffs without discarding evidence`。
+2026-11-23 00:39:36 UTC 受控暂停/快进部署/新进程恢复，Run仍为 workflow-ddd320aa0dc7c2ef。
+实际加载事件 evt-a584a48c2abc 的 runtime_load.source_revision 为上述完整提交；控制面 active，原16项任务done完整保留。
+Impl=8、Task Verify=8、max active=16；最终 Candidate Verify=2（独立配置），模型不变，执行上限仍120。
+
+运行时在00:40:04自动启动精确旧effect的独立Docker补采 evt-f15409bc3c21；
+00:40:43完成 evt-3891225a5baa：exit_code=0，source_stable=true，evidence_status=collected。
+采证工件39,259,908字节，保留截图/trace/WebM；原evt-fca29363282e未知事实未被改写。
+这证明新补采入口真实接通，但命令成功不等于全产品验收通过。
+
+00:41:49按照既有PRD委托，经ControlledActionService解除三个已被新证据覆盖的旧inspection请求，
+并replan-reject原扩大范围提案：DR07保留原有限Number语义、DR08保留原顺序算法、DR09按真实影响补验；
+保留MIN/MAX大列表真实缺陷与独立验收。以上全部记为manual_intervention=true，旧资格closed_failed不变。
+00:41:52 owner检查点resolved（evt-b4e9e16ce135）；00:42:22运行时派发Planner差量修订
+（evt-fcba2de629fd / wop-prd-plan-planner-trig-evt-d2bddb78-rework-cb0c45687463）。
+
+A6仍active：真实局部修复、后续独立验证、Judge、Goal和交付尚未结束，最终无人资格未通过。
+操作者只读观察脚本不发送wake/heartbeat/审批/重试；需要的Plan审批仍按既有授权审阅准确版本。
+运行证据保存在已部署worktree reports/eight-unattended-20261121T132814Z 下：
+autonomous-closeout-controlled-deploy.json、autonomous-closeout-owner-disposition.json、autonomous-closeout-observation.json。
