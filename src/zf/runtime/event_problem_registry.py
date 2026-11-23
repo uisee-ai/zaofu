@@ -459,6 +459,13 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             producer_kind="kernel",
             required_scope_any=("action",),
         ),
+        _failure_envelope(
+            "cli.action.failed",
+            title="CLI action result failed",
+            source="cli_action",
+            producer_kind="cli",
+            required_scope_any=("action",),
+        ),
         EventProblemSpec(
             event_type="runtime.action.rejected",
             event_class="expected_negative",
