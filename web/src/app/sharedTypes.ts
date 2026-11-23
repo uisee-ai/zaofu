@@ -29,12 +29,6 @@ export const NAV_PAGES = [
   "settings",
 ] as const;
 export const PAGES = ["project", ...NAV_PAGES, "task"] as const;
-export const DETAIL_TABS = [
-  "Summary",
-  "Activity",
-  "Evidence",
-  "Advanced",
-] as const;
 export const OPERATOR_BACKENDS = [
   { id: "claude-headless", title: "Claude" },
   { id: "codex-headless", title: "Codex" },
@@ -95,7 +89,6 @@ export type ChannelRole =
   | "automation_reporter"
   | "observer";
 
-export type DetailTab = (typeof DETAIL_TABS)[number];
 
 export interface EmptyStateAction {
   label: string;

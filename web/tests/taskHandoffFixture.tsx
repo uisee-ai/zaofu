@@ -1,12 +1,11 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { TaskDetail } from "../src/components/kanban/TaskDetail";
+import { TaskReader } from "../src/components/kanban/TaskReader";
 import type { Task, TaskDetail as Detail } from "../src/api/types";
-import type { DetailTab } from "../src/app/sharedTypes";
 import "../src/styles.css";
+import "../src/styles/28-workbench.css";
 
 function Fixture() {
-  const [tab, setTab] = useState<DetailTab>("Summary");
   const [stale, setStale] = useState(false);
   const task = { id: "TASK-HANDOFF", title: "核对任务接力", status: "in_progress", assigned_to: "verify-2",
     phase: "implement", active_dispatch_id: "dispatch-current", blocked_by: [], skills_required: [] } as unknown as Task;
@@ -26,10 +25,10 @@ function Fixture() {
         current_memory: "unknown", checkpoint: { status: "captured" } } },
   } as unknown as Detail;
   return <><button onClick={() => setStale(!stale)}>切换过期绑定</button>
-    <TaskDetail projectId="handoff" selectedTaskId={task.id} task={task} detail={detail} tab={tab} setTab={setTab}
+    <TaskReader projectId="handoff" selectedTaskId={task.id} task={task} detail={detail}
       actionReady={false} actionResult={null} actionState="" events={[]} diff={null} loadError={null}
       onAction={() => { throw new Error("Read-only journey issued an action"); }} onBackToBoard={() => {}}
-      onOpenOrchestrator={() => {}} onOpenProjection={() => {}} skillsSummary={null}
+      onOpenProjection={() => {}} skillsSummary={null}
       timeline={null} timelineError={null} timelineLoading={false} /></>;
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);

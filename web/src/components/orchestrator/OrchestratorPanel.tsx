@@ -404,6 +404,7 @@ export function OrchestratorPanel({
   events,
   focusSignal,
   panelMode,
+  taskThread,
   visible,
   onAction,
   onPanelModeChange,
@@ -422,6 +423,7 @@ export function OrchestratorPanel({
   focusSignal: number;
   panelMode: Exclude<AgentPanelMode, "collapsed">;
   visible: boolean;
+  taskThread?: string;
   onAction: (action: string, payload: Record<string, unknown>) => void | Promise<unknown>;
   onPanelModeChange: (mode: AgentPanelMode) => void;
   onLockSession: () => void;
@@ -461,7 +463,7 @@ export function OrchestratorPanel({
   const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
   const [pendingProposalNotice, setPendingProposalNotice] = useState("");
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => (
-    storedActiveKanbanThread(localStorage, headlessProjectId)
+    taskThread || storedActiveKanbanThread(localStorage, headlessProjectId)
   ));
   const inboxTarget = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -474,7 +476,7 @@ export function OrchestratorPanel({
   const inboxThreadSelected = useRef(false);
   const inboxRequestFocused = useRef(false);
   useEffect(() => {
-    if (inboxThreadSelected.current || !visible || !inboxTarget.thread
+    if (taskThread || inboxThreadSelected.current || !visible || !inboxTarget.thread
       || (inboxTarget.project && inboxTarget.project !== headlessProjectId)) return;
     inboxThreadSelected.current = true;
     setHeadlessThreadKey(inboxTarget.thread);
@@ -684,7 +686,7 @@ export function OrchestratorPanel({
 
   useEffect(() => {
     const previousProjectId = headlessThreadProjectRef.current;
-    if (previousProjectId === headlessProjectId) return;
+    if (taskThread || previousProjectId === headlessProjectId) return;
     rememberHeadlessThreadScroll(previousProjectId, headlessThreadKey);
     const placeholderUpgrade = previousProjectId === "default" && headlessProjectId !== "default";
     const previousDefaultThread = defaultKanbanThreadKey(previousProjectId);
@@ -750,7 +752,7 @@ export function OrchestratorPanel({
     let cancelled = false;
     void getKanbanPendingProposals(headlessProjectId).then((page) => {
       if (!cancelled) {
-        setPendingProposals(page.items ?? []);
+        setPendingProposals((page.items ?? []).filter(item => !taskThread || item.thread_key === taskThread));
         setPendingProposalsError("");
       }
     }).catch((err: unknown) => {
@@ -794,7 +796,7 @@ export function OrchestratorPanel({
           createdAt: textValue(raw.created_at).trim() || undefined,
         }];
       });
-      if (durableRefs.length) {
+      if (!taskThread && durableRefs.length) {
         setHeadlessThreads((current) => saveKanbanThreadRefs(
           localStorage,
           headlessProjectId,
@@ -849,10 +851,12 @@ export function OrchestratorPanel({
     };
   }, [headlessProjectId, visible, webChatDrawer]);
 
+  const lastFocusSignal = useRef(focusSignal);
   useEffect(() => {
-    if (!visible) return;
-    headlessInputRef.current?.focus();
-  }, [focusSignal, panelMode, visible]);
+    const requested = lastFocusSignal.current !== focusSignal;
+    lastFocusSignal.current = focusSignal;
+    if (visible && (!taskThread || requested)) headlessInputRef.current?.focus();
+  }, [focusSignal, panelMode, taskThread, visible]);
 
   useEffect(() => {
     let cancelled = false;
@@ -944,7 +948,7 @@ export function OrchestratorPanel({
   // 任务自动引用(operator 2026-07-11):从 TaskDetail 打开时 context.taskId
   // 已自动派生;这里补"看得见/可解除"——chip + 可关。关掉后消息不再携带
   // task/trace/pdd/fanout 引用。
-  const taskRefOn = !context.taskId || !composerDraft.unreferencedTasks.includes(context.taskId);
+  const taskRefOn = Boolean(taskThread) || !context.taskId || !composerDraft.unreferencedTasks.includes(context.taskId);
   const setTaskRefOn = (referenced: boolean) => composerDraft.setTaskReferenced(context.taskId, referenced);
 
   function contextPayload(): Record<string, unknown> {
@@ -1020,6 +1024,7 @@ export function OrchestratorPanel({
   }
 
   function selectHeadlessThread(threadId: string) {
+    if (taskThread) return;
     if (threadId === headlessThreadKey) {
       headlessInputRef.current?.focus();
       return;
@@ -1969,7 +1974,7 @@ export function OrchestratorPanel({
   );
   const displayedHeadlessConversation = useMemo(() => ({
     ...visibleHeadlessConversation,
-    threads: visibleHeadlessConversation.threads.map((thread) => ({
+    threads: visibleHeadlessConversation.threads.filter(thread => !taskThread || thread.id === taskThread).map((thread) => ({
       ...thread,
       unseenCount: thread.id === headlessThreadKey ? 0 : headlessUnreadCounts[thread.id] ?? 0,
     })),
@@ -2134,11 +2139,12 @@ export function OrchestratorPanel({
       : "readonly";
   const fullscreen = panelMode === "fullscreen";
   const headlessCanChat = canUseAction("chat-orchestrator");
-  const headlessEmptyTitle = headlessCanChat ? "What should we work through?" : "Action token needed";
+  const headlessEmptyTitle = taskThread ? "还没有任务对话" : headlessCanChat ? "What should we work through?" : "Action token needed";
   const headlessEmptyBody = headlessCanChat
     ? "Ask about this project, shape a plan, or prepare a controlled action."
     : "Save a valid action token to send messages. Existing replies will still appear here.";
-  const headlessPlaceholder = !headlessCanChat
+  const headlessPlaceholder = taskThread ? "询问或补充这张任务…"
+    : !headlessCanChat
     ? "Save action token to send..."
     : headlessPlanDiscussion
       ? `Ask about ${headlessPlanDiscussion.header || "this plan"}...`
@@ -2158,13 +2164,13 @@ export function OrchestratorPanel({
   return (
     <section
       className={`panel orchestrator-panel ${panelMode}`}
-      role="dialog"
-      aria-modal={fullscreen}
-      aria-label="Kanban Agent"
+      role={taskThread ? "region" : "dialog"}
+      aria-modal={taskThread ? undefined : fullscreen}
+      aria-label={taskThread ? "任务 Agent" : "Kanban Agent"}
     >
       <div className="agent-shell-header">
         <div className="agent-title-block">
-          <button
+          {!taskThread && <button
             className="agent-window-button ghost"
             type="button"
             aria-label="New Kanban Agent chat"
@@ -2172,10 +2178,10 @@ export function OrchestratorPanel({
             onClick={resetHeadlessThread}
           >
             <Plus size={20} strokeWidth={1.8} />
-          </button>
+          </button>}
           <span className="agent-surface-title">
             <MessageCircle aria-hidden="true" size={16} strokeWidth={1.9} />
-            Kanban Agent
+            {taskThread ? "任务对话" : "Kanban Agent"}
           </span>
           <div
             className="agent-model-dropdown header-agent-switch"
@@ -2242,6 +2248,7 @@ export function OrchestratorPanel({
               Lock
             </button>
           ) : null}
+          {!taskThread && <>
           <button
             className="agent-window-button emphasized"
             type="button"
@@ -2259,7 +2266,7 @@ export function OrchestratorPanel({
             onClick={() => onPanelModeChange("collapsed")}
           >
             <Minus size={19} strokeWidth={1.9} />
-          </button>
+          </button></>}
         </div>
       </div>
       <div className="orchestrator-body">
@@ -2305,14 +2312,14 @@ export function OrchestratorPanel({
         </form> : null}
 
         <div className={`headless-chat ${headlessWelcome ? "welcome" : ""}`}>
-          <AgentThreadNavigation
+          {!taskThread && <AgentThreadNavigation
             activeThreadId={headlessThreadKey}
             allowSplit={fullscreen}
             conversation={displayedHeadlessConversation}
             onActiveThreadChange={selectHeadlessThread}
             onSplitThreadChange={setHeadlessSplitThreadKey}
             splitThreadId={headlessSplitThreadKey}
-          />
+          />}
           <div
             className="headless-thread"
             ref={headlessThreadRef}
@@ -2362,7 +2369,7 @@ export function OrchestratorPanel({
               compactRunHeader
               conversation={displayedHeadlessConversation}
               collapseCompletedRunDetails
-              emptyBody={headlessEmptyBody}
+              emptyBody={taskThread ? "" : headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
               onActiveThreadChange={selectHeadlessThread}
               onAdoptResearchResult={(card, cardId) => void adoptResearchResult(card, cardId)}
@@ -2573,10 +2580,10 @@ export function OrchestratorPanel({
                     onClick={() => void submitHeadlessMessage("总结当前状态", { projectionFirst: true })}>
                     快照
                   </button>
-                  <button type="button" className="headless-task-ref-action" data-testid="agent-task-unref"
+                  {!taskThread && <button type="button" className="headless-task-ref-action" data-testid="agent-task-unref"
                     title="解除任务引用" onClick={() => setTaskRefOn(false)}>
                     ×
-                  </button>
+                  </button>}
                 </div>
               ) : (
                 <div className="headless-task-ref off">
@@ -2669,7 +2676,7 @@ export function OrchestratorPanel({
                 role={snapshot ? "alert" : "status"}
               >
                 {snapshot
-                  ? `${activeBackendTitle} is ${actionState}. Save a valid action token to send messages.`
+                  ? (taskThread ? "当前仅可阅读对话，获得操作权限后可发送消息。" : `${activeBackendTitle} is ${actionState}. Save a valid action token to send messages.`)
                   // Gate not resolved yet (first snapshot in flight): saying
                   // "read only, save a token" here was a lie that flashed on
                   // every panel open. Messages typed now park and auto-send.
@@ -2707,7 +2714,7 @@ export function OrchestratorPanel({
                 />
                 <div className="headless-composer-footer">
                   <div className="headless-composer-tools">
-                    <WebChatAttachments
+                    {!taskThread && <WebChatAttachments
                       key={`${headlessProjectId}:${headlessThreadKey}`}
                       artifacts={webChatAttachments}
                       conversationId={headlessConversationId}
@@ -2732,7 +2739,7 @@ export function OrchestratorPanel({
                         id: plan.requestEventId, label: plan.header || plan.question || plan.requestId,
                         onSelect: () => chatAboutPlan(plan),
                       }))}
-                    />
+                    />}
                   </div>
                   <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
                     catalogSupported={operatorBackend === "codex-headless"} unlocked={canUseAction("chat-orchestrator")}

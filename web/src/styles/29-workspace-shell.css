@@ -47,7 +47,7 @@ body { font-size: var(--type-body); line-height: 1.45; }
 }
 @media (max-width: 980px) {
   .topbar { padding-inline: 16px; }
-  .app-shell:has(.board-panel:is([data-page="board"], [data-page="inbox"], [data-page="settings"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
+  .app-shell:has(.board-panel:is([data-page="board"], [data-page="task"], [data-page="inbox"], [data-page="settings"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
   .workspace { padding: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .workspace > .board-panel { grid-column: 1; grid-row: 2; min-height: 0; }
   .project-rail { max-height: none; border-bottom: 1px solid var(--line); }
