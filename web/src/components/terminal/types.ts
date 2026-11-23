@@ -10,6 +10,7 @@ export interface TerminalCapability {
   observe_bridge: boolean;
   control_bridge: boolean;
   tab_rename: boolean;
+  mouse?: boolean;
   reason: string;
 }
 
@@ -48,6 +49,7 @@ export interface TerminalSession {
   updated_at: string;
   stopped_at?: string;
   diagnostics: string[];
+  agent_status?: "working" | "blocked" | "idle" | "done" | "";
   usage?: TerminalUsage;
 }
 

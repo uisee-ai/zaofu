@@ -22,6 +22,7 @@ import type {
 } from "./types";
 
 interface TerminalViewProps {
+  mouse: boolean;
   expectedClose: boolean;
   mode: TerminalAttachmentMode;
   onStatusChange: (sessionId: string, status: string, error: string) => void;
@@ -130,7 +131,7 @@ function* terminalInputChunks(text: string): Generator<string> {
 function terminalCellAtPointer(
   terminal: Terminal,
   host: HTMLElement,
-  event: WheelEvent,
+  event: MouseEvent,
 ): { column: number; row: number } {
   const screen = terminal.element?.querySelector<HTMLElement>(".xterm-screen") ?? host;
   const bounds = screen.getBoundingClientRect();
@@ -147,6 +148,7 @@ function terminalCellAtPointer(
 }
 
 export function TerminalView({
+  mouse,
   expectedClose,
   mode,
   onStatusChange,
@@ -161,6 +163,7 @@ export function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const modeRef = useRef(mode);
+  const mouseRef = useRef(mouse);
   const visibleRef = useRef(visible);
   const takeoverSeenRef = useRef(0);
   const expectedCloseRef = useRef(expectedClose);
@@ -173,6 +176,7 @@ export function TerminalView({
   const terminalTheme = TERMINAL_THEMES[resolvedTheme];
 
   modeRef.current = mode;
+  mouseRef.current = mouse;
   visibleRef.current = visible;
   expectedCloseRef.current = expectedClose;
 
@@ -229,6 +233,30 @@ export function TerminalView({
       socket.send(JSON.stringify({ ...command, ...metadata }));
       return true;
     };
+
+    const screen = terminal.element!.querySelector<HTMLElement>(".xterm-screen")!;
+    let press: { x: number; y: number; socket: WebSocket } | null = null;
+    const startClick = (event: MouseEvent) => {
+      const socket = socketRef.current;
+      press = mouseRef.current && modeRef.current === "control" && event.button === 0
+        && !event.shiftKey && !event.metaKey && socket?.readyState === WebSocket.OPEN
+        && terminal.modes.mouseTrackingMode === "none"
+        ? { x: event.clientX, y: event.clientY, socket } : null;
+    };
+    const finishClick = (event: MouseEvent) => {
+      const start = press;
+      press = null;
+      if (!start || start.socket !== socketRef.current || start.socket.readyState !== WebSocket.OPEN
+        || modeRef.current !== "control" || !mouseRef.current || event.button !== 0 || event.shiftKey || event.metaKey
+        || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 3 || terminal.hasSelection()) return;
+      const cell = terminalCellAtPointer(terminal, host, event);
+      for (const action of ["down", "up"]) {
+        start.socket.send(JSON.stringify({ type: "terminal.mouse", action, button: "left",
+          ...cell, modifiers: terminalModifierBits(event) }));
+      }
+    };
+    screen.addEventListener("mousedown", startClick);
+    screen.addEventListener("click", finishClick);
 
     let pendingWheelRows = 0;
     let pendingWheelMetadata: Record<string, number> = {};
@@ -307,6 +335,8 @@ export function TerminalView({
     return () => {
       if (wheelAnimationFrame !== null) window.cancelAnimationFrame(wheelAnimationFrame);
       if (resizeTimer !== null) window.clearTimeout(resizeTimer);
+      screen.removeEventListener("mousedown", startClick);
+      screen.removeEventListener("click", finishClick);
       observer.disconnect();
       imeInput.dispose();
       input.dispose();

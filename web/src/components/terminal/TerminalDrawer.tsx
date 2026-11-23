@@ -447,6 +447,11 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                         aria-hidden="true"
                       />
                       <span className="web-terminal-tab-label">{session.title}</span>
+                      {session.state === "active" && session.agent_status && (
+                        <small data-agent-status={session.agent_status}>
+                          {{ idle: "Idle", working: "Working", blocked: "Needs input", done: "Done" }[session.agent_status]}
+                        </small>
+                      )}
                     </button>
                   )}
                   <button
@@ -659,6 +664,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                 key={session.session_id}
               >
                 <TerminalView
+                  mouse={page?.capability.mouse === true}
                   expectedClose={
                     session.state !== "active" || stoppingSessionIds.has(session.session_id)
                   }

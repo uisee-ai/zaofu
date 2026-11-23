@@ -89,6 +89,9 @@ class RouteBackend:
             tab_rename=True,
         )
 
+    def list_agents(self, runtime):
+        return []
+
     def ensure_project_runtime(self, session_name: str) -> HerdrProjectRuntime:
         return HerdrProjectRuntime(session_name=session_name, server_pid=123)
 

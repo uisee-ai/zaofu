@@ -157,3 +157,5 @@ cost 与精度。Rename 不重置用量；这些数字来自每个 CLI 的结构
 浏览器不能指定任意 executable、cwd、argv 或环境变量。终端字符流不进入 EventLog、Task、
 Workflow 或 Artifact，也不能靠 screen scraping 推进 Kernel 状态。遇到 unavailable、controller
 冲突或恢复问题，先核对[宿主配置](#2-默认启用与宿主配置)和[会话恢复](#3-创建tab-与恢复)。
+
+Herdr 0.9.2 起，Control 支持单击启用鼠标的 TUI；拖选文字和 Observe 保持本地操作。刷新终端列表可查看 agent 的工作、空闲或等待输入状态。见[集成规格与验收](../impl/herdr-web-terminal-095.md)。

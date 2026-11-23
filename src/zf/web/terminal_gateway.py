@@ -294,6 +294,28 @@ class HerdrNDJSONBridge:
             ):
                 raise BridgeProtocolError("terminal.resize geometry is invalid")
             return {"type": kind, "cols": cols, "rows": rows}
+        if kind == "terminal.mouse" and self.spec.mouse:
+            column, row = value.get("column"), value.get("row")
+            modifiers = value.get("modifiers", 0)
+            if (
+                value.get("action") not in ("down", "up")
+                or value.get("button") != "left"
+                or type(column) is not int
+                or not 0 <= column < self.config.max_cols
+                or type(row) is not int
+                or not 0 <= row < self.config.max_rows
+                or type(modifiers) is not int
+                or not 0 <= modifiers <= 7
+            ):
+                raise BridgeProtocolError("terminal.mouse is invalid")
+            return {
+                "type": kind,
+                "action": value["action"],
+                "button": "left",
+                "column": column,
+                "row": row,
+                "modifiers": modifiers,
+            }
         if kind == "terminal.scroll":
             direction, lines = value.get("direction"), value.get("lines")
             source = value.get("source", "wheel")
@@ -394,11 +416,14 @@ async def relay_terminal_websocket(
     queued_bytes = 0
     queue_lock = asyncio.Lock()
 
+    observer_eof = False
+
     async def read_bridge() -> None:
-        nonlocal queued_bytes
+        nonlocal queued_bytes, observer_eof
         while True:
             record = await bridge.read_record()
             if record is None:
+                observer_eof = spec.mode == "observe"
                 try:
                     queue.put_nowait(None)
                 except asyncio.QueueFull as exc:
@@ -499,7 +524,7 @@ async def relay_terminal_websocket(
                 failure = BridgeBackpressureError(
                     "terminal attachment could not drain; reconnect for a full frame"
                 )
-        if isinstance(failure, BridgeBackpressureError):
+        if isinstance(failure, BridgeBackpressureError) or observer_eof:
             close_code = 1013
         elif failure is not None:
             close_code = 1002 if isinstance(failure, BridgeProtocolError) else 1011

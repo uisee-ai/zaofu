@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -15,6 +15,7 @@ from zf.core.config.schema import RuntimeWebTerminalConfig
 from zf.web.terminal_backend import (
     HerdrProjectRuntime,
     TERMINAL_PROVIDER_KINDS,
+    TerminalAgent,
     TerminalBackend,
     TerminalBridgeSpec,
     TerminalCapability,
@@ -146,7 +147,8 @@ class TerminalService:
         value = self.registry.read()
         records = [TerminalSessionRecord.from_mapping(item) for item in self._records(value)]
         records.sort(key=lambda item: (item.created_at, item.session_id))
-        records = self._refresh_pending_usage_bindings(records)
+        live = self._live_agents(records)
+        records = self._refresh_pending_usage_bindings(records, live)
         return {
             "schema_version": "terminal-sessions.v1",
             "enabled": self.config.enabled,
@@ -154,15 +156,76 @@ class TerminalService:
             "allowed_providers": list(self.allowed_providers),
             "allow_takeover": self.config.allow_takeover,
             "capability": self.capability().projection(),
-            "sessions": [self.project_session(record) for record in records],
+            "sessions": [
+                {
+                    **self.project_session(record),
+                    "agent_status": live[record.session_id].status
+                    if record.session_id in live
+                    else "",
+                }
+                for record in records
+            ],
         }
+
+    def _live_agents(
+        self, records: list[TerminalSessionRecord]
+    ) -> dict[str, TerminalAgent]:
+        active = [record for record in records if record.state == "active"]
+        if not active:
+            return {}
+        try:
+            rows = self.backend.list_agents(
+                HerdrProjectRuntime(self.herdr_session_name)
+            )
+        except TerminalRuntimeError:
+            return {}
+        by_identity = {
+            (agent.terminal_id, agent.name, agent.provider): agent for agent in rows
+        }
+        live = {}
+        for record in active:
+            agent = by_identity.get(
+                (record.terminal_id, record.agent_name, record.provider_kind)
+            )
+            if agent:
+                live[record.session_id] = agent
+        return live
 
     def _refresh_pending_usage_bindings(
         self,
         records: list[TerminalSessionRecord],
+        live: dict[str, TerminalAgent],
     ) -> list[TerminalSessionRecord]:
-        updates: dict[str, TerminalUsageBinding] = {}
+        updates: dict[str, tuple[TerminalSessionRecord, TerminalUsageBinding, str]] = {}
         for index, record in enumerate(records):
+            agent = live.get(record.session_id)
+            # Keep the first native identity for this terminal generation, even if
+            # its transcript arrives later or the hook subsequently reports /new.
+            native_id = record.herdr_native_id or (agent.native_id if agent else "")
+            if record.provider == "codex" and native_id:
+                if record.usage_binding_status == "conflict" or (
+                    record.herdr_native_id and record.provider_session_id == native_id
+                ):
+                    continue
+                if (
+                    record.provider_session_id
+                    and record.provider_session_id != native_id
+                ):
+                    binding = TerminalUsageBinding(
+                        "conflict",
+                        reason="Herdr session identity differs from the previously bound Codex session",
+                    )
+                else:
+                    try:
+                        binding = self.usage.bind_codex_reference(native_id, self.project_root)
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+                    if record.provider_session_id and binding.status != "bound":
+                        # A temporarily unavailable transcript must retain its existing binding.
+                        continue
+                if binding.status != "pending" or record.herdr_native_id != native_id:
+                    updates[record.session_id] = (record, binding, native_id)
+                continue
             if (
                 record.provider != "codex"
                 or record.provider_session_id
@@ -188,15 +251,21 @@ class TerminalService:
             except Exception:
                 continue
             if binding.status == "bound":
-                updates[record.session_id] = binding
+                updates[record.session_id] = (record, binding, "")
         if not updates:
             return records
 
         def persist(value: dict[str, object]) -> list[TerminalSessionRecord]:
             for item in self._records(value):
-                binding = updates.get(str(item.get("session_id") or ""))
-                if binding is None or item.get("provider_session_id"):
+                update = updates.get(str(item.get("session_id") or ""))
+                if update is None:
                     continue
+                observed, binding, native_id = update
+                if observed.provider_session_id != item.get(
+                    "provider_session_id", ""
+                ) or observed.herdr_native_id != item.get("herdr_native_id", ""):
+                    continue
+                item["herdr_native_id"] = native_id
                 item["provider_session_id"] = binding.provider_session_id
                 item["provider_session_path"] = binding.provider_session_path
                 item["usage_binding_status"] = binding.status
@@ -331,10 +400,14 @@ class TerminalService:
                 start_timeout_seconds=self.config.provider_start_timeout_seconds,
             )
             try:
-                binding = self.usage.complete_launch(
-                    launch,
-                    wait_seconds=self.usage_binding_wait_seconds,
-                )
+                if resource.native_id and provider == "codex":
+                    binding = self.usage.bind_codex_reference(
+                        resource.native_id, self.project_root
+                    )
+                else:
+                    binding = self.usage.complete_launch(
+                        launch, wait_seconds=self.usage_binding_wait_seconds
+                    )
             except Exception:
                 binding = TerminalUsageBinding(
                     status="unavailable",
@@ -358,6 +431,7 @@ class TerminalService:
                 tab_id=resource.tab_id,
                 pane_id=resource.pane_id,
                 terminal_id=resource.terminal_id,
+                herdr_native_id=resource.native_id,
                 agent_name=resource.agent_name,
                 provider_session_id=binding.provider_session_id,
                 provider_session_path=binding.provider_session_path,
@@ -521,7 +595,7 @@ class TerminalService:
         cols: int,
         rows: int,
     ) -> TerminalBridgeSpec:
-        self._require_capability()
+        capability = self._require_capability()
         if mode not in {"observe", "control"}:
             raise TerminalRuntimeError(
                 "invalid_attachment_mode", f"invalid attachment mode: {mode}", status_code=422
@@ -552,11 +626,12 @@ class TerminalService:
                 f"terminal session is {record.state}",
                 status_code=409,
             )
-        return self.backend.bridge_spec(
+        spec = self.backend.bridge_spec(
             runtime=HerdrProjectRuntime(session_name=record.herdr_session),
-            target=record.pane_id,
+            target=record.terminal_id or record.pane_id,
             mode=mode,
             takeover=takeover,
             cols=cols,
             rows=rows,
         )
+        return replace(spec, mouse=mode == "control" and capability.mouse)

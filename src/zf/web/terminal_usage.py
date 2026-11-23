@@ -164,6 +164,38 @@ class TerminalUsageService:
             binding_started_at_ns=binding_started_at_ns,
         )
 
+    def bind_codex_reference(
+        self, native_id: str, project_root: Path
+    ) -> TerminalUsageBinding:
+        if re.fullmatch(
+            r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", native_id
+        ):
+            matches = [
+                path
+                for path in self.codex_sessions_root.glob(
+                    f"*/*/*/rollout-*-{native_id}.jsonl"
+                )
+                if self._under(path.resolve(), self.codex_sessions_root)
+            ]
+            if len(matches) == 1:
+                for obj in self._jsonl(matches[0]):
+                    if obj.get("type") == "session_meta":
+                        meta = obj.get("payload")
+                        if (
+                            isinstance(meta, dict)
+                            and meta.get("id") == native_id
+                            and isinstance(meta.get("cwd"), str)
+                            and meta["cwd"]
+                            and Path(meta["cwd"]).resolve() == project_root.resolve()
+                        ):
+                            return TerminalUsageBinding(
+                                "bound", native_id, str(matches[0])
+                            )
+                        break
+        return TerminalUsageBinding(
+            "pending", reason="awaiting matching Codex session metadata"
+        )
+
     def complete_launch(
         self,
         launch: TerminalUsageLaunch,
@@ -271,7 +303,10 @@ class TerminalUsageService:
 
     def snapshot(self, record: TerminalSessionRecord) -> dict[str, object]:
         internal = self._read_snapshot(record)
-        if internal.status not in {"observed", "awaiting_usage"}:
+        if (
+            internal.status not in {"observed", "awaiting_usage"}
+            and record.usage_binding_status != "conflict"
+        ):
             fallback = self._ledger_snapshot(record)
             if fallback is not None:
                 return fallback
@@ -357,6 +392,13 @@ class TerminalUsageService:
                 source="provider_transcript",
                 provider=record.provider,
                 reason="provider usage reader is not qualified",
+            )
+        if record.usage_binding_status == "conflict":
+            return _UsageSnapshot(
+                status="unavailable",
+                source="provider_transcript",
+                provider=record.provider,
+                reason=record.usage_binding_reason,
             )
         if not record.provider_session_id:
             return _UsageSnapshot(

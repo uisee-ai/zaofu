@@ -23,6 +23,11 @@ def state_root() -> Path:
     return root
 
 
+def scenario() -> dict:
+    path = state_root() / "scenario.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
 def state_path(session: str) -> Path:
     safe = "".join(char if char.isalnum() or char in "-_" else "-" for char in session)
     return state_root() / f"{safe}.json"
@@ -133,17 +138,26 @@ def agent_start(session: str, args: list[str]) -> int:
     kind = option(args, "--kind")
     if not name or not pane_id or not kind:
         return error("invalid_agent", "name, pane and kind are required")
-    return response(
-        {
-            "agent": {
-                "name": name,
-                "kind": kind,
-                "pane_id": pane_id,
-                "terminal_id": f"term-{pane_id}",
-                "state": "idle",
-            }
+    agent = {
+        "name": name,
+        "agent": kind,
+        "pane_id": pane_id,
+        "terminal_id": f"term-{pane_id}",
+        "agent_status": "idle",
+    }
+    if native_id := scenario().get("native_id"):
+        agent["agent_session"] = {
+            "source": "herdr:codex",
+            "agent": kind,
+            "kind": "id",
+            "value": native_id,
         }
-    )
+
+    def store_agent(value: dict) -> dict:
+        value.setdefault("agents", {})[name] = agent
+        return {"agent": agent}
+
+    return response(with_state(session, store_agent))
 
 
 def terminal_frame(seq: int, text: str, *, full: bool) -> None:
@@ -173,6 +187,12 @@ def terminal_session(session: str, mode: str, target: str) -> int:
         full=True,
     )
     if mode == "observe":
+        marker = state_root() / "interrupt-next-observer"
+        try:
+            marker.unlink()
+            return 0
+        except FileNotFoundError:
+            pass
         for _ in sys.stdin:
             pass
         return 0
@@ -186,6 +206,9 @@ def terminal_session(session: str, mode: str, target: str) -> int:
         if kind == "terminal.release":
             print(json.dumps({"type": "terminal.closed", "reason": "released"}), flush=True)
             return 0
+        if kind == "terminal.mouse":
+            seq += 1
+            terminal_frame(seq, f"\r\nmouse {command['action']} {command['column']},{command['row']}", full=False)
         if kind == "terminal.input":
             if isinstance(command.get("text"), str):
                 data = command["text"]
@@ -220,7 +243,7 @@ def terminal_session(session: str, mode: str, target: str) -> int:
 def main() -> int:
     args = sys.argv[1:]
     if args == ["--version"]:
-        print("herdr 0.8.0")
+        print("herdr " + str(scenario().get("version", "0.8.0")))
         return 0
     if args[:3] == ["api", "schema", "--json"]:
         print(json.dumps({"title": "fake-herdr-api", "version": "0.8.0"}))
@@ -244,11 +267,26 @@ def main() -> int:
     if command[:2] == ["tab", "create"]:
         return tab_create(session, command)
     if command[:2] == ["tab", "get"] and len(command) >= 3:
+        if code := scenario().get("tab_error"):
+            return error(code, command[2])
         return tab_get(session, command[2])
     if command[:2] == ["tab", "close"] and len(command) >= 3:
         return tab_close(session, command[2])
     if command[:2] == ["tab", "rename"] and len(command) >= 4:
         return tab_rename(session, command[2], " ".join(command[3:]))
+    if command[:2] == ["agent", "list"]:
+        status = scenario().get("status", "idle")
+        return response(
+            with_state(
+                session,
+                lambda v: {
+                    "agents": [
+                        {**a, "agent_status": status}
+                        for a in v.get("agents", {}).values()
+                    ]
+                },
+            )
+        )
     if command[:2] == ["agent", "start"]:
         return agent_start(session, command)
     if command[:3] == ["terminal", "session", "observe"] and len(command) >= 4:

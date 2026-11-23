@@ -371,3 +371,32 @@ def test_unqualified_provider_usage_is_explicitly_unsupported(tmp_path: Path) ->
     assert projection["status"] == "unsupported"
     assert projection["cost_usd"] is None
     assert projection["total_tokens"] is None
+
+
+def test_codex_hook_requires_matching_project_and_native_session_meta(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "sessions"
+    service = TerminalUsageService(state_dir=tmp_path, codex_sessions_root=root)
+    native_id = "90857bb3-480c-43c0-897c-6d212be10409"
+    path = root / "2026" / "11" / "23" / f"rollout-test-{native_id}.jsonl"
+    assert service.bind_codex_reference(native_id, tmp_path).status == "pending"
+    _append_jsonl(
+        path,
+        {"type": "session_meta", "payload": {"id": native_id, "cwd": str(tmp_path)}},
+    )
+    assert (
+        service.bind_codex_reference(native_id, tmp_path / "other").status == "pending"
+    )
+    assert service.bind_codex_reference(
+        native_id, tmp_path
+    ).provider_session_path == str(path)
+    path.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"id": "different", "cwd": str(tmp_path)},
+            }
+        )
+    )
+    assert service.bind_codex_reference(native_id, tmp_path).status == "pending"

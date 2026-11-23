@@ -19,6 +19,7 @@ from zf.core.config.schema import RuntimeWebTerminalConfig
 from zf.web.terminal_backend import (
     HerdrProjectRuntime,
     HerdrTerminalResource,
+    TerminalAgent,
     TerminalBridgeSpec,
     TerminalCapability,
     TerminalRuntimeError,
@@ -115,6 +116,7 @@ def test_herdr_command_runner_applies_the_sanitized_environment(
 
 class FakeBackend:
     def __init__(self) -> None:
+        self.agents: list[TerminalAgent] = []
         self.created = 0
         self.stopped: list[str] = []
         self.renamed: list[tuple[str, str]] = []
@@ -134,6 +136,9 @@ class FakeBackend:
             control_bridge=True,
             tab_rename=self.rename_available,
         )
+
+    def list_agents(self, runtime: HerdrProjectRuntime) -> list[TerminalAgent]:
+        return self.agents
 
     def ensure_project_runtime(self, session_name: str) -> HerdrProjectRuntime:
         return HerdrProjectRuntime(session_name=session_name, server_pid=123)
@@ -308,8 +313,10 @@ def test_claude_terminal_binds_private_native_session_and_projects_usage(
     assert projection["usage"]["status"] == "awaiting_usage"
 
 
+@pytest.mark.parametrize("late_identity", ["consistent", "conflict"])
 def test_codex_terminal_late_binds_usage_after_browser_trust_gate(
     tmp_path: Path,
+    late_identity: str,
 ) -> None:
     backend = FakeBackend()
     sessions_root = tmp_path / "codex-sessions"
@@ -336,7 +343,9 @@ def test_codex_terminal_late_binds_usage_after_browser_trust_gate(
         tz=timezone.utc,
     ).isoformat()
     native_id = "01a01f2e-dfd8-70f2-8283-e1d08dd4bd01"
-    transcript = sessions_root / "2026" / "08" / "20" / f"rollout-demo-{native_id}.jsonl"
+    transcript = (
+        sessions_root / "2026" / "08" / "20" / f"rollout-demo-{native_id}.jsonl"
+    )
     transcript.parent.mkdir(parents=True)
     transcript.write_text(
         "\n".join(
@@ -382,6 +391,30 @@ def test_codex_terminal_late_binds_usage_after_browser_trust_gate(
     assert session["usage"]["total_tokens"] == 12
     assert registry["sessions"][0]["provider_session_id"] == native_id
     assert "provider_session_id" not in session
+
+    usage.settle(service.get_session(record.session_id))
+    hidden = transcript.rename(transcript.with_suffix(".hidden"))
+    hook_id = (
+        native_id
+        if late_identity == "consistent"
+        else "41850c7c-eff2-4a55-ba87-0ef93ea373e3"
+    )
+    backend.agents = [
+        TerminalAgent(record.terminal_id, record.agent_name, "codex", "idle", hook_id)
+    ]
+    refreshed = service.list_sessions()["sessions"][0]
+    stored = service.get_session(record.session_id)
+    if late_identity == "consistent":
+        assert stored.provider_session_id == native_id
+        assert stored.usage_binding_status == "bound"
+        assert refreshed["usage"]["status"] == "awaiting_usage"
+        hidden.rename(transcript)
+        assert service.list_sessions()["sessions"][0]["usage"]["total_tokens"] == 12
+        assert service.get_session(record.session_id).herdr_native_id == native_id
+    else:
+        assert stored.provider_session_id == ""
+        assert stored.usage_binding_status == "conflict"
+        assert refreshed["usage"]["status"] == "unavailable"
 
 
 @pytest.mark.parametrize(
@@ -613,7 +646,7 @@ def test_herdr_adapter_starts_a_project_named_headless_server(warming_timeout: b
                     command,
                     1 if self.workspace_lists == 1 else 0,
                     "" if self.workspace_lists == 1 else '{"result":{"workspaces":[]}}',
-                    "server unavailable" if self.workspace_lists == 1 else "",
+                    '{"error":{"code":"server_not_running"}}' if self.workspace_lists == 1 else "",
                 )
             return super().run(argv, timeout=timeout)
 
@@ -1199,3 +1232,49 @@ async def test_bridge_start_failure_closes_only_the_attachment(
     )
 
     assert websocket.codes == [1011]
+
+
+@pytest.mark.parametrize(
+    "code", ["server_not_running", "protocol_mismatch", "permission_denied"]
+)
+def test_herdr_query_errors_do_not_prove_absence(code: str) -> None:
+    class ErrorRunner(FakeRunner):
+        def run(self, argv, *, timeout):
+            return subprocess.CompletedProcess(
+                argv, 1, "", json.dumps({"error": {"code": code}})
+            )
+
+    backend = HerdrTerminalBackend("/bin/true", runner=ErrorRunner())
+    with pytest.raises(TerminalRuntimeError):
+        backend.terminal_exists(runtime=HerdrProjectRuntime("zf-project"), tab_id="t1")
+    if code != "server_not_running":
+        with pytest.raises(TerminalRuntimeError):
+            backend.ensure_project_runtime("zf-project")
+
+
+def test_mouse_commands_require_supported_bridge_and_valid_coordinates() -> None:
+    command = {
+        "type": "terminal.mouse",
+        "action": "down",
+        "button": "left",
+        "column": 4,
+        "row": 2,
+    }
+    old = HerdrNDJSONBridge(
+        TerminalBridgeSpec(("herdr",), "control", 80, 24), _config()
+    )
+    with pytest.raises(BridgeProtocolError):
+        old._validate_command(command)
+    current = HerdrNDJSONBridge(
+        TerminalBridgeSpec(("herdr",), "control", 80, 24, mouse=True), _config()
+    )
+    assert current._validate_command(command) == {**command, "modifiers": 0}
+    for overrides in (
+        {"column": -1},
+        {"row": True},
+        {"action": "move"},
+        {"button": "middle"},
+        {"modifiers": 8},
+    ):
+        with pytest.raises(BridgeProtocolError):
+            current._validate_command({**command, **overrides})
