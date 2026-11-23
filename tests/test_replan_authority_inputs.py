@@ -46,6 +46,9 @@ def test_replan_input_manifest_exposes_current_package_ports_and_oa_authority(tm
             "baseline-plan-port-task_map"} <= sources.keys()
     decision = hydrate_sidecar_ref(runtime.state_dir, sources["plan-rework-decision"]).payload
     assert decision["decision"] == "return_to_plan"
+    basis = decision["delta"]["directives"][0]["basis_refs"][0]
+    assert any(key.startswith("replan-evidence-") and row["ref"] == basis["ref"]
+               and row["sha256"] == basis["sha256"] for key, row in sources.items())
     assert sources["plan-rework-decision"]["sha256"] == marker.payload["orchestrator_decision_ref"]["sha256"]
     required = canonical_required_reads(
         {"sources": refs, "handoff_authority_contract": {"attempt_domain": "plan"}},
@@ -111,9 +114,39 @@ def test_cited_oa_evidence_keeps_original_descriptor_and_rejects_tampering(tmp_p
     request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
     manifest = hydrate_sidecar_ref(runtime.state_dir, request["source_manifest_ref"]).payload
     original = manifest["sources"][0]
+    # Isolate the legacy top-level shape from current directive evidence.
+    decision.pop("delta", None)
     decision["evidence_refs"] = [original["ref"], "artifacts/unregistered.json"]
     refs = _decision_evidence_sources(runtime.state_dir, decision)
     assert refs == [{**original, "source_id": f"replan-evidence-{original['source_id']}"}]
     (runtime.state_dir / original["ref"]).write_text('{"tampered":true}')
     with pytest.raises(ValueError):
         _decision_evidence_sources(runtime.state_dir, decision)
+
+
+def test_replan_does_not_import_other_action_or_wrong_digest(tmp_path):
+    runtime, marker, _trigger = _return_to_plan(tmp_path)
+    decision = hydrate_sidecar_ref(runtime.state_dir, marker.payload["orchestrator_decision_ref"]).payload
+    directive = decision["delta"]["directives"][0]
+    unchanged = {**directive, "action": "rework"}
+    wrong_digest = {**directive, "basis_refs": [{**directive["basis_refs"][0], "sha256": "f"*64}]}
+    decision["delta"]["directives"] = [unchanged, wrong_digest]
+    decision.pop("evidence_refs", None)
+    assert _decision_evidence_sources(runtime.state_dir, decision) == []
+
+
+def test_replan_only_exposes_directives_for_scoped_tasks(tmp_path):
+    runtime, marker, _trigger = _return_to_plan(tmp_path)
+    decision = hydrate_sidecar_ref(runtime.state_dir, marker.payload["orchestrator_decision_ref"]).payload
+    directive = decision["delta"]["directives"][0]
+    op = load_workflow_operation(runtime.event_log, decision["operation_id"])
+    request = hydrate_sidecar_ref(runtime.state_dir, op["request_ref"]).payload["request"]
+    manifest = hydrate_sidecar_ref(runtime.state_dir, request["source_manifest_ref"]).payload
+    other_source = next(s for s in manifest["sources"] if s["ref"] != directive["basis_refs"][0]["ref"])
+    other = {**directive, "target": {**directive["target"], "task_id": "TASK-2"},
+             "basis_refs": [{"ref": other_source["ref"], "sha256": other_source["sha256"]}]}
+    decision["delta"]["directives"].append(other)
+    decision.pop("evidence_refs", None)
+    assert _decision_evidence_sources(runtime.state_dir, decision, task_ids=set()) == []
+    refs = _decision_evidence_sources(runtime.state_dir, decision, task_ids={"TASK-1"})
+    assert [r["ref"] for r in refs] == [directive["basis_refs"][0]["ref"]]

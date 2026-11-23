@@ -18,6 +18,7 @@ from zf.runtime.orchestrator_agent_policy import (
 )
 from zf.runtime.orchestrator_agent_plan_binding import current_checkpoint_plan_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.task_verification_failure_sources import task_verification_failure_sources
 
 
 SEMANTIC_FAILURE_REQUESTED = "orchestrator.semantic.failure.requested"
@@ -237,6 +238,14 @@ def request_semantic_failure_checkpoint(
             for member in candidate["members"])
     elif candidate:
         artifact_refs.append({**candidate["control_result_ref"], "source_id": "candidate-verification"})
+    else:
+        try:
+            artifact_refs.extend(task_verification_failure_sources(
+                runtime.state_dir, events, set(failure_ids), task_id=task_id,
+                workflow_run_id=workflow_run_id, package=package,
+            ))
+        except ValueError as exc:
+            raise SemanticFailureCheckpointError(str(exc)) from exc
     artifact_refs.extend({**ref, "source_id": f"candidate-host-media-{index}"}
                          for index, ref in enumerate(media_refs))
     recovery_ref = payload.get("recovery_context_ref")

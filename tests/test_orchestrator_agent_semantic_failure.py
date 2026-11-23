@@ -26,6 +26,7 @@ from zf.runtime.artifact_read_capability import (
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.call_result_adapters import hydrate_profiled_control_result_event
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_agent_decision_apply import (
     apply_orchestrator_agent_decision,
@@ -263,6 +264,7 @@ def _submit_rework(
     action: str = "rework",
     outside_ref: bool = False,
     directive_fields: dict | None = None,
+    basis_source_id: str = "",
 ) -> ZfEvent:
     activate_orchestrator_agent_operation(
         runtime,
@@ -282,7 +284,8 @@ def _submit_rework(
         )
     identity = prepared.context.input_body["identity"]
     target = prepared.context.input_body["checkpoint_context"]
-    basis = prepared.context.source_manifest["sources"][0]
+    basis = next(row for row in prepared.context.source_manifest["sources"]
+                 if not basis_source_id or row["source_id"] == basis_source_id)
     decision = {
         "schema_version": "orchestration-decision.v1",
         "execution_status": "completed",
@@ -385,6 +388,64 @@ def test_semantic_checkpoint_is_explicit_and_requires_exact_sources(
             type="verify.failed",
             task_id="TASK-1",
         ))
+
+
+@pytest.mark.parametrize("case", ["current", "old_package", "different_task", "stale_attempt", "untrusted", "damaged"])
+def test_checkpoint_exposes_only_bound_admitted_task_verification(tmp_path, case):
+    runtime = _runtime(tmp_path)
+    package = next(e.payload for e in runtime.event_log.read_all()
+                   if e.type == "plan.artifact_package.admitted")
+    binding = {"workflow_run_id": "run-semantic-1", "operation_id": "op-verify",
+               "attempt_id": "attempt-1", "dispatch_id": "dispatch-1", "request_hash": "a"*64}
+    body = {**binding, "schema_version": "verification-result.v1", "verdict": "rejected",
+            "output_profile_id": "task-verify", "task_map_generation": "g1",
+            "plan_artifact_package_digest": package["package_digest"], "task_id": "TASK-1",
+            "requirement_results": [{"acceptance_id": "local", "status": "passed"},
+                                    {"acceptance_id": "integrated", "status": "failed"}]}
+    if case == "old_package":
+        body["plan_artifact_package_digest"] = "f"*64
+    if case == "different_task":
+        body["task_id"] = "TASK-2"
+    result = write_immutable_json_sidecar(runtime.state_dir, body, root="artifacts/test-results",
+        kind="call_control_result", schema_version=body["schema_version"], created_by="test")
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}",
+            task_id="TASK-1", origin="kernel", payload={**binding, "operation_type": "task-stage",
+                "active_attempt_id": "new-attempt" if case == "stale_attempt" else binding["attempt_id"],
+                "task_pipeline_stage": "verify", "task_map_generation": "g1"}))
+    failure = runtime.event_writer.append(ZfEvent(type="workflow.call.result.admitted",
+        actor="zf-cli", origin="worker" if case == "untrusted" else "kernel", task_id="TASK-1",
+        payload={**binding, "admission_status": "admitted", "semantic_verdict": "rejected",
+                 "control_result_schema": body["schema_version"], "control_result_ref": result}))
+    runtime.event_writer.append(ZfEvent(type="workflow.operation.settled", task_id="TASK-1",
+                                        origin="kernel", payload=binding))
+    request = _semantic_request(runtime)
+    request.payload["failure_event_ids"] = [failure.id]
+    if case == "damaged":
+        (runtime.state_dir / result["ref"]).write_text("{}")
+        with pytest.raises(SemanticFailureCheckpointError):
+            request_semantic_failure_checkpoint(runtime, request)
+        return
+    if case in {"old_package", "different_task", "stale_attempt"}:
+        with pytest.raises(SemanticFailureCheckpointError):
+            request_semantic_failure_checkpoint(runtime, request)
+        return
+    prepared = request_semantic_failure_checkpoint(runtime, request)
+    sources = [s for s in prepared.context.source_manifest["sources"] if s["ref"] == result["ref"]]
+    assert len(sources) == (1 if case == "current" else 0)
+    if sources:
+        assert hydrate_sidecar_ref(runtime.state_dir, sources[0]).payload["requirement_results"] == body["requirement_results"]
+        from zf.runtime.plan_synth_handoff import build_plan_handoff_input_refs
+
+        # Older OA decisions cited the semantic input, without listing its
+        # task result separately. A successor may use the exact admission.
+        apply_orchestrator_agent_decision(runtime, _submit_rework(
+            runtime, prepared, action="return_to_plan", basis_source_id="semantic-failure-input",
+        ))
+        trigger = next(e for e in runtime.event_log.read_all() if e.type == "prd.plan.requested")
+        refs = build_plan_handoff_input_refs(state_dir=runtime.state_dir,
+            project_root=runtime.project_root, payload=trigger.payload)
+        assert [r["sha256"] for r in refs if r["source_id"] == f"replan-task-verification-{failure.id}"] == [result["sha256"]]
 
 
 def test_admitted_directive_dispatches_only_exact_target_with_bound_feedback(

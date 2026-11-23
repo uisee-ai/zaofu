@@ -64,7 +64,31 @@ def replan_authority_sources(
                        str(authority.get("orchestration_delta_digest") or ""), "plan-rework-delta"))
     for key in ("orchestrator_decision_ref", "orchestration_delta_ref", "orchestration_delta_digest"):
         context[key] = authority[key]
-    refs.extend(_decision_evidence_sources(state_dir, decision))
+    scope = set(context.get("task_ids") or context.get("failed_task_ids")
+                or payload.get("task_ids") or payload.get("failed_task_ids") or [])
+    evidence = _decision_evidence_sources(state_dir, decision, task_ids=scope)
+    refs.extend(evidence)
+    for item in evidence:
+        if item["source_id"] != "replan-evidence-semantic-failure-input":
+            continue
+        failure = hydrate_sidecar_ref(state_dir, item).payload
+        target = failure["target"]
+        if (target.get("task_id") not in scope or failure.get("workflow_run_id") != run_id
+                or target.get("task_map_generation") != package["task_map_generation"]):
+            continue
+        # Historical OA manifests may lack the Verify body. Use the original
+        # kernel admissions, never descriptors embedded in the failure report.
+        from zf.runtime.task_verification_failure_sources import task_verification_failure_sources
+
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        admissions = {row["event_id"] for row in failure["failure_events"]}
+        exact = task_verification_failure_sources(
+            state_dir, events, admissions, task_id=target["task_id"], workflow_run_id=run_id,
+            package={"task_map_generation": package["task_map_generation"], "package_digest": package_digest},
+        )
+        for descriptor in exact:
+            if not any(row["ref"] == descriptor["ref"] and row["sha256"] == descriptor["sha256"] for row in refs):
+                refs.append(source(descriptor["ref"], descriptor["sha256"], "replan-" + descriptor["source_id"]))
     return refs
 
 
@@ -103,7 +127,9 @@ def _legacy_oa_authority(
     )}
 
 
-def _decision_evidence_sources(state_dir: Path, decision: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _decision_evidence_sources(
+    state_dir: Path, decision: Mapping[str, Any], *, task_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Reuse only cited sources already pinned in this decision's OA manifest."""
     operation = load_workflow_operation(EventLog(state_dir / "events.jsonl"), str(decision.get("operation_id") or ""))
     if not operation:
@@ -113,11 +139,18 @@ def _decision_evidence_sources(state_dir: Path, decision: Mapping[str, Any]) -> 
     if not isinstance(descriptor, Mapping):
         raise ValueError("replan OA source manifest is unavailable")
     manifest = hydrate_sidecar_ref(state_dir, dict(descriptor)).payload
-    cited = {item if isinstance(item, str) else str(item.get("ref") or "")
-             for item in decision.get("evidence_refs", []) if isinstance(item, (str, Mapping))}
+    legacy = decision.get("evidence_refs") or []
+    citations = list(legacy)
+    for directive in (decision.get("delta") or {}).get("directives", []):
+        target = directive.get("target") or {}
+        if directive.get("action") == "return_to_plan" and (task_ids is None or target.get("task_id") in task_ids):
+            citations.extend(directive.get("basis_refs") or [])
+    legacy_paths = {item for item in legacy if isinstance(item, str)}
+    legacy_paths.update(item.get("ref") for item in legacy if isinstance(item, Mapping) and not item.get("sha256"))
+    cited = {(item.get("ref"), item.get("sha256")) for item in citations if isinstance(item, Mapping)}
     refs = []
     for item in manifest.get("sources", []):
-        if item.get("ref") in cited:
+        if item["ref"] in legacy_paths or (item["ref"], item["sha256"]) in cited:
             hydrate_sidecar_ref(state_dir, dict(item))
             refs.append({**item, "source_id": f"replan-evidence-{item['source_id']}"})
     return refs
