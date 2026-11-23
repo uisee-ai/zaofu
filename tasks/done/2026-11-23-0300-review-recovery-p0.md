@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done · 24eb7bbe fix: bind critic evidence and close recovery handoffs
 
 # 审核纠错、诊断调度与恢复交接 P0
 
