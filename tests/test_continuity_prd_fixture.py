@@ -34,7 +34,8 @@ def test_real_qualification_preserves_v5_and_delivers_reader_policy(tmp_path):
         assert role.model_reasoning_effort == "high"
         assert role.provider_session.sandbox == "workspace-write", role.instance_id
         assert role.provider_session.native_delegation is False
-        if role.flow_kind == "prd" and role.role_kind == "reader":
+        if (role.flow_kind == "prd" and role.role_kind == "reader"
+                and role.instance_id != "planner"):
             assert role.lifecycle.reader_context_scope == "dispatch", role.instance_id
         else:
             assert role.lifecycle.reader_context_scope == "workflow", role.instance_id

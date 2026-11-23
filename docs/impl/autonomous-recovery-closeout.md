@@ -97,3 +97,22 @@ rejected/blocked 是语义结果，不能当技术失败反复调用直到出现
 本轮增量影响闭包 12142 passed、18 skipped；哨兵 53 passed、流程 mock 10 passed；
 Docker 显式 tier 2 passed。原断点真实恢复和最终产品交付继续由 active 任务跟踪，
 以上结果只证明实现与相关调用路径，尚不证明长任务无人资格。
+
+## Planner 会话连续性
+
+8×8 配置由 `tests/continuity_prd_fixture.py` 生成。具名 Planner 显式设置为
+`reader_context_scope: dispatch` 曾导致同一 Task/Run 的 replan 清空 Codex UUID；
+具名配置优先于 Flow 的默认值，因此仅修改默认值不能解决现场问题。
+现将 Planner 设置为 `workflow`，独立 Critic、Verify、Judge 保持 `dispatch`。
+运行项目必须同步修改 zf.yaml，并在控制面重新加载后核对 runtime-load 证据。
+
+同一 Task、完整且相等的 Run 绑定允许复用原生会话。缺失 Run 或完全没有旧作用域却
+持有缓存 UUID，不证明会话归属；沿用现有结算、活跃 turn 和进程退出检查后再隔离。
+不带 Task ID 的 Plan Synth 仍按 Run 隔离；Task 与 Run 同时缺失时 defer，不轮换或冒领会话。
+Provider 配置摘要、rollout 存在性与归属检查继续适用，不能使用 `resume --last` 或
+手工把已替换的旧 UUID 写回当前活跃会话。
+
+会话历史只提供上下文，不继承审批、验收结论或读取证明。当前交付仍为
+`full-with-shadow-delta`；`artifact read --required --resume` 只续接当前
+attempt/operation/bundle 及会话绑定下的已观测读取。跨 attempt 的读取复用尚不在本轮
+实现范围内，当前 Source Manifest 与版本门禁保持不变。
