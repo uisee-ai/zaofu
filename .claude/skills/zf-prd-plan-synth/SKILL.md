@@ -313,8 +313,11 @@ layers it needs, plus its focused tests and evidence. A good task has:
 Every mandatory user journey must map to one or more bounded tasks and exact
 acceptance ids. Do not create independent "backend", "frontend", and "tests"
 tasks that cannot demonstrate a user-visible outcome on their own. When more
-than one slice feeds the same product, preserve one final assembly owner that
-owns shared wiring and the real product entrypoint.
+than one slice needs changes to shared wiring, assign that wiring and the real
+entrypoint to one assembly owner. For an already wired, frozen entrypoint, cite
+the baseline, identify the existing task responsible for integrated evidence,
+and bind the final journeys to Candidate Verify. Apply the declared assembly
+policy and the distinct writer-bundle checks in the task-map contract.
 
 Each `exclusive_files` path has one owner across the full map. A later wave or
 dependency does not permit duplicate ownership; assign shared entrypoint and

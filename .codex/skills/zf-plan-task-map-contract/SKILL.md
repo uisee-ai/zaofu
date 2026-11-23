@@ -943,7 +943,15 @@ bundle's own unit tests and only surfaces at candidate verification as
 `integration.failed` / `test.failed` — e.g. the assembled CLI is non-functional
 because no task owned the root entrypoint that wires the bundles together.
 
-Whenever the plan has more than one parallel bundle, emit exactly one final
+Count independent writer bundles by their actual ownership and dependency
+topology. Pool lanes and independent read-only audits do not by themselves
+create distinct writer bundles. When the shared entrypoint is already wired
+and frozen, identify its baseline and assign integrated journey evidence to an
+existing in-scope task with Candidate Verify on the assembled target. Preserve
+all source-defined tasks, write scopes, and declared assembly policies. Newly
+required cross-bundle wiring still needs an authorized writer.
+
+Whenever the plan has more than one parallel writer bundle, emit exactly one final
 **assembly task**:
 
 - Give it an `owner_role` distinct from the feature tasks it depends on
