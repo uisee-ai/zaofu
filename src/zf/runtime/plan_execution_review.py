@@ -119,6 +119,33 @@ def review_execution(
         items.append("setup_not_wired")
     if not policy.get("impl_self_check_required"):
         items.append("self_check_not_required")
+    requirements = [
+        _task_requirements(task, writer_items.get(str(task.get("task_id") or task.get("id") or ""))
+                           if per_task else None) for task in tasks
+    ]
+    if any(row.get("standard_with_empty_write_scope") for row in requirements):
+        items.append("standard_with_empty_write_scope")
+    # An optional Candidate probe can legitimately lack a mandatory AC. Report the
+    # exact declarations to reviewers without turning them into a product verdict.
+    mandatory_refs = {
+        cid for task in tasks for ac in _rows(task.get("acceptance_criteria") or task.get("acceptance"))
+        if isinstance(ac, Mapping) and ac.get("mandatory", True) is not False
+        and ac.get("verification_owner") == "candidate_verify"
+        for cid in _rows(ac.get("verification_command_ids")) + _rows(ac.get("command_ids"))
+        if isinstance(cid, str)
+    }
+    for task, row in zip(tasks, requirements, strict=True):
+        unbound = [
+            c["id"] for c in _rows(_object(task.get("validation")).get("commands"))
+            if isinstance(c, Mapping) and isinstance(c.get("id"), str) and c["id"]
+            and c.get("owner") == "candidate_verify" and c.get("acceptance_ids") == []
+            and not c.get("acceptance_id")
+            and c["id"] not in mandatory_refs
+        ]
+        if unbound:
+            row["unbound_candidate_command_ids"] = unbound
+    if any(row.get("unbound_candidate_command_ids") for row in requirements):
+        items.append("candidate_commands_without_mandatory_binding")
     writers = [role for role in policy.get("writer_instances", [])
                if not kind or role.get("flow_kind") in ("", kind)]
     return {
@@ -146,10 +173,7 @@ def review_execution(
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
             "rolling_smoke_policy": _rolling_smoke_policy(),
-            "task_requirements": [
-                _task_requirements(task, writer_items.get(str(task.get("task_id") or task.get("id") or ""))
-                                   if per_task else None) for task in tasks
-            ],
+            "task_requirements": requirements,
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
         },
@@ -198,7 +222,10 @@ def _initial_readonly_verify(item: dict) -> dict:
     from zf.runtime.writer_task_materialization import writer_task_pipeline_entry_mode
 
     raw = item["raw_task"]
-    if writer_task_pipeline_entry_mode(item, raw) != "verify_only":
+    mode = writer_task_pipeline_entry_mode(item, raw)
+    if mode == "standard" and raw.get("allowed_paths") == []:
+        return {"standard_with_empty_write_scope": True}
+    if mode != "verify_only":
         return {}
     task_id = item["task_id"]
     criteria = raw.get("acceptance_criteria") or raw.get("acceptance") or []

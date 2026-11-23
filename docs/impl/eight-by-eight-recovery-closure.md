@@ -1080,3 +1080,7 @@ PNG 的索引项提供 `image_page_command`。无法挂载时，可视化客户�
 对于批准的 Task Map，顶层明确同时声明 `runtime_only: true`、`write_free: true` 和空 `allowed_paths` 的任务进入 `verify_only`。其顶层 `verification_read_paths` 随同一任务写入 TaskStore 的 evidence_contract。顶层与嵌套声明冲突，或只读声明同时携带写路径时，Plan 校验返回具体任务和字段；只有空写路径本身不会把开发任务改成审计。
 
 若已完成的兄弟任务必须保留原合同，只读审计可在自己的 `evidence_contract.frozen_candidate_acceptance_ids` 中列出由最终冻结 Candidate 执行的强制 `candidate_verify` 条款。每个条款须显式绑定命令，本地仍须有可独立执行的强制基线检查。仅候选使用的命令随条款延后，共用命令仍在基线执行。Plan 预览列出实际初审义务及延后的 ID。Task Verify 保留完整合同快照，最终 Candidate 汇集全部强制条款与命令重新验证。使用这项声明需要配置独立的下游 Candidate Reader。
+
+Plan 执行预览在 Critic 必读摘要中列出两类待核对情形。任务管线编译为 standard 且显式写范围为空时，详情标出具体任务；候选命令显式没有 AC、且所有强制 Candidate AC 均未引用它时，详情标出命令 ID。Planner 和 Critic 根据原始目标核对初始审计与最终门，可选探测保留其用途。
+
+对同一任务、同一验收 ID，若 Task Map 与验收矩阵都显式声明了 verification_owner 或 verification_tier，新计划预检和新包准入逐字段比较，返回具体 AC、字段和两侧取值。其他命令的测试分层仍独立；已接纳包按原代际重放。

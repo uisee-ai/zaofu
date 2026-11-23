@@ -112,7 +112,7 @@ def plan_matrix_admission_errors(
         )
 
     for acceptance_id, row in acceptance_by_id.items():
-        expected_task = task_acceptance.get(acceptance_id, ("", {}))[0]
+        expected_task, criterion = task_acceptance.get(acceptance_id, ("", {}))
         task_refs = _refs(row, "task_id", "task_ids", "owning_task_id")
         _known_refs(errors, task_refs, set(task_by_id), f"acceptance_matrix.{acceptance_id}.task_ids", "task")
         if expected_task and task_refs and task_refs != {expected_task}:
@@ -129,12 +129,17 @@ def plan_matrix_admission_errors(
                 f"acceptance_matrix.{acceptance_id}.task_ids",
                 "acceptance row must identify its task",
             )
+        if expected_task and task_refs == {expected_task}:
+            for field in ("verification_owner", "verification_tier"):
+                expected, actual = criterion.get(field), row.get(field)
+                if (isinstance(expected, str) and expected.strip()
+                        and isinstance(actual, str) and actual.strip()
+                        and expected.strip() != actual.strip()):
+                    _error(errors, "acceptance_binding_mismatch",
+                           f"acceptance_matrix.{acceptance_id}.{field}",
+                           f"{expected_task} Task Map declares {expected!r}, matrix declares {actual!r}")
         command_refs = _refs(row, "verification_command_ids", "command_ids")
-        task_refs_expected = _refs(
-            task_acceptance.get(acceptance_id, ("", {}))[1],
-            "verification_command_ids",
-            "command_ids",
-        )
+        task_refs_expected = _refs(criterion, "verification_command_ids", "command_ids")
         if command_refs != task_refs_expected:
             _error(
                 errors,

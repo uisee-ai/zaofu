@@ -110,6 +110,12 @@ owner、tier 和实际阶段一致。只有 `node --test` 的 AC 绑定不能证
   prerequisite 标签、空 journey_ids 豁免整个章节。
 - `task_verify` 的局部结果只能依赖本片及已完成前置行为。跨后续切片的结果可以
   保留为 mandatory `candidate_verify`，必须有明确后续生产者和验证时点。
+- 按来源逐项核对预期只读任务与执行预览中的 `initial_readonly_verify`。若摘要标出
+  `standard_with_empty_write_scope`，按需查看详情中的任务 ID，核对实际入口、基线与本地命令。
+  `phase` 是作者标注，调度读取 `execution_mode` 与只读合同。对照已完成任务的保留范围再提出修改。
+- 若摘要出现 `candidate_commands_without_mandatory_binding`，查看对应任务的
+  `unbound_candidate_command_ids`，从原始需求确认每一项是强制门还是可选探测。
+  对所有强制门核对 Candidate AC 与命令的双向引用、执行者及同版矩阵，逐项指出缺口。
 - 条件扩展保留来源、启用决定和未启用范围；只在进入受影响阶段前关闭阻塞决定。
   不为开始工程盘点提前猜测所有产品决定，不把未启用条件写成产品已通过。
 

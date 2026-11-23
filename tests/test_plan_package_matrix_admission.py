@@ -213,3 +213,35 @@ def test_actual_gap_routes_reject_stale_inherited_matrix_before_materialization(
     assert "acceptance_set_mismatch" in _rejections(case)[-1].payload["reason"]
     assert not case.runtime.task_store.list_all()
     assert not case.transport.sent
+
+
+@pytest.mark.parametrize(("owner", "tier", "expected"), [
+    ("candidate_verify", "e2e", {"verification_owner", "verification_tier"}),
+    ("task_verify", "runtime", set()),
+    (None, None, set()),
+])
+def test_explicit_same_ac_binding_matches_in_preflight_and_package(case, tmp_path, owner, tier, expected):
+    from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
+    from tests.test_plan_candidate_preflight import _matrix_metadata, _source_index
+
+    row = next(p for p in case.ports if p["logical_name"] == "acceptance_matrix")["body"]["acceptance"][0]
+    if owner is not None:
+        row["verification_owner"] = owner
+    if tier is not None:
+        row["verification_tier"] = tier
+    result = evaluate_plan_candidate_preflight(
+        state_dir=case.state, project_root=tmp_path,
+        reports=[{"report": {"task_map": case.body, "source_index": _source_index(),
+                             "plan_ports": case.ports, "plan_md": "# Plan\n\nImplement TASK-1."}}],
+        manifest={"stage_id": "prd-plan", "trigger_payload": {"flow_kind": "prd", "prd_ref": "docs/requirement.md"}},
+        metadata=_matrix_metadata())
+    fields = {e["field"] for e in result["errors"] if e["code"] == "acceptance_binding_mismatch"}
+    assert fields == {f"acceptance_matrix.AC-1.{field}" for field in expected}
+    admitted = _admit(case, _ready(case))
+    if expected:
+        assert admitted is None
+        for field in fields:
+            assert field in _rejections(case)[-1].payload["reason"]
+    else:
+        assert admitted is not None
+        assert not _rejections(case)

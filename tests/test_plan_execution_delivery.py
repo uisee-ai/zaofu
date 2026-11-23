@@ -108,3 +108,39 @@ def test_verification_detail_tampering_fails_closed(tmp_path):
     (tmp_path / detail['ref']).write_text('{}')
     with pytest.raises(ValueError, match='mismatch'):
         expanded_verification(tmp_path, body, payload['input_refs'])
+
+
+def test_critic_summary_identifies_missing_audit_entry_and_unbound_candidate_probes(tmp_path):
+    from zf.runtime.plan_execution_delivery import execution_review_delivery
+
+    audit = {'task_id': 'AUDIT', 'phase': 'verify_only', 'allowed_paths': []}
+    commands = [
+        {'id': key, 'owner': 'candidate_verify', 'command': f'run {key}', 'acceptance_ids': []}
+        for key in ('build', 'all-tests', 'browser')
+    ]
+    impl = {'task_id': 'IMPL', 'allowed_paths': ['src/tool'], 'validation': {'commands': commands}}
+    consumer = {'task_id': 'OTHER', 'allowed_paths': ['src/other'], 'acceptance_criteria': [
+        {'id': 'journey', 'statement': 'Real browser', 'verification_owner': 'candidate_verify',
+         'verification_command_ids': ['browser']}]}
+    def check():
+        return review_execution({'tasks': [audit, impl, consumer]}, ports={}, policy={},
+                                metadata={'task_pipeline': {'mode': 'blocking'}})
+
+    first = check()
+    payload = {}
+    attach_execution_review(state_dir=tmp_path, payload=payload, review=first, source_event_id='evt')
+    sources = {s['source_id']: s for s in payload['input_refs']}
+    summary = hydrate_sidecar_ref(tmp_path, sources['plan-execution-review']).payload
+    assert {'standard_with_empty_write_scope', 'candidate_commands_without_mandatory_binding'} <= set(summary['review_items'])
+    detail = hydrate_sidecar_ref(tmp_path, sources['plan-execution-verification']).payload
+    rows = {row['task_id']: row for row in detail['task_requirements']}
+    assert rows['AUDIT']['standard_with_empty_write_scope'] is True
+    assert 'initial_readonly_verify' not in rows['AUDIT']
+    assert rows['IMPL']['unbound_candidate_command_ids'] == ['build', 'all-tests']
+    assert 'unbound_candidate_command_ids' not in rows['OTHER']
+    audit.update(execution_mode='runtime_only', runtime_only=True, write_free=True)
+    consumer['acceptance_criteria'][0]['verification_command_ids'].extend(['build', 'all-tests'])
+    for command in commands:
+        command['acceptance_ids'] = ['journey']
+    fixed, _ = execution_review_delivery(check())
+    assert not {'standard_with_empty_write_scope', 'candidate_commands_without_mandatory_binding'} & set(fixed['review_items'])
