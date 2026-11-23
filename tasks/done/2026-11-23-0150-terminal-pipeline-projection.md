@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 33c4195a fix: preserve terminal pipeline history across policy changes
 
 # 监工发现的已完成任务策略漂移投影故障
 
@@ -15,7 +15,7 @@ TASK-ASCENDING admitted profile_digest不匹配。16个原任务均done；当前
 
 - [x] P1 终态历史不按新策略重新准入 -> verify: 完成/取消任务在策略变化后仍可投影，原状态、generation和历史结果不改写；活动任务的摘要不一致仍拒绝。
 - [x] P2 混合任务与实际入口 -> verify: 新活动任务与旧完成任务并存，done依赖保持有效、cancelled不自动满足；真实WRC派发入口重放不报错、不重开完成任务、不重复派发。
-- [ ] P3 验证与安全部署 -> verify: 聚焦模块、直接调用者、共享合同和mock通过；受控仅重启控制面，保留当前Reader会话；现场只读投影成功且原重复错误停止，提交修复和记录。
+- [x] P3 验证与安全部署 -> verify: 聚焦模块、直接调用者、共享合同和mock通过；受控仅重启控制面，保留当前Reader会话；现场只读投影成功且原重复错误停止，提交修复和记录。
 
 不删除原失败、不修改Task/operation/generation摘要，不以显示历史行授权新派发，不扩大
 产品验收或审批权限。监工采样器每30秒只写reports，不调用恢复动作；主动干预另行记账。
@@ -35,3 +35,14 @@ Task/事件不被改写。当前plan-critic继续审核；部署前保持其会�
 基础设施恢复路由。Supervisor已告警但未找到对应诊断派发，不等于修复闭环。
 本批只修投影根因，以上问题需独立验证同故障去重、恢复Case/作用域互斥与resident许可，
 不能简单解除全部队列条件。本轮监工报告保留这些未决项，不标作已完成。
+
+## 安全加载事实
+
+真实部署前Critic已完成并reject，Run因stage_replan_cap_exhausted进入blocked。
+首次run-pause被409拒绝，未执行stop；保留失败回执后，在blocked断点仅重启控制面，
+未调用run-resume、未改上限或审核结论。运行基线7d1edef4包含本修复，加载证据
+evt-29f26e77e997；源码树、配置和原closed_failed协议摘要核对通过。
+原产品pane集合保留；额外AR pane为自动诊断启动。158秒观察无同类新报错，现场投影
+保持16 done、50 settled。记录位于运行worktree reports/eight-unattended-20261121T132814Z/
+supervision-20261123/projection-deploy.json，副本在本worktree reports/terminal-pipeline-projection/。
+本条done不等于最终业务交付；Critic新旧版本混用反证和自动AR诊断继续由监工报告跟踪。
