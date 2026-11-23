@@ -1,6 +1,7 @@
 # 将已接纳结果引用的前驱执行证据显式交付
 
-> 状态: active
+> 状态: done
+> 实现: `55b78e24 fix: deliver cited predecessor evidence to task successors`
 
 授权来自持续监工中发现问题、修复、评估后续恢复的既定范围。上一轮导航方法已实际物化，
 但SUM第二次Verify `evt-d56859ca339b` 仍只判断事后重演，未取原始RED。当前runtime原生
@@ -28,3 +29,11 @@ g4返工已派发，已到maxReworkAttempts=2的第二次语义返工。不得�
 - 原Run当前g4 handoff只读重放生成11条引用观察/约12KB，原RED740850精确关联原Impl、输出digest及两个admitted引用。没有向业务Worker注入该清单。
 - SUM g4已于07:11:59自主提交原RED+当前GREEN且无代码差量；下一Verify已07:12:28派发，早于本补丁部署。保留其冻结输入，不为制造live激活证据而重新派发。
 - 报告与精确命令：`reports/cited-handoff-evidence/`。下一符合条件的新Task派发才会使用新清单；当前语义结果继续监工。
+
+## 受控部署与验证边界
+
+已加载55b78e24，PID2198792，runtime load事件evt-9d6ce6278c75/evt-3f5976e59885；
+保留原worker、当前Verify583a42b782a4、配置、15项done和历史资格。当前Verify在补丁前
+已派发，未改其冻结输入，不能声称它消费了新清单。新producer到required-read的实际
+运行入口已由测试验证；未来首次真实激活及业务判词仍由监工观察，不作虚假通过。
+本任务完成代码、接线、测试与部署；旧拒绝/恢复计数不变，不强制重派制造验证证据。
