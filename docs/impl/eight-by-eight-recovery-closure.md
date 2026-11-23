@@ -1045,3 +1045,15 @@ operation/request/dispatch/Run 后，current config/Plan/Task/goal/Candidate 均
 门解除且 provider 空闲时发布原 checkpoint 的一次 retry。实际发送前在既有 operation
 guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不再重复发送。
 暂停/终止、已有结果、失效绑定或发送状态未知时不适用；再失败转 blocked 保留诊断。
+
+## 首次 Reader 恢复的媒体预检（2026-11-23）
+
+首次host采证交接与已有host绑定的后续恢复使用同一产物检查；不能因首次request没有
+`candidate_host_evidence_ref`就直接认定输入改善。命令退出0后，声明产物必须在经摘要、
+来源和版本校验的媒体索引中存在，才允许原生Reader恢复。非法/缺失路径保留原失败给
+现有诊断owner，不重新执行已完成命令、不修改已冻结输入、不代替产品验收。
+
+真实现场目录声明`artifacts/evidence/browser/`与容器证据根下文件不一致；预检不负责
+猜测目录映射或改写合同。该差异由Reader/RM/OA及合同Owner通过现有流程纠正，已有
+浏览器执行和媒体仍是原目标历史事实。测试覆盖实际`resume_reader_after_probes`入口的
+有/无request首次恢复、合法文件、非法声明和缺失文件，以及重复tick不重派。

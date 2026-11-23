@@ -71,14 +71,14 @@ def retained_reader_probes(service, operation, contract, policy, events) -> dict
 
 def reader_probe_inputs_improved(service, operation, contract, policy, receipts) -> bool:
     """Only new effects or a repaired previously unavailable input permit retry."""
-    if not operation.get('request_ref'):
-        return True  # Legacy Reader handoff has only its own post-call effects.
-    request = _request(service.state_dir, operation)
+    request = _request(service.state_dir, operation) if operation.get('request_ref') else {}
     ref = request.get('candidate_host_evidence_ref')
-    if not ref:
-        return True
-    body = hydrate_sidecar_ref(service.state_dir, ref).payload
-    old = {row['command_id']: row for row in body['receipts']}
+    old = {}
+    if ref:
+        body = hydrate_sidecar_ref(service.state_dir, ref).payload
+        old = {row['command_id']: row for row in body['receipts']}
+    # First-time evidence must meet the same media contract as a successor's.
+    # A new receipt alone cannot repair a missing or invalid declared output.
     improved = False
     for command in contract['verification_commands']:
         receipt_ref = receipts.get(command['command_id'])
