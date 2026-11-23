@@ -61,11 +61,8 @@ class FanoutDispatchLivenessMixin:
         task_id, trace_id = current
         if previous_task_id != task_id:
             return False
-        return not (
-            previous_trace_id
-            and trace_id
-            and previous_trace_id != trace_id
-        )
+        # An unknown Run is not proof that a cached context belongs here.
+        return bool(previous_trace_id and previous_trace_id == trace_id)
 
     def _prepare_reader_fanout_context(
         self,
@@ -82,21 +79,22 @@ class FanoutDispatchLivenessMixin:
         if (
             role.role_kind != "reader"
             or not self._role_is_on_demand(role)
-            or (not task_id and role.lifecycle.reader_context_scope != "dispatch")
         ):
             return True, {}
         registry = self._role_lifecycle_registry()
         per_dispatch = role.lifecycle.reader_context_scope == "dispatch"
         if per_dispatch and not dispatch_id:
             return False, {"defer_reason": "reader_context_dispatch_id_missing"}
-        if per_dispatch and not (task_id or trace_id):
+        if not (task_id or trace_id):
             return False, {"defer_reason": "reader_context_scope_missing"}
         previous_dispatch = str(registry.instance_meta().get(
             role.instance_id, {},
         ).get("fanout_context_dispatch_id") or "")
         current = (task_id, trace_id)
         previous = self._reader_fanout_context_scope(role.instance_id)
-        if provider_session_replaced or not any(previous):
+        if provider_session_replaced or (
+            not any(previous) and registry.get(role.instance_id) is None
+        ):
             registry.update_instance_meta(
                 role.instance_id,
                 fanout_context_task_id=task_id,

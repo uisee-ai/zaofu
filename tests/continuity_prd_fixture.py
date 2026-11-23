@@ -61,7 +61,7 @@ def configuration(root: Path, *, harness: Path) -> list[dict]:
             "sandbox": "workspace-write", "native_delegation": False,
         }
     # Named controller readers do not consume lane lifecycleByStage defaults.
-    # Preserve their workdirs while rotating native context on each dispatch.
+    # Planner rework retains its same-root context; independent readers rotate.
     for role in renderable_config_to_primitive(load_config(source))["roles"]:
         if role["flow_kind"] == "prd" and role["role_kind"] == "reader":
             if role["instance_id"].startswith("verify-lane-"):
@@ -71,7 +71,10 @@ def configuration(root: Path, *, harness: Path) -> list[dict]:
                 "context_window_tokens": 200000,
                 "provider_session": {"sandbox": "workspace-write", "native_delegation": False},
                 "lifecycle": {"mode": "on_demand", "idle_seconds": 600,
-                              "reader_context_scope": "dispatch"},
+                              "reader_context_scope": (
+                                  "workflow" if role["instance_id"] == "planner"
+                                  else "dispatch"
+                              )},
             })
             cfg["roles"].append(role)
     spec["roleDefaults"]["lifecycleByStage"] = {
