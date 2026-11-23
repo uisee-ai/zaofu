@@ -78,4 +78,10 @@ def repaired_reader_stage_trigger(
             raise ValueError('Candidate Reader repair requires its exact frozen source')
         trigger.payload['candidate_snapshot_event_id'] = native.id
         trigger.payload.pop('schema_version', None)
+    from zf.runtime.candidate_media_review import KEY, validate_owner_review
+    trigger.payload.pop(KEY, None)
+    if KEY in payload:
+        if trigger.type != 'candidate.ready' or semantic_recovery:
+            raise ValueError('Candidate media review requires an operator Candidate Reader recovery')
+        trigger.payload[KEY] = validate_owner_review(state_dir, events, requested, payload, failure, native)
     return trigger

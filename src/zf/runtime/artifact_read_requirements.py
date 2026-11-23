@@ -91,7 +91,7 @@ def build_canonical_required_reads(
             # Legacy stage-barrier Candidate Verify remains source-compatible.
             required_paths["impl-self-check"] = ("$",)
         for source_id in source_ids:
-            if source_id == "candidate-host-execution" or source_id.startswith(
+            if source_id in {"candidate-host-execution", "candidate-host-review"} or source_id.startswith(
                     ("candidate-host-fact-", "candidate-host-media-")):
                 required_paths[source_id] = ("$",)
     elif profile == "integration-acceptance-review":

@@ -32,6 +32,12 @@ Critic 派发前会按宿主收据读取器的规则检查 `producer_paths`。�
 `host_producer_path_invalid` 和命令所在字段。冻结前仍需对照生产脚本核实
 文件名和业务用例；文件是否真实生成、内容能否支撑条款，由后续采证与独立 Verify 判定。
 
+历史 Candidate 已因旧目录声明阻塞时，owner 可在 `stage-replan-new-generation`
+的基础设施修复请求中附上 `candidate_media_review_ref`。该不可变审批材料绑定失败事件、
+冻结候选、原宿主回执、完整原命令和已复核的命名文件。运行时保留既有命名文件义务，
+核对归档与原始执行身份，只向此次受控动作派发的新 Reader 提供映射和来源材料。
+补充测试应注明其独立测试版本与适用范围；原宿主回执、旧 Reader 判词和产品门禁均保留。
+
 ```bash
 zf plan inspect-execution --config zf.yaml --task-map path/to/task_map.json --flow-kind prd
 # 已准入运行可补充 --plan-package <配置 state_dir 内的 Package JSON>

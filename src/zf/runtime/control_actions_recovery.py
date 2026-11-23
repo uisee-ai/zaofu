@@ -384,6 +384,11 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        from zf.runtime.candidate_media_review import KEY
+        if KEY in payload and (self.actor != 'operator' or not payload.get('repaired_failure_event_id')
+                               or payload.get('review_only') or payload.get('orchestrator_decision_event_id')):
+            return self._recovery_failed(requested, action, requested_action,
+                'Candidate media review requires an owner-controlled Reader repair', 409)
         if payload.get('review_only') is True:
             from zf.runtime.plan_critic_reassessment import apply_reassessment
             return apply_reassessment(self, requested, action, requested_action, payload)

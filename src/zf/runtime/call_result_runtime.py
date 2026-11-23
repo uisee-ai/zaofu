@@ -229,7 +229,7 @@ def prepare_call_operation(
         from zf.runtime.candidate_host_consumption import prepare_candidate_host_consumption
 
         prepare_candidate_host_consumption(runtime, payload=payload,
-            operation_id=operation_id, attempt_id=attempt_id)
+            operation_id=operation_id, attempt_id=attempt_id, source_event_id=causation_id)
         from zf.runtime.milestone_handoff import attach_milestone_handoff
 
         attach_milestone_handoff(runtime, payload, operation_id, attempt_id)
