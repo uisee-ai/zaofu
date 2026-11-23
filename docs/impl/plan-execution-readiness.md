@@ -26,6 +26,12 @@
 
 ## 实际执行事实
 
+当 Candidate Verify 的命令与启用的宿主容器验证白名单匹配时，Plan 提交与
+Critic 派发前会按宿主收据读取器的规则检查 `producer_paths`。每一项都应是
+实际产出的相对文件名，例如 `ZF_EVIDENCE_DIR/desktop.png`。目录声明会返回
+`host_producer_path_invalid` 和命令所在字段。冻结前仍需对照生产脚本核实
+文件名和业务用例；文件是否真实生成、内容能否支撑条款，由后续采证与独立 Verify 判定。
+
 ```bash
 zf plan inspect-execution --config zf.yaml --task-map path/to/task_map.json --flow-kind prd
 # 已准入运行可补充 --plan-package <配置 state_dir 内的 Package JSON>

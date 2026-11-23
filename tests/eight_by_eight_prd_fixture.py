@@ -17,8 +17,8 @@ FEATURES = [
     ("reverse", "字符反转", "按 Unicode 码点反转完整输入，保留空白；不按 UTF-16 单元反转。", [("A😀中", "中😀A"), ("", "")]),
     ("word_count", "单词计数", "首尾去空白后按连续空白分词，返回词数；空输入返回0。", [("  alpha\n洛书 beta ", 3), ("   ", 0)]),
     ("unique_words", "去重词序", "按空白分词，大小写敏感去重，保留首次顺序，以单空格拼接。", [("a b a 中 b", "a b 中"), ("  ", "")]),
-    ("slug", "ASCII短名", "转小写；连续非ASCII字母数字替换为连字符，再去首尾连字符。", [(" Hello, World! ", "hello-world"), ("中文", "")]),
-    ("mask", "尾四位脱敏", "按Unicode码点，保留最后4个字符，前面每个字符替为*；不足4位原样返回。", [("ab😀1234", "***1234"), ("中😀", "中😀")]),
+    ("slug", "ASCII短名", "转小写；连续非ASCII字母数字替换为连字符，再去首尾连字符。", [(" Hello, World! ", "hello-world"), ("中文", ""), ("", "")]),
+    ("mask", "尾四位脱敏", "按Unicode码点，保留最后4个字符，前面每个字符替为*；不足4位原样返回。", [("ab😀1234", "***1234"), ("中😀", "中😀"), ("", "")]),
     ("lines", "非空行编号", "按LF拆行，每行trim，去掉空行，依次返回1: 内容并用LF连接；兼容CRLF。", [(" a\r\n\n b ", "1: a\n2: b"), ("\n ", "")]),
     ("initials", "词首缩写", "按空白分词，取每词首个Unicode码点、转大写并拼接；空输入返回空串。", [(" alice bob 中华 😀wow", "AB中😀"), (" ", "")]),
     ("sum", "数列求和", "CSV数字列表按输入顺序求和；空输入返回0。", [("1,-2,4.5", 3.5), (" ", 0)]),
@@ -48,6 +48,8 @@ def prepare(root: Path, *, harness: Path, image: str) -> dict:
 npm test、npm run build、npm run build && node tests/browser.cjs，由独立Candidate Verify审查。
 浏览器只通过既有预授权Docker宿主采证机制运行，不能要求沙箱Impl访问Docker。
 桌面和移动端逐项断言，保存截图、trace、WebM及镜像/浏览器/源码身份。Judge负责最终验收。
+浏览器命令的 producer_paths 应与冻结脚本一致：在 ZF_EVIDENCE_DIR/ 下逐项声明
+desktop.png、mobile.png、desktop-trace.zip、mobile-trace.zip、desktop.webm、mobile.webm、environment.json。
 键盘验收为按钮聚焦后按Enter触发；textarea内Enter保留换行，不改冻结页面。
 规范命令注册表仅含上述3条全局命令和16条逐模块build+test命令；额外边界断言写入模块测试，
 浏览器断言沿冻结脚本执行。不得额外生成未授权宿主命令或要求监工临时补采证。

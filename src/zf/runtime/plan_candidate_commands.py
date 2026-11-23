@@ -1,11 +1,13 @@
 """Acceptance and rolling-smoke command contracts for Plan candidates."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 
-def _claim_acceptance_command_errors(task_map: Mapping[str, Any]) -> list[dict[str, str]]:
+def _claim_acceptance_command_errors(
+    task_map: Mapping[str, Any], *, host_commands: Collection[str] = (),
+) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     claims = {
         str(item.get("goal_claim_id") or item.get("id") or "").strip()
@@ -77,6 +79,16 @@ def _claim_acceptance_command_errors(task_map: Mapping[str, Any]) -> list[dict[s
             ).strip()
             if not command_id:
                 continue
+            executable = str(command.get("command") or command.get("cmd") or "").strip()
+            if str(command.get("owner") or "").strip() == "candidate_verify" and executable in host_commands:
+                from zf.runtime.host_evidence_media import required_media_paths
+
+                try:
+                    required_media_paths(command)
+                except ValueError as exc:
+                    _error(errors, "host_producer_path_invalid",
+                           f"{task_id}.validation.commands[{command_id}].producer_paths",
+                           f"{exc}; declare individual files relative to ZF_EVIDENCE_DIR")
             for field in ("owner", "tier"):
                 if not str(command.get(field) or "").strip():
                     _error(errors, f"command_{field}_missing", f"{task_id}.validation.commands[{command_id}].{field}", f"verification command requires {field}")

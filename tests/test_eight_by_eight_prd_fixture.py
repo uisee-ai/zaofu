@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import json
 
 from tests.eight_by_eight_prd_fixture import FEATURES, prepare
 from zf.core.config.loader import load_config
@@ -30,6 +31,10 @@ def test_prepared_project_compiles_real_eight_by_eight_policy(tmp_path):
     assert len(FEATURES) == 16
     assert not (root / ".zf").exists()  # preparation does not start/admit a Run
     assert config.runtime.host_verification.protected_files["tests/browser.cjs"] == hashlib.sha256((root / "tests/browser.cjs").read_bytes()).hexdigest()
+    source = (root / "tests/browser.cjs").read_text()
+    cases, _ = json.JSONDecoder().raw_decode(source.split("const cases=", 1)[1])
+    blanks = {name for name, samples in cases if any(not value.strip() for value, _ in samples)}
+    assert blanks == {name for name, *_ in FEATURES}
     commands = set(config.runtime.host_verification.commands)
     assert len(commands) == 19
     assert {f"npm run build && node --test app/tests/{key}.test.mjs" for key, *_ in FEATURES} <= commands

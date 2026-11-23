@@ -314,7 +314,9 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     workflow = getattr(config, "workflow", None)
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
+    host = getattr(getattr(config, "runtime", None), "host_verification", None)
     return {
+        "host_verification_commands": list(host.commands) if host and host.enabled else [],
         "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
         "execution": execution_policy(config),
