@@ -22,6 +22,7 @@ from zf.runtime.task_pipeline_execution_status import (
 )
 from zf.runtime.task_pipeline_reconciler import (
     TaskPipelineReconciler,
+    task_pipeline_policy_for_contexts,
     task_pipeline_policy_partitions,
 )
 from zf.runtime.workflow_operation import reduce_workflow_operations
@@ -61,7 +62,8 @@ def read_task_pipeline_projection(
     partitions = task_pipeline_policy_partitions(
         config,
         contexts,
-        task_ids=contexts,
+        # Historical terminal rows remain visible without new policy admission.
+        task_ids=[task.id for task in tasks if task.status not in _TERMINAL_TASK_STATUSES],
     )
     policy_by_task = {
         task_id: partition["policy"]
@@ -93,7 +95,7 @@ def read_task_pipeline_projection(
             policy=partition["policy"],
         ))
     return build_task_pipeline_projection(
-        policy=None,
+        policy=task_pipeline_policy_for_contexts(config, contexts),
         oa_delegations=delegations,
         preferred_role_instances=task_pipeline_preferred_roles(
             reader, generation_contexts=contexts,
@@ -361,6 +363,7 @@ def _scheduler_projection(
     oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
     inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
+    terminal_task_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
     if not policy:
         return {}
@@ -370,6 +373,7 @@ def _scheduler_projection(
         if str(getattr(task, "status", "") or _mapping_value(task, "status"))
         == "done"
     }
+    terminal_ids.update(terminal_task_ids)
     return TaskPipelineReconciler().reconcile(
         policy=policy,
         tasks=tasks,
@@ -429,6 +433,10 @@ def _partitioned_scheduler_projection(
         str(getattr(task, "id", "") or _mapping_value(task, "id")): task
         for task in tasks
     }
+    completed_ids = {
+        task_id for task_id, task in task_by_id.items()
+        if str(getattr(task, "status", "") or _mapping_value(task, "status")) == "done"
+    }
     grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
     for task_id, task_policy in sorted(policy_by_task.items()):
         key = (
@@ -457,6 +465,7 @@ def _partitioned_scheduler_projection(
             oa_delegations=oa_delegations,
             preferred_role_instances=preferred_role_instances,
             inherited_failures=inherited_failures,
+            terminal_task_ids=completed_ids,
             tasks=[task_by_id[task_id] for task_id in task_ids],
             operations=operations,
             attempts=attempts,

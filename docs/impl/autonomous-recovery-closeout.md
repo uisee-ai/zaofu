@@ -116,3 +116,16 @@ Provider 配置摘要、rollout 存在性与归属检查继续适用，不能使
 `full-with-shadow-delta`；`artifact read --required --resume` 只续接当前
 attempt/operation/bundle 及会话绑定下的已观测读取。跨 attempt 的读取复用尚不在本轮
 实现范围内，当前 Source Manifest 与版本门禁保持不变。
+
+## 终态历史与当前调度投影
+
+调整最终Candidate并发宽度会改变完整Task Pipeline策略摘要。派发路径已排除done/
+cancelled任务，投影视图也必须只对非终态任务执行当前策略的准入匹配；历史行、原
+generation与结果继续从原账本展示，不能用新配置重写历史身份。顶层策略描述当前
+配置；活动策略分组仅包含仍需调度的任务。混合投影保留已完成任务的依赖事实，
+cancelled不自动满足依赖。活动任务摘要变化仍拒绝，不因“只读展示”豁免实际派发门。
+
+本次监工发现旧投影将终态context重新送入严格策略匹配，导致WRC维护循环连续报错。
+真实只读入口可复现，修复后用真实WRC入口重放和混合代际用例验证；不修改旧Task、
+合同、generation或失败事件。重复失败的诊断调度与维护continuation处置独立跟踪，
+不以这项投影修复声称所有恢复路径均已自动闭环。
