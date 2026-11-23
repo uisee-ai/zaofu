@@ -16,7 +16,17 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
     renameSync(file + ".next", file);
   };
   mkdirSync(path.join(root, "fake"), { recursive: true });
-  setScenario({ status: "blocked" });
+  // Herdr 0.9.5 frame attributes captured from a submitted Codex prompt.
+  const bg = "\x1b[48;2;68;68;68m";
+  const ink = "\x1b[38;2;238;238;238m";
+  const reset = "\x1b[0m";
+  const pad = bg + " ".repeat(60) + reset;
+  const sample = [
+    ink + bg + "Unrelated output" + reset,
+    "", pad, bg + ink + "\x1b[1;2m› " + reset + bg + ink + "介绍下你自己" + reset,
+    bg + ink + "  Continued line" + reset, pad, "Reply", "",
+  ].join("\r\n");
+  setScenario({ status: "blocked", sample_output: sample });
   const dir = path.join(root, "codex", "sessions", "2026", "11", "23");
   mkdirSync(dir, { recursive: true });
   for (const [id, tokens] of [[native, 81], [randomUUID(), 914]] as const) {
@@ -30,10 +40,15 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   }
   const headers = { "x-zf-web-token": process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST! };
   await page.addInitScript(token => localStorage.setItem("zf.webActionToken", token), headers["x-zf-web-token"]);
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.addInitScript(() => localStorage.setItem("zf.themeMode", "system"));
   const mouseCommands: string[] = [];
+  const submitted: string[] = [];
   page.on("websocket", socket => {
     if (new URL(socket.url()).pathname.endsWith("/control")) {
       socket.on("framesent", ({ payload }) => {
+        const command = JSON.parse(String(payload));
+        if (command.type === "terminal.input" && command.text === "\r") submitted.push(command.text);
         if (String(payload).includes('"terminal.mouse"')) mouseCommands.push(String(payload));
       });
     }
@@ -53,6 +68,33 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   expect((await record()).usage.total_tokens).toBe(83);
   const screen = drawer.locator(".is-active .xterm-screen");
   await expect(screen).toContainText("Coding agent ready");
+  const prompt = screen.getByText("介绍下你自己", { exact: true });
+  const continued = screen.getByText("Continued line", { exact: true });
+  const originalSurface = "rgb(68, 68, 68)";
+  const colors = await drawer.evaluate(el => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "color:var(--wt-text);background-color:var(--wt-surface)";
+    el.appendChild(probe);
+    const { color, backgroundColor } = getComputedStyle(probe);
+    probe.remove();
+    return { color, backgroundColor };
+  });
+  await expect(prompt).toHaveCSS("background-color", colors.backgroundColor);
+  await expect(prompt).toHaveCSS("color", colors.color);
+  await expect(continued).toHaveCSS("background-color", colors.backgroundColor);
+  await expect(screen.getByText("Unrelated output")).toHaveCSS("background-color", originalSurface);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(prompt).toHaveCSS("background-color", originalSurface);
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(prompt).toHaveCSS("background-color", colors.backgroundColor);
+
+  const pos = (await prompt.boundingBox())!;
+  await page.mouse.move(pos.x + 1, pos.y + pos.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pos.x + pos.width - 1, pos.y + pos.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(screen.locator(".xterm-selection > div").first()).toBeVisible();
+  await expect(screen.locator(".xterm-decoration-top").first()).toHaveCSS("background-color", "rgb(207, 226, 255)");
   const bounds = (await screen.boundingBox())!;
   await page.mouse.move(bounds.x + 3, bounds.y + 8);
   await page.mouse.down();
@@ -99,6 +141,8 @@ test("Herdr terminal survives uncertainty and uses agent identity, clicks and ob
   await screen.click({ position: { x: 2, y: 2 } });
   await page.keyboard.type("controller-alive");
   await expect(screen).toContainText("controller-alive");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => submitted.length).toBe(1);
   await mirror.close();
   setScenario({ tab_error: "tab_not_found" });
   expect((await request.post(api + "/reconcile", { headers })).ok()).toBeTruthy();

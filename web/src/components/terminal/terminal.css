@@ -457,6 +457,18 @@
   background: var(--wt-bg);
 }
 
+/* xterm serializes RGB in hex until the DOM normalizes the inline style to
+   rgb() (e.g. for CJK spacing). Its selection and cursor own their colors. */
+.web-terminal-codex-prompt > span:not(.xterm-decoration-top, .xterm-cursor):is(
+  [style*="background-color:#444444"], [style*="background-color: rgb(68, 68, 68)"]
+) {
+  background-color: var(--wt-surface) !important;
+
+  &:is([style*=";color:#eeeeee"], [style*="; color: rgb(238, 238, 238)"]) {
+    color: var(--wt-text) !important;
+  }
+}
+
 .web-terminal-xterm-host .xterm-viewport {
   background-color: var(--wt-bg) !important;
   scrollbar-color: color-mix(in oklab, var(--wt-text-faint) 50%, transparent) transparent;

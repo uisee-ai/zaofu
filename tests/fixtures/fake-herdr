@@ -178,7 +178,8 @@ def terminal_session(session: str, mode: str, target: str) -> int:
         screens = value.setdefault("screens", {})
         return screens.setdefault(
             target,
-            f"\x1b[2J\x1b[H[Fake Herdr] {target}\r\nCoding agent ready\r\n$ ",
+            f"\x1b[2J\x1b[H[Fake Herdr] {target}\r\nCoding agent ready\r\n"
+            + scenario().get("sample_output", "") + "$ ",
         )
 
     terminal_frame(

@@ -17,6 +17,10 @@
 
 沿用 dev 的安装策略和最低宿主版本。启动或刷新 Dashboard 时按宿主能力开放鼠标，列表刷新时更新 agent 标签。原生 ID 来自 Herdr 的 Codex 集成。若先收到 ID，后生成 transcript，保留 ID 直到精确匹配。已有绑定与首次原生 ID 冲突时，该终端的用量显示为不可用。宿主 hook 的安装与检查见[使用手册](../manual/24-web-terminal.md)。
 
+### Codex 历史提问的主题
+
+Herdr 0.9.5 的 NDJSON 桥输出带有显式 RGB 的 ANSI 帧。浅色 Dashboard 根据 Codex 提问标记及其连续底色识别历史提问，使用工作台的浅色底和正文色绘制提问、续行和留白。切换主题或重新附着时，浏览器会重绘已有内容。深色主题使用终端原色，拖选文字使用 xterm 的选区色。
+
 ## 浏览器验收与复跑
 
 在本工作树根目录准备依赖和 Dashboard 静态资源。真实宿主档需要已安装的本机 Codex CLI 和官方 Herdr 0.9.5 二进制。Linux x86_64 的 SHA256 为 `14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d`。

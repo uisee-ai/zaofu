@@ -14,6 +14,7 @@ import {
   terminalScrollFromRows,
   terminalWheelDeltaRows,
 } from "./terminalModel";
+import { trackCodexPromptRows } from "./codexPromptTheme";
 import { attachTerminalImeInputGuard } from "./terminalIme";
 import type {
   TerminalAttachmentMode,
@@ -350,6 +351,13 @@ export function TerminalView({
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.theme = terminalTheme;
   }, [terminalTheme]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal && session.provider === "codex" && resolvedTheme === "light") {
+      return trackCodexPromptRows(terminal);
+    }
+  }, [resolvedTheme, session.provider]);
 
   useEffect(() => {
     if (!visible) return undefined;
