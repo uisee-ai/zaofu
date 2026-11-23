@@ -79,6 +79,14 @@ tick 重试。内核事件绑定 source_request_id；事件重放仍只产生一
 也不干预当前 Task 的发布/验证或其他 Run；纯基础设施恢复在原权威有效时仍可执行。
 回归入口见 `tests/test_candidate_host_supersession.py` 的真实 Run Manager tick 闭包。
 
+Task恢复的`task-handoff-cited-evidence`输入显式列出前驱admitted结果已经引用的执行
+观察。生产者仅沿当前handoff不可变链，将结构化event evidence_refs与冻结索引作精确
+关联，保留来源operation、时间、输出ref/digest、引用结果及当前消费者的读取命令。
+它不扫描全局日志、不按RED/GREEN文本分类，也不宣告历史证据满足当前合同。清单成为
+当前request的required输入，正文仍按需完整读取；无法关联的事件引用明确保留为
+非索引执行观察。绑定、摘要、跨Task/Run、循环或歧义不满足时拒绝生成。已冻结请求
+重放保持原输入；新派发使用新清单，独立Verify仍负责基线、时序与验收适用性。
+
 `runtime.host_verification.recollect_commands` 默认空，必须由 owner 在 zf.yaml 明确
 声明为可安全重复观测的精确命令，且是 commands 的子集；不根据命令名称推测安全。
 原镜像摘要、网络、保护文件、超时及既有执行上限继续适用。

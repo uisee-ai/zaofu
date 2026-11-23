@@ -58,16 +58,23 @@ def test_real_operation_preparation_pins_handoff_as_required_input(tmp_path):
     runtime = _runtime(tmp_path)
     ref = write_immutable_json_sidecar(runtime.state_dir, {"objective": "Keep the candidate and verify it"},
         root="task-handoffs/bodies", kind="task_handoff", schema_version="task-handoff.v1", created_by="kernel")
+    cited = write_immutable_json_sidecar(runtime.state_dir, {'entries': [], 'authorizes_execution': False},
+        root='task-handoffs/cited-evidence', kind='task_cited_evidence',
+        schema_version='task-handoff-cited-evidence.v1', created_by='kernel')
     payload = {"workflow_run_id": "run-1", "role_instance": "dev-1", "task_id": "T1",
         "task_pipeline_stage": "impl", "stage_id": "impl", "output_profile_id": "implementation",
         "canonical_success_event": "dev.build.done", "canonical_failure_event": "dev.blocked",
-        "input_refs": [{**ref, "source_id": "task-handoff", "artifact_id": "task-handoff", "allowed_paths": ["$"]}]}
+        "input_refs": [{**ref, "source_id": "task-handoff", "artifact_id": "task-handoff", "allowed_paths": ["$"]},
+                       {**cited, 'source_id': 'task-handoff-cited-evidence',
+                        'artifact_id': 'task-handoff-cited-evidence', 'allowed_paths': ['$']}]}
     prepare_call_operation(runtime, payload=payload, operation_type="task-stage", operation_key="T1:impl",
         stage_id="impl", task_id="T1", dispatch_id="attempt-1")
     event = next(e for e in runtime.event_log.read_all() if e.type == "workflow.operation.requested")
     request = hydrate_sidecar_ref(runtime.state_dir, event.payload["request_ref"]).payload["request"]
     assert any(row["source_id"] == "task-handoff" and row["artifact_sha256"] == ref["sha256"]
         for row in request["required_reads"])
+    assert any(row['source_id'] == 'task-handoff-cited-evidence' and row['artifact_sha256'] == cited['sha256']
+               for row in request['required_reads'])
 
 
 @pytest.mark.parametrize("corrupt", [False, True])

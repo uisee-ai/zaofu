@@ -95,13 +95,27 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture, ho
         payload={**source, 'attempt_id': 'a0', 'workdir': str(root)})
     hook = replace(hook, correlation_id='run-1')
     settled = replace(settled, task_id='TASK-1', payload=source)
-    for event in (requested, dispatched, hook, settled, *extra):
+    result_ref = write_immutable_json_sidecar(runtime.state_dir, {
+        **{key: source[key] for key in ('workflow_run_id', 'task_id', 'operation_id')},
+        'evidence_refs': ['event:' + hook.id]}, root='results', kind='test',
+        schema_version='test.v1', created_by='kernel')
+    admitted = ZfEvent(type='workflow.call.result.admitted', origin='kernel', task_id='TASK-1',
+        payload={**source, 'control_result_ref': result_ref, 'semantic_verdict': 'blocked'})
+    for event in (requested, dispatched, hook, admitted, settled, *extra):
         runtime.event_writer.append(event)
     dispatch_task()
     body = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]['payload']['task_handoff_ref']).payload
     index = hydrate_sidecar_ref(runtime.state_dir, body['execution_evidence_ref']).payload
     assert [e['event_id'] for e in index['entries']] == [hook.id, *([completed.id] if host else [])]
     assert 'handoff-evidence' in body['execution_evidence_read']
+    cited = hydrate_sidecar_ref(runtime.state_dir, body['cited_execution_evidence_ref']).payload
+    assert [row['event_id'] for row in cited['entries']] == [hook.id]
+    assert any(row['source_id'] == 'task-handoff-cited-evidence'
+               for row in prepared[-1]['payload']['input_refs'])
+    descriptor = body['cited_execution_evidence_ref']
+    dispatch_task()
+    replay = hydrate_sidecar_ref(runtime.state_dir, prepared[-1]['payload']['task_handoff_ref']).payload
+    assert replay['cited_execution_evidence_ref'] == descriptor
     reads = body['host_execution_evidence_reads']
     assert len(reads) == int(host)
     if host:

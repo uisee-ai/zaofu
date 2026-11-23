@@ -69,6 +69,11 @@ def attach_task_handoff(runtime: Any, payload: dict[str, Any], contract: dict[st
             source = max(predecessors, key=lambda row: order.get(row.get("last_event_id"), -1))
             body = _body(runtime, payload, contract, target, source, events)
             validate_handoff_body(body, target)
+            from zf.runtime.task_handoff_citations import write_cited_execution_evidence
+
+            cited = write_cited_execution_evidence(runtime.state_dir, body)
+            if cited:
+                body['cited_execution_evidence_ref'] = cited
             descriptor = write_immutable_json_sidecar(runtime.state_dir, body,
                 root="task-handoffs/bodies", kind="task_handoff", schema_version=SCHEMA,
                 created_by="kernel", source_event_id=str(source.get("last_event_id") or ""))
@@ -79,6 +84,12 @@ def attach_task_handoff(runtime: Any, payload: dict[str, Any], contract: dict[st
         payload["input_refs"] = [*[row for row in payload.get("input_refs", [])
             if row.get("source_id") != SOURCE_ID],
             {**descriptor, "source_id": SOURCE_ID, "artifact_id": SOURCE_ID, "allowed_paths": ["$"]}]
+        cited = body.get('cited_execution_evidence_ref')
+        if cited:
+            verify_sidecar_ref(runtime.state_dir, cited)
+            cited_id = 'task-handoff-cited-evidence'
+            payload['input_refs'] = [*[row for row in payload['input_refs'] if row.get('source_id') != cited_id],
+                {**cited, 'source_id': cited_id, 'artifact_id': cited_id, 'allowed_paths': ['$']}]
 
 
 def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
@@ -146,6 +157,9 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
             for event_id in evidence["host_event_ids"]],
         "unknown_effects": _unconfirmed_continuations(events, target["task_id"], source.get("active_attempt_id")),
         "next_action": "Read current contract and handoff, acknowledge receipt, then continue the current authorized stage. "
+                       "When supplied, task-handoff-cited-evidence locates commands already cited by admitted "
+                       "results across the pinned predecessor chain; inspect relevant original observations via "
+                       "its exact read_command before concluding historical evidence is missing. "
                        "For historical command output, including controlled host probes after settlement, "
                        "use host_execution_evidence_reads first when present, otherwise execution_evidence_read. "
                        "Known command event IDs in admitted results or self-checks are lookup leads: read them "
