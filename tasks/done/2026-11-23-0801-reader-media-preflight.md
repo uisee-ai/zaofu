@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 首次 Reader 恢复前核验必需媒体
 
@@ -34,3 +34,5 @@ invalid host producer path。合同声明 artifacts/evidence/browser/，采证�
   语义恢复；本项不能据此报告产品验收通过。
 
 最终验证：影响闭包188 passed / 2 deselected（包含mock），sentinel53 passed。
+
+实现提交：`c57e80d4 fix: validate media before initial reader recovery`。
