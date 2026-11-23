@@ -56,6 +56,15 @@ Local adaptation of yoke critic role context for ZaoFu.
 同时执行该方法的来源分类、跨域反例和最早反馈审查。返工 verdict 区分“已列修复关闭”
 与“当前完整 Plan 审查范围”，列出未覆盖维度；不能把前者当作全局语义通过。
 
+复核旧阻断项时，先在本版正文中定位被指违反的陈述，再读同一主题的直接反证。声称两组
+Task 必须先后执行时，引用本版规定跨 Task 前置条件的原句，并核对任务图中的依赖与可调度性。
+“每个审计独立运行本地命令”只规定单项验收范围。若本版已明确两组可同时派发，关闭旧项；
+若同一版确有两种相反的调度说明，同时引用两处并指出应对齐的文档。
+
+上下文压缩后若 `--required --resume` 再次送来读过的首页，先调用
+`zf artifact recover --attempt <当前 attempt>`，核对本代 work record、历史交付缺口和需要重新理解的条款。
+按返回的精确路径和游标补读，已收齐的历史区间仍需由 Critic 判断能否用于当前审查。
+
 标准 Issue/PRD/Refactor 计划在进入 writer admission 前由一个独立 Critic
 做一次有界语义检查。light topology 可跳过。这里的检查完全属于本 Skill 和
 Critic Agent；Kernel 只接纳 verdict/ref/digest/current plan revision，不负责理解

@@ -134,6 +134,14 @@ def build_canonical_required_reads(
         )
     required_paths.update(reader_paths)
 
+    if profile == "plan-synth":
+        # Only controlled review-only requests supply these sources. The owner
+        # reason and citations suffice; the full candidate index is already bound.
+        required_paths.update({
+            "plan-review-counter-evidence": ("$.reason", "$.counter_evidence"),
+            "plan-review-prior-verdict": ("$",),
+        })
+
     authority_contract = (
         manifest.get("handoff_authority_contract")
         if isinstance(manifest.get("handoff_authority_contract"), Mapping)
@@ -241,7 +249,9 @@ def build_canonical_required_reads(
         deduped.append(row)
     # Only new declarations change order; pinned attempts/cursors keep theirs.
     # The default page must expose the recovery input before bulk product data.
-    return sorted(deduped, key=lambda row: row['source_id'] != 'critical-reader-repair-context')
+    recovery_order = {"critical-reader-repair-context": 0, "plan-review-counter-evidence": 1,
+                      "plan-review-prior-verdict": 2}
+    return sorted(deduped, key=lambda row: recovery_order.get(row["source_id"], 3))
 
 
 def _selected_minimum_bytes(source: Mapping[str, Any], json_path: str) -> int:

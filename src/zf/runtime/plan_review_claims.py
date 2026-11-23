@@ -22,7 +22,10 @@ def review_claim_briefing(policy: str) -> list[str]:
         'and either exact `observed_value` (JSON) or `quote` (text, optional character start/end). '
         'current_evidence must cite this candidate’s child inputs; historical sources may support '
         'comparison but cannot establish the current value. Before rejecting, reread disputed current '
-        'fields, especially after historical reads or compaction. Unsupported improvement suggestions '
+        'fields, especially after historical reads or compaction. For an alleged contradiction, cite '
+        'the current statement that imposes the disputed constraint and the current statement or graph '
+        'it conflicts with. Close old findings whose condition the current candidate already corrected. '
+        'Unsupported improvement suggestions '
         'remain nonblocking; missing necessary evidence remains a gap. Mechanical checks validate '
         'citations, not your interpretation. An accurate citation alone never proves a Plan passed.', '',
     ]
