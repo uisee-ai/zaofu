@@ -16,10 +16,14 @@ def policy_receipt_matches(state_dir: Path, policy, receipt: dict) -> bool:
             if not isinstance(previous, dict) or digest(previous) != receipt.get('policy_digest'):
                 return False
             parsed = asdict(parse_host_verification(previous))
-            return (parsed == previous
+            return (parsed == {**previous, 'recollect_commands': previous.get('recollect_commands', [])}
                 and 0 < previous['max_executions_per_run'] <= current['max_executions_per_run']
-                and {k:v for k,v in previous.items() if k != 'max_executions_per_run'}
-                    == {k:v for k,v in current.items() if k != 'max_executions_per_run'})
+                and previous['max_artifact_bytes'] <= current['max_artifact_bytes']
+                and previous['max_total_evidence_bytes'] <= current['max_total_evidence_bytes']
+                and {k:v for k,v in previous.items() if k not in {
+                    'max_executions_per_run', 'recollect_commands', 'max_artifact_bytes', 'max_total_evidence_bytes'}}
+                    == {k:v for k,v in current.items() if k not in {
+                        'max_executions_per_run', 'recollect_commands', 'max_artifact_bytes', 'max_total_evidence_bytes'}})
         except (ValueError, TypeError, KeyError):
             return False
     if receipt.get('policy_digest') == digest(current):
@@ -29,6 +33,9 @@ def policy_receipt_matches(state_dir: Path, policy, receipt: dict) -> bool:
     legacy_match = False
     for limit in range(1, min(current['max_executions_per_run'], 100) + 1):
         previous = {**current, 'max_executions_per_run': limit}
+        if receipt.get('policy_digest') == digest(previous):
+            return True
+        previous.pop('recollect_commands', None)
         if receipt.get('policy_digest') == digest(previous):
             return True
         legacy = {k:v for k,v in previous.items()

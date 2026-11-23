@@ -141,10 +141,12 @@ def dispatch_pending_self_repairs(
                     "attempt": req.attempt,
                     "candidate_id": req.candidate_id,
                     "reason": "repair_contract_freeze_failed",
+                    "source_request_id": req.event_id,
                     "error": str(exc),
                     "branch": branch,
                     "worktree": str(worktree),
                 },
+                origin="kernel",
             ))
             continue
         worktree.parent.mkdir(parents=True, exist_ok=True)
@@ -166,10 +168,12 @@ def dispatch_pending_self_repairs(
                     "attempt": req.attempt,
                     "candidate_id": req.candidate_id,
                     "reason": "worktree_add_failed",
+                    "source_request_id": req.event_id,
                     "stderr": result.stderr or "",
                     "branch": branch,
                     "worktree": str(worktree),
                 },
+                origin="kernel",
             ))
             continue
         briefing = build_repair_briefing(

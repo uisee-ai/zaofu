@@ -193,7 +193,11 @@ def request_semantic_failure_checkpoint(
             ),
             "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "
             "exact-target directive: classification=product_defect, contract_changed=false, rationale, "
-            "and gap_tasks copied exactly from the pinned Task Map for all implicated Tasks. Only task_id, "
+            "and gap_tasks copied exactly from the pinned Task Map. For mixed outcomes supply "
+            "finding_dispositions covering every supplied finding_id exactly once: classification "
+            "product_defect/contract_question/execution_unknown, owner, next_action and rationale. "
+            "Only product_repair_eligible findings can authorize product_defect; gap_tasks cover exactly "
+            "their task_ids. All findings remain pending final independent disposition. Only task_id, "
             "base_commit (frozen Candidate head), and supersedes_task_ids (one predecessor) may change. "
             "Unknown/input/blocked outcomes require diagnosis; changed obligations require return_to_plan.",
         }

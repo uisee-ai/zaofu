@@ -85,5 +85,8 @@ def aggregate_candidate_binding(
     completed_facts = [{'child_id': key, 'role_instance': event.payload.get('role_instance'),
                         'child_event_id': event.id, 'outcome': 'reported_completed'}
                        for key, event in completed.items() if event.type == 'fanout.child.completed']
+    from zf.runtime.candidate_finding_partition import candidate_findings
+
     return {**primary, 'operation_id': op_id, 'failed_task_ids': affected,
+            'findings': candidate_findings(state_dir, members, unresolved, events),
             'members': members, 'unresolved_members': unresolved, 'completed_members': completed_facts}

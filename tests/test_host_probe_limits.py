@@ -60,6 +60,7 @@ def test_legacy_policy_receipt_requires_actual_current_budget_proof(tmp_path):
     from zf.runtime.sidecar_refs import write_sidecar_json
     p=policy();body=asdict(p)
     body.pop('max_artifact_bytes');body.pop('max_total_evidence_bytes')
+    body.pop('recollect_commands')  # The historical schema predates this authority.
     old={'policy_digest':digest(body)}
     assert not policy_receipt_matches(tmp_path,p,old)
     old['evidence_ref']=write_sidecar_json(tmp_path,'artifacts/old-evidence.json',

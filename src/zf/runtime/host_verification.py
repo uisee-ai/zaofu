@@ -207,7 +207,19 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                          and e.type.startswith('runtime.action.attempt.')]
                 if prior:
                     if not any(e.type == 'runtime.action.attempt.completed' for e in prior):
-                        _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
+                        from zf.runtime.host_probe_recollection import recollection_manifest
+                        try:
+                            recollected = recollection_manifest(service, manifest, events, policy)
+                            if recollected:
+                                apply(service, recollected, approval_ref=policy.approval_ref,
+                                    reviewed_digest=recollected['manifest_digest'], readonly_snapshot=True,
+                                    recollection_base=manifest,
+                                    verifier=lambda root, body: verify_in_container(service, root, body, policy))
+                                return 1
+                        except (ValueError, OSError, subprocess.SubprocessError):
+                            pass  # The exact failure stays available for RM diagnosis.
+                        if command['command'] not in policy.recollect_commands:
+                            _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
                     continue
                 run = operation['workflow_run_id']
                 used = sum(e.type == 'runtime.action.attempt.started'
@@ -229,7 +241,11 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                 except BlockingIOError:
                     continue  # a live resource owner is a defer, not permission to steal its workspace
                 except (ValueError, OSError, subprocess.SubprocessError) as exc:
-                    _escalate_once(service, events, manifest, str(exc))
+                    if command['command'] not in policy.recollect_commands:
+                        _escalate_once(service, events, manifest, str(exc))
+                    # Opt-in unknown probes already have a durable RM diagnosis
+                    # route and one independent observation. Do not create a
+                    # human gate before that authorized route can run.
                 return 1  # one bounded effect per tick, never an unbounded queue
     return 0
 

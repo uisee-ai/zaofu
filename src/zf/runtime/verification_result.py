@@ -595,6 +595,9 @@ def validate_verification_acceptance(
     contract_snapshot: Mapping[str, Any],
 ) -> None:
     """Bind row ownership and required outcomes to a caller-validated stage."""
+    from zf.runtime.candidate_finding_partition import validate_obligation_results
+
+    validate_obligation_results(result, contract_snapshot)
     if str(result.get("execution_status") or "") == "failed":
         return
     criteria = contract_snapshot.get("acceptance_criteria")

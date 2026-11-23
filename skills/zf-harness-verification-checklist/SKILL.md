@@ -88,6 +88,22 @@ amendment. Suggestions and nits stay in the verification report.
 
 ## Boundary
 
+恢复后的复验先对照原始需求和已批准合同：将已证明的产品缺陷、合同争议、执行结果未知
+分别列出。不能将偏好的边界行为追补为阻塞 AC；每项阻塞须给原条款、实际触发与失败证据。
+复用执行事实时核对目标、合同、来源、环境和补丁影响；只有审核身份变化不能单独成为重跑
+全部命令的理由。受控交付的历史收据仍需独立判断，不是当前消费者的通过票。
+Candidate 合同带 `candidate_recovery_obligations` 时，最终通过还须逐项提交
+`recovery_obligation_results`，写明 finding_id、resolved、rationale 与真实 evidence_refs。
+evidence_refs 必须使用当前输入索引中的 ref/sha256 对象；读权限或内容不匹配不能提交。
+contract_question 可引用当前冻结的原批准需求及具体条款解释，不强制新审批；若声称
+owner 已变更合同，resolution_event_id 必须通过真实批准请求、trigger 与当前 admitted
+generation 绑定。无论如何表述，不能改变当前合同、命令、范围或权限；正式合同与 PRD
+冲突须走原有 scoped Plan 修正。
+带 original_start_event_id 的 host unknown 须引用精确原 effect 的完成、获准独立补采，
+或当前目标针对原冻结命令的独立事实并说明适用性；已知非零也能解决未知，但产品验收
+仍然失败。原 unknown 不改写。RM 建议、其他 Run 决定和无关探针不能充当授权或事实。
+局部修复不能消除未知执行结果；需求决定仍由获准 owner 处理，不以 Reader 自行豁免代替。
+
 Runtime validates schema, identity, evidence presence, result admission,
 attempt/cap, affinity, stale/replay, and terminal state. This checklist decides
 whether the selected checks and evidence meaningfully prove the project

@@ -294,8 +294,10 @@ def _verification_issues(
         )]
 
     from zf.runtime.candidate_host_consumption import admitted_host_commands
+    from zf.runtime.candidate_obligation_evidence import validate_obligation_evidence
 
     try:
+        validate_obligation_evidence(state_dir, result, contract, events)
         host_commands = admitted_host_commands(state_dir, result, operation=operation, events=events)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         return [_issue(field="control_result.host_execution_receipt_ids",

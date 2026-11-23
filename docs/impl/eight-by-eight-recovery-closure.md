@@ -1,5 +1,7 @@
 # 8×8 执行与恢复链路修复
 
+后续 Kimi/Codex 调研实施见[无外部监工恢复与交付闭环](autonomous-recovery-closeout.md)。
+
 2026-11-21 环境污染补充：源码修复有两个执行边界——Worker 自行测试，以及 RM 的
 独立验收。两者均经 `repair_process_environment.isolated_repair_environment` 剥离
 父控制面的 `ZF_*`、Git/tmux 和 Python/pytest 定位，显式注入可信解释器、本地 `src`

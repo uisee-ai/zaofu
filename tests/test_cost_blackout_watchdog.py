@@ -63,7 +63,7 @@ def test_startup_grace_ignores_historical_usage_before_new_dispatch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    now = datetime(2026, 11, 21, 17, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     monkeypatch.setattr("time.time", lambda: now.timestamp())
     state_dir, log, writer = _env(tmp_path)
     run_id = "run-new-dispatch"
@@ -104,7 +104,7 @@ def test_startup_grace_expires_at_fixed_clock_boundary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    now = datetime(2026, 11, 21, 17, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     monkeypatch.setattr("time.time", lambda: now.timestamp())
     state_dir, log, writer = _env(tmp_path)
     run_id = "run-grace-boundary"

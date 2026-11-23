@@ -252,6 +252,11 @@ Before emitting a verdict, check:
 
 ## Judge 输入范围
 
+恢复复验的阻塞结论必须锚定原始需求及当前获准合同，说明具体输入、预期和证据；不能把
+个人偏好的算法、极端边界限制或更严格协议当成既有要求。改动范围决定补验范围，最终
+Goal 仍对账全部义务。技术性空输出/格式错误与有效 rejected/blocked 是不同结果：前者
+修复结果交付，后者进入对应问题恢复，不靠重复调用 Judge 等待一个通过答案。
+
 按当前 profile 的必读政策从 `artifact index --attempt <id>` 定位合同、目标版本
 与独立 Verify 结果，核对证据是否属于当前 Task/target。Integration acceptance
 review 和 Thin Judge/Goal closure 有各自范围；不得把 Impl 的

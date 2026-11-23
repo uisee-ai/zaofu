@@ -49,6 +49,9 @@ def bound_container_probe_receipt(
         for key, value in identity.items():
             if p.get(key) != value or receipt.get(key) != value or start.payload.get(key) != value:
                 return None
+        for key in ('recollection_of_start_id', 'original_manifest_digest'):
+            if any(value != manifest.get(key) for value in (p.get(key), start.payload.get(key), receipt.get(key))):
+                return None
         if (receipt.get("schema_version") != "task-host-receipt.v1"
                 or receipt.get("execution_origin") != "preauthorized_container"
                 or not policy_receipt_matches(state_dir, policy, receipt)
@@ -88,7 +91,16 @@ def pending_host_probe_diagnoses(state_dir: Path, events: list[ZfEvent], config:
         if bound_unknown_host_effect(event, prior, policy.approval_ref):
             unknown.setdefault(p["manifest_digest"], event)
         if receipt is not None:
-            unknown.pop(p["manifest_digest"], None)
+            # Only completion of that effect, or its explicit independent
+            # recollection, discharges the pending diagnosis. The original
+            # unknown event remains unchanged and is never declared successful.
+            for manifest_digest, failed in list(unknown.items()):
+                if event.causation_id == failed.causation_id or (
+                        receipt.get('recollection_of_start_id') == failed.causation_id
+                        and receipt.get('original_manifest_digest') == manifest_digest
+                        and receipt['manifest'].get('recollection_of_start_id') == failed.causation_id
+                        and receipt['command'] in policy.recollect_commands):
+                    unknown.pop(manifest_digest)
             key = (run, p["task_id"], receipt["target_commit"], receipt["command"])
             if receipt["exit_code"] == 0 and receipt["status"] == "completed":
                 failures.pop(key, None)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import asdict
 from typing import Any
 
 from zf.runtime.artifact_access import require_artifact_access
@@ -33,17 +34,31 @@ def _source_fact(state_dir: Path, source: dict, request: dict, fact: dict,
                  consumer: dict, commands: dict) -> tuple[dict, dict] | None:
     """Keep the authenticated source identity; never rename it as a new probe."""
     if (request.get('output_profile_id') != 'candidate-verify'
-            or any(request.get(k) != consumer.get(k) for k in BOUND_FIELDS)
+            or any(request.get(k) != consumer.get(k) for k in BOUND_FIELDS[:4])
             or source.get('workflow_run_id') != consumer['workflow_run_id']
             or source.get('task_id') != consumer['task_id']):
         return None
     receipt = hydrate_sidecar_ref(state_dir, fact['receipt_ref']).payload
+    if any(request.get(k) != consumer.get(k) for k in BOUND_FIELDS[4:]):
+        from zf.runtime.candidate_execution_equivalence import same_execution_contract
+        if not same_execution_contract(state_dir, request, consumer):
+            return None
+    if receipt.get('execution_origin') == 'preauthorized_container':
+        from zf.core.config.host_verification import parse_host_verification
+        from zf.runtime.host_verification_policy import policy_receipt_matches
+        policy = consumer.get('host_policy_snapshot')
+        if (policy and not policy_receipt_matches(state_dir, parse_host_verification(policy), receipt)) or (
+                not policy and request['contract_snapshot_digest'] != consumer['contract_snapshot_digest']):
+            return None
     if any(ref.get('allowed_paths') not in (None, ['$']) for ref in (
             fact['receipt_ref'], receipt.get('output_ref') or {}, receipt.get('evidence_ref') or {})):
         raise ValueError('partial host source cannot grant full evidence access')
     manifest = receipt['manifest']
+    if ('dependency_digest' in consumer
+            and (not consumer['dependency_digest'] or manifest.get('dependency_digest') != consumer['dependency_digest'])):
+        return None
     spec = commands.get(fact['command_id'])
-    if (not spec or manifest.get('contract_digest') != consumer['contract_snapshot_digest']
+    if (not spec or manifest.get('contract_digest') != request['contract_snapshot_digest']
             or fact['target_commit'] != consumer['target_commit']
             or any(manifest['command'].get(k) != spec.get(k)
                    for k in ('command_id', 'command', 'command_digest', 'producer_paths'))):
@@ -72,7 +87,17 @@ def prepare_candidate_host_consumption(runtime: Any, *, payload: dict, operation
         return
     consumer = {k: payload[k] for k in BOUND_FIELDS}
     consumer.update(operation_id=operation_id, attempt_id=attempt_id,
-                    role_instance=payload['role_instance'])
+                    role_instance=payload['role_instance'],
+                    contract_snapshot_ref=payload.get('contract_snapshot_ref'),
+                    target_snapshot_ref=payload.get('target_snapshot_ref'))
+    policy = getattr(getattr(runtime.config, 'runtime', None), 'host_verification', None)
+    if policy is not None:
+        consumer['host_policy_snapshot'] = asdict(policy)
+    from zf.runtime.candidate_execution_equivalence import consumer_dependency_digest
+    try:
+        consumer['dependency_digest'] = consumer_dependency_digest(runtime, payload)
+    except (ValueError, OSError, KeyError, TypeError):
+        consumer['dependency_digest'] = None
     contract = hydrate_sidecar_ref(runtime.state_dir, {
         'ref': payload['contract_snapshot_ref'], 'sha256': payload['contract_snapshot_digest']}).payload
     commands = {c['command_id']: c for c in contract['verification_commands']}

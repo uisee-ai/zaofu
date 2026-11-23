@@ -261,6 +261,11 @@ shape dispatch and reports, but terminal task truth belongs to the runtime.
 WRC 直接请求，无需新增 RM 模型审批。WRC 负责合法续作与恢复执行，不是 OA agent。
 
 等待要注明 owner、缺失项、作用域、唤醒条件及复查安排；无关工作继续。
+Candidate 同时含产品失败与执行未知时，按冻结 `findings` 的 finding_id 逐项分流，
+在单一 `candidate_repair.finding_dispositions` 中写 classification、owner、next_action、
+rationale；产品修复只覆盖明确受影响 Task，保留其余待决义务交 RM。一个 Reader 中也可能
+同时含不同问题，不能只按 Reader 分组。合同已变才进入 scoped Plan；已知局部缺陷不等待
+无关环境诊断，也不因重新冻结、换 reviewer 或新增 turn 而重复整轮无变化审核。
 旧通过、兄弟任务活动和历史 unroutable 均需核对当前适用性，不能永久压住新故障。
 恢复处理器自身中断时继续其未完成步骤，保留有效实现和原案卷；交接回执不能当作
 故障消除。完成承诺需对应故障效果证据及下游接收/合法等待，Task 仍按完整合同验收。

@@ -24,15 +24,22 @@ def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: 
         run_id=decision["identity"]["workflow_run_id"], task_id=expected["target_task_id"])
     if len(aggregate["members"]) > 1 and expected.get("candidate_failure_scope") != "aggregate":
         raise ValueError("candidate repair requires a checkpoint containing all failed Reader outcomes")
-    candidate = {**candidate, **{key: aggregate[key] for key in ("members", "unresolved_members", "failed_task_ids")}}
+    candidate = {**candidate, **{key: aggregate[key] for key in ("members", "unresolved_members", "failed_task_ids", "findings")}}
     _, result = candidate_reader_binding(runtime.state_dir, events,
         fanout_id=failure.payload["fanout_id"], operation_id=expected["candidate_operation_id"])
-    if result.get("verdict") != "rejected":
+    dispositions = repair.get("finding_dispositions")
+    if result.get("verdict") != "rejected" and dispositions is None:
         raise ValueError("candidate blocker requires diagnosis or Plan recovery, not product repair")
-    if candidate.get("unresolved_members") or any(
+    mixed = candidate.get("unresolved_members") or any(
         member.get("verdict") != "rejected" or member.get("execution_status") != "completed"
         for member in candidate.get("members", [])
-    ):
+    ) or any(not finding["product_repair_eligible"] for finding in candidate["findings"])
+    obligations = []
+    affected = set(candidate.get("failed_task_ids") or [])
+    if dispositions is not None:
+        from zf.runtime.candidate_finding_partition import partition_product_tasks
+        affected, obligations = partition_product_tasks(candidate["findings"], dispositions)
+    elif mixed:
         raise ValueError("candidate aggregate still contains blocked or unknown outcomes")
     identity = decision["identity"]
     run_id = identity["workflow_run_id"]
@@ -57,7 +64,6 @@ def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: 
     gaps = repair.get("gap_tasks")
     if not isinstance(gaps, list) or not gaps or len(gaps) > 8:
         raise ValueError("candidate repair requires 1..8 explicit canonical gap Tasks")
-    affected = set(candidate.get("failed_task_ids") or [])
     replaced = set()
     new_ids = set()
     for gap in gaps:
@@ -113,6 +119,7 @@ def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: 
         "checkpoint_id": "oa-candidate-repair-" + identity["operation_id"],
         "rework_feedback": [repair["rationale"], *directive["required_actions"]],
         "rework_summary": {"gap_tasks": deepcopy(gaps), "supersedes_task_ids": sorted(replaced),
+                           **({"candidate_obligations": obligations} if obligations else {}),
                            "preserve_task_rows": True},
     }
 

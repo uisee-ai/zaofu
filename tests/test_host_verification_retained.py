@@ -40,7 +40,8 @@ def setup_consumer(evidence, monkeypatch):
     monkeypatch.setattr(retained, 'binding', lambda *a: (operation, payload, contract, runtime.state_dir))
     monkeypatch.setattr(retained, 'git', lambda *a: seeded['candidate_head'])
     monkeypatch.setattr(retained, 'source_files', lambda *a: [])
-    monkeypatch.setattr(retained, 'dependency_digest', lambda *a: 'b' * 64)
+    declared_dependencies = hydrate_sidecar_ref(runtime.state_dir, receipt).payload['manifest']['dependency_digest']
+    monkeypatch.setattr(retained, 'dependency_digest', lambda *a: declared_dependencies)
     return service, operation, contract, runtime.config.runtime.host_verification, events, receipt
 
 

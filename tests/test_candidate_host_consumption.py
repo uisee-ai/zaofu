@@ -11,7 +11,7 @@ from tests.test_host_verification import policy
 from zf.core.events import ZfEvent
 from zf.runtime.call_result_runtime import prepare_call_operation, mark_call_operation_started
 from zf.runtime.sidecar_refs import write_sidecar_json, write_sidecar_text, hydrate_sidecar_ref
-from zf.runtime.task_host_manifest import digest
+from zf.runtime.task_host_manifest import digest, dependency_digest
 from zf.runtime.task_host_evidence import IDENTITY
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
@@ -36,7 +36,13 @@ def evidence(tmp_path, request):
         ['ZF_EVIDENCE_DIR/artifacts/probe.json'] if fault == 'output-root' else None))
     configured = policy()
     configured.commands = [seeded['command']]
-    runtime.config.runtime = SimpleNamespace(host_verification=configured)
+    runtime.config.runtime = SimpleNamespace(host_verification=configured,
+        workdirs=SimpleNamespace(required_paths=[], provision_paths=[]))
+    if fault == 'declared-dependency':
+        dependency = runtime.project_root / 'node_modules' / 'tool.js'
+        dependency.parent.mkdir()
+        dependency.write_text('original dependency')
+        runtime.config.runtime.workdirs.required_paths = ['node_modules']
     prepared, payload = prepare(runtime, seeded, 'source-reader')
     mark_call_operation_started(runtime, prepared, task_id='FLOW-ANCHOR',
         dispatch_id='attempt-source-reader', causation_id='evt-candidate-ready')
@@ -54,7 +60,7 @@ def evidence(tmp_path, request):
     manifest = {'schema_version': 'task-host-manifest.v1', 'kind': 'verify',
         'operation_id': prepared.operation_id, 'identity': {k: v for k, v in identity.items() if k != 'operation_id'},
         'contract_digest': payload['contract_snapshot_digest'], 'head': seeded['candidate_head'],
-        'command': command, 'files': [], 'dependency_digest': 'b' * 64}
+        'command': command, 'files': [], 'dependency_digest': dependency_digest(runtime, runtime.project_root)}
     manifest['manifest_digest'] = digest(manifest)
     if fault == 'wrong-contract':
         manifest['contract_digest'] = 'e' * 64
@@ -309,3 +315,52 @@ def test_new_target_or_authority_does_not_receive_old_host_facts(evidence, field
     prepare_candidate_host_consumption(runtime, payload=payload,
         operation_id='new-authority-operation', attempt_id='new-authority-attempt')
     assert not payload.get('candidate_host_evidence_ref')
+
+
+def test_same_source_refreeze_rebinds_facts_to_new_consumer(evidence):
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    runtime, seeded, source, original_payload, receipt, completed = evidence
+    original = next(e for e in runtime.event_log.read_all() if e.type == 'candidate.ready')
+    body = {k: v for k, v in original.payload.items()
+            if k not in {'target_commit', 'freeze_receipt_ref', 'freeze_receipt_digest'}}
+    body.update(freeze_id='freeze-2', candidate_generation='candidate-generation-2')
+    ref = write_immutable_json_sidecar(runtime.state_dir, body, root='candidate-freeze-receipts',
+        kind='candidate_freeze_receipt', schema_version='candidate-freeze-receipt.v1', created_by='kernel')
+    runtime.event_writer.append(ZfEvent(type='candidate.ready', origin='kernel',
+        correlation_id=seeded['run_id'], payload={**body, 'target_commit': seeded['candidate_head'],
+            'freeze_receipt_ref': ref, 'freeze_receipt_digest': ref['sha256']}))
+    prepared, payload = prepare(runtime, seeded, 'refreeze-consumer')
+    assert payload['contract_snapshot_digest'] != original_payload['contract_snapshot_digest']
+    binding = hydrate_sidecar_ref(runtime.state_dir, payload['candidate_host_evidence_ref']).payload
+    assert binding['receipts'][0]['source_operation_id'] == source.operation_id
+    assert binding['receipts'][0]['receipt_ref'] == receipt
+    op = reduce_workflow_operations(runtime.event_log.read_all())[prepared.operation_id]
+    result = {**payload, 'host_execution_receipt_ids': [completed.id],
+              'request_hash': prepared.request_hash, 'verdict': 'passed'}
+    assert admitted_host_commands(runtime.state_dir, result, operation=op, events=runtime.event_log.read_all())
+    assert len([e for e in runtime.event_log.read_all() if e.type == 'runtime.action.attempt.started']) == 1
+
+
+def test_changed_execution_environment_does_not_receive_old_fact(evidence):
+    runtime, seeded, *_ = evidence
+    runtime.config.runtime.host_verification.image = 'different-runtime:version'
+    _, payload = prepare(runtime, seeded, 'environment-consumer')
+    assert not payload.get('candidate_host_evidence_ref')
+
+
+@pytest.mark.parametrize('evidence', ['declared-dependency'], indirect=True)
+def test_unchanged_commit_with_changed_dependency_bytes_cannot_reuse(evidence, monkeypatch):
+    runtime, seeded, *_ = evidence
+    from zf.core.config.schema import RoleConfig
+    runtime.config.roles = [RoleConfig(name='verify', instance_id=name, role_kind='reader')
+        for name in ('consumer-dependency-before', 'consumer-dependency-after')]
+    plan = SimpleNamespace(enabled=True, mode='worktree', role_kind='reader', project_path=runtime.project_root)
+    monkeypatch.setattr('zf.runtime.workdirs.WorkdirManager', lambda **kw: SimpleNamespace(plan=lambda role: plan))
+    monkeypatch.setattr('zf.runtime.task_host_manifest.git', lambda *args: seeded['candidate_head'])
+    _, before = prepare(runtime, seeded, 'consumer-dependency-before')
+    assert before.get('candidate_host_evidence_ref')
+    (runtime.project_root / 'node_modules' / 'tool.js').write_text('changed dependency without commit')
+    _, after = prepare(runtime, seeded, 'consumer-dependency-after')
+    assert not after.get('candidate_host_evidence_ref')

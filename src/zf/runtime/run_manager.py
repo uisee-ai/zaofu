@@ -1208,6 +1208,14 @@ def build_run_manager_projection(
     ]
     resident_actions = _pending_resident_agent_actions(resident_agent, events)
     repair_validation_actions = _pending_repair_validation_actions(merge_queue, events)
+    from zf.runtime.repair_dispatch_recovery import pending_dispatch_diagnoses
+    from zf.runtime.candidate_finding_partition import pending_obligation_diagnoses
+
+    for diagnosis in [*pending_dispatch_diagnoses(events), *pending_obligation_diagnoses(events)]:
+        if not _action_seen(events, diagnosis):
+            diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
+            diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
+            repair_validation_actions.append(diagnosis)
     repair_apply_actions = _pending_repair_apply_actions(
         merge_queue,
         events,
