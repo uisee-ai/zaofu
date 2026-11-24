@@ -43,11 +43,12 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   await expect(reader.getByRole("heading", { name: "验收条件" })).toBeVisible();
   await page.screenshot({ path: info.outputPath("desktop.png") });
   await expect(chat.getByText("Task conversation", { exact: true })).toBeVisible();
-  await expect(chat.getByRole("button", { name: "Send", exact: true })).toHaveText("Send");
+  const send = chat.getByRole("button", { name: "Send", exact: true });
+  await expect(send.locator("svg")).toBeVisible();
   const input = chat.getByPlaceholder("问进展、补充背景，或提出任务调整…");
   await input.fill("请确认本任务接收到了这条追问。");
   const sent = page.waitForResponse(r => r.url().endsWith("/actions/chat-orchestrator") && r.request().method() === "POST");
-  await chat.getByRole("button", { name: "Send", exact: true }).click();
+  await send.click();
   const response = await sent;
   const headers = await response.request().allHeaders();
   expect(headers["x-zf-web-token"]).toBeUndefined();

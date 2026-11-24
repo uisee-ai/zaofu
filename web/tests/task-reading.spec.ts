@@ -278,7 +278,9 @@ test("compact metadata works at each viewport without surfacing runtime IDs", as
 
 for (const width of [1440, 960, 390]) {
   test(`long task keeps the empty composer in view at ${width}px`, async ({ page }, info) => {
-    await installUiFixture(page);
+    await installUiFixture(page, { snapshot: { runtime: {
+      mode: "live", actions: { mutation_enabled: true, allowed: ["chat-orchestrator"] },
+    } } });
     const task = uiTasks[0];
     await page.route("**/tasks/UI-101", route => route.fulfill({ json: {
       task, contract: { behavior: Array.from({ length: 68 }, (_, i) => `第 ${i + 1} 项交付说明`).join("\n\n") }, events: [],
@@ -291,20 +293,37 @@ for (const width of [1440, 960, 390]) {
     const input = chat.getByRole("textbox", { name: "任务消息" });
     await expect(article).toContainText("第 68 项交付说明");
     await expect(input).toBeInViewport({ ratio: 1 });
-    await expect(chat.getByRole("button", { name: "Send", exact: true })).toHaveText("Send");
+    const send = chat.getByRole("button", { name: "Send", exact: true });
+    await expect(send).toHaveText("");
+    await expect(send).toBeDisabled();
+    await expect(send.locator("svg")).toBeVisible();
+    await expect(send).toBeInViewport({ ratio: 1 });
     await expect(input).not.toBeFocused();
     await expect(chat.getByText("还没有任务对话")).toHaveCount(0);
     await expect(chat.getByTestId("agent-task-ref")).toHaveCount(0);
     expect((await chat.boundingBox())!.height).toBeLessThan(108);
     const before = (await input.boundingBox())!;
+    const button = (await send.boundingBox())!;
+    expect(button.width).toBe(36);
+    expect(button.height).toBe(button.width);
+    expect(button.x).toBeGreaterThanOrEqual(before.x + before.width);
+    expect(Math.abs((button.y + button.height / 2) - (before.y + before.height / 2))).toBeLessThan(1);
     await expect(reader.getByRole("complementary")).toHaveCount(width >= 1200 ? 1 : 0);
     expect(await article.evaluate(el => el.scrollTop)).toBe(0);
     await page.screenshot({ path: info.outputPath(`composer-${width}.png`) });
     await article.evaluate(el => { el.scrollTop = el.scrollHeight; });
     expect(await article.evaluate(el => el.scrollTop)).toBeGreaterThan(300);
     expect(Math.abs((await input.boundingBox())!.y - before.y)).toBeLessThan(1);
-    await input.fill("留在正文底部的追问");
+    await input.fill("留在正文底部的追问\n补充第二行");
     await expect(input).toBeFocused();
+    await expect(send).toBeEnabled();
+    const multiline = (await input.boundingBox())!;
+    expect(multiline.height).toBeGreaterThan(before.height);
+    const after = (await send.boundingBox())!;
+    expect(Math.abs(after.x - button.x)).toBeLessThan(1);
+    expect(Math.abs(after.y - button.y)).toBeLessThan(1);
+    await expect(input).toBeInViewport({ ratio: 1 });
+    await page.screenshot({ path: info.outputPath(`multiline-${width}.png`) });
   });
 }
 
