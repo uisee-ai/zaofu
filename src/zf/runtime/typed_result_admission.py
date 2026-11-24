@@ -68,6 +68,18 @@ def typed_result_admission_issues(
             owner="candidate_verify", action="result_repair")]
     # Contract-bound Verify evidence has the same obligations on the legacy
     # event transport as on the controlled result-submit transport.
+    if (schema_version == "implementation-result.v1" and operation
+            and operation.get("task_pipeline_stage") == "impl"
+            and (result.get("execution_status") or "completed") == "completed"
+            and (result.get("verdict") or "passed") == "passed"):
+        from subprocess import SubprocessError
+        from zf.runtime.implementation_commit import validate_impl_commit
+
+        try:
+            validate_impl_commit(Path(state_dir), operation, result, events or [])
+        except (KeyError, OSError, ValueError, SubprocessError) as exc:
+            return [_issue(field="control_result.target_commit", code="implementation_commit_invalid",
+                           message=str(exc), owner="implementation_owner", action="result_repair")]
     if not semantic_submit and not contract_bound_verification:
         return []
     if schema_version == "implementation-result.v1":

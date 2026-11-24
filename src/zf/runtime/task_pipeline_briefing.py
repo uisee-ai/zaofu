@@ -32,10 +32,18 @@ def write_task_pipeline_briefing(
     result_lines: list[str]
     if stage == "impl":
         from zf.runtime.impl_self_check import completion_payload_template
+        from zf.runtime.implementation_commit import published_retry_commit
 
+        commit = ""
+        publication_error = ""
+        if payload.get("rework_feedback"):
+            try:
+                commit = published_retry_commit(runtime.state_dir, payload, runtime.event_log.read_all())
+            except (KeyError, OSError, ValueError) as exc:
+                publication_error = str(exc)
         completion = {
             **payload,
-            "source_commit": "<HEAD commit>",
+            "source_commit": commit or "<HEAD commit>",
             "files_touched": [],
             "evidence_refs": ["<durable implementation evidence ref>"],
             **completion_payload_template(
@@ -44,6 +52,7 @@ def write_task_pipeline_briefing(
                 task_id=str(task.id),
                 run_id=str(payload.get("workflow_run_id") or ""),
                 child_id=prepared.operation_id,
+                commit=commit or "<HEAD commit>",
             ),
         }
         command, _, display, result_lines = prepare_writer_execution_card(
@@ -66,6 +75,9 @@ def write_task_pipeline_briefing(
             "Set target_commit and every self-check target to the exact HEAD.",
             "Do not update candidate/main refs or runtime truth directly.",
         ]
+        if publication_error:
+            stage_instructions.append(f"Host publication evidence is unavailable: {publication_error}. "
+                                      "Report a blocker if this prevents validating the result.")
         if payload.get("worker_model_planner"):
             stage_instructions.append(f"Use `{zf_cli_cmd()} artifact worker-plan --attempt {payload['attempt_id']} "
                 "--reason initial --input SOURCE ARTIFACT SELECTOR` with the frozen goal and constraints. Carry the "

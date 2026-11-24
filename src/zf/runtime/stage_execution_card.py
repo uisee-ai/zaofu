@@ -679,6 +679,8 @@ def prepare_writer_execution_card(
         or not str(task_item.get("operation_id") or "").strip()
     ):
         return completion_command, blocked_command, display, []
+    is_task_impl = task_payload.get("task_pipeline_stage") == "impl"
+    target = completion_payload.get("source_commit") if is_task_impl else None
     command, scratch = prepare_result_file_command(
         state_dir=state_dir,
         result_scratch_ref=str(
@@ -697,7 +699,7 @@ def prepare_writer_execution_card(
             "verdict": "passed",
             "failure_class": "none",
             "blocker_kind": "none",
-            "target_commit": "<HEAD commit>",
+            "target_commit": target or "<HEAD commit>",
             "changed_files": [],
             "evidence_refs": ["<implementation summary artifact or event ref>"],
             "self_check": dict(completion_payload.get("impl_self_check") or {}),
@@ -705,6 +707,8 @@ def prepare_writer_execution_card(
             "summary": "<concise implementation outcome>",
         },
     )
+    if is_task_impl:
+        command = render_result_validate_command(command) + " --submit"
     lines = [
         "## Output Contract",
         "",
