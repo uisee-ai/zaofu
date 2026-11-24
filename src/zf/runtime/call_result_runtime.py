@@ -681,6 +681,8 @@ def prepare_call_operation(
         request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
     if output_profile_id == "candidate-verify" and payload.get("candidate_reader_scope"):
         request["candidate_reader_scope"] = dict(payload["candidate_reader_scope"])
+    if payload.get("candidate_repair_feedback_ref"):
+        request["candidate_repair_feedback_ref"] = dict(payload["candidate_repair_feedback_ref"])
     if payload.get("milestone_handoff_ref"):
         request["milestone_handoff_ref"] = dict(payload["milestone_handoff_ref"])
     if payload.get("candidate_host_evidence_ref"):

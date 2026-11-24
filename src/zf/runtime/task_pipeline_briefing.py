@@ -259,6 +259,12 @@ def write_task_pipeline_briefing(
     ]
     if controlled_inputs:
         lines.extend([controlled_inputs, ""])
+    if payload.get("candidate_repair_feedback_ref"):
+        lines.extend(["## Candidate repair evidence",
+            "Read the required candidate-repair-feedback source. "
+            + ("Reproduce its specific counterexamples on the frozen base and retain RED/GREEN evidence."
+               if stage == "impl" else "Independently repeat its counterexamples against the exact implementation target."),
+            "Keep the current Task contract and allowed paths.", ""])
     if payload.get("task_handoff_ref"):
         digest = payload["task_handoff_ref"]["sha256"]
         lines.extend(["## Handoff receipt", "Read the complete task-handoff required input, then acknowledge its exact version:",

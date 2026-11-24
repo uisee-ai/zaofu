@@ -199,7 +199,7 @@ def build_canonical_required_reads(
     for source in sources:
         source_id = str(source.get("source_id") or "")
         if source_id.startswith("critical-") or source_id in {
-            "rework-feedback", "task-handoff", "task-handoff-cited-evidence",
+            "rework-feedback", "task-handoff", "task-handoff-cited-evidence", "candidate-repair-feedback",
         }:
             required_paths[source_id] = ("$",)
         for json_path in required_paths.get(source_id, ()):

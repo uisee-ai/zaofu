@@ -371,7 +371,7 @@ def dispatch_task_pipeline_stage(
     from zf.runtime.task_handoff import attach_task_handoff
 
     try:
-        attach_task_handoff(runtime, operation_payload, contract_snapshot)
+        attach_task_handoff(runtime, operation_payload, contract_snapshot, generation_context=generation_context)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         from zf.runtime.task_pipeline_runtime import TaskPipelineWaiting
 
