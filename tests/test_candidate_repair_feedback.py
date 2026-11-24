@@ -73,3 +73,37 @@ def test_replaying_old_operations_preserves_original_input_binding(repair_call, 
     runtime.event_writer.append(ZfEvent(type="workflow.operation.requested", origin="kernel",
         payload={"operation_id": "op-impl", "request_ref": ref}))
     assert call("impl").get("candidate_repair_feedback_ref") == original.get("candidate_repair_feedback_ref")
+
+
+def test_task_stage_dispatch_reaches_feedback_producer_for_first_impl_and_verify(repair_call, tmp_path, monkeypatch):
+    from tests.test_task_pipeline_capsule import dispatch_fixture
+    from zf.core.task.schema import Task, TaskContract
+    from zf.runtime.task_doc import compute_task_capsule_revisions
+    from zf.runtime.task_pipeline_dispatch import dispatch_task_pipeline_stage
+
+    publication, ctx, contract, _ = repair_call
+    transport_root = tmp_path / "dispatch-environment"
+    transport_root.mkdir()
+    runtime, _, snapshot, prepared, _ = dispatch_fixture.__wrapped__(transport_root, monkeypatch)
+    from types import SimpleNamespace
+    from zf.runtime import call_result_runtime
+
+    def capture_request(*_args, **kwargs):
+        prepared.append(kwargs)
+        return SimpleNamespace(should_dispatch=False, operation_id=kwargs["payload"]["operation_id"])
+
+    monkeypatch.setattr(call_result_runtime, "prepare_call_operation", capture_request)
+    runtime.event_log, runtime.event_writer, runtime.state_dir = publication.event_log, publication.event_writer, publication.state_dir
+    runtime.config = publication.config
+    task = Task(id=contract["task_id"], title="repair AC-5", contract=TaskContract(behavior="repair AC-5"))
+    runtime.task_store.add(task)
+    snapshot.update(contract, **compute_task_capsule_revisions(task))
+    context = {**ctx, **{k: snapshot[k] for k in ("plan_artifact_package_ref", "plan_artifact_package_digest",
+                                                    "plan_artifact_package_id")}, "flow_kind": "prd"}
+    for stage in ("impl", "verify"):
+        dispatch_task_pipeline_stage(runtime, task=task, policy={}, generation_context=context,
+            assignment={"stage": stage, "role_instance": "dev-0", "operation_generation": 1},
+            operation_rows=[], attempt_rows=[])
+        frozen = prepared[-1]["payload"]
+        assert frozen["candidate_repair_feedback_ref"]["sha256"] == frozen["input_refs"][0]["sha256"]
+        assert hydrate_sidecar_ref(runtime.state_dir, frozen["input_refs"][0]).payload["task_id"] == task.id
