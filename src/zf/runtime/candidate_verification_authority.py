@@ -299,7 +299,9 @@ def prepare_candidate_verification_authority(
     )
     from zf.runtime.candidate_finding_partition import retained_candidate_obligations
 
-    obligations = retained_candidate_obligations(events, run_id=workflow_run_id, task_id=anchor_task_id)
+    obligations = retained_candidate_obligations(
+        events[:events.index(candidate) + 1], run_id=workflow_run_id, task_id=anchor_task_id, candidate=candidate,
+    )
     if obligations:
         aggregate["candidate_recovery_obligations"] = obligations
     contract_descriptor = write_task_contract_snapshot(

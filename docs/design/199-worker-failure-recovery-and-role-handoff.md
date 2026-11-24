@@ -149,6 +149,8 @@ PRD v5 的 `workflow.orchestration.flow_policies.prd.autonomous_actions` 可显�
 
 Run Manager 用原决定与 Reader operation 跟踪请求、派发和回执。控制面重启后依据账本恢复；相同请求只消费一次。缺少补证权限、执行失败或证据仍无法回答时，回传原决定、未决 finding、已经尝试的动作及证据，由 OA 判断后续处置。补证回执供原工作流消费，最终交付仍需独立 Candidate Verify、Judge 与 Goal 终态。
 
+正式 Candidate Verify 在原生冻结发生时确定合同里的未结义务。后继 Candidate 沿同一 Run、工作流锚点和分支的基线提交追溯前序冻结，只接收已准入 OA 决定中与该冻结绑定的 finding。代码提交不变而 Plan 更换时，后继冻结需要用自己的已准入 generation 关联原规划请求、失败事件与决定摘要。相同 finding 只进合同一次。历史冻结和补证报告各自保留原摘要，Reader 对执行事实的判断不签发产品交付许可。[冻结合同回归](../../tests/test_candidate_obligation_freeze.py)
+
 [OA 分诊回归](../../tests/test_candidate_replan_dispositions.py) · [Reader 补证](../../src/zf/runtime/candidate_reader_reassessment.py) · [Run Manager 交接](../../src/zf/runtime/candidate_obligation_followup.py)
 
 ### 3.2 WRC 是任务恢复的执行主体
