@@ -27,7 +27,13 @@ def review_claim_briefing(policy: str) -> list[str]:
         'it conflicts with. Close old findings whose condition the current candidate already corrected. '
         'Unsupported improvement suggestions '
         'remain nonblocking; missing necessary evidence remains a gap. Mechanical checks validate '
-        'citations, not your interpretation. An accurate citation alone never proves a Plan passed.', '',
+        'citations, not your interpretation. An accurate citation alone never proves a Plan passed.',
+        'For full approval, when the current required plan-execution-review contains execution_comparisons, '
+        'write one report.execution_assessments entry per key: comparison, conclusion, exact task_ids if listed, '
+        'and the same basis with requirement_evidence from a frozen requirement/declared input and current_evidence '
+        'from the current candidate. Compare actual stage entry and standalone Candidate commands to the obligation. '
+        'A host allowlist grants permission only. Reconcile every still-present comparison again after rework. '
+        'Positive assessments are verdict metadata; leave clean findings and Planner-owned gates empty.', '',
     ]
 
 
@@ -59,6 +65,12 @@ def review_claim_issues(
     rejected = value('verdict') == 'rejected' or value('recommendation') in {'reject', 'needs_rework'}
     if rejected and not rows:
         error('fix_items', 'A rejection requires a blocking item with current evidence and obligation basis')
+    if not rejected and (value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}):
+        from zf.runtime.plan_review_comparisons import approval_assessments
+        try:
+            rows.extend(approval_assessments(state_dir, request, report or result, error=error))
+        except (KeyError, ValueError, TypeError, OSError) as exc:
+            error("report.execution_assessments", str(exc))
     if not rows:
         return issues
     try:

@@ -160,8 +160,12 @@ def review_execution(
         items.append("candidate_commands_without_mandatory_binding")
     writers = [role for role in policy.get("writer_instances", [])
                if not kind or role.get("flow_kind") in ("", kind)]
+    from zf.runtime.plan_review_comparisons import execution_comparisons
+
+    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger)
     return {
         "schema_version": "plan-execution-review.v1",
+        **({"execution_comparisons": comparisons} if comparisons else {}),
         "scope": "mechanical_facts_for_semantic_review",
         "plan_review": metadata.get("plan_review", {}),
         "usage_observations": dict(usage_facts or {"available": False}),

@@ -724,6 +724,8 @@ def _normalize_plan_synth(
         ),
         "task_map": dict(task_map) if isinstance(task_map, Mapping) else {},
         "gates": list(gates) if isinstance(gates, list) else [],
+        **({"execution_assessments": report["execution_assessments"]}
+           if isinstance(report.get("execution_assessments"), list) else {}),
         "risk_register": (
             list(risk_register) if isinstance(risk_register, list) else []
         ),

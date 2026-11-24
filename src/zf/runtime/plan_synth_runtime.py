@@ -38,6 +38,7 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "plan_review_optimization",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
+    "execution_assessments",
     "failure_class",
     "artifact_refs",
     "evidence_refs",

@@ -32,6 +32,13 @@ Critic 先按本次批准的 `plan_review` 与[按需审查](references/review-s
 [执行路线与任务切片](references/execution-route.md)核对有效配置和反馈时点。
 Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本计划的匹配关系；
 该报告没有语义 verdict，不能把机械 preflight passed 当成实施就绪。
+完整复审时查看当前摘要的 `execution_comparisons`。有空写入范围的标准入口时，按列出的
+task_id 对照需求声明与实际派发入口。对于候选验证，分别列出冻结需求要求的独立命令、
+当前 Task Map 登记的命令及宿主许可范围。复合调用中的子命令与独立执行产生不同回执。
+上一轮修好了其中一个缺口，本轮仍要对照当前版本处理其余差异。
+本轮批准时，将每项核对结论写入 `report.execution_assessments`，给出 comparison、
+conclusion、摘要中列出的 task_ids（如有），以及引用冻结需求和当前候选的 basis。
+仅获准但本轮无需执行的命令可解释排除。没有缺陷时 findings 保持空。
 对照 `rolling_smoke_policy` 与每片 `rolling_smoke_command_ids` 检查独立集成工作区
 的构建/生成前置；在 Writer 中通过或正文声明“先构建”不证明集成器实际会执行它。
 将其中 `input_binding` 的 Task Map／有效策略摘要、revision／generation 与本次产物

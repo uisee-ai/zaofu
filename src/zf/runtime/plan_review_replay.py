@@ -77,6 +77,13 @@ def pin_replayed_review_usage(
 
     old_comparable = expanded_verification(runtime.state_dir, old, manifest.get("sources", []))
     new_comparable = expanded_verification(runtime.state_dir, new, payload.get("input_refs", []))
+    # The new comparison index is derived entirely from the bound Task Map and
+    # compiled policy. Keep older attempts' exact summary and review obligations.
+    bindings = old_comparable.get("input_binding") or {}
+    if ("execution_comparisons" not in old_comparable
+            and all(bindings.get(k) for k in ("task_map_digest", "effective_policy_digest"))
+            and bindings == new_comparable.get("input_binding")):
+        new_comparable.pop("execution_comparisons", None)
     # Usage is observational, while all candidate/policy/graph facts remain
     # request identity. A real change must still reach the divergence guard.
     if ({key: value for key, value in old_comparable.items() if key != "usage_observations"}

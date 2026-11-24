@@ -56,6 +56,27 @@ Planner/critic 的事实使用当前派发配置及冻结的验证请求。
 不会自动阻断、批准、调整 task map、启用 pipeline 或执行 setup。
 Planner 的 validate 结果与 Critic 的输入使用相同事实生成器。
 
+### Critic 的执行对账
+
+新冻结的 `plan-execution-review.execution_comparisons` 是本轮待对照的执行事实。
+`standard_with_empty_write_scope.task_ids` 列出实际进入标准流程且写入范围为空的任务。
+`candidate_command_scope` 列出当前按 Candidate 选择或声明的命令、登记任务与命令 ID，
+以及仅由宿主许可的命令。Critic 从冻结需求确定本轮必须取得哪些独立回执，再与
+当前 Task Map 的登记对照。独立构建与“构建后执行浏览器检查”可以在同一需求中分别出现。
+仅获许可的命令可以不选；合法的空写入范围也可以通过。
+
+使用 `current-evidence-v1` 的纯 Critic 在 full 审查（含默认 full）批准时，
+若必读摘要包含这些检查项，在 `report.execution_assessments` 为每个 comparison 提交
+一项 conclusion 和既有 basis。按摘要列出受影响的 task_ids，引用冻结需求
+（或其显式输入）以及当前候选来源的 digest、JSON 选择器和原值或原文。
+运行时核对检查项覆盖与引用绑定；是否满足需求仍由 Critic 判断。合法计划可保留
+空 findings 和 gates。退回修订继续使用阻塞项的既有证据合同；再次完整批准时
+依当前摘要重新对账，上一轮阻塞项已修好只证明该项修好。
+
+targeted、已冻结的局部或无变更复审，沿用各自批准的覆盖范围。旧快照不含
+execution_comparisons，恢复时复用原摘要及原 verdict 合同。Task Map 或已绑定配置
+发生变化时由新请求冻结新的对照事实。
+
 阻塞式 Task Pipeline 的执行预检在只读任务的 `verification.task_requirements` 明细中提供
 `initial_readonly_verify`。其中列出声明的基线、运行时选择的验收 owner、当前 mandatory AC
 及命令 ID。Planner、Critic 与 Owner 可以在批准前对照基线已有实现及最终候选的验收矩阵。

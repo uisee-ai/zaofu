@@ -69,6 +69,8 @@ def test_legacy_review_replay_keeps_original_required_body(tmp_path):
 
     runtime = _runtime(tmp_path)
     review = _review()
+    review['input_binding']['effective_policy_digest'] = 'sha256:' + 'a' * 64
+    indexed = {**review, 'execution_comparisons': {'standard_with_empty_write_scope': {'task_ids': ['T']}}}
     source = write_immutable_json_sidecar(runtime.state_dir, review, root='plan-execution-reviews',
         kind='plan_execution_review', schema_version='plan-execution-review.v1', created_by='plan-preflight', source_event_id='evt')
     legacy = {'workflow_run_id': 'run', 'fanout_id': 'fanout', 'role_instance': 'critic',
@@ -81,13 +83,13 @@ def test_legacy_review_replay_keeps_original_required_body(tmp_path):
     base = {k: v for k, v in legacy.items() if k != 'input_refs'}
     first = prepare_call_operation(runtime, payload=legacy, **kwargs)
     fresh = deepcopy(base)
-    attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=review, source_event_id='evt')
+    attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=indexed, source_event_id='evt')
     second = prepare_call_operation(runtime, payload=fresh, **kwargs)
     assert second.replay_hit and first.request_hash == second.request_hash
     assert not any(s['source_id'] == 'plan-execution-verification' for s in fresh['input_refs'])
     old = next(s for s in fresh['input_refs'] if s['source_id'] == 'plan-execution-review')
     assert hydrate_sidecar_ref(runtime.state_dir, old).payload == json.loads(json.dumps(review))
-    changed = deepcopy(review)
+    changed = deepcopy(indexed)
     changed['verification']['task_requirements'][0]['commands'][0]['owner'] = 'human'
     fresh = deepcopy(base)
     attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=changed, source_event_id='evt')
