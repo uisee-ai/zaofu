@@ -21,6 +21,13 @@ event schema or recovery state machine.
 本轮 Prompt 只提供目标版本、范围和已授权的执行层级。
 单一已知回归可直接执行对应探针，无需重新生成全项目地图。
 
+## Candidate 测试并行
+
+- 先区分测试执行、Reader 读取与判词、重试等待各花了多久。增加测试进程只会影响实际执行测试的那一段。
+- 按冻结命令执行。若已登记的入口使用 `pytest-xdist`（例如 `pytest -n 2`），由该命令的执行者启动 worker。依赖构建的测试保留前置步骤；并行 worker 须隔离数据库、端口和证据输出等共享资源。缺少并行入口时沿用原命令，可为下次冻结提议调整。
+- 若合同允许多路 Reader 复用同一次宿主执行，各自核对候选、合同、命令、环境与证据绑定，引用该回执。每路仍须对自己获派的全部条款独立判定。
+- 评估提速时，在同一候选、同一环境对照串行与并行的墙钟耗时、用例 ID 和断言结果。按需核对各 worker 的退出状态、输出与必需附件；分片缺失、提前中止或证据被覆盖时，将受影响条款保留为未验证。
+
 ## Checklist
 
 - The checked worktree/ref is the immutable target named by the briefing.

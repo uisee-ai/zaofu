@@ -121,6 +121,7 @@ owner、tier 和实际阶段一致。只有 `node --test` 的 AC 绑定不能证
   `standard_with_empty_write_scope`，按需查看详情中的任务 ID，核对实际入口、基线与本地命令。
   `phase` 是作者标注，调度读取 `execution_mode` 与只读合同。对照已完成任务的保留范围再提出修改。
 - 宿主验收使用已登记的完整命令。Planner 从编译策略的 `host_verification_commands` 复制所需命令，保留组合命令的前置构建。Critic 对照 `candidate_commands_outside_host_registry` 的任务和命令 ID，核实另有执行渠道或提出修订。按原始需求确认哪些检查必须执行。
+- 若 Candidate 的耗时集中在可隔离的测试套件，冻结前优先选择已登记、覆盖相同用例和断言的并行命令。按宿主可用资源及同时执行的套件数选 worker 数。若需新增命令，先走现有授权路径，当前计划沿用已授权入口。
 - 对照各任务的 `initial_readonly_verify` 选择，确认初审时测试所需的实现已存在。依赖完整候选的验收绑定到冻结后的 Candidate 阶段。按编译策略检查每任务 Verify 的就绪条件，再单独检查 Candidate 阶段的触发事件。
 - 若摘要出现 `candidate_commands_without_mandatory_binding`，查看对应任务的
   `unbound_candidate_command_ids`，从原始需求确认每一项是强制门还是可选探测。

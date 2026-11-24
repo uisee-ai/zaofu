@@ -254,6 +254,7 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 When Candidate Verify receives a current `product_acceptance_spec`:
 
+- 安排探测前，按 `zf-harness-verification-checklist` 的「Candidate 测试并行」核对冻结命令、可复用回执及本 Reader 的验收责任。
 - If an execution failure prevented product evaluation, submit exactly
   `execution_status: failed` + `verdict: abstained`, retain the actual failure
   and available tool evidence, and omit `product_acceptance_report`,
