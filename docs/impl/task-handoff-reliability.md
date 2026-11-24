@@ -125,4 +125,4 @@ Chromium 149.0.7827.22 / Playwright 1.59.1。API 为 fixture，实际组件、�
 原始日志、基线对账与媒体保留于集成 worktree 的 reports/continuity-integration-20261117/；
 此次未新增真实 Provider 验收，不能据此扩大 R16 的资格范围。
 
-看板任务详情中的交接状态、阅读布局与任务对话见[看板任务详情规格](../specs/kanban-task-detail.md)。
+当前流程投影用 `operation_status` 区分预定、执行和暂停。已接纳结果携带阶段、语义裁决及结算时间。详情优先使用当前绑定，排队时隐藏旧执行者；任务对话固定在正文栏下方。页面行为见[看板任务详情规格](../specs/kanban-task-detail.md)。

@@ -12,11 +12,11 @@ test("current task handoff links its workspace, target, inputs and partial failu
   await page.goto("/tests/task-handoff.html");
   await expect(page.locator("#task-properties")).toContainText("verify");
   await expect(page.locator("#task-properties")).toContainText("verify-2");
+  await page.getByText("执行现场", { exact: true }).click();
   await expect(page.locator(".handoff-line")).toContainText("admitted");
   await expect(page.locator(".handoff-line")).toContainText("generation 1 · failed");
   await expect(page.locator(".handoff-line")).not.toContainText("done");
   await expect(page.locator("#task-properties")).not.toContainText("implement");
-  await page.getByText("执行现场", { exact: true }).click();
   const binding = page.getByTestId("handoff-binding-details");
   await binding.locator("summary").click();
   await expect(binding).toContainText("target-current");
@@ -36,7 +36,7 @@ test("current task handoff links its workspace, target, inputs and partial failu
   await expect(binding).not.toContainText("/custom-state/execution/tasks/TASK-HANDOFF/g1/project");
   await page.getByRole("button", { name: "查看交接历史" }).click();
   await expect(page.getByTestId("task-activity-view")).toBeVisible();
-  await expect(page.locator(".reader-status")).toContainText("等待当前阶段提交并接纳结果");
+  await expect(page.locator(".reader-article")).toContainText("等待当前阶段提交并接纳结果");
   expect(inputRequests).toBe(1);
   expect(errors).toEqual([]);
 });

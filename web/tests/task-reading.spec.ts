@@ -21,14 +21,16 @@ test("task conversations send with the current binding and restore only that tas
     expect(p.project_id).toBe("ui-review");
     expect(p.conversation_id).toBe("kanban:ui-review");
     sent.push(p.task_id);
+    const prior = history.get(p.thread_key) ?? [];
+    const base = prior.length;
     const event = (seq: number, type: string, payload: object) => ({
       id: `evt-${p.task_id}-${seq}`, seq, type, task_id: p.task_id, ts: "2026-11-23T08:00:00Z",
       payload: { ...p, ...payload },
     });
-    history.set(p.thread_key, [
-      event(1, "user.message", { target: "kanban-agent", runtime_delivery: "headless" }),
-      event(2, "kanban.agent.turn.created", { message_event_id: `evt-${p.task_id}-1` }),
-      event(3, "kanban.agent.reply", { answer: `答复 ${p.task_id}` }),
+    history.set(p.thread_key, [...prior,
+      event(base + 1, "user.message", { target: "kanban-agent", runtime_delivery: "headless" }),
+      event(base + 2, "kanban.agent.turn.created", { message_event_id: `evt-${p.task_id}-${base + 1}` }),
+      event(base + 3, "kanban.agent.reply", { answer: base ? "第二轮答复" : `答复 ${p.task_id}` }),
     ]);
     return route.fulfill({ json: { ok: true, status: "accepted" } });
   });
@@ -36,27 +38,34 @@ test("task conversations send with the current binding and restore only that tas
   const chat = page.getByRole("region", { name: "任务 Agent" });
   for (const task of uiTasks.slice(0, 2)) {
     await page.locator(`button[data-task-id="${task.id}"]`).click();
-    const input = chat.getByPlaceholder("询问或补充这张任务…");
+    const input = chat.getByPlaceholder("询问或补充这项任务…");
     await expect(chat).not.toContainText("答复 UI-101");
     await input.fill(`进展 ${task.id}`);
     await input.press("Enter");
     await expect(chat.getByText(`答复 ${task.id}`, { exact: true })).toBeVisible();
+    if (task.id === "UI-101") {
+      await input.fill("再说明一下依据");
+      await input.press("Enter");
+      await expect(chat.getByText("第二轮答复", { exact: true })).toBeVisible();
+    }
     await expect(chat.getByTestId("agent-task-unref")).toHaveCount(0);
     await page.goBack();
   }
   await page.locator('button[data-task-id="UI-101"]').click();
   await page.reload();
-  await expect(chat.getByText("答复 UI-101", { exact: true })).toBeVisible();
+  await expect(chat.getByText("第二轮答复", { exact: true })).toBeVisible();
+  await expect(chat.getByText("答复 UI-101", { exact: true })).toHaveCount(0);
   await expect(chat).not.toContainText("答复 UI-102");
   const expand = page.getByRole("button", { name: "展开对话" });
   await expand.click();
+  await expect(chat.getByText("答复 UI-101", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "收起对话" })).toHaveAttribute("aria-expanded", "true");
   await chat.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("task-conversation.png") });
   await page.getByRole("button", { name: "收起对话" }).click();
   await expect(expand).toHaveAttribute("aria-expanded", "false");
-  await expect(chat.getByText("答复 UI-101", { exact: true })).toBeVisible();
-  expect(sent).toEqual(["UI-101", "UI-102"]);
+  await expect(chat.getByText("第二轮答复", { exact: true })).toBeVisible();
+  expect(sent).toEqual(["UI-101", "UI-101", "UI-102"]);
   expect(errors).toEqual([]);
 });
 
@@ -70,7 +79,8 @@ test("narrow task reading keeps attributes optional and evidence in reach", asyn
   const attrs = reader.getByRole("button", { name: "属性", exact: true });
   await expect(attrs).toHaveAttribute("aria-expanded", "false");
   await attrs.click();
-  await expect(reader.getByRole("complementary")).toContainText("dev-2");
+  await expect(reader.getByRole("complementary")).toContainText("执行受阻");
+  await expect(reader.getByRole("complementary")).not.toContainText("dev-2");
   await attrs.click();
   await expect(page.locator(".headless-input")).toHaveCount(1);
   await page.keyboard.press("Control+k");
@@ -226,4 +236,120 @@ test("long task references keep property labels and values aligned at each viewp
     await expect(page.getByText("返回时恢复筛选", { exact: true })).toHaveCount(1);
     await page.screenshot({ path: info.outputPath(`layout-${width}.png`) });
   }
+});
+
+for (const width of [1440, 960, 390]) {
+  test(`long task keeps the empty composer in view at ${width}px`, async ({ page }, info) => {
+    await installUiFixture(page);
+    const task = uiTasks[0];
+    await page.route("**/tasks/UI-101", route => route.fulfill({ json: {
+      task, contract: { behavior: Array.from({ length: 68 }, (_, i) => `第 ${i + 1} 项交付说明`).join("\n\n") }, events: [],
+    } }));
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/?project=ui-review&page=board&task=UI-101");
+    const reader = page.getByRole("region", { name: "任务详情" });
+    const article = reader.locator(".reader-article");
+    const chat = reader.getByRole("region", { name: "任务 Agent" });
+    const input = chat.getByRole("textbox", { name: "询问或补充这项任务" });
+    await expect(article).toContainText("第 68 项交付说明");
+    await expect(input).toBeInViewport({ ratio: 1 });
+    await expect(input).not.toBeFocused();
+    await expect(chat.getByText("还没有任务对话")).toHaveCount(0);
+    await expect(chat.getByTestId("agent-task-ref")).toHaveCount(0);
+    expect((await chat.boundingBox())!.height).toBeLessThan(108);
+    const before = (await input.boundingBox())!;
+    const side = reader.getByRole("complementary");
+    if (width > 800) expect(before.x + before.width).toBeLessThan((await side.boundingBox())!.x);
+    expect(await article.evaluate(el => el.scrollTop)).toBe(0);
+    await page.screenshot({ path: info.outputPath(`composer-${width}.png`) });
+    await article.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    expect(await article.evaluate(el => el.scrollTop)).toBeGreaterThan(300);
+    expect(Math.abs((await input.boundingBox())!.y - before.y)).toBeLessThan(1);
+    await input.fill("留在正文底部的追问");
+    await expect(input).toBeFocused();
+  });
+}
+
+test("execution progress distinguishes automatic stages, live workers and human evidence gates", async ({ page }) => {
+  const task = { ...uiTasks[0], status: "backlog", assigned_to: "obsolete-worker" };
+  const { writes } = await installUiFixture(page, { snapshot: { tasks: [task] } });
+  let pipeline: Record<string, unknown> | null = null;
+  await page.route("**/tasks/UI-101", route => route.fulfill({ json: {
+    task, contract: { evidence_contract: { required_manual_evidence: ["reports/test-data.json"] } },
+    handoff_summary: { current_state: task.status, pipeline, completed: pipeline ? [
+      { kind: "admitted_result", stage: "impl", semantic_verdict: "passed" },
+    ] : [] },
+    task_run_panel: { active_operation: pipeline
+      ? { active: true, state: "in_progress", dispatch_id: "expired", instance_id: "obsolete-worker" } : null },
+    events: [],
+  } }));
+  const url = "/?project=ui-review&page=board&task=UI-101";
+  const progress = page.getByRole("region", { name: "执行进度" });
+  await page.goto(url);
+  await expect(progress).toContainText("未进入流程");
+  await page.getByText("任务操作", { exact: true }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toBeVisible();
+  await expect(page.locator(".task-reader").getByText(/Propose Assignment|Assignment Intent|dispatch-task|request-verify|request-review|ship-candidate|Assignee/)).toHaveCount(0);
+  const base = { status: "current", pipeline_stage: "verify_ready", current_stage: "verify", owner: { instance_id: "verify-2" } };
+  for (const [fields, label, worker] of [
+    [{}, "等待验证", false],
+    [{ operation_status: "reserved", operation_id: "op1" }, "等待验证", false],
+    [{ pipeline_stage: "verify_active", operation_status: "running", operation_id: "op1", dispatch_id: "d1" }, "验证中", true],
+    [{ pipeline_stage: "verify_active", operation_status: "suspended", operation_id: "op1" }, "验证已暂停", false],
+    [{ pipeline_stage: "dependency_blocked" }, "等待依赖", false],
+    [{ status: "unavailable" }, "执行状态待确认", false],
+  ] as const) {
+    pipeline = { ...base, ...fields };
+    await page.reload();
+    await expect(progress).toContainText(label);
+    if (pipeline.status === "current") await expect(progress).toContainText("实现已通过");
+    if (worker) await expect(progress).toContainText("verify-2");
+    else await expect(progress).not.toContainText("当前执行");
+    await expect(progress).not.toContainText("obsolete-worker");
+    await expect(page.getByRole("link", { name: "查看运行处置请求" })).toHaveCount(0);
+  }
+  pipeline = { status: "current", pipeline_stage: "external_gate_waiting" };
+  await page.reload();
+  await expect(progress).toContainText("待你补充证据");
+  await expect(page.locator(".reader-status")).toContainText("reports/test-data.json");
+  const resolve = page.getByRole("link", { name: "查看运行处置请求" });
+  await resolve.click();
+  await expect(page).toHaveURL(/obs_tab=operations/);
+  expect(writes).toEqual([]);
+});
+
+test("legacy task access unfolds only on request and preserves the draft", async ({ page }) => {
+  const { writes } = await installUiFixture(page, { locked: true });
+  await page.goto("/?project=ui-review&page=board&task=UI-101");
+  const chat = page.getByRole("region", { name: "任务 Agent" });
+  const input = chat.getByRole("textbox", { name: "询问或补充这项任务" });
+  const token = chat.getByPlaceholder("action token", { exact: true });
+  await input.fill("保留草稿");
+  await expect(token).toHaveCount(0);
+  await expect(chat.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await chat.getByRole("button", { name: "解锁发送" }).click();
+  await expect(token).toBeVisible();
+  await chat.getByRole("button", { name: "收起解锁" }).click();
+  await expect(input).toHaveValue("保留草稿");
+  expect(writes).toEqual([]);
+});
+
+test("a proposed task edit shows the acceptance change before the user confirms", async ({ page }) => {
+  const { writes } = await installUiFixture(page, { snapshot: { runtime: {
+    mode: "live", actions: { mutation_enabled: true, allowed: ["chat-orchestrator", "update-task"] },
+  } } });
+  const payload = { task_id: "UI-101", contract: { acceptance: "恢复上一次筛选" } };
+  await page.route("**/kanban-agent/pending-proposals", route => route.fulfill({ json: { items: [{
+    thread_key: "task:UI-101", proposal_event_id: "evt-acceptance", action: "update-task",
+    title: "补充验收条件", valid: true, payload,
+  }] } }));
+  await page.goto("/?project=ui-review&page=board&task=UI-101");
+  const chat = page.getByRole("region", { name: "任务 Agent" });
+  await chat.getByRole("button", { name: "Details" }).click();
+  await expect(chat).toContainText("恢复上一次筛选");
+  expect(writes).toEqual([]);
+  await chat.getByRole("button", { name: "Update task", exact: true }).click();
+  await expect.poll(() => writes.filter(w => w.path.endsWith("/actions/update-task")).length).toBe(1);
+  expect(writes.find(w => w.path.endsWith("/actions/update-task"))?.body.payload)
+    .toMatchObject({ ...payload, proposal_event_id: "evt-acceptance", thread_id: "task:UI-101" });
 });

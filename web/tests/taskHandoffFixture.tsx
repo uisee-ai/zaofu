@@ -17,7 +17,7 @@ function Fixture() {
       current_state: "in_progress", current_stage: "verify", owner: { role: "verify", instance_id: "verify-2" },
       completed: [{ kind: "admitted_result", summary: "verify · generation 1 · failed" }],
       next_required_event: "task.pipeline.verify.completed", next_required_action: "等待当前阶段提交并接纳结果",
-      pipeline: { status: "current", current_stage: "verify", pipeline_stage: "verify_active", workflow_run_id: "run-current",
+      pipeline: { status: "current", operation_status: "running", current_stage: "verify", pipeline_stage: "verify_active", workflow_run_id: "run-current",
         attempt_id: "attempt-current", dispatch_id: "dispatch-current", target_ref: "target-current",
         workspace: stale ? { status: "unavailable", reason: "task workspace metadata does not match the current dispatch" }
           : { status: "bound", path: "/custom-state/execution/tasks/TASK-HANDOFF/g1/project" } },

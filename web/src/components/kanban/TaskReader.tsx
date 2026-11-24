@@ -10,10 +10,9 @@ import { MarkdownText } from "../agent-session/MarkdownText";
 import { HandoffBindingDetails } from "./HandoffBindingDetails";
 import { mergeEventsByIdentity } from "../orchestrator/kanbanSessionEvents";
 import { RouteSummaryStrip } from "./TaskCard";
-import { taskColumn } from "./board";
-import { taskOwner, taskPhase, taskStatus } from "./taskViewModel";
+import { lastStageResult, taskExecution } from "./taskExecution";
 import {
-  AssignmentIntentPanel, ContractInvalidBanner, HandoffSummaryPanel, TaskActivityPanel,
+  ContractInvalidBanner, HandoffSummaryPanel, TaskActivityPanel,
   TaskAdvancedPanel, TaskEditPanel, TaskEvidencePanel, TaskRunSummaryPanel,
 } from "./TaskDetail";
 
@@ -78,18 +77,18 @@ function TaskReading({ task, detail, timeline, diff, events, projectId, properti
   const showActivity = () => { setActivityOpen(true); activity.current?.scrollIntoView({ block: "start" }); };
   const handoff = detail?.handoff_summary;
   const handoffPanel = handoff && !handoff.empty ? <HandoffSummaryPanel detail={detail} /> : null;
-  const activeHandoff = Boolean(handoff?.receipt?.delivery_status || handoff?.pipeline || (handoff?.receipt && handoff.receipt.status !== "unavailable"));
+  const showReceipt = Boolean(handoff?.receipt?.delivery_status || (handoff?.receipt && handoff.receipt.status !== "unavailable"));
   const contract = detail?.contract ?? task.contract ?? {};
   const description = textValue(contract.behavior) || handoff?.objective;
   const progress = detail?.task_run_panel;
   const latest = asRecord(progress?.latest_progress);
   const progressMessage = textValue(latest.message || latest.current_subtask);
-  const stage = handoff?.current_stage || progress?.current_stage_label || taskPhase(task);
-  const owner = handoff?.pipeline ? textValue(handoff.owner?.instance_id || handoff.owner?.role) || "等待接手" : taskOwner(task);
+  const execution = taskExecution(task, detail);
+  const result = lastStageResult(detail);
   const attention = task.task_card?.attention ?? task.attention;
-  const blocker = task.workflow_projection?.rework_reason
+  const blocker = handoff?.pipeline ? handoff.blockers?.[0] : task.workflow_projection?.rework_reason
     || (attention?.required !== false && task.blocked_reason)
-    || handoff?.blockers?.[0] || (attention?.required && attention.label);
+    || (attention?.required && attention.label);
   const verify = stageVerdict(detail?.verify?.state);
   const review = stageVerdict(detail?.review?.state);
   const files = diff?.files?.length ? diff.files : handoff?.changed_files ?? [];
@@ -102,66 +101,77 @@ function TaskReading({ task, detail, timeline, diff, events, projectId, properti
   const business = taskEvents.filter(event => isTaskBusinessEvent(event.type)).reverse();
   const trace = timeline?.links?.trace || timeline?.trace_id || detail?.links?.trace || detail?.trace_id || task.links?.trace || "";
   const terminal = taskIsEffectivelyTerminal(task);
-  const issue = blocker || (detail?.verify?.state === "failed" && "验证失败") || (["failed", "rejected"].includes(detail?.review?.state ?? "") && "评审未通过");
-  const next = handoff?.next_required_action;
-  const showProgress = terminal || issue || progressMessage || (next && (handoff?.pipeline || progress?.active_operation || handoff?.receipt?.delivery_status));
+  const issue = blocker || (!handoff?.pipeline && (detail?.verify?.state === "failed" && "验证失败"
+    || ["failed", "rejected"].includes(detail?.review?.state ?? "") && "评审未通过"));
   const fanout = task.fanout;
-  const stageLabels: Record<string, string> = { verify_ready: "等待验证", verify_active: "验证中", implement: "实现", implementation: "实现" };
-  const stageLabel = stageLabels[stage] || stage;
   const workflowRunId = textValue(handoff?.pipeline?.workflow_run_id || fanout?.workflow_run_id);
   return <div className="reader-layout" data-properties={properties}>
-    <article className="reader-article">
-      <header className="reader-heading">
-        <h1>{task.title || task.id}</h1>
-        {source.length > 0 && <p className="reader-source"><span>来源</span> {source.join(" / ")}</p>}
-      </header>
-      <ContractInvalidBanner task={task} detail={detail} events={events} />
-      {showProgress && <div className={issue && !terminal ? "reader-status attention" : "reader-status"}>
-        <strong>{terminal ? taskStatus(task) : issue || stageLabel}</strong>
-        {next && !terminal && <p>下一步 · {next}</p>}
-        {progressMessage && <p>{progressMessage}</p>}
-        {(issue || terminal) && <button type="button" onClick={showEvidence}>查看{terminal ? "交付结果" : "验证依据"}</button>}
-      </div>}
-      {activeHandoff && handoffPanel}
-      {description && description !== task.title && <section><h2>任务说明</h2><MarkdownText content={description} /></section>}
-      <AcceptanceCriteria contract={contract} />
-      {!activeHandoff && handoffPanel}
-      <section><h2>本轮交付</h2>
-        {(verify || review) && <p>{[verify && `验证 · ${verify}`, review && `评审 · ${review}`].filter(Boolean).join("　")}</p>}
-        {files.length > 0 && <div className="reader-files">
-          <p>改动 {files.length} 个文件</p>
-          <ul>{files.slice(0, 3).map(file => <li key={file}><FileCode2 size={15} aria-hidden="true" /><code>{file}</code></li>)}</ul>
+    <div className="reader-main">
+      <article className="reader-article">
+        <header className="reader-heading">
+          <h1>{task.title || task.id}</h1>
+          {source.length > 0 && <p className="reader-source"><span>来源</span> {source.join(" / ")}</p>}
+        </header>
+        <ContractInvalidBanner task={task} detail={detail} events={events} />
+        {!properties && !execution.manualEvidence && !terminal && <p className="reader-progress-inline">{[result, execution.label, execution.worker].filter(Boolean).join(" → ")}</p>}
+        {execution.manualEvidence ? <div className="reader-status attention">
+          <strong>待你补充证据</strong>
+          {task.blocked_reason && <p>{task.blocked_reason}</p>}
+          <ManualEvidenceRequirements contract={contract} />
+          <a href={`?page=runtime&project=${encodeURIComponent(projectId || "")}`}>查看运行处置请求</a>
+        </div> : (issue || terminal) && <div className={terminal ? "reader-status" : "reader-status attention"}>
+          <strong>{terminal ? execution.label : issue}</strong>
+          <button type="button" onClick={showEvidence}>查看{terminal ? "交付结果" : "验证依据"}</button>
         </div>}
-        {artifacts.length > 0 && <ul>{artifacts.slice(0, 4).map((item, i) => <li key={i}>{textValue(item.title || item.path || item.ref || item.kind)}</li>)}</ul>}
-        <details ref={evidence} open={evidenceOpen} onToggle={e => setEvidenceOpen(e.currentTarget.open)}>
-          <summary>查看输入与交付证据</summary>
-          {evidenceOpen && <TaskEvidencePanel detail={detail} diff={diff} projectId={projectId} />}
+        {showReceipt && handoffPanel}
+        {description && description !== task.title && <section><h2>任务说明</h2><MarkdownText content={description} /></section>}
+        <AcceptanceCriteria contract={contract} />
+        <section><h2>本轮交付</h2>
+          {(verify || review) && <p>{[verify && `验证 · ${verify}`, review && `评审 · ${review}`].filter(Boolean).join("　")}</p>}
+          {files.length > 0 && <div className="reader-files">
+            <p>改动 {files.length} 个文件</p>
+            <ul>{files.slice(0, 3).map(file => <li key={file}><FileCode2 size={15} aria-hidden="true" /><code>{file}</code></li>)}</ul>
+          </div>}
+          {artifacts.length > 0 && <ul>{artifacts.slice(0, 4).map((item, i) => <li key={i}>{textValue(item.title || item.path || item.ref || item.kind)}</li>)}</ul>}
+          <details ref={evidence} open={evidenceOpen} onToggle={e => setEvidenceOpen(e.currentTarget.open)}>
+            <summary>查看输入与交付证据</summary>
+            {evidenceOpen && <TaskEvidencePanel detail={detail} diff={diff} projectId={projectId} />}
+          </details>
+        </section>
+        <section><h2>动态</h2>
+          {business.length ? <ol className="reader-events">{business.slice(0, 4).map((e, i) => <li key={e.id || i}>
+            <time dateTime={e.ts} title={e.ts}>{e.ts && formatDateTime(e.ts, undefined, true)}</time><strong>{e.actor || "ZaoFu"}</strong><span>{textValue(e.payload?.summary || e.payload?.message || e.payload?.reason || e.type)}</span>
+          </li>)}</ol> : <p className="muted">暂无任务动态</p>}
+          <details ref={activity} open={activityOpen} onToggle={e => setActivityOpen(e.currentTarget.open)}>
+            <summary>执行路线与更多动态</summary>
+            {activityOpen && !timeline?.execution_route && !detail?.execution_route && task.route_summary && <RouteSummaryStrip route={task.route_summary} />}
+            {activityOpen && <TaskActivityPanel detail={detail} events={business.slice(0, 20)} onOpenProjection={props.onOpenProjection}
+              route={timeline?.execution_route ?? detail?.execution_route ?? null} timelineError={props.timelineError} timelineLoading={props.timelineLoading} traceId={trace} />}
+          </details>
+        </section>
+        <details><summary>执行现场</summary>
+          {!showReceipt && handoffPanel}
+          {!terminal && handoff?.next_required_action && <p>下一步 · {handoff.next_required_action}</p>}
+          <HandoffBindingDetails summary={handoff} onEvidence={showEvidence} onActivity={showActivity} />
+          <TaskRunSummaryPanel task={task} detail={detail} onOpenProjection={props.onOpenProjection} />
+          <TaskAdvancedPanel detail={detail} task={task} skillsSummary={props.skillsSummary} />
         </details>
-      </section>
-      <section><h2>动态</h2>
-        {business.length ? <ol className="reader-events">{business.slice(0, 4).map((e, i) => <li key={e.id || i}>
-          <time dateTime={e.ts} title={e.ts}>{e.ts && formatDateTime(e.ts, undefined, true)}</time><strong>{e.actor || "ZaoFu"}</strong><span>{textValue(e.payload?.summary || e.payload?.message || e.payload?.reason || e.type)}</span>
-        </li>)}</ol> : <p className="muted">暂无任务动态</p>}
-        <details ref={activity} open={activityOpen} onToggle={e => setActivityOpen(e.currentTarget.open)}>
-          <summary>执行路线与更多动态</summary>
-          {activityOpen && !timeline?.execution_route && !detail?.execution_route && task.route_summary && <RouteSummaryStrip route={task.route_summary} />}
-          {activityOpen && <TaskActivityPanel detail={detail} events={business.slice(0, 20)} onOpenProjection={props.onOpenProjection}
-            route={timeline?.execution_route ?? detail?.execution_route ?? null} timelineError={props.timelineError} timelineLoading={props.timelineLoading} traceId={trace} />}
-        </details>
-      </section>
+      </article>
       {conversation}
-      <details><summary>执行现场</summary>
-        <HandoffBindingDetails summary={handoff} onEvidence={showEvidence} onActivity={showActivity} />
-        <TaskRunSummaryPanel task={task} detail={detail} onOpenProjection={props.onOpenProjection} />
-        <TaskAdvancedPanel detail={detail} task={task} skillsSummary={props.skillsSummary} />
-      </details>
-    </article>
+    </div>
     <aside id="task-properties" className="reader-properties" hidden={!properties} aria-label="任务属性">
+      <section className="reader-execution" aria-label="执行进度">
+        <h2>执行进度</h2>
+        {result && <p className="reader-stage-result">{result}</p>}
+        <dl className="reader-property-list">
+          <dt>状态</dt><dd>{execution.label}</dd>
+          {execution.worker && <><dt>当前执行</dt><dd>{execution.worker}</dd></>}
+        </dl>
+        {progressMessage && execution.worker && <p>{progressMessage}</p>}
+        <button type="button" onClick={showActivity}>查看执行记录<ChevronRight size={14} aria-hidden="true" /></button>
+      </section>
       <h2>任务属性</h2>
       <dl className="reader-property-list">
-        <dt>状态</dt><dd><span className="reader-state-value"><i className={`task-status-dot status-${taskColumn(task)}`} />{taskStatus(task)}</span></dd>
-        <dt>阶段</dt><dd>{stageLabel}</dd>
-        <dt>负责人</dt><dd>{owner}</dd>
         <dt>优先级</dt><dd>P{taskPriority(task)}</dd>
         {task.blocked_by?.length ? <>
           <dt>依赖</dt><dd className="reader-dependencies">{task.blocked_by.map(id =>
@@ -178,12 +188,19 @@ function TaskReading({ task, detail, timeline, diff, events, projectId, properti
       </dl>
       <details><summary>任务操作</summary>
         <TaskEditPanel actionReady={props.actionReady} actionState={props.actionState} detail={detail} task={task} onUpdate={p => props.onAction("update-task", p)} />
-        <AssignmentIntentPanel actionReady={props.actionReady} actionState={props.actionState} task={task} onPropose={p => props.onAction("assignment-propose", p)} />
-        {["dispatch-task","request-verify","request-review","ship-candidate"].map(action => <button key={action} disabled={!props.actionReady} onClick={() => props.onAction(action)}>{action}</button>)}
         {props.actionResult && <p role="status">{props.actionResult.status} {props.actionResult.reason}</p>}
       </details>
     </aside>
   </div>;
+}
+
+function ManualEvidenceRequirements({ contract }: { contract: Record<string, unknown> }) {
+  const required = asRecord(contract.evidence_contract).required_manual_evidence;
+  const record = asRecord(required);
+  const refs = typeof required === "string" ? [required] : asStringArray(
+    Array.isArray(required) ? required : record.refs || record.required_refs || record.artifacts,
+  );
+  return refs.length > 0 ? <ul>{refs.map(ref => <li key={ref}><code>{ref}</code></li>)}</ul> : null;
 }
 
 function AcceptanceCriteria({ contract }: { contract: Record<string, unknown> }) {

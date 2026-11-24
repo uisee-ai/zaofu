@@ -2174,9 +2174,10 @@ export function App() {
   );
 
   const cloudSession = sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed);
-  const localSettings = page === "settings" && Boolean(webSessionStatus?.local_account);
-  const accountControls = webSessionStatus?.local_account || cloudSession
-    ? <AccountControls username={webSessionStatus?.username} local={Boolean(webSessionStatus?.local_account)} />
+  const localAccount = sessionMode === "local_account" || Boolean(webSessionStatus?.local_account);
+  const localSettings = page === "settings" && localAccount;
+  const accountControls = localAccount || cloudSession
+    ? <AccountControls username={webSessionStatus?.username} local={localAccount} />
     : null;
   if (sessionError && !sessionMode) return <main role="alert">登录状态加载失败。
     <button type="button" onClick={() => retrySession(n => n + 1)}>重试</button></main>;
@@ -2211,7 +2212,6 @@ export function App() {
           {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
-          {cloudSession && accountControls}
           <div className="topbar-search-control">
             <input
               className="search-input"
@@ -2263,6 +2263,7 @@ export function App() {
           >
             <Terminal size={16} strokeWidth={1.9} aria-hidden="true" />
           </button>
+          {accountControls}
         </div>
       </header>
 
@@ -2275,7 +2276,6 @@ export function App() {
 
       <main className={`workspace ${terminalOpen && projectToolsAvailable ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
-          accountControls={webSessionStatus?.local_account ? accountControls : null}
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
@@ -2298,7 +2298,7 @@ export function App() {
         <section className="board-panel" data-page={page}>
           {page === "settings" ? (
             <Suspense fallback={<div role="status">{t("Settings")}</div>}>
-              <SettingsRoute snapshot={snapshot} localAccount={Boolean(webSessionStatus?.local_account)}
+              <SettingsRoute snapshot={snapshot} localAccount={localAccount}
                 canChangePassword={Boolean(webSessionStatus?.actions_enabled)} />
             </Suspense>
           ) : !activeProjectId ? (

@@ -24,9 +24,12 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   expect(await page.evaluate(() => localStorage.getItem("zf.webActionToken"))).toBeNull();
 
   await page.setViewportSize({ width: 1440, height: 960 });
+  const account = page.locator(".topbar .account-switcher summary");
+  await expect(account.locator(".account-name")).toHaveText("zaofu");
+  await expect(account).toBeInViewport({ ratio: 1 });
   await expect(reader.getByRole("heading", { name: "验收条件" })).toBeVisible();
   await page.screenshot({ path: info.outputPath("desktop.png") });
-  const input = chat.getByPlaceholder("询问或补充这张任务…");
+  const input = chat.getByPlaceholder("询问或补充这项任务…");
   await input.fill("请确认本任务接收到了这条追问。");
   const sent = page.waitForResponse(r => r.url().endsWith("/actions/chat-orchestrator") && r.request().method() === "POST");
   await chat.getByRole("button", { name: "Send message" }).click();
@@ -46,10 +49,16 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   await reader.getByRole("button", { name: "属性", exact: true }).click();
   await expect(reader.getByRole("complementary")).toContainText("TASK-DATASET");
   await page.screenshot({ path: info.outputPath("mobile.png") });
-  const logout = await page.request.post("/auth/local/logout", { headers: { Origin: origin }, data: {} });
+  await expect(account.locator(".account-name")).toBeInViewport({ ratio: 1 });
+  await account.click();
+  const logoutButton = page.getByRole("button", { name: /Sign out|退出登录/ });
+  await expect(logoutButton).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: info.outputPath("account-menu-mobile.png") });
+  const loggedOut = page.waitForResponse(r => r.url().endsWith("/auth/local/logout") && r.request().method() === "POST");
+  await logoutButton.click();
+  const logout = await loggedOut;
   expect(logout.ok()).toBeTruthy();
   const denied = await page.request.post(response.url(), { headers: { Origin: origin }, data: response.request().postDataJSON() });
   expect(denied.status()).toBe(401);
-  // A rejected API poll sends the open Dashboard back through the login flow.
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible({ timeout: 20_000 });
 });

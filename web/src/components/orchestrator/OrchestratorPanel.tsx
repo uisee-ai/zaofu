@@ -16,6 +16,8 @@ import {
 } from "../../api/client";
 import type { PendingKanbanProposal } from "../../api/client";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
+import { actionImpactRows } from "../agent-session/previewRegistry";
+import { TaskChatHeader } from "./TaskChatHeader";
 import { AgentThreadNavigation } from "../../components/agent-session/AgentThreadNavigation";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
 import { DuringRunComposerActions } from "../../components/agent-session/DuringRunComposerActions";
@@ -451,6 +453,8 @@ export function OrchestratorPanel({
   ));
   const [operatorError, setOperatorError] = useState("");
   const [dismissedPermissionEscalations, setDismissedPermissionEscalations] = useState<string[]>([]);
+  const [taskUnlockOpen, setTaskUnlockOpen] = useState(false);
+  const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
   const [headlessSubmitting, setHeadlessSubmitting] = useState(false);
   const headlessSubmitInFlight = useRef(false);
   const planSubmissionsInFlight = useRef(new Set<string>());
@@ -550,6 +554,7 @@ export function OrchestratorPanel({
   const awaitingAccess = !snapshot || !access.mode;
   const chatAccessHint = awaitingAccess ? "正在读取会话权限…"
     : passcodeRequired ? "请先解锁当前会话。"
+    : taskThread && showTokenRow ? "解锁发送后可提问。"
     : showTokenRow ? "Save a valid action token to send messages."
     : actionReady ? "当前项目未开放 Agent 对话。" : "当前会话仅可阅读对话。";
   const modelSelection = useKanbanModelSelection(headlessProjectId, headlessThreadKey, operatorBackend,
@@ -1078,6 +1083,7 @@ export function OrchestratorPanel({
     // Lock before permission lookup, including the queue and early-return paths.
     if (headlessSubmitInFlight.current) return;
     headlessSubmitInFlight.current = true;
+    if (taskThread && (messageOverride ?? headlessMessage).trim() && canUseAction("chat-orchestrator")) setTaskHistoryOpen(true);
     setHeadlessSubmitting(true);
     try {
       await dispatchHeadlessMessage(messageOverride, options);
@@ -1193,7 +1199,7 @@ export function OrchestratorPanel({
       setOperatorError("Agent backend list is still loading; try again in a moment.");
       return;
     }
-    const directAction = slashAction(message);
+    const directAction = taskThread ? null : slashAction(message);
     setHeadlessMessage("");
     let pendingTurnId = "";
     try {
@@ -1676,6 +1682,9 @@ export function OrchestratorPanel({
   }
 
   function pendingProposalContract(item: PendingKanbanProposal): Array<[string, string]> {
+    if (item.action === "update-task") {
+      return actionImpactRows(item.action, item.payload).filter(row => row.label !== "action").map(row => [row.label, row.value]);
+    }
     const contract = item.payload.contract;
     if (!contract || typeof contract !== "object") return [];
     const record = contract as Record<string, unknown>;
@@ -1876,6 +1885,7 @@ export function OrchestratorPanel({
 
   function saveToken() {
     onSaveToken(tokenInput);
+    setTaskUnlockOpen(false);
     setTokenInput("");
     setOperatorError("");
   }
@@ -1886,6 +1896,7 @@ export function OrchestratorPanel({
     try {
       const result = await onUnlockSession(passcode);
       if (result.ok) {
+        setTaskUnlockOpen(false);
         setPasscodeInput("");
         setOperatorError("");
       } else {
@@ -2076,7 +2087,7 @@ export function OrchestratorPanel({
       setHeadlessHasNewBelow(false);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [headlessHistoryLoading, headlessHistoryReady, headlessProjectId, headlessThreadKey, panelMode]);
+  }, [headlessHistoryLoading, headlessHistoryReady, headlessProjectId, headlessThreadKey, panelMode, taskHistoryOpen]);
   // Content changed (new turn / streamed delta / refresh). Only follow to the
   // bottom when the user is pinned there; otherwise surface a "New messages"
   // affordance instead of yanking their scroll position.
@@ -2127,11 +2138,11 @@ export function OrchestratorPanel({
       : "readonly";
   const fullscreen = panelMode === "fullscreen";
   const headlessCanChat = canUseAction("chat-orchestrator");
-  const headlessEmptyTitle = taskThread ? "还没有任务对话" : headlessCanChat ? "What should we work through?" : showTokenRow ? "Action token needed" : "Agent 对话";
+  const headlessEmptyTitle = headlessCanChat ? "What should we work through?" : showTokenRow ? "Action token needed" : "Agent 对话";
   const headlessEmptyBody = headlessCanChat
     ? "Ask about this project, shape a plan, or prepare a controlled action."
     : chatAccessHint;
-  const headlessPlaceholder = taskThread ? "询问或补充这张任务…"
+  const headlessPlaceholder = taskThread ? "询问或补充这项任务…"
     : !headlessCanChat
     ? (showTokenRow ? "Save action token to send..." : chatAccessHint)
     : headlessPlanDiscussion
@@ -2156,9 +2167,15 @@ export function OrchestratorPanel({
       aria-modal={taskThread ? undefined : fullscreen}
       aria-label={taskThread ? "任务 Agent" : "Kanban Agent"}
     >
-      <div className="agent-shell-header">
+      {taskThread ? <TaskChatHeader
+        thread={activeHeadlessThread} hasMore={headlessHistoryHasMore} open={taskHistoryOpen}
+        onToggle={() => setTaskHistoryOpen(open => !open)}
+        accessControl={passcodeRequired || showTokenRow ? <button type="button" aria-expanded={taskUnlockOpen}
+          onClick={() => setTaskUnlockOpen(open => !open)}>{taskUnlockOpen ? "收起解锁" : "解锁发送"}</button>
+          : access.mode === "remote_passcode" && sessionActionReady && <button type="button" onClick={onLockSession}>锁定会话</button>}
+      /> : <div className="agent-shell-header">
         <div className="agent-title-block">
-          {!taskThread && <button
+          <button
             className="agent-window-button ghost"
             type="button"
             aria-label="New Kanban Agent chat"
@@ -2166,10 +2183,10 @@ export function OrchestratorPanel({
             onClick={resetHeadlessThread}
           >
             <Plus size={20} strokeWidth={1.8} />
-          </button>}
+          </button>
           <span className="agent-surface-title">
             <MessageCircle aria-hidden="true" size={16} strokeWidth={1.9} />
-            {taskThread ? "任务对话" : "Kanban Agent"}
+            Kanban Agent
           </span>
           <div
             className="agent-model-dropdown header-agent-switch"
@@ -2236,7 +2253,6 @@ export function OrchestratorPanel({
               Lock
             </button>
           ) : null}
-          {!taskThread && <>
           <button
             className="agent-window-button emphasized"
             type="button"
@@ -2254,11 +2270,11 @@ export function OrchestratorPanel({
             onClick={() => onPanelModeChange("collapsed")}
           >
             <Minus size={19} strokeWidth={1.9} />
-          </button></>}
+          </button>
         </div>
-      </div>
+      </div>}
       <div className="orchestrator-body">
-        {passcodeRequired ? <form
+        {passcodeRequired && (!taskThread || taskUnlockOpen) ? <form
           className="token-row agent-auth-row"
           onSubmit={(event) => {
             event.preventDefault();
@@ -2277,7 +2293,7 @@ export function OrchestratorPanel({
           </button>
         </form> : null}
 
-        {showTokenRow ? <form
+        {showTokenRow && (!taskThread || taskUnlockOpen) ? <form
           className="token-row agent-auth-row"
           onSubmit={(event) => {
             event.preventDefault();
@@ -2299,7 +2315,7 @@ export function OrchestratorPanel({
           </button>
         </form> : null}
 
-        <div className={`headless-chat ${headlessWelcome ? "welcome" : ""}`}>
+        <div className={`headless-chat ${!taskThread && headlessWelcome ? "welcome" : ""}`}>
           {!taskThread && <AgentThreadNavigation
             activeThreadId={headlessThreadKey}
             allowSplit={fullscreen}
@@ -2310,6 +2326,8 @@ export function OrchestratorPanel({
           />}
           <div
             className="headless-thread"
+            hidden={Boolean(taskThread && !((taskHistoryOpen && (activeHeadlessThread?.turns.length || headlessHistoryHasMore))
+              || pendingDurableInteractions.length || headlessHistoryError || inboxTargetUnavailable))}
             ref={headlessThreadRef}
             onScroll={(event) => {
               const nearBottom = isScrollElementNearBottom(event.currentTarget);
@@ -2318,7 +2336,7 @@ export function OrchestratorPanel({
               rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
             }}
           >
-            {headlessHistoryHasMore ? (
+            {headlessHistoryHasMore && (!taskThread || taskHistoryOpen) ? (
               <button
                 className="agent-history-load"
                 disabled={headlessHistoryLoading}
@@ -2348,7 +2366,7 @@ export function OrchestratorPanel({
               onDraftChange={updateWebChatInteractionDraft}
               onRespond={answerDurableInteraction}
             />
-            <AgentSessionTimeline
+            {(!taskThread || (taskHistoryOpen && Boolean(activeHeadlessThread?.turns.length))) && <AgentSessionTimeline
               actionBusyId={headlessProposalRunning}
               activeThreadId={headlessThreadKey}
               allowSplit={fullscreen && headlessConversation.threads.length > 1}
@@ -2379,9 +2397,9 @@ export function OrchestratorPanel({
               showRunProvider={false}
               showThreadChips={false}
               splitThreadId={headlessSplitThreadKey}
-            />
+            />}
           </div>
-          {headlessHasNewBelow ? (
+          {headlessHasNewBelow && (!taskThread || taskHistoryOpen) ? (
             <button className="channel-scroll-latest" type="button" onClick={showLatestHeadless}>
               <ChevronDown size={15} />
               New messages
@@ -2509,7 +2527,7 @@ export function OrchestratorPanel({
                       </button>
                       <button
                         className="headless-pending-run"
-                        disabled={!item.valid || pendingProposalBusy === item.proposal_event_id}
+                        disabled={!item.valid || !canUseAction(item.action) || pendingProposalBusy === item.proposal_event_id}
                         type="button"
                         onClick={() => void runPendingProposal(item)}
                       >
@@ -2556,7 +2574,7 @@ export function OrchestratorPanel({
             </div>
           ) : null}
           <div className="headless-composer">
-            {context.taskId ? (
+            {!taskThread && context.taskId ? (
               taskRefOn ? (
                 <div className="headless-task-ref" data-testid="agent-task-ref">
                   <span className="headless-task-ref-chip" title={context.title || context.taskId}>
@@ -2568,10 +2586,10 @@ export function OrchestratorPanel({
                     onClick={() => void submitHeadlessMessage("总结当前状态", { projectionFirst: true })}>
                     快照
                   </button>
-                  {!taskThread && <button type="button" className="headless-task-ref-action" data-testid="agent-task-unref"
+                  <button type="button" className="headless-task-ref-action" data-testid="agent-task-unref"
                     title="解除任务引用" onClick={() => setTaskRefOn(false)}>
                     ×
-                  </button>}
+                  </button>
                 </div>
               ) : (
                 <div className="headless-task-ref off">
@@ -2653,7 +2671,7 @@ export function OrchestratorPanel({
               </div>
             ) : operatorError ? (
               <div className="headless-composer-alert" role="alert">{operatorError}</div>
-            ) : !headlessCanChat ? (
+            ) : !headlessCanChat && !(taskThread && (passcodeRequired || showTokenRow)) ? (
               // Surfaced from the very moment the panel opens (not only after a
               // first failed send). Without this, users typed + pressed Enter,
               // the token gate (submitHeadlessMessage:7945) silently set
@@ -2671,6 +2689,8 @@ export function OrchestratorPanel({
                 <textarea
                   ref={headlessInputRef}
                   className="headless-input"
+                  rows={taskThread ? 1 : undefined}
+                  aria-label={taskThread ? "询问或补充这项任务" : undefined}
                   placeholder={headlessPlaceholder}
                   aria-invalid={!headlessCanChat || undefined}
                   disabled={headlessSubmitting || Boolean(permissionEscalation)}
@@ -2724,11 +2744,11 @@ export function OrchestratorPanel({
                       }))}
                     />}
                   </div>
-                  <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
+                  {(!taskThread || modelSelection.selectionUnavailable) && <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
                     catalogSupported={operatorBackend === "codex-headless"} unlocked={canUseAction("chat-orchestrator")}
                     onReauthorize={hasToken ? () => onSaveToken("") : undefined}
                     onSwitchToCodex={headlessBackendOptions.some((item) => item.id === "codex-headless" && item.available !== false)
-                      ? () => selectOperatorBackend("codex-headless") : undefined} />
+                      ? () => selectOperatorBackend("codex-headless") : undefined} />}
                   {activeDurableTurn ? (
                     <DuringRunComposerActions
                       waitingForInput={activeDurableTurn.state === "waiting_input"}

@@ -1,4 +1,3 @@
-import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
 import type { EventRecord, ExecutionRouteProjection, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff } from "../../api/types";
 import { contextBadgeTone, contextLabel } from "../../lib/format";
 import { routeStatusTone, taskPriority } from "../../lib/task-display";
@@ -11,9 +10,7 @@ import { previewProfileForRef } from "../agent-session/previewRegistry";
 
 interface TaskEditDraft {
   title: string;
-  status: string;
   priority: string;
-  assignedTo: string;
   blockedReason: string;
   blockedBy: string;
   skills: string;
@@ -36,9 +33,7 @@ function taskEditDraft(task: Task, detail: TaskDetailModel | null): TaskEditDraf
   const contract = recordValue(detail?.contract) ?? recordValue(taskRecord.contract) ?? {};
   return {
     title: task.title || "",
-    status: task.status || "backlog",
     priority: String(taskPriority(task)),
-    assignedTo: task.assigned_to || "",
     blockedReason: task.blocked_reason || "",
     blockedBy: joinCsv(task.blocked_by),
     skills: joinCsv(task.skills_required),
@@ -749,9 +744,7 @@ export function TaskEditPanel({
   function saveTaskEdit() {
     onUpdate({
       title: draft.title,
-      status: draft.status,
       priority: Number(draft.priority || 3),
-      assigned_to: draft.assignedTo.trim(),
       blocked_reason: draft.blockedReason,
       blocked_by: csvList(draft.blockedBy),
       skills_required: csvList(draft.skills),
@@ -778,22 +771,10 @@ export function TaskEditPanel({
           <input className="filter-input" value={draft.title} onChange={(event) => update({ title: event.target.value })} />
         </label>
         <label>
-          <span>Status</span>
-          <select className="filter-input" value={draft.status} onChange={(event) => update({ status: event.target.value })}>
-            {["backlog", "in_progress", "review", "testing", "blocked", "done", "cancelled"].map((status) => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
-        </label>
-        <label>
           <span>Priority</span>
           <select className="filter-input" value={draft.priority} onChange={(event) => update({ priority: event.target.value })}>
             {[0, 1, 2, 3, 4, 5].map((priority) => <option key={priority} value={String(priority)}>P{priority}</option>)}
           </select>
-        </label>
-        <label>
-          <span>Assignee</span>
-          <input className="filter-input" value={draft.assignedTo} onChange={(event) => update({ assignedTo: event.target.value })} />
         </label>
         <label>
           <span>Skills</span>
@@ -838,86 +819,6 @@ export function TaskEditPanel({
         </button>
         <button className="icon-button" disabled={!dirty} type="button" onClick={() => setEdits({})}>
           Reset
-        </button>
-      </div>
-    </div>
-  );
-}
-
-
-export function AssignmentIntentPanel({
-  actionReady,
-  actionState,
-  onPropose,
-  task,
-}: {
-  actionReady: boolean;
-  actionState: string;
-  onPropose: (payload: Record<string, unknown>) => void;
-  task: Task;
-}) {
-  const [role, setRole] = useState(task.assigned_to || "");
-  const [backend, setBackend] = useState("");
-  const [channelId, setChannelId] = useState("");
-  const [supervisor, setSupervisor] = useState("");
-  const [reason, setReason] = useState("operator assignment intent");
-
-  useEffect(() => {
-    setRole(task.assigned_to || "");
-  }, [task.id, task.assigned_to]);
-
-  const hasIntent = Boolean(
-    role.trim() || backend.trim() || channelId.trim() || supervisor.trim(),
-  );
-
-  function propose() {
-    onPropose({
-      task_id: task.id,
-      role: role.trim() || undefined,
-      backend: backend.trim() || undefined,
-      channel_id: channelId.trim() || undefined,
-      supervisor: supervisor.trim() || undefined,
-      reason: reason.trim() || "operator assignment intent",
-      source: "web-assignment-intent",
-    });
-  }
-
-  return (
-    <div className="subsection task-edit-panel">
-      <div className="inline-heading">
-        <h3>Assignment Intent</h3>
-        <span className="muted">{actionReady ? "proposal only" : actionState}</span>
-      </div>
-      <div className="task-edit-grid">
-        <label>
-          <span>Role</span>
-          <input className="filter-input" value={role} onChange={(event) => setRole(event.target.value)} />
-        </label>
-        <label>
-          <span>Backend</span>
-          <select className="filter-input" value={backend} onChange={(event) => setBackend(event.target.value)}>
-            <option value="">unchanged</option>
-            {OPERATOR_BACKENDS.map((item) => (
-              <option key={item.id} value={item.id}>{item.title}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Channel</span>
-          <input className="filter-input" value={channelId} onChange={(event) => setChannelId(event.target.value)} />
-        </label>
-        <label>
-          <span>Supervisor</span>
-          <input className="filter-input" value={supervisor} onChange={(event) => setSupervisor(event.target.value)} />
-        </label>
-        <label className="wide-field">
-          <span>Reason</span>
-          <input className="filter-input" value={reason} onChange={(event) => setReason(event.target.value)} />
-        </label>
-      </div>
-      <div className="action-row flush-action-row">
-        <button className="icon-button primary" disabled={!actionReady || !hasIntent} type="button" onClick={propose}>
-          Propose Assignment
         </button>
       </div>
     </div>

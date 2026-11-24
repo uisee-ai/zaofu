@@ -42,6 +42,7 @@ def test_pipeline_handoff_uses_current_operation_despite_late_legacy_result(tmp_
     assert result["current_stage"] == replay["current_stage"] == stage
     assert result["owner"] == {"role": stage, "instance_id": "impl-2"}
     assert result["next_required_event"] == f"task.pipeline.{stage}.completed"
+    assert result["pipeline"]["operation_status"] == "running"
     assert result["pipeline"]["attempt_id"] == "attempt-current"
     assert result["pipeline"]["target_ref"] == "target-current"
     assert result["pipeline"]["workspace"]["status"] == "unavailable"
@@ -83,6 +84,10 @@ def test_settlement_waits_for_next_stage_without_claiming_task_done(tmp_path):
     assert not result["owner"]["instance_id"]
     assert TaskStore(state / "kanban.json").get(task.id).status == "in_progress"
     assert result["completed"][0]["kind"] == "admitted_result"
+    assert result["pipeline"]["operation_status"] == ""
+    assert result["completed"][0]["stage"] == "impl"
+    assert result["completed"][0]["semantic_verdict"] == "passed"
+    assert result["completed"][0]["settled_at"]
     assert "passed" in result["completed"][0]["summary"]
 
 
