@@ -6767,12 +6767,13 @@ class FanoutCoordinationMixin(
                 return False
             task_item = {}
             from zf.runtime.fanout_retry_briefing import reader_retry_operation_id
+            operation_id = reader_retry_operation_id(manifest, child, previous_dispatch, prepared_call)
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,
                 manifest=manifest,
                 child=child,
                 run_id=run_id,
-                effective_operation_id=reader_retry_operation_id(manifest, child, previous_dispatch, prepared_call),
+                effective_operation_id=operation_id,
             )
             identity_sources = (child, manifest, prepared_call)
         prompt = build_task_prompt(
@@ -6780,22 +6781,13 @@ class FanoutCoordinationMixin(
             briefing_path,
             prompt_kind="fanout_child",
         )
-        if (
-            str(manifest.get("topology") or "") == "fanout_reader"
-            and provider_session_replaced and recovery_decision_event is not None
-            and not fresh_operation
-        ):
-            from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+        if manifest.get("topology") == "fanout_reader" and not fresh_operation:
+            from zf.runtime.reader_respawn_continuation import reader_transport_retry_guidance
 
-            original_payload = previous_dispatch.payload.get("payload") or {}
-            attempt_id = str(
-                getattr(prepared_call, "attempt_id", "")
-                or original_payload.get("attempt_id")
-                or previous_dispatch.payload.get("attempt_id") or ""
-            )
-            prompt += reader_continuation_guidance(
-                attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
-                runtime=self, actor=role.instance_id, operation_id=original_payload.get("operation_id", "") or previous_dispatch.payload.get("operation_id", ""),
+            prompt += reader_transport_retry_guidance(
+                self, previous_dispatch, operation_id=operation_id, role=role, dispatch_id=run_id,
+                continue_session=provider_session_replaced and recovery_decision_event is not None,
+                cli=zf_cli_cmd(),
             )
         try:
             dispatch_context = self._send_scoped_transport_task(

@@ -42,6 +42,12 @@ Run Manager 诊断请求；RM 自身也受同一环境问题阻塞，无法读�
 child-rebuild → Kernel 派发验证恢复；同时覆盖进程重建、幂等和错误身份拒绝。
 真实 Provider 的恢复与后续 8×8 仍等待宿主修复，mock 通过不替代该层结论。
 
+同一 Reader 调用更换传输派发时，注入同时列出本次派发 ID 与原工件输入 attempt。
+`artifact recover --attempt` 使用后者；其绑定同时检查原内核派发、活动 Operation、
+不可变请求与来源 manifest。返回 `bound` 即表示本次重试可继续使用该输入，历史读取
+和草稿仍要按实际上下文独立核对。提交沿用本次 briefing 的原命令与有效租约。
+正式重试的回归见 `tests/test_reader_transport_input_navigation.py`。
+
 ## 2026-11-20：宿主修复与旧升级记录关闭
 
 获得用户授权后，执行现有 `scripts/setup-codex-sandbox.sh --apply` 安装发行版
