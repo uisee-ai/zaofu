@@ -268,3 +268,62 @@ def test_sealed_historical_witness_without_current_transcript_restarts_safely(tm
     transcript.unlink()
     assert main([*command, "--resume"]) == 0
     assert json.loads(capsys.readouterr().out)["items"][0]["page_start"] == 0
+
+
+def test_resume_fills_only_unobserved_middle_page_and_skips_witnessed_suffix(tmp_path, monkeypatch, capsys):
+    state = tmp_path / "state"
+    path = state / "artifacts/input.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"body": "r" * 11000}))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest = build_attempt_source_manifest(workflow_run_id="run-1", task_id="T1", attempt_id="attempt-1",
+        dispatch_id="attempt-1", sources=[{"source_id": "s", "artifact_id": "a", "ref": "artifacts/input.json",
+            "sha256": digest, "allowed_paths": ["$.body"]}], metadata={"read_purpose": "implementation"})
+    write_attempt_source_manifest(state, manifest)
+    _grant(state, monkeypatch, manifest=manifest, operation_id="op-1")
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    for event_type in ("workflow.operation.requested", "workflow.operation.started"):
+        writer.append(ZfEvent(type=event_type, payload={"operation_id": "op-1", "active_attempt_id": "attempt-1"}))
+    writer.append(ZfEvent(type="task.dispatched", payload={"attempt_id": "attempt-1", "required_reads": [
+        {"source_id": "s", "artifact_id": "a", "artifact_sha256": digest, "json_path": "$.body"}]}))
+    command = ["artifact", "read", "--attempt", "attempt-1", "--state-dir", str(state), "--required"]
+    session, transcript = str(uuid4()), tmp_path / "codex.jsonl"
+    RoleSessionRegistry(state / "role_sessions.yaml", tmp_path).bind_codex_session("dev-1", session, session_path=transcript)
+    transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session}}) + "\n")
+    cursor = ""
+    gaps = []
+    stamp = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
+    for page_no in range(12):
+        assert main([*command, "--cursor", cursor, "--page-bytes", "3072"]) == 0
+        raw = capsys.readouterr().out.strip()
+        page = json.loads(raw)
+        if page_no in (1, 3):
+            gaps.append((page["items"][0]["page_start"], page["items"][0]["page_end"]))
+        else:
+            with transcript.open("a") as stream:
+                stream.write(json.dumps({"timestamp": stamp, "type": "response_item", "payload": {
+                    "type": "function_call_output", "call_id": str(page_no), "output": raw}}) + "\n")
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+    assert not cursor and len(gaps) == 2
+    delivered = []
+    # Smaller recovery pages intentionally require valid cursor navigation inside each hole.
+    options = ["--resume"]
+    first_resume_cursor = None
+    for _ in range(20):
+        assert main([*command, *options, "--page-bytes", "2048"]) == 0
+        page = json.loads(capsys.readouterr().out)
+        for item in page["items"]:
+            delivered.append((item["page_start"], item["page_end"]))
+        if not page["next_cursor"]:
+            break
+        first_resume_cursor = first_resume_cursor or page["next_cursor"]
+        options = ["--cursor", page["next_cursor"]]
+    assert not page["next_cursor"]
+    assert [n for lo, hi in delivered for n in range(lo, hi)] == [n for lo, hi in gaps for n in range(lo, hi)]
+    # With evidence lost, reusing the old gap cursor must replay the full input.
+    transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session}}) + "\n")
+    assert main([*command, "--cursor", first_resume_cursor, "--page-bytes", "2048"]) == 0
+    replay = json.loads(capsys.readouterr().out)
+    assert replay["items"][0]["page_start"] == 0

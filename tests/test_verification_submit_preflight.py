@@ -8,6 +8,8 @@ import pytest
 from tests.test_product_acceptance import _package, _report, RUN_ID, GENERATION, TARGET, CANDIDATE
 from tests.test_result_submit import _runtime
 from tests.test_typed_result_admission import _contract, _verification_result
+from zf.runtime.call_result_envelope import canonical_json_sha256
+from zf.runtime.candidate_reader_assignments import candidate_acceptance_id
 from zf.runtime.result_submit import (
     SemanticResultSubmitService, provision_role_submit_credential, bind_operation_submit_capability,
 )
@@ -17,7 +19,7 @@ from zf.runtime.task_contract_snapshot import (
 )
 
 
-def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
+def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False, assignments=None):
     runtime = _runtime(tmp_path)
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"][profile] = "blocking"
     credential_path = provision_role_submit_credential(runtime.state_dir, "verify-1")
@@ -26,6 +28,18 @@ def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
     contract.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION)
     contract["verification_owner"] = owner
     contract["acceptance_criteria"][0]["verification_owner"] = owner
+    request_scope = {}
+    if assignments:
+        assigned = assignments[0]
+        ac = candidate_acceptance_id("TASK-1", "AC-1")
+        contract["acceptance_criteria"][0]["acceptance_id"] = ac
+        contract["verification_commands"][0]["acceptance_ids"] = [ac]
+        request_scope = {"candidate_reader_scope": {
+            "role_instance": assigned["role_instance"], "acceptance_ids": [ac],
+            "journey_ids": assigned["journey_ids"], "candidate_event_id": "freeze",
+            "target_commit": TARGET, "assignments_digest": canonical_json_sha256(assignments),
+            "plan_artifact_package_digest": package["sha256"],
+        }}
     if pipeline:
         contract["verification_commands"][0]["owner"] = owner
         contract["allowed_paths"] = []
@@ -35,6 +49,7 @@ def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
         descriptor, target_commit=TARGET, contract_snapshot=contract,
     ))
     semantic = _verification_result(contract, descriptor, target)
+    semantic["requirement_results"][0]["acceptance_id"] = contract["acceptance_criteria"][0]["acceptance_id"]
     semantic["verification_owner"] = owner
     semantic["requirement_results"][0]["verification_owner"] = owner
     semantic.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION,
@@ -69,7 +84,7 @@ def _running_verify(tmp_path, profile, owner="task_verify", *, pipeline=False):
         workflow_run_id=RUN_ID, operation_id=prepared.operation_id,
         operation_type="task-stage" if pipeline else "fanout_reader_child", task_id="TASK-1",
         role_instance="verify-1", active_attempt_id="attempt-verify", lease_id="lease-verify",
-        request={**pipeline_identity, "output_profile_id": profile, "output_profile_revision": "1",
+        request={**pipeline_identity, **request_scope, "fanout_id": "verify", "output_profile_id": profile, "output_profile_revision": "1",
                  "semantic_result_submit_mode": "blocking", "result_identity": payload,
                  "result_scratch_ref": "tmp/result-submit/op-verify/result.json",
                  "canonical_success_event": success_event,
@@ -102,7 +117,21 @@ def test_discovery_preflight_rejects_missing_report_without_consuming_submission
     assert any(i["code"] == "product_acceptance_invalid" for i in failed["errors"])
     assert service.validate_plan_candidate(**args, semantic_result=semantic)["status"] == "passed"
     assert before == {p.relative_to(runtime.state_dir): p.read_bytes() for p in runtime.state_dir.rglob("*") if p.is_file()}
-    assert service.submit(**args, semantic_result=semantic).canonical_event_type == "flow.discovery.child.completed"
+    submission = service.submit(**args, semantic_result=semantic)
+    assert submission.canonical_event_type == "flow.discovery.child.completed"
+    from zf.runtime.goal_closure_identity import _current_product_acceptance_identity
+
+    events = runtime.event_log.read_all()
+    result = _current_product_acceptance_identity(
+        events, state_dir=runtime.state_dir, workflow_run_id=RUN_ID, task_map_generation=GENERATION,
+        candidate_head_commit=TARGET, package_identity={},
+    )
+    admitted = next(event for event in events if event.id == submission.admitted_event_id)
+    assert result["product_acceptance_report_digest"] == admitted.payload["product_acceptance_report_digest"]
+    assert _current_product_acceptance_identity(
+        [e for e in events if e.id != submission.canonical_event_id], state_dir=runtime.state_dir,
+        workflow_run_id=RUN_ID, task_map_generation=GENERATION, candidate_head_commit=TARGET, package_identity={},
+    ) == {}
 
 
 def test_discovery_output_card_supplies_product_contract_and_atomic_preflight(tmp_path):
@@ -272,3 +301,34 @@ def test_failed_execution_diagnostic_names_exact_legal_fields(tmp_path):
     result.update(execution_status="failed")
     with pytest.raises(VerificationResultError, match='verdict="abstained"'):
         validate_verification_result(result)
+
+
+def test_bounded_candidate_reader_preflight_and_live_submit_use_frozen_request(tmp_path, monkeypatch):
+    from tests import test_product_acceptance as product
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    spec = product._spec()
+    assignments = spec["candidate_reader_assignments"] = [
+        {"role_instance": "verify-1", "acceptance": [{"task_id": "TASK-1", "acceptance_id": "AC-1"}],
+         "journey_ids": []},
+        {"role_instance": "journey-reader", "acceptance": [{"task_id": "TASK-1", "acceptance_id": "AC-1"}],
+         "journey_ids": ["journey-create"]},
+    ]
+    monkeypatch.setattr(product, "_spec", lambda **_: spec)
+    runtime, prepared, service, credential, semantic = _running_verify(
+        tmp_path, "candidate-verify", owner="candidate_verify", assignments=assignments,
+    )
+    args = dict(operation_id=prepared.operation_id, role_instance="verify-1",
+                credential=credential.read_text().strip())
+    denied = service.validate_plan_candidate(**args, semantic_result=semantic)
+    assert denied["status"] == "failed" and "unknown journey" in str(denied["errors"])
+    semantic.pop("product_acceptance_report")
+    assert service.validate_plan_candidate(**args, semantic_result=semantic)["status"] == "passed"
+    submission = service.submit(**args, semantic_result=semantic)
+    assert submission.canonical_event_type == "verify.child.completed"
+    admitted = next(e for e in runtime.event_log.read_all() if e.id == submission.admitted_event_id)
+    assert admitted.type == "workflow.call.result.admitted"
+    stored = hydrate_sidecar_ref(runtime.state_dir, admitted.payload["control_result_ref"]).payload
+    assert stored["candidate_reader_scope"]["role_instance"] == "verify-1"
+    assert stored["candidate_reader_journeys"] == {}
+    assert "product_acceptance_report_ref" not in stored

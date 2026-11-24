@@ -73,6 +73,7 @@ def _runtime(tmp_path: Path) -> SimpleNamespace:
 def _seed_frozen_candidate(
     runtime: SimpleNamespace, tier: str = "task_non_smoke", *, package_fields=None, additional_completed=(),
     producer_paths=None, run_id="run-candidate-authority", generation="generation-1", candidate_head="c"*40,
+    additional_checks=(),
 ) -> dict[str, str]:
     child_task_id = "TASK-1"
     child_commit = "b" * 40
@@ -126,6 +127,12 @@ def _seed_frozen_candidate(
         "risk_class": "low",
         "integration_admission_profile": "standard",
     }
+    for ac_id, cmd_id, cmd in additional_checks:
+        contract["acceptance_criteria"].append({**contract["acceptance_criteria"][0], "acceptance_id": ac_id,
+                                               "verification_command_ids": [cmd_id]})
+        contract["verification_commands"].append({**contract["verification_commands"][0], "command_id": cmd_id,
+                                                  "command": cmd, "command_digest": hashlib.sha256(cmd.encode()).hexdigest(),
+                                                  "acceptance_ids": [ac_id]})
     contract.update({k: v for k, v in (package_fields or {}).items() if k.startswith("plan_artifact_package_")})
     contract_descriptor = write_task_contract_snapshot(runtime.state_dir, contract)
     target_descriptor = write_target_snapshot(

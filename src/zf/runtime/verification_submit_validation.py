@@ -66,8 +66,9 @@ def validate_verification_submission(
     adapted = bind_product_acceptance_report(
         adapted, state_dir=state_dir,
         operation={**dict(operation), "result_identity": identity, "output_profile_id": profile_id,
+                   "fanout_id": request.get("fanout_id"), "candidate_reader_scope": request.get("candidate_reader_scope"),
                    "canonical_success_event": request.get("canonical_success_event", "")},
-        source_event_id="", persist=False,
+        source_event_id="", persist=False, events=events or (),
     )
     errors = [dict(issue) for issue in adapted.issues]
     errors.extend(typed_admission_issues_for(state_dir, adapted, semantic_submit=True,

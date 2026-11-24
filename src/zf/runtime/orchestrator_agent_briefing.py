@@ -90,6 +90,7 @@ def build_orchestrator_agent_operation_briefing(
                 "plan_candidate": "adopt",
                 "stage_barrier": "continue",
                 "semantic_failure": "continue",
+                "candidate_reader_observation": "continue",
                 "goal_revision": "halt",
                 "pre_closeout": "aggregate",
             }[prepared.checkpoint],
@@ -189,6 +190,10 @@ def build_orchestrator_agent_operation_briefing(
                 "admission evidence shows that no eligible writer lane exists; "
                 "a logical-owner/physical-lane name mismatch is not evidence",
             ])
+        if prepared.checkpoint == "candidate_reader_observation":
+            output_rules.append("- Report the observed failed acceptance IDs and supporting evidence in summary, "
+                                "distinguish confirmed facts from the cause still unknown, and return continue. "
+                                "Other Readers and the definitive aggregate remain outstanding.")
         if prepared.checkpoint in {"run_start", "pre_impl"}:
             output_rules.append(
                 "- adopt requires a `run-orchestration-plan.v1` bound to the "

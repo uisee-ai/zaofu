@@ -679,6 +679,8 @@ def prepare_call_operation(
             request["candidate_reassessment_flow_kind"] = flow_kind
     if reassessment_scope_ref:
         request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
+    if output_profile_id == "candidate-verify" and payload.get("candidate_reader_scope"):
+        request["candidate_reader_scope"] = dict(payload["candidate_reader_scope"])
     if payload.get("milestone_handoff_ref"):
         request["milestone_handoff_ref"] = dict(payload["milestone_handoff_ref"])
     if payload.get("candidate_host_evidence_ref"):
@@ -984,6 +986,8 @@ def admit_runtime_call_result(
             "output_profile_id": str(operation_request.get("output_profile_id") or ""),
             "output_profile_revision": str(operation_request.get("output_profile_revision") or ""),
             "canonical_success_event": str(operation_request.get("canonical_success_event") or ""),
+            "fanout_id": operation_request.get("fanout_id"),
+            "candidate_reader_scope": operation_request.get("candidate_reader_scope"),
             "handoff_authority_contract": dict(operation_request.get("handoff_authority_contract") or {}),
         },
         require_semantic_submit=require_semantic_submit,

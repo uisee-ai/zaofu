@@ -9,6 +9,8 @@ load_on_demand: true
 
 # ZaoFu Verify Rescan Replan
 
+在 `product_completeness` 收到分工的 Candidate Reader 结果时，按冻结 Plan 和候选逐条核对各路已准入的 control result。覆盖表应保留独立双查的两份来源，逐项核对冲突、未知和跨任务旅程，按需回到原文或获准的真实探针。确认全部强制义务都有证据后提交本阶段的一份完整产品报告。缺失分片或缺证时沿当前 profile 返回实际缺口。
+
 ## When To Trigger
 
 Trigger this skill when global discovery, parity, or bridge evidence shows any

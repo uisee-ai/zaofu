@@ -221,6 +221,11 @@ class CanonicalHandoffResolver:
                 for source in route_sources
             ],
         }
+        if profile == "candidate-verify" and mutable.get("candidate_reader_scope"):
+            from zf.runtime.candidate_reader_assignments import scope_plan_reads
+
+            metadata["candidate_plan_read_selections"] = scope_plan_reads(
+                plan_port_sources, mutable["candidate_reader_scope"], self.state_dir)
         manifest, descriptor = source_manifest_from_payload(
             state_dir=self.state_dir,
             project_root=self.project_root,

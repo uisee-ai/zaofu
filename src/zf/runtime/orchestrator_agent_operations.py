@@ -59,6 +59,8 @@ def request_orchestrator_agent_checkpoint(
     source_event: ZfEvent,
     payload: Mapping[str, Any],
 ) -> PreparedOrchestratorAgentOperation:
+    if checkpoint == "candidate_reader_observation" and checkpoint_policy != "shadow":
+        raise ValueError("Candidate Reader observation requires shadow policy")
     role_instance = orchestrator_instance_id(runtime)
     checkpoint_source_event_id = canonical_checkpoint_source_event_id(
         source_event,

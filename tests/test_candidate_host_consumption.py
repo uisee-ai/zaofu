@@ -31,10 +31,35 @@ def prepare(runtime, seeded, role, *, parent_operation_id=None):
 
 
 @pytest.fixture
-def evidence(tmp_path, request):
+def evidence(tmp_path, request, monkeypatch):
     fault = getattr(request, 'param', '')
     runtime = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(runtime, producer_paths={
+    extra = {}
+    if fault == 'scoped':
+        from tests import test_product_acceptance as product
+        from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package, package_event_payload
+
+        spec = product._spec()
+        spec["candidate_reader_assignments"] = [
+            {"role_instance": role, "acceptance": [{"task_id": "TASK-1", "acceptance_id": ac_id}],
+             "journey_ids": journeys}
+            for role, ac_id, journeys in (("source-reader", "AC-1", ["journey-create"]),
+                                          ("consumer-reader", "AC-2", []), ("other-reader", "AC-3", []),
+                                          ("refreeze-consumer", "AC-2", []))
+        ]
+        monkeypatch.setattr(product, "_spec", lambda **kw: spec)
+        package, _ = product._package(runtime.state_dir)
+        admitted = package_event_payload(hydrate_plan_artifact_package(runtime.state_dir, package),
+                                         package, status="admitted")
+        runtime.event_log.append(ZfEvent(type="plan.artifact_package.admitted", origin="kernel",
+                                         correlation_id=product.RUN_ID, payload=admitted))
+        extra = dict(run_id=product.RUN_ID, generation=product.GENERATION,
+                     additional_checks=[("AC-2", "cmd-2", "pytest -q tests/test_pulse.py"),
+                                        ("AC-3", "cmd-3", "pytest -q tests/test_other.py")],
+                     package_fields={"plan_artifact_package_id": package["package_id"],
+                                     "plan_artifact_package_ref": package["ref"],
+                                     "plan_artifact_package_digest": package["sha256"]})
+    seeded = _seed_frozen_candidate(runtime, **extra, producer_paths={
         'output-root': ['ZF_EVIDENCE_DIR/artifacts/probe.json'],
         'directory-output': ['artifacts/evidence/browser/'],
     }.get(fault))
@@ -374,7 +399,8 @@ def test_new_target_or_authority_does_not_receive_old_host_facts(evidence, field
     assert not payload.get('candidate_host_evidence_ref')
 
 
-def test_same_source_refreeze_rebinds_facts_to_new_consumer(evidence):
+@pytest.mark.parametrize("evidence, scoped", [("", False), ("scoped", True)], indirect=["evidence"])
+def test_source_refreeze_reuse_requires_the_same_execution_authority(evidence, scoped):
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     from zf.runtime.candidate_host_consumption import admitted_host_commands
 
@@ -390,6 +416,9 @@ def test_same_source_refreeze_rebinds_facts_to_new_consumer(evidence):
             'freeze_receipt_ref': ref, 'freeze_receipt_digest': ref['sha256']}))
     prepared, payload = prepare(runtime, seeded, 'refreeze-consumer')
     assert payload['contract_snapshot_digest'] != original_payload['contract_snapshot_digest']
+    if scoped:
+        assert not payload.get('candidate_host_evidence_ref')
+        return
     binding = hydrate_sidecar_ref(runtime.state_dir, payload['candidate_host_evidence_ref']).payload
     assert binding['receipts'][0]['source_operation_id'] == source.operation_id
     assert binding['receipts'][0]['receipt_ref'] == receipt
@@ -421,3 +450,23 @@ def test_unchanged_commit_with_changed_dependency_bytes_cannot_reuse(evidence, m
     (runtime.project_root / 'node_modules' / 'tool.js').write_text('changed dependency without commit')
     _, after = prepare(runtime, seeded, 'consumer-dependency-after')
     assert not after.get('candidate_host_evidence_ref')
+
+@pytest.mark.parametrize("evidence", ["scoped"], indirect=True)
+def test_scoped_readers_share_only_identical_command_execution_facts(evidence):
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    runtime, seeded, source, source_payload, receipt, completed = evidence
+    prepared, consumer = prepare(runtime, seeded, "consumer-reader")
+    assert source_payload["contract_snapshot_digest"] != consumer["contract_snapshot_digest"]
+    assert source_payload["candidate_reader_scope"]["acceptance_ids"] != consumer["candidate_reader_scope"]["acceptance_ids"]
+    binding = hydrate_sidecar_ref(runtime.state_dir, consumer["candidate_host_evidence_ref"]).payload
+    assert [(row["source_operation_id"], row["receipt_ref"]) for row in binding["receipts"]] == [
+        (source.operation_id, receipt)]
+    assert not binding["authorizes_execution"]
+    events = runtime.event_log.read_all()
+    op = reduce_workflow_operations(events)[prepared.operation_id]
+    result = {**consumer, "host_execution_receipt_ids": [completed.id], "request_hash": prepared.request_hash,
+              "verdict": "passed"}
+    assert admitted_host_commands(runtime.state_dir, result, operation=op, events=events)
+    _, other = prepare(runtime, seeded, "other-reader")
+    assert not other.get("candidate_host_evidence_ref")

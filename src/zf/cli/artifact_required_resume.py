@@ -27,6 +27,9 @@ class ResumeDecision:
     offset: int = 0
     reason: str = "evidence_unavailable"
     historical_gap: tuple[int, int] | None = None
+    # Empty unless the session witnessed content beyond its first delivery gap.
+    missing_ranges: tuple[tuple[int, int, int], ...] = ()
+    cursor_proof: str = ""
 
 
 def resume_position(*args: Any, **kwargs: Any) -> tuple[int, int]:
@@ -81,8 +84,11 @@ def resume_decision(
                     and row.get("provider_session_id") == session]
         if not observed:
             return ResumeDecision(reason="current_session_delivery_unverified")
+        def coverage(rows: list[dict[str, Any]]) -> ResumeDecision:
+            return _coverage(state_dir, rows, groups, receipts, attempt, bundle_digest, session, boundary)
+
         if boundary:
-            historical = _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
+            historical = coverage(observed)
             retained = []
             for row in observed:
                 witness = row.get("provider_observation_ref")
@@ -94,19 +100,21 @@ def resume_decision(
                         retained.append(row)
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
-            current = (_coverage(state_dir, retained, groups, receipts, attempt, bundle_digest)
+            current = (coverage(retained)
                        if retained else ResumeDecision(reason="delivery_predates_compaction"))
             if historical.reason == "observed_complete" and current.reason != "observed_complete":
                 return ResumeDecision(len(groups), 0, "context_recovery")
             gap = (historical.index, historical.offset)
             if gap > (current.index, current.offset):
                 if _delivered_gap_notice(state_dir, retained, attempt, bundle_digest):
-                    return ResumeDecision(*gap, "continue_historical_delivery")
+                    return ResumeDecision(*gap, "continue_historical_delivery", missing_ranges=historical.missing_ranges,
+                                          cursor_proof=historical.cursor_proof)
                 # Keep the current-context reread available. The worker may explicitly
                 # continue the independently witnessed delivery after recovering its notes.
-                return ResumeDecision(current.index, current.offset, current.reason, gap)
+                return ResumeDecision(current.index, current.offset, current.reason, gap, current.missing_ranges,
+                                      current.cursor_proof)
             return current
-        return _coverage(state_dir, observed, groups, receipts, attempt, bundle_digest)
+        return coverage(observed)
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         return ResumeDecision(reason="evidence_invalid")
 
@@ -130,26 +138,30 @@ def _delivered_gap_notice(state_dir: Path, retained: list[dict[str, Any]],
 
 def _coverage(
     state_dir: Path, observed: list[dict[str, Any]], groups: list[dict[str, Any]],
-    receipts: list[list[dict[str, Any]]], attempt: str, bundle_digest: str,
+    receipts: list[list[dict[str, Any]]], attempt: str, bundle_digest: str, session: str, boundary: float,
 ) -> ResumeDecision:
     """Validate exact delivered bytes independently of their retention in memory."""
     bodies: dict[str, Any] = {}
+    missing: list[tuple[int, int, int]] = []
+    lengths: list[int] = []
+    by_occurrence: dict[tuple, list[dict]] = {}
+    fields = ("workflow_run_id", "task_id", "attempt_id", "dispatch_id", "source_id",
+              "artifact_id", "artifact_sha256", "json_path", "occurrence_id")
+    for row in observed:
+        by_occurrence.setdefault(tuple(row.get(k) for k in fields), []).append(row)
     for index, (group, aliases) in enumerate(zip(groups, receipts, strict=True)):
         selection = group.get("selection")
         content = group.get("content", "")  # Legacy direct callers.
         total = selection.chars if selection else len(content)
         digest = selection.digest if selection else hashlib.sha256(content.encode()).hexdigest()
         byte_count = selection.byte_count if selection else len(content.encode())
-        ranges_by_alias: list[list[tuple[int, int]]] = []
+        lengths.append(total)
+        alias_gaps: list[tuple[int, int]] = []
         for alias in aliases:
             ranges: list[tuple[int, int]] = []
-            for row in observed:
-                fields = ("workflow_run_id", "task_id", "attempt_id", "dispatch_id", "source_id",
-                          "artifact_id", "artifact_sha256", "json_path", "occurrence_id")
-                if any(row.get(k) != alias.get(k) for k in fields):
-                    continue
+            for row in by_occurrence.get(tuple(alias.get(k) for k in fields), []):
                 start, end = row.get("page_start"), row.get("page_end")
-                if (type(start) is not int or type(end) is not int or not 0 <= start < end <= total
+                if (type(start) is not int or type(end) is not int or not (0 <= start < end <= total or start == end == total == 0)
                         or row.get("page_total") != total or row.get("selected_sha256") != digest
                         or row.get("selected_bytes") != byte_count):
                     continue
@@ -171,16 +183,28 @@ def _coverage(
                             and item.get("content") == (selection.read(start, end) if selection else content[start:end])):
                         ranges.append((start, end))
                         break
-            ranges_by_alias.append(ranges)
-        ends = []
-        for ranges in ranges_by_alias:
-            end = 0
-            for start, stop in sorted(ranges):
-                if start > end:
-                    break
-                end = max(end, stop)
-            ends.append(end)
-        position = min(ends, default=0)
-        if position < total:
-            return ResumeDecision(index, position, "observed_prefix" if index or position else "coverage_gap")
-    return ResumeDecision(len(groups), 0, "observed_complete")
+            frontier = 0
+            for start, end in sorted(ranges):
+                if start > frontier:
+                    alias_gaps.append((frontier, start))
+                frontier = max(frontier, end)
+            if frontier < total or (not total and not ranges):
+                alias_gaps.append((frontier, total))
+        # Every alias needs its own delivery evidence even when the body is shared.
+        for start, end in sorted(alias_gaps):
+            if missing and missing[-1][0] == index and start <= missing[-1][2]:
+                index_, start_, end_ = missing[-1]
+                missing[-1] = (index_, start_, max(end_, end))
+            else:
+                missing.append((index, start, end))
+    if not missing:
+        return ResumeDecision(len(groups), 0, "observed_complete")
+    index, offset, _ = missing[0]
+    # Explicit bounds also distinguish an unseen empty source from an observed one.
+    suffix = [(i, offset if i == index else 0, lengths[i]) for i in range(index, len(groups))]
+    sparse = missing != suffix
+    # An explicit continuation may advance inside an unobserved gap only while
+    # the native session, compaction boundary and verified coverage still match.
+    proof = hashlib.sha256(json.dumps([session, boundary, missing]).encode()).hexdigest() if sparse else ""
+    return ResumeDecision(index, offset, "observed_prefix" if index or offset else "coverage_gap",
+                          missing_ranges=tuple(missing) if sparse else (), cursor_proof=proof)

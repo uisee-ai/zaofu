@@ -567,6 +567,8 @@ class SemanticResultSubmitService:
                 "output_profile_id": profile_id,
                 "output_profile_revision": revision,
                 "canonical_success_event": str(request.get("canonical_success_event") or ""),
+                "fanout_id": request.get("fanout_id"),
+                "candidate_reader_scope": request.get("candidate_reader_scope"),
                 "handoff_authority_contract": dict(request.get("handoff_authority_contract") or {}),
             },
             input_policy=policy,

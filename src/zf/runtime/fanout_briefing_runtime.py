@@ -316,14 +316,20 @@ class FanoutBriefingMixin:
                         product_acceptance_report_template,
                     )
 
+                    scope = child_payload.get("candidate_reader_scope")
                     product_binding = product_acceptance_binding_from_package(
                         self.state_dir,
-                        {"ref": package_ref, "sha256": package_digest},
+                        {"ref": package_ref, "sha256": package_digest}, validate_ports=not bool(scope),
                     )
-                    if product_binding.get("spec"):
+                    if product_binding.get("spec") and (not scope or scope["journey_ids"]):
+                        spec = product_binding["spec"]
+                        if scope:
+                            from zf.runtime.candidate_reader_report import scoped_journey_spec
+
+                            spec = scoped_journey_spec(spec, scope)
                         verification_template["product_acceptance_report"] = (
                             product_acceptance_report_template(
-                                spec=dict(product_binding["spec"]),
+                                spec=spec,
                                 spec_ref=str(product_binding.get("spec_ref") or ""),
                                 spec_digest=str(
                                     product_binding.get("spec_digest") or ""
@@ -1042,6 +1048,13 @@ class FanoutBriefingMixin:
                 ),
                 "",
                 *stage_instruction_lines,
+                *([
+                    "Approved Candidate Reader assignment (frozen in the contract snapshot).",
+                    "Acceptance: " + ", ".join(child_payload["candidate_reader_scope"]["acceptance_ids"]),
+                    "Product journeys: " + (", ".join(child_payload["candidate_reader_scope"]["journey_ids"]) or "none assigned"),
+                    "Submit evidence for the assigned checks. Product completeness is owned by post-verify discovery.",
+                    "",
+                ] if child_payload.get("candidate_reader_scope") else []),
                 # Scope task review by affinity, while preserving a bound
                 # candidate Product Acceptance obligation.
                 *affinity_scope_briefing_lines(

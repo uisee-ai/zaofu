@@ -34,8 +34,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     register_recover_task_verify(nested)
     from zf.cli.recover_task_integration import register_recover_task_integration
     register_recover_task_integration(nested)
-    from zf.cli.recover_oa_review import register_recover_oa_review
+    from zf.cli.recover_oa_review import register_recover_candidate_repair, register_recover_oa_review
     register_recover_oa_review(nested)
+    register_recover_candidate_repair(nested)
     from zf.cli.recover_assistance import register_recover_assistance
     register_recover_assistance(nested)
     from zf.cli.recover_association import register_recover_association
@@ -317,9 +318,11 @@ def _run_contract_recovery_allowed(
     state_dir: Path,
     project_root: Path,
     config_path: Path,
+    *,
+    fail_closed: bool = False,
 ) -> bool:
     if config is None:
-        return True
+        return not fail_closed
     try:
         from zf.runtime.run_contract import evaluate_run_contract_resume_policy
 
@@ -330,7 +333,7 @@ def _run_contract_recovery_allowed(
             state_dir=state_dir,
         )
     except Exception:
-        return True
+        return not fail_closed
     if policy.get("status") in {"STOP", "WARN"}:
         EventWriter(event_log).append(ZfEvent(
             type="config.run_contract.resume_checked",

@@ -39,10 +39,12 @@ def _source_fact(state_dir: Path, source: dict, request: dict, fact: dict,
             or source.get('workflow_run_id') != consumer['workflow_run_id']
             or source.get('task_id') != consumer['task_id']):
         return None
+    if fact['command_id'] not in commands:
+        return None
     receipt = hydrate_sidecar_ref(state_dir, fact['receipt_ref']).payload
     if any(request.get(k) != consumer.get(k) for k in BOUND_FIELDS[4:]):
         from zf.runtime.candidate_execution_equivalence import same_execution_contract
-        if not same_execution_contract(state_dir, request, consumer):
+        if not same_execution_contract(state_dir, request, consumer, command_id=fact['command_id']):
             return None
     if receipt.get('execution_origin') == 'preauthorized_container':
         from zf.core.config.host_verification import parse_host_verification

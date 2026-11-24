@@ -329,7 +329,7 @@ def _current_product_acceptance_identity(
     candidate_head_commit: str,
     package_identity: Mapping[str, str],
 ) -> dict[str, Any]:
-    """Select the latest exact Candidate Verify Product report identity."""
+    """Select the latest admitted full Candidate or product-discovery report."""
 
     from zf.runtime.candidate_result_binding import same_task_map_generation
 
@@ -337,13 +337,17 @@ def _current_product_acceptance_identity(
     package_digest = str(
         package_identity.get("plan_artifact_package_digest") or ""
     )
+    discovery_sources = {event.id for event in events if event.type == "flow.discovery.child.completed"}
     for event in reversed(events):
         if event.type != "workflow.call.result.admitted":
             continue
         body = event.payload if isinstance(event.payload, Mapping) else {}
         if str(body.get("workflow_run_id") or "") != workflow_run_id:
             continue
-        if str(body.get("control_result_schema") or "") != "verification-result.v1":
+        schema = body.get("control_result_schema")
+        if schema != "verification-result.v1" and not (
+            schema == "workflow-read-result.v1" and body.get("source_event_id") in discovery_sources
+        ):
             continue
         if str(body.get("product_acceptance_report_ref") or "") == "":
             continue

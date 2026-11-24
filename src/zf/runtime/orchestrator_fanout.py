@@ -937,7 +937,10 @@ class FanoutCoordinationMixin(
                 continue
             statuses = [str(child.get("status") or "") for child in children]
             if not all(status in {"completed", "failed"} for status in statuses):
-                continue
+                from zf.runtime.candidate_reader_observation import replay_partial_candidate_observation
+
+                if not replay_partial_candidate_observation(self, manifest, events):
+                    continue
             before = event_log_snapshot_token(self.event_log)
             self._evaluate_reader_fanout(fanout_id)
             if event_log_snapshot_token(self.event_log) != before:
@@ -5651,6 +5654,10 @@ class FanoutCoordinationMixin(
         config = manifest.get("aggregate_config") or {}
         mode = str(config.get("mode") or "wait_for_all")
         synth_role = str(config.get("synth_role") or "")
+        if failed and not all_terminal and mode == "wait_for_all":
+            from zf.runtime.candidate_reader_observation import observe_partial_candidate_failure
+
+            observe_partial_candidate_failure(self, fanout_id, manifest)
         if synth_role:
             if not all_terminal:
                 return

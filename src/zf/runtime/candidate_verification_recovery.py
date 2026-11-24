@@ -54,9 +54,12 @@ def recovery_payload(runtime, *, event, decision, directive, expected, candidate
         raise ValueError("candidate verification recovery contains duplicate or invalid members")
     for member in members:
         row = by_child.get(member["child_id"], {})
+        # Admitted reports are identified by operation and immutable control ref.
+        # For a result-less timeout the terminal child event is the only evidence.
+        require_child_event = not member.get("control_result_ref") or row.get("child_event_id") is not None
         if (row.get("operation_id") != member.get("operation_id")
                 or row.get("control_result_ref") != member.get("control_result_ref")
-                or row.get("child_event_id") != member.get("child_event_id")
+                or (require_child_event and row.get("child_event_id") != member["child_event_id"])
                 or row.get("disposition") != "reverify"
                 or not str(row.get("rationale") or "").strip()):
             raise ValueError("candidate verification recovery member binding incomplete")

@@ -174,3 +174,15 @@ Candidate Verify 的独立结果通过受控提交时，在 scratch 的顶层 `h
 Reader 的首次调用可以挂在同一 Run、同一 Task 的 Workflow operation 下。重试沿历史 Reader attempt 重新核对消费范围，到所属 Workflow 为止；跨 Run 或 Task 的祖先仍要求纠正绑定。
 
 修正执行环境或恢复实现后，可对仍为当前失败的 Reader 提交新的受控 `child-rebuild`。若前一修复动作已被拒绝，提交 `retry_after_rejection_event_id` 与 `approval_ref`。内核复核拒绝回执所对应的原始修复、Run、Reader、attempt 和失败事件；同一拒绝的重复请求沿用同一幂等键。
+
+## 冻结候选的分工验收
+
+Planner 可在批准的 `product_acceptance_spec` 中声明 `candidate_reader_assignments`。每项列配置中的 `role_instance`、以原 `task_id` 和 `acceptance_id` 标识的 `acceptance` 数组，以及 `journey_ids`。多个角色可以独立承担同一高风险条款。可选的 `plan_reads` 把已授权 Plan port 的必读选择缩小到明确的 JSON 路径。给跨模块、端到端和媒体断言分配明确的旅程。冻结计划未声明分工时沿用完整 Candidate 读者合同。
+
+运行时从同一候选和批准计划派生各路合同与命令，保持原来的 role/attempt 绑定。分工 Reader 提交本路证据和观察。只有当前组所有必需读者都完成且成功，才可推进到 `product_completeness`。该角色读取各路已准入的引用，核查覆盖、独立性、未决发现与全局旅程，提交一份完整报告供后继阶段消费。恢复的同一会话用 `artifact read --required --resume` 补原生交付证据尚未覆盖的页面。发现证据缺口时仍需补读或返回待证。
+
+原候选产品返工曾因旧计数逻辑误计 Plan 修订而被拒时，操作员可用 `zf recover candidate-repair --decision <原 OA 提交事件>` 检查同一决定的当前适用性。确认不可变目标、后继任务和预算后，加 `--apply --approval-ref <操作员批准引用>` 请求原受控动作。旧拒绝保留在账本；已发布结果沿原 checkpoint 去重。该命令沿用实际产品返工上限与原任务合同。
+
+Candidate Reader 的首个产品反例若已准入、定位到条款且绑定本次冻结，可以触发 `candidate_reader_observation`。它沿用 OA 的 semantic_failure 开关。OA 在此处可提交只读诊断，记录的 `continue` 不会签收产品或提前终止其他 Reader。所有 Reader 终结后，正式决策可以引用该诊断。跨 Reader 的命令执行证据复用同时核对父合同、分工、冻结版本、依赖、宿主策略与命令，各 Reader 仍独立判断。
+
+2026-11-24 使用 8×8 的冻结产物做了三候选盲测。原候选保留 AVERAGE 溢出，第二个候选只修该例，第三个在第二个基础上把公开 SUM 控件错接到 AVERAGE。每个候选均运行 16 个模块对应的 70 项 Node 测试、数值边界检查和 Docker Chromium 旅程。三种读取方式最终均命中 9/9 条判断。全量、带进度摘要、分工再整合三组的中位耗时分别为 13.31、13.81、19.95 秒，每组仅三个样本。分工减少了简报字节，但额外的整合调用增加了用时及总输入 token。默认策略继续由获批 Plan 决定。摘要需包含实际执行的测试文件与模块映射，并保留边界输入的执行记录；缺少证据时允许返回 unknown。

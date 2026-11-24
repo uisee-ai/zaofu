@@ -250,6 +250,11 @@ def request_semantic_failure_checkpoint(
         except (OSError, ValueError, KeyError) as exc:
             raise SemanticFailureCheckpointError(str(exc)) from exc
     elif aggregate_candidate:
+        from zf.runtime.candidate_reader_observation import admitted_reader_observation
+
+        observation = admitted_reader_observation(runtime.state_dir, events, {m["child_event_id"] for m in candidate["members"]})
+        if observation:
+            artifact_refs.append(observation)
         artifact_refs.extend({**member["control_result_ref"],
             "source_id": f"candidate-verification-{member['child_id']}"}
             for member in candidate["members"])

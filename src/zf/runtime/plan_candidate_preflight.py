@@ -361,7 +361,6 @@ def _product_acceptance_spec_errors(
 
     from zf.runtime.product_acceptance import (
         PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
-        ProductAcceptanceError,
         validate_product_acceptance_spec,
     )
 
@@ -413,7 +412,11 @@ def _product_acceptance_spec_errors(
                 "task_map_generation": generation,
             },
         )
-    except ProductAcceptanceError as exc:
+        if "candidate_reader_assignments" in normalized:
+            from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
+
+            validate_plan_assignment_coverage(normalized, task_map)
+    except ValueError as exc:
         rows: list[dict[str, str]] = []
         _error(
             rows,

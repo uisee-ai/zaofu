@@ -24,8 +24,10 @@ def candidate_findings(state_dir: Path, members: list, unresolved: list, events:
             rows.append(("/outcome", {"verdict": member.get("verdict"),
                                      "execution_status": member.get("execution_status")}))
         for pointer, row in rows:
+            # A control result already identifies the report. Only a result-less
+            # terminal outcome uses the child event as its evidence identity.
             source = {"operation_id": member["operation_id"], "control_result_ref": ref,
-                      "child_event_id": member.get("child_event_id"), "pointer": pointer}
+                      "child_event_id": None if ref else member.get("child_event_id"), "pointer": pointer}
             key = hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest()
             task = criteria.get(row.get("acceptance_id"))
             findings.append({**source, "finding_id": "finding-" + key,

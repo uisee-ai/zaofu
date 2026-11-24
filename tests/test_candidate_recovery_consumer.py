@@ -46,7 +46,7 @@ def test_mixed_recovery_new_consumer_reads_and_admits_original_host_evidence(tmp
                 {"child_id": role, "role_instance": role} for role in ("source-reader", "peer-reader")]})
         return seeded
     monkeypatch.setattr(host, "_seed_frozen_candidate", seed)
-    evidence = host.evidence.__wrapped__(tmp_path, SimpleNamespace(param=""))
+    evidence = host.evidence.__wrapped__(tmp_path, SimpleNamespace(param=""), monkeypatch)
     runtime, seeded, source_op, source_payload, receipt_ref, host_completed = evidence
     runtime.config.runtime = RuntimeConfig(host_verification=runtime.config.runtime.host_verification)
     oa.provision_role_submit_credential(runtime.state_dir, "orchestrator")

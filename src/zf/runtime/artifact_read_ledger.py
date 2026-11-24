@@ -144,6 +144,7 @@ def build_attempt_source_manifest(
             "handoff_authority_profile",
             "handoff_authority_contract",
             "candidate_snapshot",
+            "candidate_plan_read_selections",
             "candidate_event_id",
             "candidate_head_commit",
             "candidate_snapshot_digest",

@@ -168,7 +168,8 @@ amendment are separate role capabilities supplied by the workflow profile.
    packaging probes required by the task's risk and verification tier. Receipt
    reuse never waives semantic AC review or an independent high-risk probe.
 5. Task Verify adjudicates `impl_self_check` and `task_verify` criteria;
-   Candidate Verify covers all non-human criteria on its pinned target.
+   Candidate Verify covers the non-human criteria in its frozen contract. With
+   `candidate_reader_scope`, the assigned rows are this Reader's responsibility.
    Preserve rows
    owned by `candidate_verify`, `human`, or another later layer as
    `not_applicable`; do not claim them passed and do not reject/block the Task
@@ -255,6 +256,7 @@ amendment are separate role capabilities supplied by the workflow profile.
 When Candidate Verify receives a current `product_acceptance_spec`:
 
 - 安排探测前，按 `zf-harness-verification-checklist` 的「Candidate 测试并行」核对冻结命令、可复用回执及本 Reader 的验收责任。
+- 派发带 `candidate_reader_scope` 时，仅对本路条款和分配的旅程提交判词，按已渲染的模板填写本路旅程结果。需独立双查时，先从合同、精确目标和允许的探针验证，再对照其他结论。发现跨域反例时保留原文、输入、观察与证据引用，交整体验收核对。下面的全量报告规则适用于未分工的派发。
 - If an execution failure prevented product evaluation, submit exactly
   `execution_status: failed` + `verdict: abstained`, retain the actual failure
   and available tool evidence, and omit `product_acceptance_report`,
@@ -323,7 +325,7 @@ to perform a meaningful independent evaluation.
 确定复核线索；仅按上述第3条复用合同允许的同版确定性收据，其他必需独立探测
 仍由 Verify 执行并绑定当前 target，不能被自检替代。共享
 规则必须保留失败语义、权限、边界值和跨任务接口反例；不因本任务切片较小而
-缩减验收。Candidate Verify 仍按其完整包政策读取，不套用 Task Verify 的选择。
+缩减验收。Candidate Verify 读取本次候选派发绑定的选择；旧计划按完整包策略读取。
 压缩/换会话后先核对 task/attempt/target/ref/digest，再补读当前不再掌握的正文；
 `--resume` 只适用于仍能使用当前会话已交付材料时，不是记忆或理解证明。
 

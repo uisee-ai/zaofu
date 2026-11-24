@@ -67,7 +67,7 @@ def aggregate_candidate_binding(
         scope = candidate_plan_scope(state_dir, events, result)
         if scope['anchor_task_id'] != task_id:
             raise ValueError('candidate member anchor mismatch')
-        member = {**identity, 'child_id': child_id, 'control_result_ref': ref,
+        member = {**identity, 'child_id': child_id, 'child_event_id': child.id, 'control_result_ref': ref,
                   'execution_status': result.get('execution_status')}
         members.append(member)
         if result['verdict'] in {'rejected', 'blocked'} and result.get('execution_status') == 'completed':

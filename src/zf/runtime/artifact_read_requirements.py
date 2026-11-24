@@ -121,6 +121,10 @@ def build_canonical_required_reads(
                              and profile == "candidate-verify"))
                     else ("$",)
                 )
+    if profile == "candidate-verify":
+        for source_id, selected in manifest.get("candidate_plan_read_selections", {}).items():
+            if source_id in required_paths:
+                required_paths[source_id] = tuple(selected)
     elif profile == "artifact-delivery":
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")

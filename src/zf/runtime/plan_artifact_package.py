@@ -719,6 +719,13 @@ def prepare_plan_artifact_package(
                 "task_map_generation": generation,
             },
         )
+        if "candidate_reader_assignments" in product_acceptance_spec:
+            from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
+
+            try:
+                validate_plan_assignment_coverage(product_acceptance_spec, task_map)
+            except ValueError as exc:
+                raise PlanArtifactPackageError(str(exc)) from exc
     package = build_plan_artifact_package(
         workflow_run_id=workflow_run_id,
         request_id=str(payload.get("request_id") or ""),

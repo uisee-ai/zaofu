@@ -61,7 +61,11 @@ def prepare_required_read(
         "identity": identity,
     })
     resume_info = None
-    if resume:
+    missing_ranges = ()
+    cursor_proof = ""
+    ordered_groups = list(groups.values())
+    index, start, sparse_cursor = _position(cursor, bundle_digest, ordered_groups) if cursor else (0, 0, "")
+    if resume or sparse_cursor:
         from zf.cli.artifact_required_resume import resume_decision
 
         decision = resume_decision(
@@ -69,7 +73,12 @@ def prepare_required_read(
             bundle_digest=bundle_digest, groups=list(groups.values()),
             receipts=list(receipts.values()), event_log=event_log,
         )
-        index, start = decision.index, decision.offset
+        missing_ranges = decision.missing_ranges
+        cursor_proof = decision.cursor_proof
+        if not sparse_cursor or sparse_cursor != cursor_proof:
+            index, start = decision.index, decision.offset
+        elif (decision.index, decision.offset) > (index, start):
+            index, start = decision.index, decision.offset
         skipped = sum(group["selection"].chars for group in list(groups.values())[:index]) + start
         resume_info = {
             "mode": "context_recovery" if decision.reason == "context_recovery" else ("resume" if skipped else "full"),
@@ -92,14 +101,22 @@ def prepare_required_read(
                 "next_resume": "continue_witnessed_delivery_gap",
                 "historical_next_cursor": _cursor(bundle_digest, *decision.historical_gap),
             })
-    else:
-        index, start = _position(cursor, bundle_digest, list(groups.values())) if groups or cursor else (0, 0)
+    def gap_at_or_after(position: tuple[int, int]) -> tuple[int, int, int]:
+        idx, offset = position
+        if missing_ranges:
+            for group_idx, lo, hi in missing_ranges:
+                if group_idx > idx or (group_idx == idx and (hi > offset or lo == hi == offset)):
+                    return group_idx, max(lo, offset) if group_idx == idx else lo, hi
+            return len(ordered_groups), 0, 0
+        return idx, offset, ordered_groups[idx]["selection"].chars if idx < len(ordered_groups) else 0
+
+    index, start, gap_end = gap_at_or_after((index, start))
     items: list[dict[str, Any]] = []
     emitted: list[dict[str, Any]] = []
     keys = list(groups)
 
     def render(extra: dict[str, Any] | None, position: tuple[int, int]) -> str:
-        continuation = _cursor(bundle_digest, *position) if position[0] < len(groups) else None
+        continuation = _cursor(bundle_digest, *position, sparse=cursor_proof) if position[0] < len(groups) else None
         page = {
             "schema_version": PAGE_SCHEMA,
             "attempt_id": str(manifest.get("attempt_id") or ""),
@@ -136,9 +153,10 @@ def prepare_required_read(
                     "selected_sha256": digest}
 
         def position(end: int) -> tuple[int, int]:
-            return (index, end) if end < selection.chars else (index + 1, 0)
+            next_pos = (index, end) if end < selection.chars else (index + 1, 0)
+            return gap_at_or_after(next_pos)[:2] if end == gap_end else next_pos
 
-        end = min(selection.chars, start + page_bytes)
+        end = min(gap_end, start + page_bytes)
         if len(render(item(end), position(end)).encode("utf-8")) + 1 > page_bytes:
             low, high = start, end
             while low < high:
@@ -169,29 +187,35 @@ def prepare_required_read(
         index, start = position(end)
         if start:
             break
+        index, start, gap_end = gap_at_or_after((index, start))
     output = render(None, (index, start))
     if len(output.encode("utf-8")) + 1 > page_bytes:
         raise ValueError("required page metadata exceeds output bound")
     return output, emitted
 
 
-def _cursor(bundle_digest: str, index: int, offset: int) -> str:
-    value = json.dumps([bundle_digest, index, offset], separators=(",", ":"))
+def _cursor(bundle_digest: str, index: int, offset: int, *, sparse: str = "") -> str:
+    # The marker requests re-verification of the observed intervals on every call.
+    fields = [bundle_digest, index, offset, sparse] if sparse else [bundle_digest, index, offset]
+    value = json.dumps(fields, separators=(",", ":"))
     return base64.urlsafe_b64encode(value.encode()).decode()
 
 
 def _position(
     cursor: str | None, bundle_digest: str, groups: list[dict[str, Any]],
-) -> tuple[int, int]:
-    index, offset = 0, 0
+) -> tuple[int, int, str]:
+    index, offset, sparse = 0, 0, ""
     if cursor is not None:
         try:
             if len(cursor) > 512:
                 raise ValueError("oversized cursor")
             value = json.loads(base64.b64decode(cursor, altchars=b"-_", validate=True))
-            if not isinstance(value, list) or len(value) != 3 or value[0] != bundle_digest:
+            if (not isinstance(value, list) or len(value) not in (3, 4) or value[0] != bundle_digest
+                    or (len(value) == 4 and (not isinstance(value[3], str) or len(value[3]) != 64
+                                              or any(c not in "0123456789abcdef" for c in value[3])))):
                 raise ValueError("stale cursor")
-            index, offset = value[1:]
+            sparse = value[3] if len(value) == 4 else ""
+            index, offset = value[1:3]
         except (ValueError, TypeError) as exc:
             raise ValueError(
                 "invalid or stale required-read cursor; copy the exact next_cursor from the "
@@ -205,4 +229,4 @@ def _position(
         or offset >= max(1, groups[index]["selection"].chars)
     ):
         raise ValueError("required-read cursor is outside the selected bundle")
-    return index, offset
+    return index, offset, sparse

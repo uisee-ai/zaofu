@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_reader_assignments import candidate_acceptance_id
 from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
@@ -44,6 +45,7 @@ def prepare_candidate_verification_authority(
     frozen candidate and never reuses the mutable workflow-anchor contract.
     """
 
+    payload.pop("candidate_reader_scope", None)
     events = runtime.event_log.read_all()
     candidate = frozen_candidate_for_payload(
         events,
@@ -304,6 +306,14 @@ def prepare_candidate_verification_authority(
     )
     if obligations:
         aggregate["candidate_recovery_obligations"] = obligations
+    from zf.runtime.candidate_reader_assignments import assigned_spec, scope_reader_contract
+
+    spec = assigned_spec(Path(runtime.state_dir), body)
+    if spec:
+        scope = scope_reader_contract(aggregate, spec, role=str(payload.get("role_instance") or ""),
+                                      target=candidate_head)
+        payload["candidate_reader_scope"] = scope
+        contract_revision = aggregate["contract_revision"]
     contract_descriptor = write_task_contract_snapshot(
         Path(runtime.state_dir),
         aggregate,
@@ -505,10 +515,7 @@ def _aggregate_contract_snapshot(
             if not isinstance(item, Mapping):
                 continue
             child_acceptance_id = str(item.get("acceptance_id") or "")
-            aggregate_id = "candidate-ac-" + _digest({
-                "task_id": child_task_id,
-                "acceptance_id": child_acceptance_id,
-            })[:16]
+            aggregate_id = candidate_acceptance_id(child_task_id, child_acceptance_id)
             criteria_by_id[child_acceptance_id] = aggregate_id
 
         command_ids: dict[str, str] = {}
