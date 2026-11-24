@@ -90,9 +90,14 @@ def review_claim_issues(
                    if any(row['source_id'] == f'child-result-{child}'
                           or row['source_id'].startswith((f'child-{child}-', f'child-artifact-{child}-'))
                           for child in children)}
+        from zf.runtime.previous_preflight_delivery import matches_previous_preflight_binding
+
         for binding in contract['source_bindings']:
             matches = [s for s in manifest['sources'] if s.get('source_id') == binding['source_id']]
-            if len(matches) != 1 or any(matches[0].get(k) != binding.get(k) for k in ('ref', 'sha256', 'artifact_id')):
+            if len(matches) != 1 or (
+                any(matches[0].get(k) != binding.get(k) for k in ('ref', 'sha256', 'artifact_id'))
+                and not matches_previous_preflight_binding(state_dir, manifest['sources'], binding, matches[0])
+            ):
                 raise ValueError('Review contract and source manifest bindings differ')
         for path, row in rows:
             field = f'{path}.basis'

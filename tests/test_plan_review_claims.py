@@ -7,14 +7,14 @@ from zf.runtime.plan_review_claims import POLICY
 from zf.runtime.result_submit import ResultSubmitError
 
 
-def _case(tmp_path, *, policy=POLICY):
+def _case(tmp_path, *, policy=POLICY, old_body=None):
     state = tmp_path / 'project/.zf'
     def source(name, value):
         ref = write_immutable_json_sidecar(state, value, root='claim-inputs', kind='test',
                                          schema_version='test.v1', created_by='test')
         return {**ref, 'source_id': name, 'artifact_id': name + '.json', 'allowed_paths': ['$']}
     current = source('child-artifact-planner-map', {'decision': {'status': 'confirmed'}})
-    old = source('previous-plan-candidate-1', {'decision': {'status': 'pending'}})
+    old = source('previous-plan-candidate-1', old_body or {'decision': {'status': 'pending'}})
     requirement = source('requirement', {'rule': 'Apply the confirmed owner decision'})
     contract = source('plan-synth-contract', {
         'child_bindings': [{'child_id': 'planner'}],
@@ -89,8 +89,11 @@ def test_current_basis_is_bound_and_not_just_an_existing_path(tmp_path, fault):
     assert any(e['code'] == 'plan_review_evidence_invalid' for e in check['errors']), check
 
 
-def test_valid_factual_basis_does_not_force_approval(tmp_path):
-    runtime, prepared, service, token, result, _ = _case(tmp_path)
+@pytest.mark.parametrize("projected_preflight", [False, True])
+def test_valid_factual_basis_does_not_force_approval(tmp_path, projected_preflight):
+    from tests.test_previous_preflight_delivery import preflight
+
+    runtime, prepared, service, token, result, _ = _case(tmp_path, old_body=preflight() if projected_preflight else None)
     item = result['report']['fix_items'][0]
     item['basis']['current_evidence'][0]['observed_value'] = 'confirmed'
     item['observed_gap'] = 'Decision is confirmed but its semantics still conflict with the requirement'
@@ -101,6 +104,9 @@ def test_valid_factual_basis_does_not_force_approval(tmp_path):
     for source in manifest['sources']:
         read_attempt_artifact(runtime.state_dir, manifest=manifest,
             source_id=source['source_id'], artifact_id=source['artifact_id'], json_path='$')
+    preflight_result = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
+        role_instance='plan-critic', credential=token)
+    assert not preflight_result['errors'], preflight_result
     submitted = service.submit(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
     assert submitted.canonical_event_type == 'fanout.synth.completed'
@@ -117,3 +123,51 @@ def test_nested_semantic_rejection_cannot_bypass_claim_validation(tmp_path, shap
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
     assert any(e['code'] == 'plan_review_evidence_invalid' for e in check['errors']), check
+
+@pytest.mark.parametrize("fault", ["different_child", "original_sha", "ambiguous", "missing_full", "missing_usage",
+                                   "full_scope", "detail_scope", "view_scope", "view_selector", "wrong_artifact",
+                                   "rehashed_semantics", "altered_detail", "original_bytes"])
+def test_review_binds_only_the_lossless_previous_preflight_view(tmp_path, fault):
+    import json
+    from tests.test_previous_preflight_delivery import preflight
+    from zf.runtime.previous_preflight_delivery import matches_previous_preflight_binding
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    runtime, prepared, _, _, _, original = _case(tmp_path, old_body=preflight())
+    state = runtime.state_dir
+    manifest = json.loads(next((state / 'artifacts/attempts' / prepared.attempt_id / 'source-manifests').glob('*.json')).read_bytes())
+    sources = manifest['sources']
+    view = next(s for s in sources if s['kind'] == 'plan_preflight_delivery')
+    full = next(s for s in sources if s['source_id'].startswith('preflight-original-'))
+    detail = next(s for s in sources if s['source_id'].startswith('preflight-usage-'))
+    binding = {k: original[k] for k in ('source_id', 'ref', 'artifact_id', 'sha256')}
+    assert matches_previous_preflight_binding(state, sources, binding, view)
+    if fault == 'different_child':
+        binding['source_id'] = view['source_id'] = 'child-result-planner'
+    elif fault == 'original_sha':
+        binding['sha256'] = detail['sha256']
+    elif fault == 'ambiguous':
+        sources.append(dict(detail))
+    elif fault == 'missing_full':
+        sources.remove(full)
+    elif fault == 'missing_usage':
+        sources.remove(detail)
+    elif fault in {'full_scope', 'detail_scope', 'view_scope'}:
+        {'full_scope': full, 'detail_scope': detail, 'view_scope': view}[fault]['access_scope'] = {'actors': ['other']}
+    elif fault == 'view_selector':
+        view['allowed_paths'] = ['$.preflight']
+    elif fault == 'wrong_artifact':
+        binding['artifact_id'] = 'different.json'
+    elif fault == 'rehashed_semantics':
+        body = hydrate_sidecar_ref(state, view).payload
+        body['preflight']['status'] = 'passed'
+        altered = write_immutable_json_sidecar(state, body, root='plan-preflight-delivery', kind=view['kind'],
+            schema_version=body['schema_version'], created_by='test')
+        view.update(ref=altered['ref'], sha256=altered['sha256'])
+    else:
+        target = full if fault == 'original_bytes' else detail
+        (state / target['ref']).write_text('{}')
+        with pytest.raises(ValueError):
+            matches_previous_preflight_binding(state, sources, binding, view)
+        return
+    assert not matches_previous_preflight_binding(state, sources, binding, view)
