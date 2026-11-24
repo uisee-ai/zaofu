@@ -249,6 +249,8 @@ def build_resident_run_manager_briefing(
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
         "   先读取本次 context 的 recovery_capabilities；关闭或未知的能力不得当作已可用。",
+        "   reader_rebuild 如存在，核对该失败与执行条件是否已改变。其 recommendation 只供提案；",
+        "   保留 WRC active_attempt_id，先核对 blocking_human_decisions 与最新门禁，再决定是否建议精确重试。",
         "   同时核对 preauthorized_host_recovery 的宿主策略、同Run执行事件和绑定收据；",
         "   reflect/source_repair关闭不代表宿主验证关闭。策略声明不证明执行，单条命令",
         "   通过不证明产品验收；部分非浏览器收据也不证明浏览器恢复队列不存在。",

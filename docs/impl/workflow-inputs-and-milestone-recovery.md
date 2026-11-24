@@ -173,6 +173,8 @@ Candidate Verify 的独立结果通过受控提交时，在 scratch 的顶层 `h
 
 Reader 的首次调用可以挂在同一 Run、同一 Task 的 Workflow operation 下。重试沿历史 Reader attempt 重新核对消费范围，到所属 Workflow 为止；跨 Run 或 Task 的祖先仍要求纠正绑定。
 
+Run Manager 的诊断包可按失败来源定位一个 Reader，展示受控重试需要的 WRC attempt、原失败事件、绑定预检和当前阻塞该动作的人工门。传输重试标识单独列示。Resident 结合故障是否已解除决定是否提案，执行时由原受控入口重验。
+
 修正执行环境或恢复实现后，可对仍为当前失败的 Reader 提交新的受控 `child-rebuild`。若前一修复动作已被拒绝，提交 `retry_after_rejection_event_id` 与 `approval_ref`。内核复核拒绝回执所对应的原始修复、Run、Reader、attempt 和失败事件；同一拒绝的重复请求沿用同一幂等键。
 
 ## 冻结候选的分工验收

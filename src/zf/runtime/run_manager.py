@@ -4444,6 +4444,7 @@ def _write_run_manager_context_sidecars(
         )
     safe_request = _safe_ref_slug(request_id)
     from zf.runtime.diagnosis_runtime_context import diagnosis_runtime_sources
+    from zf.runtime.diagnosis_reader_rebuild import diagnosis_reader_rebuild
     from zf.runtime.diagnosis_host_recovery import host_recovery_context
     from zf.runtime.continuation_evidence import continuation_input_refs
 
@@ -4458,8 +4459,10 @@ def _write_run_manager_context_sidecars(
         continuation_refs = []
         continuation_error = str(exc)
 
+    reader_rebuild = diagnosis_reader_rebuild(state_dir, events, action)
     context_payload = redact_obj({
         "schema_version": RUN_MANAGER_CONTEXT_SIDECAR_SCHEMA_VERSION,
+        **({"reader_rebuild": reader_rebuild} if reader_rebuild else {}),
         "request_id": request_id,
         "legacy_context_ref": _legacy_run_manager_context_ref(),
         "action": action,
