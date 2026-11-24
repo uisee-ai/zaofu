@@ -66,6 +66,15 @@ def replan_authority_sources(
         context[key] = authority[key]
     scope = set(context.get("task_ids") or context.get("failed_task_ids")
                 or payload.get("task_ids") or payload.get("failed_task_ids") or [])
+    if context.get("resume_scope") == "candidate_diagnosis_only":
+        if not (context.get("rework_summary") or {}).get("candidate_obligations"):
+            context["candidate_diagnosis_evidence"] = {"status": "unavailable", "reason": "no_bound_candidate_obligations"}
+            return refs
+        from zf.runtime.plan_candidate_diagnosis_inputs import candidate_diagnosis_inputs
+
+        evidence, index = candidate_diagnosis_inputs(state_dir, payload, context, decision, decision_ref, refs)
+        context["candidate_diagnosis_evidence"] = index
+        return [*refs, *evidence]
     evidence = _decision_evidence_sources(state_dir, decision, task_ids=scope)
     refs.extend(evidence)
     for item in evidence:
