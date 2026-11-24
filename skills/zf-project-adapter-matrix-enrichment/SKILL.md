@@ -225,9 +225,11 @@ the command to the target repository.
   runner method are executable after the planned implementation. It does not
   mean screenshots or receipts already exist. Do not mark a pre-implementation
   row blocked merely because its future evidence has not been generated yet.
-- For browser rows, load `zf-browser-e2e-contract`; bind the exact Docker command
-  and the task-owned runner/config/test/evidence paths before declaring the Plan
-  ready. Include the exact `bind_host`, owner-facing `service_url`, and
+- Select the runner from the acceptance obligation and project contract. A CLI
+  or service E2E row uses its declared invocation and observable result. Bind
+  browser rows to the project's exact browser command and producer-owned
+  evidence paths. For Docker/Playwright, load `zf-browser-e2e-contract`.
+  For browser rows that expose a service, include its `bind_host`, owner-facing `service_url`, and
   `browser_origin`; when WebCrypto/secure-context APIs are required, bind an
   origin-specific capability probe and its evidence output. A missing host
   browser is not a blocker when the sanctioned Docker runner is available.
