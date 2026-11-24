@@ -151,10 +151,9 @@ class LifecycleManagerMixin(
         self._reconcile_task_attempts()
         now = self._now()
         from datetime import datetime, timezone
+        from zf.runtime.candidate_anchor_owner_wait import CandidateAnchorWaits
         from zf.runtime.pause_lifecycle import active_request_age_seconds, is_run_dispatch_paused
         from zf.runtime.run_admission import task_workflow_run_id
-
-        from zf.runtime.candidate_anchor_owner_wait import CandidateAnchorWaits
 
         pause_events = self.event_log.read_all()
         owner_waits = CandidateAnchorWaits(pause_events)
@@ -252,13 +251,13 @@ class LifecycleManagerMixin(
                 now=datetime.fromtimestamp(now, timezone.utc), run_id=task_run)
             was_waiting = task.id in self._orphan_owner_waits
             if was_waiting or (not assignee and elapsed >= role.orphan_warning_seconds):
-                if not assignee and self.config.runtime.run_manager.resident_agent.enabled and owner_waits.holds(
-                    task_run, task.id,
-                ):
+                waiting = (not assignee and self.config.runtime.run_manager.resident_agent.enabled
+                           and owner_waits.holds(task_run, task.id))
+                if waiting:
                     self._orphan_owner_waits.add(task.id)
-                elif was_waiting:
+                else:
                     self._orphan_owner_waits.discard(task.id)
-                if was_waiting or task.id in self._orphan_owner_waits:
+                if waiting or was_waiting:
                     self._dispatch_epoch[task.id] = now
                     self._orphan_warned.discard(task.id)
                     continue

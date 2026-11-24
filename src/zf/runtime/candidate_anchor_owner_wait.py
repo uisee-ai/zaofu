@@ -53,9 +53,11 @@ class CandidateAnchorWaits:
                       and e.payload.get("stage_id") == failure.payload.get("stage_id")), None)
         aggregate = next((e for e in scoped if e.id == failure.causation_id), None)
         candidate = next((e for e in reversed(scoped) if e.type == "candidate.ready"), None)
-        if (not fanout or not start or start.payload.get("fanout_id") != fanout
+        if (not fanout or not failure.payload.get("stage_id")
+                or not start or start.payload.get("fanout_id") != fanout
                 or not aggregate or aggregate.type != "fanout.aggregate.completed"
                 or aggregate.payload.get("fanout_id") != fanout or aggregate.payload.get("status") != "failed"
+                or aggregate.payload.get("stage_id") != failure.payload["stage_id"]
                 or aggregate.payload.get("pdd_id") != task_id or not candidate
                 or candidate.payload.get("pdd_id") != task_id or start.payload.get("trigger_event_id") != candidate.id
                 or not scoped.index(candidate) < scoped.index(start) < scoped.index(aggregate) < scoped.index(failure)

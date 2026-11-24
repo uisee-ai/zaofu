@@ -154,3 +154,18 @@ def test_closed_gate_before_restart_does_not_spend_old_dispatch_time(state_dir, 
     assert "root" not in restarted._dispatch_epoch
     restarted._apply_housekeeping(ZfEvent(type="dev.build.done", task_id="root", actor="dev"))
     assert restarted._dispatch_epoch["root"] == now
+
+
+@pytest.mark.parametrize("resident,assignee", [(False, ""), (True, "dev")])
+def test_disabled_diagnosis_owner_or_assigned_worker_retains_normal_timeout(
+    state_dir, config, transport, resident, assignee,
+):
+    config.runtime.run_manager.resident_agent.enabled = resident
+    runtime = Orchestrator(state_dir, config, transport)
+    runtime.task_store.add(Task(id="root", title="qualification", status="in_progress", assigned_to=assignee))
+    for e in _history():
+        runtime.event_log.append(e)
+    runtime._dispatch_epoch["root"] = 1
+    runtime._now = lambda: 2000
+    runtime._check_orphaned_tasks()
+    assert runtime.task_store.get("root").status == "backlog"
