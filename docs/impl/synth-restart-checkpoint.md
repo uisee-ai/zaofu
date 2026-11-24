@@ -20,5 +20,7 @@ CLI 沿用 run-contract 检查与角色 respawn 互斥锁。只有当前运行�
 和历史失败事件保持原义；不生成通过结论。两次追加之间中断可再次使用同一
 失败 ID 补齐，完整派发后同一失败 ID 不会再次打开载体。
 
+升级后重开旧断点时，恢复提示仍按原派发区分 synth 与 reader。旧角色索引同时列出来源和安装目录时，运行时核对当前角色、后端、索引中的原始路径及安装文件摘要，再给出工作进程可读的 `SKILL.md` 绝对路径。原始 briefing 和必读回执继续绑定同一请求。
+
 入口和回归：`src/zf/cli/restart.py`、`tests/test_synth_restart_checkpoint.py`。
 运行中 reader 的重启保护见 [reader-respawn-continuation.md](reader-respawn-continuation.md)。

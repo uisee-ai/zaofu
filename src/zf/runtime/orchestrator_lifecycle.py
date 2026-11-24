@@ -1940,7 +1940,12 @@ class LifecycleManagerMixin(
             return False
         try:
             snapshot_ref = str(fanout_child.get("snapshot_ref") or "")
-            prompt = build_task_prompt(role.instance_id, path, "fanout_child")
+            from zf.runtime.skill_briefing import recovery_skill_locators
+
+            kind = "fanout_synth" if fanout_child.get("child_id") == "synth" else "fanout_child"
+            prompt = build_task_prompt(role.instance_id, path, kind)
+            prompt += recovery_skill_locators(project_root=self.project_root, state_dir=self.state_dir,
+                                              role=role)
             prompt += (
                 f"\nCurrent runtime CLI: `{zf_cli_cmd()}`. Use it with the same arguments "
                 "instead of older executable paths in the original briefing. "
