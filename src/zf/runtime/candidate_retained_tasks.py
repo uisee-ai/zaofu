@@ -25,12 +25,16 @@ def candidate_child_proofs(runtime: Any, events: list, candidate: Any) -> dict:
     from zf.runtime.candidate_verification_authority import _latest_task_verification
     from zf.runtime.task_pipeline_terminal import _latest_integration_event
 
+    before = events[:events.index(candidate)]
+    body = candidate.payload
+    if body.get('schema_version') == 'candidate-freeze-receipt.v1' and not body.get('candidate_continuation_ref'):
+        from zf.runtime.completed_task_replacements import validate_completed_task_replacements
+
+        validate_completed_task_replacements(Path(runtime.state_dir), before, body)
     proofs = current_proofs(runtime, events, candidate)
     for task_id in set(proofs) & set(restorations):
         proofs[task_id]['completion_restore_ref'] = restorations[task_id]
-    before = events[:events.index(candidate)]
     contexts = task_pipeline_generation_contexts(before)
-    body = candidate.payload
     run = str(body.get('workflow_run_id') or '')
     generation = str(body.get('task_map_generation') or '')
     retained = {task_id: contexts[task_id] for task_id in body.get('completed_task_ids', [])

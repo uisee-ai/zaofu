@@ -542,6 +542,12 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                     aggregate=aggregate,
                 )
             except Exception as exc:
+                from zf.runtime.candidate_registration_failure import cancel_shared_registration
+
+                if not any(item.get("prepared_call") for item in prepared.values()) and cancel_shared_registration(
+                    self, context, causation_id, exc,
+                ):
+                    return {sibling.child_id: {"skip": True} for sibling in context.expected_children}
                 self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",

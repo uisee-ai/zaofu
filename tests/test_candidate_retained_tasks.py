@@ -238,3 +238,25 @@ def test_mixed_candidate_real_submission_keeps_all_new_target_obligations(mixed,
         submitted=service.submit(operation_id=prepared.operation_id,semantic_result=result,
             role_instance='verify-lane-0',credential=token)
         assert submitted.admitted_event_id
+
+
+def test_reader_and_judge_reject_unproved_completed_task_replacement(mixed):
+    from dataclasses import replace
+    from zf.runtime.candidate_child_authority import candidate_child_authority_issues
+
+    events = mixed.event_log.read_all()
+    original = next(e for e in events if e.type == 'candidate.ready')
+    declared = {k: v for k, v in original.payload.items()
+                if k not in {'freeze_receipt_ref', 'freeze_receipt_digest'}}
+    declared['completed_task_replacements'] = {'TASK-A': [{'edges': {'TASK-A': ['TASK-B']}}]}
+    declared['completed_task_ids'] = ['TASK-B']
+    declared['superseded_task_ids'] = ['TASK-A']
+    ref = write_immutable_json_sidecar(mixed.state_dir, declared, root='repro', kind='test',
+                                       schema_version=declared['schema_version'], created_by='isolated-test')
+    forged = mixed.event_writer.append(replace(original, id='evt-unproved-replacement',
+        payload={**declared, 'freeze_receipt_ref': ref, 'freeze_receipt_digest': ref['sha256']}))
+    with pytest.raises(ValueError, match='replacement'):
+        prepare(mixed)
+    issues = candidate_child_authority_issues(mixed.state_dir, mixed.event_log.read_all(), forged,
+                                              [{'task_id': 'TASK-B'}], require_all=True)
+    assert len(issues) == 1 and 'replacement' in issues[0]['message']

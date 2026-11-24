@@ -14,8 +14,9 @@ def candidate_child_authority_issues(state_dir: Path, events: list, current_cand
     issues: list[dict[str, str]] = []
     task_store = TaskStore(state_dir / "kanban.json")
     reused = {}
-    if any(child.get("completion_reuse_ref") or child.get("retained_task_evidence") for child in children
-           if isinstance(child, Mapping)):
+    has_replacements = current_candidate is not None and bool(current_candidate.payload.get("completed_task_replacements"))
+    if has_replacements or any(child.get("completion_reuse_ref") or child.get("retained_task_evidence")
+                               for child in children if isinstance(child, Mapping)):
         from zf.runtime.candidate_retained_tasks import candidate_child_proofs
 
         if current_candidate is None:

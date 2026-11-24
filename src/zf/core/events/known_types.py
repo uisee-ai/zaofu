@@ -362,7 +362,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "candidate.quality.started", "candidate.quality.passed",
     "candidate.quality.failed", "candidate.mechanical_fix.applied",
     "candidate.worktree.stale",
-    "candidate.ready", "integration.failed",
+    "candidate.ready", "candidate.freeze.blocked", "integration.failed",
     "candidate.integration.duplicate_suppressed",
     "candidate.rework.capped",
     "integration.queue.integrating", "integration.queue.integrated",

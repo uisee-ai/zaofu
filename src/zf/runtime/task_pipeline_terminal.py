@@ -429,25 +429,18 @@ def _freeze_generation(
         }
         for event, receipt, descriptor in integrated
     ])
-    supersession_ledger_digest = _digest([
-        {
-            "task_id": event.task_id,
-            "event_id": event.id,
-            "superseded_by_task_map_ref": (
-                event.payload.get("superseded_by_task_map_ref")
-                if isinstance(event.payload, dict)
-                else ""
-            ),
-        }
-        for event in superseded
-    ])
+    from zf.runtime.completed_task_replacements import freeze_roster
+
+    roster = freeze_roster(runtime, events, context, branch, candidate_head, completed_task_ids, superseded)
+    if roster is None:
+        return False
     freeze_id = _digest({
         "workflow_run_id": workflow_run_id,
         "task_map_generation": task_map_generation,
         "candidate_generation": candidate_generation,
         "candidate_head": candidate_head,
         "integration_ledger_digest": ledger_digest,
-        "supersession_ledger_digest": supersession_ledger_digest,
+        "supersession_ledger_digest": roster["supersession_ledger_digest"],
     })
     if _candidate_ready_exists(events, freeze_id):
         return False
@@ -487,12 +480,7 @@ def _freeze_generation(
         ),
         "integration_ledger_digest": ledger_digest,
         "task_ids": task_ids,
-        "completed_task_ids": completed_task_ids,
-        "superseded_task_ids": sorted(
-            str(event.task_id or "") for event in superseded
-        ),
-        "task_supersession_event_ids": [event.id for event in superseded],
-        "supersession_ledger_digest": supersession_ledger_digest,
+        **roster,
         "task_integration_receipt_refs": receipt_refs,
         "status": "frozen",
     }

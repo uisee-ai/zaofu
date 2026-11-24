@@ -867,6 +867,12 @@ def build_workflow_batch_resume_checkpoints(
 
             if candidate_trigger is not None and admitted_reader_recovery_owns_failure(event_list, event):
                 continue
+            from zf.runtime.candidate_registration_failure import obsolete_roster_failure
+
+            # The product was never evaluated. Run Manager owns the existing infrastructure
+            # failure until it diagnoses the fixed input or a new native freeze resumes dispatch.
+            if candidate_trigger is not None and obsolete_roster_failure(state_dir, failure_inputs, event, candidate_trigger):
+                continue
             candidate_runtime_retry = (
                 candidate_trigger is not None
                 and _candidate_runtime_failure_only(failure_inputs, event)

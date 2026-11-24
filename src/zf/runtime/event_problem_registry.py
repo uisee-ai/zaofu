@@ -525,6 +525,15 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
         _candidate_quality_expected("test.failed"),
         _candidate_quality_expected("verify.failed"),
         _candidate_quality_expected("judge.failed"),
+        EventProblemSpec(
+            event_type="candidate.freeze.blocked", event_class="expected_negative",
+            problem_class="candidate_authority", failure_class="candidate_authority_invalid",
+            source="task_pipeline_freeze", title="Candidate freeze could not verify approved Task replacements",
+            owner_route="run_manager", intervention_class="diagnose", action_policy="needs_diagnosis",
+            suggested_route="run_manager_recovery", suggested_action_kind="diagnose_candidate_authority",
+            producer_kind="kernel", required_scope_any=("workflow_run_id", "generation_id"),
+            notification_policy="run_manager_first", recovery_policy="run_manager",
+        ),
         _candidate_quality_expected("integration.failed"),
         _candidate_quality_expected("candidate.quality.failed"),
         _flow_stage_expected(

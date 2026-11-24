@@ -9885,6 +9885,7 @@ def _pending_semantic_event_actions(
     candidate_infra_only: bool = False,
 ) -> list[dict[str, Any]]:
     from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
+    from zf.runtime.candidate_registration_failure import DIAGNOSIS, is_registration_failure
     from zf.runtime.candidate_infrastructure_recovery import candidate_infrastructure_failure
     from zf.runtime.run_manager_integration_review import (
         bind_integration_review_action, integration_review_sources,
@@ -9962,7 +9963,7 @@ def _pending_semantic_event_actions(
                 events, event,
             ):
                 continue
-        spec = spec_for_event(event.type)
+        spec = DIAGNOSIS if is_registration_failure(event) else spec_for_event(event.type)
         if _is_blocked_goal_closure_schema_failure(event):
             if spec is None:
                 continue
@@ -12122,6 +12123,11 @@ def _event_superseded_by_later_progress(
     from zf.runtime.assistance_handoff_retirement import assistance_handoff_retired
     from zf.runtime.task_failure_retirement import task_failure_retired
 
+    from zf.runtime.candidate_registration_failure import authority_incident_resolved
+
+    resolved = authority_incident_resolved(events, source_event)
+    if resolved is not None:
+        return resolved
     handed_off = assistance_handoff_retired(events, source_event)
     if handed_off is not None:
         return handed_off
