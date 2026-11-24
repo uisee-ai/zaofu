@@ -31,15 +31,17 @@ pytestmark = pytest.mark.real_provider
 
 
 @contextmanager
-def mounted_workspace(root, tmp_path, cfg, state, attempt, env):
-    zf = root / ".venv/bin/zf"
-    assert zf.is_file()
+def mounted_workspace(root, tmp_path, cfg, state, attempt, env, *, cli=None):
+    if cli is None:
+        zf = root / ".venv/bin/zf"
+        assert zf.is_file()
+        cli = [str(zf)]
     stderr = tmp_path / "mount-log.txt"
     with (
         stderr.open("w") as errors,
         subprocess.Popen(
             [
-                str(zf),
+                *cli,
                 "artifact",
                 "workspace",
                 "--state-dir",
