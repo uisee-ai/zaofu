@@ -41,7 +41,8 @@ def test_wake_list_changes_are_explicit():
     # 快照锁:数量带 ±0 容差——增删唤醒源必须改本测试(显式决策)。
     assert len(WAKE_PATTERNS) == len(set(WAKE_PATTERNS))  # 无重复
     assert "task_map.amend.failed" in WAKE_PATTERNS  # 3fe3a300: failed amendments wake recovery.
-    assert len(WAKE_PATTERNS) == 196, (
+    assert "candidate.reader.reassessment.requested" in WAKE_PATTERNS
+    assert len(WAKE_PATTERNS) == 197, (
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
@@ -102,7 +103,8 @@ def test_wake_list_changes_are_explicit():
             f"worker.assistance.requested +1 → 192; semantic-submit protocol correction "
             f"+1:workflow.call.result.repair.requested → 193 (LS-v1 R53); "
             f"external worker recovery request/admitted operation redrive +2 → 195; "
-            f"failed task-map amendment +1:task_map.amend.failed → 196"
+            f"failed task-map amendment +1:task_map.amend.failed → 196; "
+            f"scoped evidence Reader +1:candidate.reader.reassessment.requested → 197"
         )
 
 
