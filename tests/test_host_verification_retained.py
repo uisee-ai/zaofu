@@ -119,12 +119,13 @@ def test_repaired_input_hands_off_at_exhausted_budget_without_new_effect(evidenc
         'operation_id': operation['operation_id'], 'fanout_id': 'candidate-fanout'})
     failure = service.writer.emit('test.failed', payload={'fanout_id': 'candidate-fanout',
         'workflow_run_id': operation['workflow_run_id'], 'failure_kind': 'infra'})
-    monkeypatch.setattr(handoff, 'reader_stage_for_failure', lambda *a: (object(), None))
+    monkeypatch.setattr(handoff, 'reader_stage_for_failure', lambda *a: (SimpleNamespace(trigger='candidate.ready'), None))
     monkeypatch.setattr(module, 'reduce_workflow_operations', lambda events: {operation['operation_id']: operation})
     monkeypatch.setattr(module, 'binding', lambda *a: (operation, request, contract, service.state_dir))
     calls = []
     def controlled(**kwargs):
         calls.append(kwargs)
+        service.writer.default_origin = 'kernel'
         service.writer.emit('candidate.ready', payload={
             'workflow_run_id': operation['workflow_run_id'], 'repaired_failure_event_id': failure.id})
         return {'ok': True}
