@@ -30,6 +30,7 @@ class ResumeDecision:
     # Empty unless the session witnessed content beyond its first delivery gap.
     missing_ranges: tuple[tuple[int, int, int], ...] = ()
     cursor_proof: str = ""
+    historical_navigation_proof: str = ""
 
 
 def resume_position(*args: Any, **kwargs: Any) -> tuple[int, int]:
@@ -41,7 +42,7 @@ def resume_position(*args: Any, **kwargs: Any) -> tuple[int, int]:
 def resume_decision(
     state_dir: Path, *, manifest: dict[str, Any], identity: dict[str, Any],
     bundle_digest: str, groups: list[dict[str, Any]], receipts: list[list[dict[str, Any]]],
-    event_log: Any = None,
+    event_log: Any = None, navigation_proof: str = "",
 ) -> ResumeDecision:
     """Return the first gap; unavailable or inconsistent evidence starts over."""
     attempt = str(manifest.get("attempt_id") or "")
@@ -106,13 +107,18 @@ def resume_decision(
                 return ResumeDecision(len(groups), 0, "context_recovery")
             gap = (historical.index, historical.offset)
             if gap > (current.index, current.offset):
-                if _delivered_gap_notice(state_dir, retained, attempt, bundle_digest):
+                # Navigation is scoped to this session and compaction boundary. Only the
+                # newly verified historical coverage determines where the actual gap is.
+                navigation = hashlib.sha256(json.dumps(
+                    ["historical_gap", session, boundary, bundle_digest],
+                ).encode()).hexdigest()
+                continues_gap = navigation_proof and navigation_proof in {navigation, historical.cursor_proof}
+                if continues_gap or _delivered_gap_notice(state_dir, retained, attempt, bundle_digest):
                     return ResumeDecision(*gap, "continue_historical_delivery", missing_ranges=historical.missing_ranges,
                                           cursor_proof=historical.cursor_proof)
-                # Keep the current-context reread available. The worker may explicitly
-                # continue the independently witnessed delivery after recovering its notes.
+                # Render current context once before offering the scoped, revalidated gap cursor.
                 return ResumeDecision(current.index, current.offset, current.reason, gap, current.missing_ranges,
-                                      current.cursor_proof)
+                                      current.cursor_proof, historical_navigation_proof=navigation)
             return current
         return coverage(observed)
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):

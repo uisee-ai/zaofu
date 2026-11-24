@@ -63,6 +63,7 @@ def prepare_required_read(
     resume_info = None
     missing_ranges = ()
     cursor_proof = ""
+    historical_navigation = ""
     ordered_groups = list(groups.values())
     index, start, sparse_cursor = _position(cursor, bundle_digest, ordered_groups) if cursor else (0, 0, "")
     if resume or sparse_cursor:
@@ -71,7 +72,7 @@ def prepare_required_read(
         decision = resume_decision(
             state_dir, manifest=manifest, identity=identity,
             bundle_digest=bundle_digest, groups=list(groups.values()),
-            receipts=list(receipts.values()), event_log=event_log,
+            receipts=list(receipts.values()), event_log=event_log, navigation_proof=sparse_cursor,
         )
         missing_ranges = decision.missing_ranges
         cursor_proof = decision.cursor_proof
@@ -96,6 +97,8 @@ def prepare_required_read(
             resume_info.update(mode="delivery_gap", historical_delivery="partial",
                                next_resume="continue_witnessed_delivery_gap")
         elif decision.historical_gap is not None:
+            historical_navigation = _cursor(bundle_digest, *decision.historical_gap,
+                                             sparse=decision.historical_navigation_proof)
             resume_info.update({
                 "historical_delivery": "partial",
                 "next_resume": "continue_witnessed_delivery_gap",
@@ -123,15 +126,17 @@ def prepare_required_read(
             "delivery_id": delivery_id,
             "bundle_digest": bundle_digest,
             "items": [*items, *([extra] if extra is not None else [])],
-            "next_cursor": continuation,
+            "next_cursor": (historical_navigation or continuation) if continuation else None,
             "complete": continuation is None,
             "next_action": "read_next_page" if continuation else "confirm_delivery_then_continue_current_step",
             **({"continuation": resume_info} if resume_info is not None else {}),
         }
         if resume_info and resume_info["mode"] == "context_recovery":
             page["next_action"] = "recover_work_record_then_retrieve_context_gaps"
-        elif resume_info and "historical_next_cursor" in resume_info:
+        elif historical_navigation and continuation:
             page["next_action"] = "recover_work_record_then_read_historical_gap"
+            if items or extra:
+                page["continuation"] = {**resume_info, "context_next_cursor": _cursor(bundle_digest, *position)}
         if output_format == "text":
             from zf.runtime.artifact_text_page import render_text_page
 

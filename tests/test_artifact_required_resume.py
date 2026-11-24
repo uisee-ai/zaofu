@@ -96,10 +96,26 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
         assert resumed["continuation"]["historical_delivery"] == "partial"
         assert resumed["next_action"] == "recover_work_record_then_read_historical_gap"
         assert gap_cursor == first["next_cursor"]
+        # The ordinary navigation exposed to the Reader must also reach the witnessed gap.
+        assert main([*command, "--cursor", resumed["next_cursor"]]) == 0
+        default_next = parse_artifact_page(capsys.readouterr().out.rstrip("\n"))
+        assert default_next["items"][0]["page_start"] == first["items"][0]["page_end"]
+        assert default_next["continuation"]["current_memory"] == "unknown"
+        assert main([*command, "--cursor", resumed["continuation"]["context_next_cursor"]]) == 0
+        explicit = parse_artifact_page(capsys.readouterr().out.strip())
+        assert explicit["items"][0]["page_start"] == resumed["items"][-1]["page_end"]
+        assert main(command) == 0
+        assert parse_artifact_page(capsys.readouterr().out.rstrip("\n"))["items"][0]["page_start"] == 0
         assert main([*command, "--resume", "--page-bytes", "1024"]) == 0
         short_page = capsys.readouterr().out.rstrip("\n")
         assert len(short_page.encode()) + 1 <= 1024
-        assert parse_artifact_page(short_page)["continuation"]["historical_next_cursor"] == gap_cursor
+        small = parse_artifact_page(short_page)
+        assert small["continuation"]["historical_next_cursor"] == gap_cursor
+        assert small["items"] == []
+        assert "context_next_cursor" not in small["continuation"]
+        assert main([*command, "--cursor", small["next_cursor"]]) == 0
+        next_small = parse_artifact_page(capsys.readouterr().out.strip())
+        assert next_small["items"][0]["page_start"] == first["items"][0]["page_end"]
         assert main([*command, "--cursor", gap_cursor]) == 0
         gap_page = parse_artifact_page(capsys.readouterr().out.rstrip("\n"))
         assert gap_page["items"][0]["page_start"] == first["items"][0]["page_end"]
@@ -116,7 +132,10 @@ def test_cli_resume_uses_only_complete_output_observed_in_current_session(tmp_pa
     else:
         assert "historical_next_cursor" not in resumed["continuation"]
     for before, after in zip(outputs, outputs[1:]):
-        assert after["items"][0]["page_start"] == before["items"][-1]["page_end"]
+        offset = first["items"][-1]["page_end"] if (
+            before.get("continuation", {}).get("next_resume") and before["continuation"].get("historical_next_cursor")
+        ) else before["items"][-1]["page_end"]
+        assert after["items"][0]["page_start"] == offset
     assert resumed["items"][0]["page_start"] == (first["items"][0]["page_end"] if witness in {"observed", "compacted_before_delivery"} else 0)
 
 
@@ -270,7 +289,8 @@ def test_sealed_historical_witness_without_current_transcript_restarts_safely(tm
     assert json.loads(capsys.readouterr().out)["items"][0]["page_start"] == 0
 
 
-def test_resume_fills_only_unobserved_middle_page_and_skips_witnessed_suffix(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("compacted", [False, True])
+def test_resume_fills_only_unobserved_middle_page_and_skips_witnessed_suffix(tmp_path, monkeypatch, capsys, compacted):
     state = tmp_path / "state"
     path = state / "artifacts/input.json"
     path.parent.mkdir(parents=True)
@@ -310,6 +330,14 @@ def test_resume_fills_only_unobserved_middle_page_and_skips_witnessed_suffix(tmp
     delivered = []
     # Smaller recovery pages intentionally require valid cursor navigation inside each hole.
     options = ["--resume"]
+    if compacted:
+        with transcript.open("a") as stream:
+            stream.write(json.dumps({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=3)).isoformat(),
+                                     "type": "compacted", "payload": {}}) + "\n")
+        assert main([*command, "--resume", "--page-bytes", "2048"]) == 0
+        context = parse_artifact_page(capsys.readouterr().out)
+        assert context["items"][0]["page_start"] == 0
+        options = ["--cursor", context["next_cursor"]]
     first_resume_cursor = None
     for _ in range(20):
         assert main([*command, *options, "--page-bytes", "2048"]) == 0
@@ -322,6 +350,16 @@ def test_resume_fills_only_unobserved_middle_page_and_skips_witnessed_suffix(tmp
         options = ["--cursor", page["next_cursor"]]
     assert not page["next_cursor"]
     assert [n for lo, hi in delivered for n in range(lo, hi)] == [n for lo, hi in gaps for n in range(lo, hi)]
+    if compacted:
+        # Another compaction invalidates the first handoff; explain the new boundary.
+        with transcript.open("a") as stream:
+            stream.write(json.dumps({"timestamp": (datetime.now(timezone.utc) + timedelta(seconds=4)).isoformat(),
+                                     "type": "compacted", "payload": {}}) + "\n")
+        assert main([*command, "--cursor", context["next_cursor"], "--page-bytes", "2048"]) == 0
+        rebound = json.loads(capsys.readouterr().out)
+        assert rebound["items"][0]["page_start"] == 0
+        assert rebound["continuation"]["reason"] == "delivery_predates_compaction"
+        assert rebound["next_cursor"] != context["next_cursor"]
     # With evidence lost, reusing the old gap cursor must replay the full input.
     transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session}}) + "\n")
     assert main([*command, "--cursor", first_resume_cursor, "--page-bytes", "2048"]) == 0
