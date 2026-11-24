@@ -242,6 +242,9 @@ for (const mode of ["local_account", "controller_session", "read_only"]) {
     await expect(send).not.toHaveAttribute("title", /token/i);
     const footer = page.locator(".rail-account");
     await footer.getByLabel("zaofu", {exact: true}).click();
+    await expect(footer.locator(".account-identity small")).toHaveText(
+      mode === "local_account" ? /Local account|本地账号/ : /Cloud account|云端账号/,
+    );
     await expect(footer.getByRole("button", {name: /Sign out|退出登录/})).toBeVisible();
     await expect(footer.getByRole("link", {name: /Password|密码/})).toHaveCount(mode === "local_account" ? 1 : 0);
     await page.keyboard.press("Escape");
