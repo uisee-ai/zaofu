@@ -194,6 +194,28 @@ def test_actual_preflight_and_admission_consume_same_receipt_independently(evide
     assert sum(e.type == 'runtime.action.attempt.started' for e in runtime.event_log.read_all()) == 1
 
 
+@pytest.mark.parametrize("independent_probe", [False, True])
+def test_missing_candidate_coverage_points_back_to_bound_host_index(evidence, independent_probe):
+    _, payload, service, kwargs = consumer_result(evidence)
+    semantic = kwargs["semantic_result"]
+    ids = semantic.pop("host_execution_receipt_ids")
+    if independent_probe:
+        semantic["probe_receipts"] = [{
+            "probe_id": "independent-review", "status": "passed",
+            "evidence_refs": ["event:independent-review"],
+        }]
+    original = service.validate_plan_candidate(**kwargs)
+    [issue] = original["errors"]
+    assert issue["field"] == "control_result"
+    assert "host_execution_receipt_ids" in issue["message"]
+    assert issue["recovery_owner"] == "candidate_verify"
+    assert "candidate-host-execution" in issue["message"]
+    assert "probe_receipts" in issue["message"]
+    assert payload["candidate_host_evidence_ref"]
+    semantic["host_execution_receipt_ids"] = ids
+    assert service.validate_plan_candidate(**kwargs)["status"] == "passed"
+
+
 @pytest.mark.parametrize('fault', ['unknown-id', 'duplicate-id', 'missing-output', 'changed-receipt',
                                   'missing-media', 'changed-media', 'duplicate-completion', 'no-ac'])
 def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):

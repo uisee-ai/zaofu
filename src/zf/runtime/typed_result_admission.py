@@ -73,7 +73,29 @@ def typed_result_admission_issues(
     if schema_version == "implementation-result.v1":
         return _implementation_issues(Path(state_dir), result)
     if schema_version == "verification-result.v1":
-        return _verification_issues(Path(state_dir), result, operation=operation, events=events)
+        issues = _verification_issues(Path(state_dir), result, operation=operation, events=events)
+        if (issues and operation and operation.get("request_ref")
+                and issues[0]["code"] in {
+                    "verification_command_evidence_missing",
+                    "verification_canonical_command_coverage_missing",
+                }):
+            # Only an index frozen for this consumer offers the host evidence route.
+            try:
+                request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
+            except (OSError, ValueError, KeyError, TypeError):
+                return issues
+            if (isinstance(request, Mapping) and request.get("output_profile_id") == "candidate-verify"
+                    and request.get("candidate_host_evidence_ref")):
+                issue = issues[0]
+                issue["field"] = "control_result"
+                issue["recovery_owner"] = "candidate_verify"
+                issue["message"] += (
+                    ". Match each uncovered command_id against candidate-host-execution. "
+                    "For applicable passing facts you reviewed, cite their receipt_id values "
+                    "in host_execution_receipt_ids beside verdict. Use probe_receipts for "
+                    "checks this Reader executed. Validate the same result again."
+                )
+        return issues
     if schema_version == "task-integration-acceptance-result.v1":
         return _integration_acceptance_issues(Path(state_dir), result)
     return []
