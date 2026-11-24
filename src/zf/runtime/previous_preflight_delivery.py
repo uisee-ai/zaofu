@@ -1,6 +1,12 @@
 """Deliver old preflight usage on demand without changing frozen call inputs."""
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
+from zf.core.config.schema import ZfConfig
+from zf.core.events.factory import event_log_from_project
+from zf.core.events.log import EventLog
 from zf.runtime.artifact_read_ledger import _safe_component
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.plan_execution_delivery import execution_review_delivery
@@ -9,17 +15,28 @@ from zf.runtime.workflow_operation import load_workflow_operation
 
 
 def prepare_previous_preflight_delivery(runtime, *, payload: dict, operation_id: str) -> None:
-    sources = payload.get('input_refs') or []
+    if payload.get('input_refs'):
+        payload['input_refs'] = previous_preflight_sources(
+            runtime.state_dir, payload['input_refs'], operation_id, event_log=runtime.event_log)
+
+
+def previous_preflight_sources(
+    state_dir: Path, sources: list[dict[str, Any]], operation_id: str, *,
+    event_log: EventLog | None = None, config: ZfConfig | None = None,
+) -> list[dict[str, Any]]:
+    """Project only the mechanical usage detail of full previous-Plan inputs."""
     if not any(isinstance(s, dict) and s.get('source_id', '').startswith('previous-plan-candidate-')
                for s in sources):
-        return
-    operation = load_workflow_operation(runtime.event_log, operation_id)
+        return sources
+    if event_log is None:
+        event_log = event_log_from_project(state_dir, config=config)
+    operation = load_workflow_operation(event_log, operation_id)
     frozen = None
     if operation is not None:
-        request = hydrate_sidecar_ref(runtime.state_dir, operation['request_ref']).payload['request']
+        request = hydrate_sidecar_ref(state_dir, operation['request_ref']).payload['request']
         attempt = _safe_component(request['active_attempt_id'])
         sha = request['source_manifest_digest']
-        frozen = hydrate_sidecar_ref(runtime.state_dir, {
+        frozen = hydrate_sidecar_ref(state_dir, {
             'ref': f'artifacts/attempts/{attempt}/source-manifests/{sha}.json', 'sha256': sha,
         }).payload['sources']
     result = []
@@ -33,7 +50,7 @@ def prepare_previous_preflight_delivery(runtime, *, payload: dict, operation_id:
         if frozen is not None:
             previous = [s for s in frozen if s.get('source_id') == source['source_id']]
             if len(previous) == 1 and previous[0].get('kind') == 'plan_preflight_delivery':
-                body = hydrate_sidecar_ref(runtime.state_dir, previous[0]).payload
+                body = hydrate_sidecar_ref(state_dir, previous[0]).payload
                 original = body['original_source']
                 keys = ('ref', 'sha256', 'artifact_id', 'allowed_paths', 'access_scope', 'kind')
                 if all(original.get(k) == source.get(k) for k in keys):
@@ -45,14 +62,14 @@ def prepare_previous_preflight_delivery(runtime, *, payload: dict, operation_id:
                         matches = [s for s in frozen if s.get('source_id') == source_id]
                         if len(matches) != 1:
                             raise ValueError('previous preflight detail source missing or ambiguous')
-                        hydrate_sidecar_ref(runtime.state_dir, matches[0])
+                        hydrate_sidecar_ref(state_dir, matches[0])
                         companions.append(matches[0])
                     result.extend([previous[0], *companions])
                     continue
             result.append(source)  # Legacy inputs remain full even after an upgrade.
             continue
-        result.extend(_project(runtime.state_dir, source))
-    payload['input_refs'] = result
+        result.extend(_project(state_dir, source))
+    return result
 
 
 def _project(state_dir, source):

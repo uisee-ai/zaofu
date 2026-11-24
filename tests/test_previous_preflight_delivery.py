@@ -223,3 +223,43 @@ def test_previous_candidate_grant_cannot_alias_another_artifact(tmp_path):
     body["input_refs"].append({**source, "artifact_id": "another-artifact.json"})
     with pytest.raises(ValueError, match="ambiguous previous Plan citation"):
         prepare(runtime, body)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_replan_trigger_preflight_uses_the_issued_delivery_on_resume(tmp_path, monkeypatch, legacy):
+    runtime = _runtime(tmp_path)
+    original = preflight()
+    source = write_immutable_json_sidecar(runtime.state_dir, original, root="fixtures/preflight",
+        kind="plan_candidate_preflight", schema_version=original["schema_version"], created_by="test")
+
+    def planner_input():
+        return {"workflow_run_id": "run", "fanout_id": "fanout", "role_instance": "planner",
+                "output_profile_id": "workflow-read", "canonical_success_event": "prd.plan.child.completed",
+                "canonical_failure_event": "prd.plan.child.failed",
+                "trigger_payload": {"previous_plan_candidate_refs": [source]}}
+
+    first_payload = planner_input()
+    if legacy:
+        import zf.runtime.previous_preflight_delivery as module
+        with monkeypatch.context() as old:
+            old.setattr(module, "previous_preflight_sources", lambda state_dir, sources, operation_id, **kwargs: sources)
+            first = prepare(runtime, first_payload)
+    else:
+        first = prepare(runtime, first_payload)
+    sealed = manifest(runtime, first_payload)
+    prior = next(s for s in sealed["sources"] if s["source_id"] == "previous-plan-candidate-1")
+    required = {r["source_id"] for r in first_payload["required_reads"]}
+    assert prior["source_id"] in required
+    if legacy:
+        assert prior["sha256"] == source["sha256"]
+    else:
+        delivered = hydrate_sidecar_ref(runtime.state_dir, prior).payload
+        assert delivered["preflight"]["errors"] == original["errors"]
+        detail = delivered["preflight"]["execution_review"]["usage_observations"]
+        companions = {s["source_id"]: s for s in sealed["sources"]}
+        assert {delivered["original_source"]["source_id"], detail["detail_source_id"]}.isdisjoint(required)
+        assert hydrate_sidecar_ref(runtime.state_dir, companions[detail["detail_source_id"]]).payload == original["execution_review"]["usage_observations"]
+        assert hydrate_sidecar_ref(runtime.state_dir, companions[delivered["original_source"]["source_id"]]).payload == original
+    replay_payload = planner_input()
+    assert prepare(runtime, replay_payload).request_hash == first.request_hash
+    assert manifest(runtime, replay_payload) == sealed

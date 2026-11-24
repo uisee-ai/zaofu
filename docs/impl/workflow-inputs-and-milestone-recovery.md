@@ -219,4 +219,6 @@ Reader 领取工作前，若共享冻结依据无法通过校验，控制面记�
 
 提交可执行计划时，若当前 OA 诊断范围保留任务图且授权 Writer 数量为零，预检返回 `candidate_diagnosis_no_writer_authority`，并列出草案的必要字段。确需决定受保护范围或新授权时，Planner 可把已核实的结论、来源和具体问题提交为 `owner_review` 草案，交独立 Critic 判断。新增工作、候选重验与计划批准分别沿用原有授权入口。
 
+Planner 或 Critic 从恢复触发中取得上一轮预检时，签发前也会将机械用量明细移入可按需读取的工件。必读视图保留失败项、验收依据及原件摘要，完整预检和用量分组可按摘要取回。已签发的旧 attempt 恢复时沿用它实际签收的视图。
+
 已绑定 `workflow-read` Plan 预检和失败事件的 Planner，在同一个 operation scratch 填写结果，按原命令验证、提交。真实输入丢失或工具故障使 Plan 无法交付时，`execution_status=failed` 路由到该请求的子执行失败事件。可修复的草稿问题继续原地修正，业务意见和 Owner 决策保留各自的审查路径。
