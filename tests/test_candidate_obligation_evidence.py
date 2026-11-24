@@ -7,7 +7,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
 @pytest.mark.parametrize('fault', ['', 'original_contract', 'approved_owner', 'wrong_generation',
-    'missing_file', 'foreign_ref', 'owner_recommendation', 'wrong_host_start'])
+    'missing_file', 'foreign_ref', 'owner_recommendation', 'wrong_host_start', 'missing_row'])
 def test_obligation_admission_binds_real_consumer_evidence(evidence, monkeypatch, fault):
     runtime, _, source, _, receipt, completed = evidence
     finding = {'finding_id': 'finding-original', 'operation_id': source.operation_id,
@@ -56,6 +56,7 @@ def test_obligation_admission_binds_real_consumer_evidence(evidence, monkeypatch
             payload={'workflow_run_id': payload['workflow_run_id'], 'trigger_event_id': trigger.id,
                      'task_map_generation': 'wrong' if fault == 'wrong_generation' else payload['task_map_generation']}))
         row['resolution_event_id'] = decision.id
+    if fault == 'missing_row': semantic.pop('recovery_obligation_results')
     if fault == 'missing_file': (runtime.state_dir / ref['ref']).unlink()
     if fault == 'foreign_ref': row['evidence_refs'] = [receipt]
     if fault == 'owner_recommendation':
@@ -65,6 +66,12 @@ def test_obligation_admission_binds_real_consumer_evidence(evidence, monkeypatch
     validation = service.validate_plan_candidate(**kwargs)
     success = fault in {'', 'original_contract', 'approved_owner'}
     assert (validation['status'] == 'passed') is success, validation
+    if fault == 'missing_row':
+        issue, = validation['errors']
+        assert 'candidate_recovery_obligations[].finding_id' in issue['message']
+        assert 'result.recovery_obligation_results[]' in issue['message']
+        assert all(k in issue['message'] for k in ('status', 'rationale', 'evidence_refs', 'ref', 'sha256'))
+        assert 'recovery_obligation_results' not in semantic
     if success: assert service.submit(**kwargs).admitted_event_id
 
 

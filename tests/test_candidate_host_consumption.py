@@ -272,7 +272,7 @@ def test_missing_candidate_coverage_points_back_to_bound_host_index(evidence, in
     assert service.validate_plan_candidate(**kwargs)["status"] == "passed"
 
 
-@pytest.mark.parametrize('fault', ['unknown-id', 'duplicate-id', 'missing-output', 'changed-receipt',
+@pytest.mark.parametrize('fault', ['unknown-id', 'manifest-digest', 'duplicate-id', 'missing-output', 'changed-receipt',
                                   'missing-media', 'changed-media', 'duplicate-completion', 'no-ac'])
 def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     runtime, _, _, _, receipt_ref, completed = evidence
@@ -281,6 +281,8 @@ def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     receipt = hydrate_sidecar_ref(runtime.state_dir, receipt_ref).payload
     if fault == 'unknown-id':
         semantic['host_execution_receipt_ids'] = ['evt-unbound']
+    elif fault == 'manifest-digest':
+        semantic['host_execution_receipt_ids'] += [receipt['manifest_digest'], 'foreign-value']
     elif fault == 'duplicate-id':
         semantic['host_execution_receipt_ids'] *= 2
     elif fault == 'missing-output':
@@ -304,6 +306,35 @@ def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     result = service.validate_plan_candidate(**kwargs)
     assert result['status'] == 'failed', result
     assert not any(e.type == 'workflow.call.result.admitted' for e in runtime.event_log.read_all())
+    if fault == 'manifest-digest':
+        issue, = result['errors']
+        assert 'result.host_execution_receipt_ids[1]' in issue['message'] and '2 unbound' in issue['message']
+        assert 'candidate-host-execution.receipts[].receipt_id' in issue['message'] and 'manifest_digest' in issue['message']
+        assert completed.id not in issue['message'] and semantic['host_execution_receipt_ids'][1] == receipt['manifest_digest']
+        semantic['host_execution_receipt_ids'] = [completed.id]
+        assert service.validate_plan_candidate(**kwargs)['status'] == 'passed'
+
+
+def test_duplicate_receipts_in_frozen_binding_are_diagnosed_separately_from_invalid_draft(evidence):
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    runtime, seeded, _, _, _, completed = evidence
+    prepared, payload = prepare(runtime, seeded, 'consumer-index')
+    events = runtime.event_log.read_all()
+    op = reduce_workflow_operations(events)[prepared.operation_id]
+    envelope = hydrate_sidecar_ref(runtime.state_dir, op['request_ref']).payload
+    ref = payload['candidate_host_evidence_ref']
+    binding = hydrate_sidecar_ref(runtime.state_dir, ref).payload
+    corrupt = write_sidecar_json(runtime.state_dir, 'artifacts/invalid-binding.json',
+        {**binding, 'receipts': binding['receipts'] * 2}, kind=ref['kind'], schema_version=ref['schema_version'],
+        created_by='test', access_scope=ref['access_scope'])
+    bad_request = write_sidecar_json(runtime.state_dir, 'artifacts/invalid-request.json',
+        {**envelope, 'request': {**envelope['request'], 'candidate_host_evidence_ref': corrupt}},
+        kind='request', schema_version='request.v1', created_by='test')
+    result = {**payload, 'host_execution_receipt_ids': [completed.id], 'request_hash': prepared.request_hash}
+    with pytest.raises(ValueError, match='frozen candidate-host-execution binding contains duplicate') as exc:
+        admitted_host_commands(runtime.state_dir, result, operation={**op, 'request_ref': bad_request}, events=events)
+    assert 'result.host_execution_receipt_ids[' not in str(exc.value)
 
 
 @pytest.mark.parametrize('field', ['operation_id', 'attempt_id', 'request_hash', 'workflow_run_id',

@@ -251,8 +251,16 @@ def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | N
     require_artifact_access(ref.get('access_scope'), role=consumer['role_instance'],
                             actor=consumer['role_instance'], purpose='candidate-verify')
     available = {r['receipt_id']: r for r in binding['receipts']}
-    if len(available) != len(binding['receipts']) or any(i not in available for i in ids):
-        raise ValueError('unknown or duplicate bound host receipt')
+    if len(available) != len(binding['receipts']):
+        raise ValueError('frozen candidate-host-execution binding contains duplicate receipts[].receipt_id values. '
+                         'Report this immutable binding for runtime diagnosis.')
+    unknown = [index for index, receipt_id in enumerate(ids) if receipt_id not in available]
+    if unknown:
+        raise ValueError(
+            f'{len(unknown)} unbound entries in the draft, first at result.host_execution_receipt_ids[{unknown[0]}]. '
+            'For each host observation used, identify its command_id and cite its host event ID from '
+            'candidate-host-execution.receipts[].receipt_id. The manifest_digest identifies the execution manifest.'
+        )
     contract = hydrate_sidecar_ref(state_dir, {
         'ref': result['contract_snapshot_ref'], 'sha256': consumer['contract_snapshot_digest']}).payload
     specs = {c['command_id']: c for c in contract['verification_commands']}

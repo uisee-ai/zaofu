@@ -274,4 +274,10 @@ def validate_obligation_results(result: dict, contract: dict) -> None:
                    or any(not isinstance(ref, dict) or not ref.get('ref') or not ref.get('sha256')
                           for ref in row["evidence_refs"])
                    for row in rows)):
-        raise VerificationResultError("passed candidate requires evidence-bound disposition of every retained recovery obligation")
+        raise VerificationResultError(
+            "passed candidate requires evidence-bound disposition of every retained recovery obligation. "
+            "Compare result.recovery_obligation_results[] with the frozen contract's candidate_recovery_obligations[].finding_id. "
+            "For a passed verdict, each finding_id needs exactly one row with status resolved, an independent rationale "
+            "and nonempty evidence_refs containing ref and sha256 from the authorized inputs. "
+            "Choose the verdict supported by the current evidence."
+        )

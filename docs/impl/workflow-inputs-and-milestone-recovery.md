@@ -169,7 +169,7 @@ generation 或目标范围，核对实际生产者和各阶段的附件责任。
 旧请求缺少来源时保持未观察。该字段只提供运行事实，Judge 仍
 须独立裁决并核验自己负责的交付物。项目要求具名文件时，Plan 还须声明实际发布入口。
 
-Candidate Verify 的独立结果通过受控提交时，在 scratch 的顶层 `host_execution_receipt_ids` 中填写实际使用的宿主回执，与 `verdict` 同层。预检遇到误嵌套的回执会指明修正位置，复用同一份 scratch 和既有回执即可重新验证。
+Candidate Verify 的独立结果通过受控提交时，在 scratch 的顶层 `host_execution_receipt_ids` 中填写实际使用的宿主回执，与 `verdict` 同层。按 `command_id` 核对 `candidate-host-execution.receipts[]`，引用所用观察的 `receipt_id` 事件 ID。`manifest_digest` 标识执行清单。草稿引用未绑定的值时，预检返回无效项总数和首个数组下标；冻结索引自身有重复 ID 时会报告绑定错误。预检遇到误嵌套的回执会指明修正位置，复用同一份 scratch 和既有回执即可重新验证。 当冻结合同带有 `candidate_recovery_obligations` 时，提交 `passed` 的 Reader 还要逐一核对其 `finding_id`，在 `recovery_obligation_results[]` 中记录独立判断、理由和本次授权输入里的证据引用。
 
 Reader 的首次调用可以挂在同一 Run、同一 Task 的 Workflow operation 下。重试沿历史 Reader attempt 重新核对消费范围，到所属 Workflow 为止；跨 Run 或 Task 的祖先仍要求纠正绑定。
 
