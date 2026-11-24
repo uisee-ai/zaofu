@@ -184,7 +184,8 @@ def build_canonical_required_reads(
             ):
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
-                    if source.get("kind") in {"plan_rework_candidate_partition", "plan_declared_input"}
+                    if (source_id.startswith("previous-plan-candidate-")
+                        or source.get("kind") in {"plan_rework_candidate_partition", "plan_declared_input"})
                     else ("$",)
                 )
 

@@ -311,6 +311,9 @@ Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命
   这是完成证据一致性检查，不把执行选择当作编辑授权；全局输入变化仍走原审查。
   `previous_plan_candidate_refs` 中的被拒草稿不是权威基线。提交拒绝仍为 protocol repair，
   不消耗语义返工轮次。
+  OA 的 `candidate_diagnosis_only` 返规从其批准的冻结包、包端口和本次决定读取证据。
+  原扫描触发器中的历史草稿只在本次 marker 显式选中时进入新的 Planner 请求；
+  指定 JSON 路径的草稿只要求读取这些路径。既有请求按其签发时的清单恢复。
 - 原 OA Candidate 失败入口强制 `return_to_plan`，与 skill 的“普通缺陷走产品返工”不一致。
   现在已准入 OA 可在精确 Reader target 下提交 `rework` + `candidate_repair`，显式判断
   product_defect/合同不变，并提交标准 gap Tasks。窄路由只允许逐项复制原合同，改变新 ID、

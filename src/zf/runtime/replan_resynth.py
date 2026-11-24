@@ -131,6 +131,11 @@ def build_replan_resynth_event(
     retain_prior_replan_context(
         payload, retire_operator_grant=getattr(plan, "classification", "") == "oa_semantic_return_to_plan",
     )
+    if (getattr(plan, "classification", "") == "oa_semantic_return_to_plan"
+            and getattr(plan, "resume_scope", "") == "candidate_diagnosis_only"):
+        # This diagnosis uses its frozen package. The current marker may still
+        # select earlier evidence explicitly via the passthrough below.
+        payload.pop("previous_plan_candidate_refs", None)
     # Edit scope is tied to one operator decision, never inherited by a retry.
     payload.pop("changed_task_ids", None)
     # The previous trigger's reason describes its own stage, not this replan.
