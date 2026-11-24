@@ -483,3 +483,19 @@ def test_test1_contract_shapes_materialize_without_python_repr() -> None:
     ]
     assert "['" not in json.dumps(contract, ensure_ascii=False)
     assert "{'command'" not in json.dumps(contract, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("fields", [
+    {"acceptance": "恢复训练参数"},
+    {"acceptance_criteria": ["恢复训练参数", {"id": "AC-2", "text": "兼容旧版断点"}]},
+    {"verification": "运行恢复测试"},
+])
+def test_update_task_proposal_preserves_partial_contract_fields(fields: dict) -> None:
+    message = "补充任务要求"
+    proposal = extract_action_proposal(json.dumps({"action_proposal": {
+        "action": "update-task",
+        "intent": {"decision": "propose_action", "source_quote": message},
+        "payload": {"task_id": "TRAIN", "contract": fields},
+    }}), user_message=message)
+    assert proposal is not None and proposal["valid"]
+    assert proposal["payload"]["contract"] == fields

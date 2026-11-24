@@ -15,10 +15,15 @@ for (const [status, label] of [
         receipt: { status, delivery_status: "dispatched", target_operation_id: "op-successor", business_completed: false } },
     } }));
     await page.goto("/?project=ui-review&page=task&task=UI-102");
+    await expect(page.locator(".reader-status")).toContainText("进行中");
+    await expect(page.getByTestId("task-handoff-receipt")).toHaveCount(0);
+    await page.getByRole("link", { name: "查看任务事件" }).click();
+    await page.getByText(/查看任务运行详情 ·/).click();
     await expect(page.getByTestId("task-handoff-receipt")).toHaveText(label);
     await expect(page.locator(".handoff-summary-panel")).toContainText("in_progress");
     await expect(page.locator(".handoff-summary-panel")).toContainText("已派发到目标执行");
     await page.reload();
+    await page.getByText(/查看任务运行详情 ·/).click();
     await expect(page.getByTestId("task-handoff-receipt")).toHaveText(label);
     await page.screenshot({ path: test.info().outputPath("receipt.png"), fullPage: true });
     expect(errors).toEqual([]);

@@ -21,6 +21,7 @@ import { TaskChatHeader } from "./TaskChatHeader";
 import { AgentThreadNavigation } from "../../components/agent-session/AgentThreadNavigation";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
 import { DuringRunComposerActions } from "../../components/agent-session/DuringRunComposerActions";
+import { TaskUpdatePreview, taskUpdatePresentation } from "../kanban/TaskUpdatePreview";
 import { actionPresentation } from "../../components/agent-session/actionPresentation";
 import { deriveComposerStatus } from "../../components/agent-session/workState";
 import { useWorkingTitle } from "../../components/agent-session/useWorkingTitle";
@@ -469,6 +470,7 @@ export function OrchestratorPanel({
   const [pendingProposalExpanded, setPendingProposalExpanded] = useState<Record<string, boolean>>({});
   const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
   const [pendingProposalNotice, setPendingProposalNotice] = useState("");
+  const [receiptProposalId, setReceiptProposalId] = useState("");
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => (
     taskThread || storedActiveKanbanThread(localStorage, headlessProjectId)
   ));
@@ -1347,9 +1349,20 @@ export function OrchestratorPanel({
     });
   }
 
+  function reportTaskUpdate(result: unknown, payload: Record<string, unknown>, proposalId: string): boolean {
+    const receipt = recordValue(result);
+    const target = textValue(payload.task_id) || context.taskId;
+    const completed = receipt?.ok === true && receipt.action === "update-task" && receipt.status === "completed"
+      && receipt.task_id === target && Boolean(receipt.event_id);
+    setReceiptProposalId(proposalId);
+    setPendingProposalNotice(completed ? taskUpdatePresentation(payload).completedLabel : "等待任务更新回执");
+    return completed;
+  }
+
   async function runHeadlessProposal(proposal: AgentSessionActionProposal, key: string) {
     if (!proposal.valid || !canUseAction(proposal.action)) return;
     setHeadlessProposalRunning(key);
+    if (taskThread && proposal.action === "update-task") setPendingProposalNotice("");
     try {
       const durableInteraction = await pendingProposalInteraction(proposal);
       const payload = withImplicitTaskReference({
@@ -1366,6 +1379,7 @@ export function OrchestratorPanel({
         setOperatorError(actionFailureReason(result));
         return;
       }
+      if (taskThread && proposal.action === "update-task" && !reportTaskUpdate(result, payload, proposal.proposalEventId || "")) return;
       if (durableInteraction) {
         await answerWebChatInteraction(
           headlessProjectId,
@@ -1616,6 +1630,7 @@ export function OrchestratorPanel({
   async function runPendingProposal(item: PendingKanbanProposal) {
     if (!item.valid || !canUseAction(item.action)) return;
     setPendingProposalBusy(item.proposal_event_id);
+    if (taskThread && item.action === "update-task") setPendingProposalNotice("");
     setPendingProposalErrors((current) => ({ ...current, [item.proposal_event_id]: "" }));
     try {
       const result = await Promise.resolve(onAction(item.action, {
@@ -1637,8 +1652,13 @@ export function OrchestratorPanel({
           [item.proposal_event_id]: actionFailureReason(result) || "action failed",
         }));
       } else {
-        const taskId = textValue((result as Record<string, unknown> | undefined)?.task_id);
-        setPendingProposalNotice(proposalRunNotice(item.action, item.title || item.action, taskId));
+        if (taskThread && item.action === "update-task") {
+          if (!reportTaskUpdate(result, item.payload, item.proposal_event_id)) return;
+        } else {
+          const taskId = textValue(recordValue(result)?.task_id);
+          setReceiptProposalId("");
+          setPendingProposalNotice(proposalRunNotice(item.action, item.title || item.action, taskId));
+        }
         const pending = await findPendingDurableInteraction((interaction) => (
           interaction.kind === "action_approval"
           && interaction.request.proposal_event_id === item.proposal_event_id
@@ -1667,6 +1687,7 @@ export function OrchestratorPanel({
 
   async function dismissPendingProposal(item: PendingKanbanProposal) {
     setPendingProposalBusy(item.proposal_event_id);
+    if (taskThread && item.action === "update-task") setPendingProposalNotice("");
     setPendingProposalErrors((current) => ({ ...current, [item.proposal_event_id]: "" }));
     try {
       const result = await Promise.resolve(onAction("kanban-proposal-dismiss", {
@@ -1990,6 +2011,11 @@ export function OrchestratorPanel({
   }), [headlessThreadKey, headlessUnreadCounts, visibleHeadlessConversation]);
   const activeHeadlessThread = displayedHeadlessConversation.threads.find((thread) => thread.id === headlessThreadKey)
     ?? displayedHeadlessConversation.threads[0];
+  const shownCards = taskThread && taskHistoryOpen ? activeHeadlessThread?.turns.flatMap(turn => turn.cards) ?? [] : [];
+  const timelineProposalIds = new Set(shownCards.map(card => card.proposal?.proposalEventId));
+  const showProposalNotice = pendingProposalNotice && !shownCards.some(card =>
+    receiptProposalId && card.proposal?.proposalEventId === receiptProposalId && card.payload?.resolution === "executed");
+  const visiblePendingProposals = pendingProposals.filter(item => !timelineProposalIds.has(item.proposal_event_id));
   const referenceablePlans = (activeHeadlessThread?.id === headlessThreadKey ? activeHeadlessThread.turns : [])
     .flatMap((turn) => turn.cards)
     .map((card) => card.planRequest)
@@ -2040,6 +2066,8 @@ export function OrchestratorPanel({
         card.id,
         card.planRequest?.requestId || "",
         card.planRequest?.requestEventId || "",
+        card.proposal?.proposalId || "",
+        card.proposal?.proposalEventId || "",
         String(card.proposal?.payload?.proposal_id || ""),
       ])).filter(Boolean),
     );
@@ -2152,7 +2180,7 @@ export function OrchestratorPanel({
   const headlessEmptyBody = headlessCanChat
     ? "Ask about this project, shape a plan, or prepare a controlled action."
     : chatAccessHint;
-  const headlessPlaceholder = taskThread ? "询问或补充这项任务…"
+  const headlessPlaceholder = taskThread ? "问进展、补充背景，或提出任务调整…"
     : !headlessCanChat
     ? (showTokenRow ? "Save action token to send..." : chatAccessHint)
     : headlessPlanDiscussion
@@ -2175,7 +2203,7 @@ export function OrchestratorPanel({
       className={`panel orchestrator-panel ${panelMode}`}
       role={taskThread ? "region" : "dialog"}
       aria-modal={taskThread ? undefined : fullscreen}
-      aria-label={taskThread ? "任务 Agent" : "zaofu"}
+      aria-label={taskThread ? "Task conversation" : "zaofu"}
     >
       {taskThread ? <TaskChatHeader
         thread={activeHeadlessThread} hasMore={headlessHistoryHasMore} open={taskHistoryOpen}
@@ -2384,6 +2412,7 @@ export function OrchestratorPanel({
               compact={!fullscreen}
               compactRunHeader
               conversation={displayedHeadlessConversation}
+              renderRunIdentity={taskThread ? () => <span className="agent-run-who">zaofu agent</span> : undefined}
               collapseCompletedRunDetails
               emptyBody={taskThread ? "" : headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
@@ -2492,13 +2521,13 @@ export function OrchestratorPanel({
               onClose={() => setWebChatDrawer("")}
             />
           ) : null}
-          {pendingProposals.length || pendingProposalNotice ? (
+          {visiblePendingProposals.length || showProposalNotice ? (
             <div aria-label="Pending proposals" className="headless-pending-proposals">
-              <div className="headless-pending-title">
-                Pending proposals · {pendingProposals.length}
-              </div>
-              {pendingProposalNotice ? (
-                <div className="headless-pending-notice">
+              {visiblePendingProposals.length > 0 && <div className="headless-pending-title">
+                {taskThread ? "待确认" : "Pending proposals"} · {visiblePendingProposals.length}
+              </div>}
+              {showProposalNotice ? (
+                <div className="headless-pending-notice" role="status">
                   {pendingProposalNotice}
                   <button
                     aria-label="Clear notice"
@@ -2510,22 +2539,23 @@ export function OrchestratorPanel({
                   </button>
                 </div>
               ) : null}
-              {pendingProposals.map((item) => {
+              {visiblePendingProposals.map((item) => {
                 const expanded = Boolean(pendingProposalExpanded[item.proposal_event_id]);
                 const error = pendingProposalErrors[item.proposal_event_id] || "";
-                const presentation = actionPresentation(item.action);
+                const taskEdit = taskThread && item.action === "update-task";
+                const presentation = taskEdit ? taskUpdatePresentation(item.payload) : actionPresentation(item.action);
                 return (
                   <div className="headless-pending-entry" key={item.proposal_event_id}>
                     <div className="headless-pending-item">
                       <div className="headless-pending-main">
                         <strong>{item.title || presentation.title}</strong>
                         <small>
-                          {item.action}
+                          {taskEdit ? presentation.title : item.action}
                           {item.ts ? ` · ${item.ts.slice(11, 16)} UTC` : ""}
                           {!item.valid && item.validation_error ? ` · invalid: ${item.validation_error}` : ""}
                         </small>
                       </div>
-                      <button
+                      {(!taskEdit || item.reason) && <button
                         aria-expanded={expanded}
                         className="headless-pending-expand"
                         type="button"
@@ -2533,8 +2563,8 @@ export function OrchestratorPanel({
                           ...current, [item.proposal_event_id]: !expanded,
                         }))}
                       >
-                        {expanded ? "Hide" : "Details"}
-                      </button>
+                        {taskEdit ? (expanded ? "收起" : "详情") : (expanded ? "Hide" : "Details")}
+                      </button>}
                       <button
                         className="headless-pending-run"
                         disabled={!item.valid || !canUseAction(item.action) || pendingProposalBusy === item.proposal_event_id}
@@ -2551,15 +2581,16 @@ export function OrchestratorPanel({
                         type="button"
                         onClick={() => void dismissPendingProposal(item)}
                       >
-                        Dismiss
+                        {taskEdit ? "忽略" : "Dismiss"}
                       </button>
                     </div>
+                    {taskEdit && <TaskUpdatePreview payload={item.payload} />}
                     {expanded ? (
                       <div className="headless-pending-details">
                         {item.reason ? (
                           <div><span className="headless-pending-key">reason</span>{item.reason}</div>
                         ) : null}
-                        {pendingProposalContract(item).map(([key, value]) => (
+                        {!taskEdit && pendingProposalContract(item).map(([key, value]) => (
                           <div key={key}>
                             <span className="headless-pending-key">{key}</span>
                             {value}
@@ -2569,7 +2600,7 @@ export function OrchestratorPanel({
                     ) : null}
                     {error ? (
                       <div className="headless-pending-error" role="alert">
-                        {error} — the proposal stays pending; retry or dismiss.
+                        {taskEdit ? `更新失败，${error}` : `${error} — the proposal stays pending; retry or dismiss.`}
                       </div>
                     ) : null}
                   </div>
@@ -2700,7 +2731,7 @@ export function OrchestratorPanel({
                   ref={headlessInputRef}
                   className="headless-input"
                   rows={taskThread ? 1 : undefined}
-                  aria-label={taskThread ? "询问或补充这项任务" : undefined}
+                  aria-label={taskThread ? "任务消息" : undefined}
                   placeholder={headlessPlaceholder}
                   aria-invalid={!headlessCanChat || undefined}
                   disabled={headlessSubmitting || Boolean(permissionEscalation)}
@@ -2781,6 +2812,7 @@ export function OrchestratorPanel({
                       iconSize={21}
                       status={deriveComposerStatus(activeHeadlessRun?.status ?? (hasDurableTurns ? "idle" : activeHeadlessThread?.status), headlessSubmitting)}
                       onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}
+                      sendLabel={taskThread ? "Send" : undefined}
                       title={headlessCanChat ? "Send" : chatAccessHint}
                       onClick={() => void submitHeadlessMessage()}
                     />

@@ -1,4 +1,4 @@
-import type { Task, TaskDetail } from "../../api/types";
+import type { EventRecord, Task, TaskDetail } from "../../api/types";
 import { asRecord, textValue } from "../../app/shared";
 import { taskIsEffectivelyTerminal } from "../../lib/task-display";
 import { taskStatus } from "./taskViewModel";
@@ -15,7 +15,7 @@ const stateNames: Record<string, string> = {
   in_progress: "进行中", review: "评审阶段", testing: "测试阶段", unknown: "执行状态待确认",
 };
 
-function pipelineState(pipeline: Record<string, unknown>) {
+function pipelineState(pipeline: Record<string, unknown>, activeDispatch: unknown) {
   const stage = textValue(pipeline.pipeline_stage || pipeline.current_stage);
   const operationStage = textValue(pipeline.current_stage);
   const operationName = stageNames[operationStage] || operationStage;
@@ -27,7 +27,8 @@ function pipelineState(pipeline: Record<string, unknown>) {
   if (!operationStatus && dispatched) return { label: `${operationName}已派发` };
   if (operationStatus === "running") {
     const owner = asRecord(pipeline.owner);
-    return { label: `${operationName}中`, worker: textValue(owner.instance_id || owner.role) };
+    const bound = pipeline.dispatch_id && (!activeDispatch || pipeline.dispatch_id === activeDispatch);
+    return { label: `${operationName}中`, worker: bound ? textValue(owner.instance_id) : undefined };
   }
   const phase = stage.replace(/_(ready|active)$/, "");
   if (phase !== stage) return { label: `等待${stageNames[phase] || phase}` };
@@ -42,13 +43,13 @@ export function taskExecution(task: Task, detail: TaskDetail | null): { label: s
   const pipeline = handoff?.pipeline;
   if (handoff?.error || (!pipeline && detail.task_run_panel?.error) || (pipeline && pipeline.status !== "current")) return { label: stateNames.unknown };
   if (pipeline) {
-    const state = pipelineState({ ...pipeline, owner: pipeline.owner ?? handoff.owner });
+    const state = pipelineState({ ...pipeline, owner: pipeline.owner ?? handoff.owner }, detail.task.active_dispatch_id);
     return { ...state, manualEvidence: pipeline.pipeline_stage === "external_gate_waiting" };
   }
   const op = detail.task_run_panel?.active_operation;
   const dispatch = detail.task.active_dispatch_id;
   if (dispatch && op?.dispatch_id === dispatch && op.active && op.state === "in_progress") {
-    return { label: "执行中", worker: textValue(op.instance_id || op.role) };
+    return { label: "执行中", worker: textValue(op.instance_id) };
   }
   if (status === "backlog") {
     const binding = asRecord(detail.task.execution_binding);
@@ -60,15 +61,11 @@ export function taskExecution(task: Task, detail: TaskDetail | null): { label: s
   return { label: stateNames[status] || status };
 }
 
-export function lastStageResult(detail: TaskDetail | null): string {
-  const results = detail?.handoff_summary?.completed?.filter(item => item.kind === "admitted_result") ?? [];
-  const last = [...results].sort((a, b) => textValue(a.settled_at).localeCompare(textValue(b.settled_at))).at(-1);
-  if (!last) return "";
-  // Older handoff-summary.v1 responses only provide the formatted result.
-  const summary = textValue(last.summary);
-  const legacy = summary.match(/^(\w+) · generation \d+ · (.+)$/);
-  const stage = textValue(last.stage || legacy?.[1]);
-  const verdict = textValue(last.semantic_verdict || legacy?.[2]);
-  const outcomes: Record<string, string> = { passed: "已通过", approved: "已通过", admit: "已准入", failed: "未通过", blocked: "受阻", abstained: "未得出结论" };
-  return stage && outcomes[verdict] ? (stageNames[stage] || stage) + outcomes[verdict] : summary;
+export function latestInvalidContract(events: EventRecord[]) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.type === "task.contract.invalid") return event;
+    if (event.type === "task.contract.update" || event.type === "task.dispatched") break;
+  }
+  return null;
 }

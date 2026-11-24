@@ -18,6 +18,7 @@ interface ComposerSubmitButtonProps extends Omit<ButtonHTMLAttributes<HTMLButton
   iconSize?: number;
   /** Extra trailing content (e.g. a split-button chevron) kept after the icon. */
   children?: ReactNode;
+  sendLabel?: string;
 }
 
 export function ComposerSubmitButton({
@@ -27,6 +28,7 @@ export function ComposerSubmitButton({
   disabled,
   className,
   title,
+  sendLabel,
   children,
   onClick,
   ...rest
@@ -38,7 +40,7 @@ export function ComposerSubmitButton({
   return (
     <button
       {...rest}
-      aria-label={canStop ? "Interrupt" : "Send message"}
+      aria-label={canStop ? "Interrupt" : sendLabel || "Send message"}
       className={className}
       // While generating without a stop handler the button is inert; with a
       // stop handler it stays clickable so the user can interrupt.
@@ -54,7 +56,7 @@ export function ComposerSubmitButton({
       title={canStop ? "Interrupt" : title}
       type={canStop ? "button" : "submit"}
     >
-      {icon}
+      {sendLabel && status !== "streaming" && status !== "submitted" ? sendLabel : icon}
       {children}
     </button>
   );

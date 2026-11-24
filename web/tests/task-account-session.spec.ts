@@ -19,12 +19,13 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   await expect(reader.getByRole("heading", { level: 1 })).toContainText("checkpoint", { timeout: 30_000 });
   const session = await (await page.request.get("/api/web-session")).json();
   expect(session).toMatchObject({ mode: "local_account", actions_enabled: true, requires_token: false });
-  const chat = reader.getByRole("region", { name: "任务 Agent" });
+  const chat = reader.getByRole("region", { name: "Task conversation" });
   await expect(chat.getByPlaceholder("action token", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("zf.webActionToken"))).toBeNull();
 
   await page.setViewportSize({ width: 1440, height: 960 });
   const account = page.locator(".rail-account .account-switcher summary");
+  await expect(page.locator(".topbar .account-switcher")).toHaveCount(0);
   await expect(account.locator(".account-name")).toHaveText("zaofu");
   await expect(account).toBeInViewport({ ratio: 1 });
   const desktop = (await account.boundingBox())!;
@@ -41,10 +42,12 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   await page.getByRole("button", {name: /Expand sidebar|展开侧栏/}).click();
   await expect(reader.getByRole("heading", { name: "验收条件" })).toBeVisible();
   await page.screenshot({ path: info.outputPath("desktop.png") });
-  const input = chat.getByPlaceholder("询问或补充这项任务…");
+  await expect(chat.getByText("Task conversation", { exact: true })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Send", exact: true })).toHaveText("Send");
+  const input = chat.getByPlaceholder("问进展、补充背景，或提出任务调整…");
   await input.fill("请确认本任务接收到了这条追问。");
   const sent = page.waitForResponse(r => r.url().endsWith("/actions/chat-orchestrator") && r.request().method() === "POST");
-  await chat.getByRole("button", { name: "Send message" }).click();
+  await chat.getByRole("button", { name: "Send", exact: true }).click();
   const response = await sent;
   const headers = await response.request().allHeaders();
   expect(headers["x-zf-web-token"]).toBeUndefined();
@@ -53,13 +56,21 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   expect(response.ok()).toBeTruthy();
   expect(await response.json()).toMatchObject({ ok: true });
   await expect(chat.getByText("已收到任务追问（验证用回复）。", { exact: true }).first()).toBeVisible({ timeout: 40_000 });
+  await expect(chat.locator(".agent-run-block").filter({ hasText: "已收到任务追问" }).getByText("zaofu agent", { exact: true })).toBeVisible();
   await chat.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("conversation.png") });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await reader.locator(".reader-article").evaluate(el => { el.scrollTop = 0; });
-  await reader.getByRole("button", { name: "属性", exact: true }).click();
-  await expect(reader.getByRole("complementary")).toContainText("TASK-DATASET");
+  await expect(reader.getByText("需核对恢复后的训练参数", { exact: false })).toHaveCount(1);
+  await expect(reader.getByRole("heading", { name: "交付结果" })).toHaveCount(0);
+  await reader.getByRole("button", { name: "任务属性", exact: true }).click();
+  const drawer = reader.getByRole("dialog", { name: "任务属性" });
+  await expect(drawer.getByRole("link", { name: "准备训练数据集" })).toBeVisible();
+  await expect(drawer).toContainText("TASK-DATASET · 已完成");
+  await expect(drawer).toContainText("进入阻塞");
+  await page.screenshot({ path: info.outputPath("mobile-properties.png") });
+  await page.keyboard.press("Escape");
   await page.screenshot({ path: info.outputPath("mobile.png") });
   await expect(account).toBeHidden();
   await page.getByRole("button", {name: /Open navigation|打开导航/}).click();

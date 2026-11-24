@@ -1,3 +1,4 @@
+import { TaskInspect } from "./TaskInspect";
 // ObservabilityPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { useObservabilityPanelData } from "./useObservabilityPanelData";
 import { search } from "../../api/client";
@@ -147,6 +148,7 @@ export function ObservabilityPage({
   onSelectEvent,
   projectionDetail,
   scopedTraceRows,
+  selectedTaskId,
   searchResult,
   selectedEvent,
   selectedEventKey,
@@ -165,6 +167,7 @@ export function ObservabilityPage({
   onSelectEvent: (key: string) => void;
   projectionDetail: Record<string, unknown> | null;
   scopedTraceRows?: TraceSummary[] | null;
+  selectedTaskId?: string | null;
   searchResult: SearchResult | null;
   selectedEvent: EventRecord | null;
   selectedEventKey: string;
@@ -198,7 +201,8 @@ export function ObservabilityPage({
     return Math.max(max ?? 0, agent.context_usage_ratio);
   }, null);
   const parsedEventFilter = parseEventFilter(eventFilter);
-  const activeEventChips = eventFilterChips(eventFilter, parsedEventFilter.task || "");
+  const taskScope = parsedEventFilter.task || selectedTaskId || "";
+  const activeEventChips = eventFilterChips(eventFilter, selectedTaskId || "");
   const normalizedEventFilter = eventFilter.trim();
   const eventSavedViews = [
     {
@@ -465,6 +469,9 @@ export function ObservabilityPage({
         </div>
       ) : null}
 
+      {tab === "events" && taskScope && activeProjectId && <TaskInspect
+        key={JSON.stringify([activeProjectId, taskScope])} taskId={taskScope}
+        projectId={activeProjectId} skills={snapshot?.skills ?? null} onOpenProjection={onOpenProjection} />}
       {tab === "events" ? (
         <div className="observability-workbench events-workbench">
           <section className="subsection observability-left-pane event-control-pane">
