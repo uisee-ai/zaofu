@@ -21,8 +21,11 @@ def failed_synth(tmp_path):
     return state, log, runtime, role, dispatch, before, failure
 
 
-def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monkeypatch):
+@pytest.mark.parametrize("closed", [False, True])
+def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monkeypatch, closed):
     state, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path)
+    if closed:
+        _close_failed_operation(runtime, dispatch, failure)
     alive = [True]
     monkeypatch.setattr(runtime.transport, "terminate", lambda _: alive.__setitem__(0, False), raising=False)
     monkeypatch.setattr(runtime.transport, "is_alive", lambda _: alive[0])
@@ -35,6 +38,10 @@ def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monk
     after = reduce_workflow_operations(log.read_all())[dispatch.payload["operation_id"]]
     for key in ("request_hash", "request_ref", "active_attempt_id", "budget_snapshot"):
         assert after[key] == before[key]
+    if closed:
+        retries = [e for e in log.read_all() if e.type == "workflow.operation.retry_started"]
+        assert len(retries) == 1 and retries[0].causation_id == failure.id
+        assert after["retry_count"] == 1
     manifest = runtime._fanout_manifest(dispatch.payload["fanout_id"])
     assert manifest["synth"]["status"] == "dispatched"
     assert manifest["aggregate"]["status"] == "started"
@@ -177,3 +184,26 @@ def test_unknown_attempt_guidance_never_invents_resume_cursor():
     prompt = reader_continuation_guidance(attempt_id='', backend='codex', cli='/current/zf')
     assert 'cannot still use' in prompt
     assert '--required --resume' not in prompt
+
+
+def _close_failed_operation(runtime, dispatch, failure, **override):
+    p = dispatch.payload
+    event = ZfEvent(type="workflow.operation.failed", actor="zf-cli", origin="kernel",
+        causation_id=failure.id, correlation_id=dispatch.correlation_id, payload={
+            "workflow_run_id": p["workflow_run_id"], "operation_id": p["operation_id"],
+            "request_hash": p["request_hash"], "fanout_id": p["fanout_id"], "child_id": "synth",
+            "reason": failure.payload["reason"], "failure_class": failure.payload["failure_class"],
+        })
+    for key, value in override.items():
+        setattr(event, key, value)
+    runtime.event_writer.append(event)
+
+
+@pytest.mark.parametrize("override", [{"origin": "external"}, {"causation_id": "other-failure"}])
+def test_transport_resume_rejects_an_unrelated_operation_closeout(tmp_path, override):
+    _state, log, runtime, role, dispatch, _, failure = failed_synth(tmp_path)
+    _close_failed_operation(runtime, dispatch, failure, **override)
+    before = len(log.read_all())
+    with pytest.raises(ValueError, match="blocked, terminal"):
+        reopen_synth_restart_checkpoint(runtime, role, failure.id)
+    assert len(log.read_all()) == before

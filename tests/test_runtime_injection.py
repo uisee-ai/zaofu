@@ -94,7 +94,7 @@ class TestGenerateRoleInstructions:
         result = generate_role_instructions(self.config, orch_role)
         assert "orchestrator" in result.lower()
 
-    def test_skill_entries_include_description_and_runtime_path(self):
+    def test_skill_entries_include_description_and_runtime_path(self, tmp_path):
         role = RoleConfig(name="dev", backend="codex", skills=["test-driven-development"])
         entries = [
             SkillLockEntry(
@@ -104,7 +104,7 @@ class TestGenerateRoleInstructions:
                 task_id=None,
                 run_id=None,
                 name="test-driven-development",
-                source="skills/test-driven-development/SKILL.md",
+                source="/host-only/skills/test-driven-development/SKILL.md",
                 sha256="abc",
                 description="Drives development with tests.",
                 materialized_to=".zf/workdirs/dev/codex-home/skills/test-driven-development",
@@ -114,12 +114,14 @@ class TestGenerateRoleInstructions:
         result = generate_role_instructions(
             self.config,
             role,
-            skill_entries=entries,
+            skill_entries=entries, project_root=tmp_path,
         )
 
         assert "/test-driven-development" in result
         assert "Drives development with tests." in result
-        assert ".zf/workdirs/dev/codex-home/skills/test-driven-development" in result
+        body = tmp_path / entries[0].materialized_to / "SKILL.md"
+        assert str(body) in result
+        assert "/host-only/" not in result
 
     def test_run_contract_context_included_when_state_dir_ref_is_available(
         self,
