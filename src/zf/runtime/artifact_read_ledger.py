@@ -850,6 +850,10 @@ def _manifest_ref_path(state_dir: Path, ref: str) -> Path:
     return sidecar_path(state_dir, safe_sidecar_ref(raw))
 
 
+class ArtifactSourceNotFound(ArtifactReadError):
+    """No occurrence matches the supplied source and artifact identity."""
+
+
 def _find_source(
     manifest: Mapping[str, Any],
     *,
@@ -869,7 +873,7 @@ def _find_source(
         raise ArtifactReadError(f"ambiguous source: {source_id}/{artifact_id}; use the pinned required read")
     if matches:
         return matches[0]
-    raise ArtifactReadError(f"source not found: {source_id}/{artifact_id}")
+    raise ArtifactSourceNotFound(f"source not found: {source_id}/{artifact_id}")
 
 
 def _select_json_path(value: Any, path: str) -> Any:
@@ -931,6 +935,7 @@ __all__ = [
     "READ_POLICY_SCHEMA",
     "SOURCE_MANIFEST_SCHEMA",
     "ArtifactReadError",
+    "ArtifactSourceNotFound",
     "active_ledger_attempt_id",
     "active_read_ledger_path",
     "append_artifact_read",

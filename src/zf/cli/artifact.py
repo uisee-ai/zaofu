@@ -260,6 +260,7 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
     from time import perf_counter
+    from zf.runtime.artifact_read_ledger import ArtifactSourceNotFound
     started = perf_counter()
     try:
         required = getattr(args, "required", False)
@@ -366,6 +367,15 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
 
     except (ConfigError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        if isinstance(exc, ArtifactSourceNotFound) and args.source and args.artifact:
+            import shlex
+            from zf.runtime.cli_command import zf_cli_cmd
+
+            lookup = ["artifact", "index", f"--attempt={args.attempt}", f"--source-id={args.source}"]
+            if args.state_dir:
+                lookup.append(f"--state-dir={args.state_dir}")
+            print("Use the read_command for the declared artifact_id and json_path from this authorized lookup.", file=sys.stderr)
+            print(f"{zf_cli_cmd()} {shlex.join(lookup)}", file=sys.stderr)
         return 1
     if getattr(args, "page_start", None) is not None:
         row = result["read"]

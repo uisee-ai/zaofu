@@ -6,7 +6,7 @@
 
 | 操作 | 获取的事实 |
 | --- | --- |
-| `zf artifact index --attempt ATTEMPT --source-id ID` | 按已授权的来源精确定位。通用文本检索会跳过二进制正文，媒体保留描述符。 |
+| `zf artifact index --attempt ATTEMPT --source-id ID` | 按已授权的来源精确定位。精确读取报 `source not found` 时，执行错误提示中的索引命令，再使用结果中的 `read_command` 读取声明的 artifact ID 和路径。通用文本检索会跳过二进制正文，媒体保留描述符。 |
 | `zf artifact recover --attempt ATTEMPT` | 当前绑定、工作记录、历史已读与独立的 Provider 交付缺口。超过一页时沿返回的 `next_delivery_gaps` 命令继续。已定位的缺段用字符半开区间表示。 |
 | `zf artifact workspace --attempt ATTEMPT` | 在持久工具会话前台启动只读挂载，初始化后打印 `INPUTS.md` 和 `RESUME.md` 的绝对路径。来源路径相对于该目录。查询、浏览目录均不构成必读见证。 |
 | `/usr/bin/cat /绝对路径/inputs/来源.txt.chars-0-800` | 读取选中正文的字符区间。普通文本、CRLF、中文与空值保留原字节。二进制可原样读取，媒体的视觉验收由相应角色承担。 |

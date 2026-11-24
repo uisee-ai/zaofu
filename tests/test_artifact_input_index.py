@@ -202,3 +202,42 @@ def test_media_navigation_preserves_legacy_manifest_bytes_on_replay(tmp_path):
     view = AttemptFiles(tmp_path, current, {**IDENTITY, "operation_id":"op"}, [], lambda: {})
     name = next(iter(view.files))
     assert name.endswith(".png") and view.read(name) == (media.read_bytes(), None)
+
+
+def test_mismatched_artifact_id_points_to_exact_authorized_lookup_and_read(tmp_path, monkeypatch, capsys):
+    import shlex
+    from zf.runtime.artifact_read_ledger import source_manifest_from_payload
+
+    state = tmp_path / "worker's state"
+    physical = state / "artifacts" / "8036.json"
+    physical.parent.mkdir(parents=True)
+    physical.write_text('{"receipt": "observed"}')
+    attempt = "attempt with spaces"
+    source_id = "candidate-host-execution '$(false);'"
+    source = {"source_id": source_id, "artifact_id": "declared-evidence", "ref": "artifacts/8036.json"}
+    private = {**source, "artifact_id": "private-sibling", "access_scope": {"roles": ["other"]}}
+    manifest, _ = source_manifest_from_payload(state_dir=state, project_root=tmp_path,
+        payload={"input_refs": [source, private, {**source, "source_id": "different-source"}]},
+        workflow_run_id="run", task_id="T7", attempt_id=attempt,
+        dispatch_id=attempt, manifest_metadata={"read_purpose": "implementation"})
+    _grant(state, monkeypatch, manifest=manifest)
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
+    monkeypatch.setenv("ZF_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZF_STATE_DIR", str(state))
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(type="task.dispatched", actor="orchestrator",
+        task_id="T7", payload={"dispatch_id": attempt, "required_reads": []}))
+
+    assert main(["artifact", "read", "--attempt", attempt, "--state-dir", str(state),
+                 "--source", source_id, "--artifact", physical.name]) == 1
+    error = capsys.readouterr().err
+    assert "source not found" in error and "private-sibling" not in error
+    executable, *lookup = shlex.split(error.splitlines()[-1])
+    assert executable == "zf" and lookup[:2] == ["artifact", "index"]
+    assert main(lookup) == 0
+    page = json.loads(capsys.readouterr().out)
+    row, = expand_input_items(page)
+    assert row["source_id"] == source_id and row["artifact_id"] == "declared-evidence"
+    assert page["total"] == 1 and "private-sibling" not in json.dumps(page)
+    assert not active_read_ledger_path(state, attempt).exists()
+    assert main(shlex.split(row["read_command"])[1:]) == 0
+    assert json.loads(capsys.readouterr().out) == {"receipt": "observed"}
