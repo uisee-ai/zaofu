@@ -1084,3 +1084,5 @@ PNG 的索引项提供 `image_page_command`。无法挂载时，可视化客户�
 Plan 执行预览在 Critic 必读摘要中列出两类待核对情形。任务管线编译为 standard 且显式写范围为空时，详情标出具体任务；候选命令显式没有 AC、且所有强制 Candidate AC 均未引用它时，详情标出命令 ID。Planner 和 Critic 根据原始目标核对初始审计与最终门，可选探测保留其用途。
 
 对同一任务、同一验收 ID，若 Task Map 与验收矩阵都显式声明了 verification_owner 或 verification_tier，新计划预检和新包准入逐字段比较，返回具体 AC、字段和两侧取值。其他命令的测试分层仍独立；已接纳包按原代际重放。
+
+OA 对新的候选失败作出 `return_to_plan` 后，Planner 以本次决策与失败反馈为输入。上一轮 Owner 给 Reader 的指令、授权引用和阶段代次保存在 `historical_orchestration_context`，标记为 `observation_only`。已批准的 Plan 包及其端口仍按原绑定提供。对同一 Reader 重试和 Owner 明确批准的新代次分别沿用原恢复入口。

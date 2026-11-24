@@ -59,11 +59,14 @@ def replan_semantic_context(payload: Mapping) -> dict:
     }
 
 
-def retain_prior_replan_context(payload: dict) -> None:
+def retain_prior_replan_context(payload: dict, *, retire_operator_grant: bool = False) -> None:
     """Keep a previous request's directives as evidence, not new authority."""
     keys = ("orchestrator_decision_ref", "orchestration_delta",
             "orchestration_delta_ref", "orchestration_delta_digest",
             "required_actions", "reason_codes", "operator_override", "owner_authorization")
+    if retire_operator_grant:
+        keys += ("operator_feedback", "operator_authorized", "operator_authorization_ref",
+                 "stage_replan_generation", "stage_replan_generation_source_event_id")
     prior = {key: payload.pop(key) for key in keys if key in payload}
     if prior:
         payload["historical_orchestration_context"] = {
@@ -125,7 +128,9 @@ def build_replan_resynth_event(
     payload = dict(base_payload)
     # A new failure is a new request. Only its explicit decision below may
     # supply authority; the previous scan's OA decision belongs to its Plan.
-    retain_prior_replan_context(payload)
+    retain_prior_replan_context(
+        payload, retire_operator_grant=getattr(plan, "classification", "") == "oa_semantic_return_to_plan",
+    )
     # Edit scope is tied to one operator decision, never inherited by a retry.
     payload.pop("changed_task_ids", None)
     # The previous trigger's reason describes its own stage, not this replan.

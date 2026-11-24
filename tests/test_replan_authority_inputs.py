@@ -150,3 +150,40 @@ def test_replan_only_exposes_directives_for_scoped_tasks(tmp_path):
     assert _decision_evidence_sources(runtime.state_dir, decision, task_ids=set()) == []
     refs = _decision_evidence_sources(runtime.state_dir, decision, task_ids={"TASK-1"})
     assert [r["ref"] for r in refs] == [directive["basis_refs"][0]["ref"]]
+
+
+def test_new_oa_replan_only_exposes_prior_operator_grant_as_history(tmp_path):
+    runtime = _runtime(tmp_path)
+    prior = {
+        "operator_feedback": ["Restore the blank-input assertion."],
+        "stage_replan_generation": "owner-blank-input-generation",
+        "stage_replan_generation_source_event_id": "prior-escalation",
+        "operator_authorized": True,
+        "operator_authorization_ref": "owner:blank-input",
+    }
+    old = runtime.event_writer.append(ZfEvent(
+        type="prd.plan.requested", correlation_id="run-semantic-1",
+        payload={"rework_of": "prior-failure", **prior},
+    ))
+    prepared = request_semantic_failure_checkpoint(runtime, _semantic_request(runtime))
+    outcome = apply_orchestrator_agent_decision(
+        runtime, _submit_rework(runtime, prepared, action="return_to_plan"),
+    )
+    assert outcome["applied"]
+    events = runtime.event_log.read_all()
+    trigger = next(e for e in events if e.type == old.type and e.id != old.id)
+    assert prior.keys().isdisjoint(trigger.payload)
+    history = trigger.payload["historical_orchestration_context"]
+    assert history["authority"] == "observation_only"
+    assert history["source_rework_of"] == "prior-failure"
+    assert {key: history[key] for key in prior} == prior
+    refs = build_plan_handoff_input_refs(
+        state_dir=runtime.state_dir, project_root=tmp_path, payload=trigger.payload,
+        source_event_id=trigger.id,
+    )
+    context = next(row for row in refs if row["source_id"] == "plan-rework-context")
+    body = hydrate_sidecar_ref(runtime.state_dir, context).payload
+    assert "operator_feedback" not in body
+    assert body["rework_feedback"] == trigger.payload["rework_feedback"]
+    assert body["historical_orchestration_context"] == history
+    assert old.payload["operator_feedback"] == prior["operator_feedback"]
