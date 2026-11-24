@@ -9,3 +9,8 @@ const REFRESH_NOISE_EVENT_TYPES = new Set([
 export function isRefreshNoiseEventType(eventType: string): boolean {
   return REFRESH_NOISE_EVENT_TYPES.has(eventType);
 }
+
+export function isTaskBusinessEvent(type: string): boolean {
+  return /^(task|feature|dev|test|verify|review|judge|gate|candidate|fanout|workdir|run|ship|workflow|handoff|assignment)\./.test(type)
+    && !isRefreshNoiseEventType(type);
+}

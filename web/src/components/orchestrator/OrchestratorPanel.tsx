@@ -1,6 +1,7 @@
 // OrchestratorPanel + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { clearQuestionDraft, planQuestionDraftKey } from "../common/questionDraft";
 import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
+import type { dashboardActionAccess } from "../../app/dashboardActionAccess";
 import type { ActionResponse, RecentEvent, Snapshot, WebChatArtifact, WebChatChildActivity, WebChatInteraction, WebChatQueueItem, WebChatRuntime } from "../../api/types";
 import { referencedTaskId, withImplicitTaskReference } from "./kanbanTaskReference";
 import {
@@ -15,6 +16,8 @@ import {
 } from "../../api/client";
 import type { PendingKanbanProposal } from "../../api/client";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
+import { actionImpactRows } from "../agent-session/previewRegistry";
+import { TaskChatHeader } from "./TaskChatHeader";
 import { AgentThreadNavigation } from "../../components/agent-session/AgentThreadNavigation";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
 import { DuringRunComposerActions } from "../../components/agent-session/DuringRunComposerActions";
@@ -405,6 +408,7 @@ export function OrchestratorPanel({
   events,
   focusSignal,
   panelMode,
+  taskThread,
   visible,
   onAction,
   onPanelModeChange,
@@ -414,7 +418,7 @@ export function OrchestratorPanel({
   onSaveToken,
   onUnlockSession,
   snapshot,
-  tokenPresent,
+  access,
 }: {
   actionResult: ActionResponse | null;
   consumeTerminalQuote?: (project: string, target: string) => string;
@@ -424,6 +428,7 @@ export function OrchestratorPanel({
   focusSignal: number;
   panelMode: Exclude<AgentPanelMode, "collapsed">;
   visible: boolean;
+  taskThread?: string;
   onAction: (action: string, payload: Record<string, unknown>) => void | Promise<unknown>;
   onPanelModeChange: (mode: AgentPanelMode) => void;
   onLockSession: () => void;
@@ -432,7 +437,7 @@ export function OrchestratorPanel({
   onSaveToken: (token: string) => void;
   onUnlockSession: (passcode: string) => Promise<{ ok: boolean; status: string; reason?: string }>;
   snapshot: Snapshot | null;
-  tokenPresent: boolean;
+  access: ReturnType<typeof dashboardActionAccess>;
 }) {
   const headlessProjectId = kanbanAgentProjectId(
     activeProjectId,
@@ -450,6 +455,8 @@ export function OrchestratorPanel({
   ));
   const [operatorError, setOperatorError] = useState("");
   const [dismissedPermissionEscalations, setDismissedPermissionEscalations] = useState<string[]>([]);
+  const [taskUnlockOpen, setTaskUnlockOpen] = useState(false);
+  const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
   const [headlessSubmitting, setHeadlessSubmitting] = useState(false);
   const headlessSubmitInFlight = useRef(false);
   const planSubmissionsInFlight = useRef(new Set<string>());
@@ -463,7 +470,7 @@ export function OrchestratorPanel({
   const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
   const [pendingProposalNotice, setPendingProposalNotice] = useState("");
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => (
-    storedActiveKanbanThread(localStorage, headlessProjectId)
+    taskThread || storedActiveKanbanThread(localStorage, headlessProjectId)
   ));
   const inboxTarget = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -476,7 +483,7 @@ export function OrchestratorPanel({
   const inboxThreadSelected = useRef(false);
   const inboxRequestFocused = useRef(false);
   useEffect(() => {
-    if (inboxThreadSelected.current || !visible || !inboxTarget.thread
+    if (taskThread || inboxThreadSelected.current || !visible || !inboxTarget.thread
       || (inboxTarget.project && inboxTarget.project !== headlessProjectId)) return;
     inboxThreadSelected.current = true;
     setHeadlessThreadKey(inboxTarget.thread);
@@ -541,18 +548,12 @@ export function OrchestratorPanel({
   const [headlessHasNewBelow, setHeadlessHasNewBelow] = useState(false);
 
   const allowedActions = snapshot?.runtime.actions?.allowed ?? [];
-  const webSession = snapshot?.runtime.web_session;
+  const { actionReady, actionState, hasToken, mutationEnabled, passcodeRequired, sessionActionReady, showTokenRow } = access;
   const agentSurface = snapshot?.runtime.agent_surface;
   const appliedAgentProfile = recordValue(webChatRuntime?.agent_profile?.profile);
   const permissionProfile = textValue(
     appliedAgentProfile?.permission_profile || agentSurface?.permission_profile,
   ).trim() || "workspace_writer";
-  // A project snapshot is intentionally token-agnostic and may report
-  // mutation_enabled=false when it was hydrated without the browser token.
-  // A locally saved token is the explicit fallback authorization for this
-  // surface, so it must participate in the same gate as the snapshot flag.
-  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
-    || tokenPresent;
   const headlessConversationId = kanbanAgentConversationId(headlessProjectId);
   const webChatInteractionDraftKey = interactionDraftStorageKey(
     headlessProjectId,
@@ -560,24 +561,18 @@ export function OrchestratorPanel({
     headlessThreadKey,
   );
   webChatResourceIdentityRef.current = `${headlessProjectId}:${headlessConversationId}:${headlessThreadKey}`;
-  const sessionActionReady = Boolean(webSession?.actions_enabled);
-  const tokenFallbackAvailable = webSession?.mode === "token_required"
-    || Boolean(webSession?.token_fallback_enabled);
-  const passcodeRequired = webSession?.mode === "remote_passcode" && !sessionActionReady;
-  const showTokenRow = mutationEnabled && !sessionActionReady && tokenFallbackAvailable && !tokenPresent;
-  const tokenRequired = showTokenRow && !tokenPresent;
-  const actionReady = sessionActionReady || (mutationEnabled && tokenPresent);
-  const actionState = actionReady
-    ? "active"
-    : mutationEnabled
-      ? (passcodeRequired ? "passcode needed" : tokenRequired ? "token needed" : "locked")
-      : "read only";
   const canUseAction = (action: string) => actionReady && allowedActions.includes(action);
+  const awaitingAccess = !snapshot || !access.mode;
+  const chatAccessHint = awaitingAccess ? "正在读取会话权限…"
+    : passcodeRequired ? "请先解锁当前会话。"
+    : taskThread && showTokenRow ? "解锁发送后可提问。"
+    : showTokenRow ? "Save a valid action token to send messages."
+    : actionReady ? "当前项目未开放 Agent 对话。" : "当前会话仅可阅读对话。";
   const modelSelection = useKanbanModelSelection(headlessProjectId, headlessThreadKey, operatorBackend,
     visible && canUseAction("chat-orchestrator"),
     context.taskId && !composerDraft.unreferencedTasks.includes(context.taskId) ? context.taskId : "");
   useEffect(() => {
-    if (pendingGateMessage === null || !snapshot) return;
+    if (pendingGateMessage === null || awaitingAccess) return;
     const parked = pendingGateMessage;
     setPendingGateMessage(null);
     if (parked.projectId !== headlessProjectId || parked.threadId !== headlessThreadKey) return;
@@ -588,10 +583,10 @@ export function OrchestratorPanel({
     if (actionReady && allowedActions.includes("chat-orchestrator")) {
       void submitHeadlessMessage(parked.message);
     } else {
-      setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
+      setOperatorError(chatAccessHint);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingGateMessage, snapshot, actionReady]);
+  }, [pendingGateMessage, awaitingAccess, actionReady]);
   // 8001 regression (operator report 2026-07-16): when the selected project is
   // dead (root deleted -> snapshot 404s forever) the parked message became a
   // black hole — cleared textarea, never sent, no feedback. Bound the park:
@@ -695,7 +690,7 @@ export function OrchestratorPanel({
 
   useEffect(() => {
     const previousProjectId = headlessThreadProjectRef.current;
-    if (previousProjectId === headlessProjectId) return;
+    if (taskThread || previousProjectId === headlessProjectId) return;
     rememberHeadlessThreadScroll(previousProjectId, headlessThreadKey);
     const placeholderUpgrade = previousProjectId === "default" && headlessProjectId !== "default";
     const previousDefaultThread = defaultKanbanThreadKey(previousProjectId);
@@ -762,7 +757,7 @@ export function OrchestratorPanel({
     let cancelled = false;
     void getKanbanPendingProposals(headlessProjectId).then((page) => {
       if (!cancelled) {
-        setPendingProposals(page.items ?? []);
+        setPendingProposals((page.items ?? []).filter(item => !taskThread || item.thread_key === taskThread));
         setPendingProposalsError("");
       }
     }).catch((err: unknown) => {
@@ -806,7 +801,7 @@ export function OrchestratorPanel({
           createdAt: textValue(raw.created_at).trim() || undefined,
         }];
       });
-      if (durableRefs.length) {
+      if (!taskThread && durableRefs.length) {
         setHeadlessThreads((current) => saveKanbanThreadRefs(
           localStorage,
           headlessProjectId,
@@ -861,10 +856,12 @@ export function OrchestratorPanel({
     };
   }, [headlessProjectId, visible, webChatDrawer, activityParent]);
 
+  const lastFocusSignal = useRef(focusSignal);
   useEffect(() => {
-    if (!visible) return;
-    headlessInputRef.current?.focus();
-  }, [focusSignal, panelMode, visible]);
+    const requested = lastFocusSignal.current !== focusSignal;
+    lastFocusSignal.current = focusSignal;
+    if (visible && (!taskThread || requested)) headlessInputRef.current?.focus();
+  }, [focusSignal, panelMode, taskThread, visible]);
 
   useEffect(() => {
     let cancelled = false;
@@ -956,7 +953,7 @@ export function OrchestratorPanel({
   // 任务自动引用(operator 2026-07-11):从 TaskDetail 打开时 context.taskId
   // 已自动派生;这里补"看得见/可解除"——chip + 可关。关掉后消息不再携带
   // task/trace/pdd/fanout 引用。
-  const taskRefOn = !context.taskId || !composerDraft.unreferencedTasks.includes(context.taskId);
+  const taskRefOn = Boolean(taskThread) || !context.taskId || !composerDraft.unreferencedTasks.includes(context.taskId);
   const setTaskRefOn = (referenced: boolean) => composerDraft.setTaskReferenced(context.taskId, referenced);
 
   function contextPayload(): Record<string, unknown> {
@@ -1032,6 +1029,7 @@ export function OrchestratorPanel({
   }
 
   function selectHeadlessThread(threadId: string) {
+    if (taskThread) return;
     if (threadId === headlessThreadKey) {
       headlessInputRef.current?.focus();
       return;
@@ -1097,6 +1095,7 @@ export function OrchestratorPanel({
     // Lock before permission lookup, including the queue and early-return paths.
     if (headlessSubmitInFlight.current) return;
     headlessSubmitInFlight.current = true;
+    if (taskThread && (messageOverride ?? headlessMessage).trim() && canUseAction("chat-orchestrator")) setTaskHistoryOpen(true);
     setHeadlessSubmitting(true);
     try {
       await dispatchHeadlessMessage(messageOverride, options);
@@ -1151,6 +1150,21 @@ export function OrchestratorPanel({
     };
     const targetBackend = options.backendOverride ?? boundDiscussionBackend ?? operatorBackend;
     if (!message || !isChatBackend(targetBackend)) return;
+    if (!canUseAction("chat-orchestrator")) {
+      // First-message race (operator report 2026-07-16): before the snapshot
+      // arrives the gate reads "read only" and the send silently bounced.
+      // Park the message and let the snapshot effect below flush it instead
+      // of erroring on a gate that is merely unknown.
+      if (awaitingAccess) {
+        setPendingGateMessage({ message, projectId: headlessProjectId, threadId: headlessThreadKey,
+          attachmentVersions: webChatAttachments.map((item) => item.version_id) });
+        setOperatorError("");
+        return;
+      }
+      setOperatorError(chatAccessHint);
+      headlessInputRef.current?.focus();
+      return;
+    }
     const permissionResolution = await resolveKanbanTurnPermission({
       override: options.permissionProfileOverride,
       projectId: headlessProjectId,
@@ -1175,21 +1189,6 @@ export function OrchestratorPanel({
       await queueHeadlessMessage(message, requestPatch, targetBackend, turnPermissionProfile);
       return;
     }
-    if (!canUseAction("chat-orchestrator")) {
-      // First-message race (operator report 2026-07-16): before the snapshot
-      // arrives the gate reads "read only" and the send silently bounced.
-      // Park the message and let the snapshot effect below flush it instead
-      // of erroring on a gate that is merely unknown.
-      if (!snapshot) {
-        setPendingGateMessage({ message, projectId: headlessProjectId, threadId: headlessThreadKey,
-          attachmentVersions: webChatAttachments.map((item) => item.version_id) });
-        setOperatorError("");
-        return;
-      }
-      setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
-      headlessInputRef.current?.focus();
-      return;
-    }
     // 2026-07-03 racing-codex e2e round 2 finding (T3 refinement): guarding
     // on `!agentSurface` alone was not precise enough — agentSurface can
     // already be populated while the *separate* effect that corrects
@@ -1212,7 +1211,7 @@ export function OrchestratorPanel({
       setOperatorError("Agent backend list is still loading; try again in a moment.");
       return;
     }
-    const directAction = slashAction(message);
+    const directAction = taskThread ? null : slashAction(message);
     setHeadlessMessage("");
     let pendingTurnId = "";
     try {
@@ -1695,6 +1694,9 @@ export function OrchestratorPanel({
   }
 
   function pendingProposalContract(item: PendingKanbanProposal): Array<[string, string]> {
+    if (item.action === "update-task") {
+      return actionImpactRows(item.action, item.payload).filter(row => row.label !== "action").map(row => [row.label, row.value]);
+    }
     const contract = item.payload.contract;
     if (!contract || typeof contract !== "object") return [];
     const record = contract as Record<string, unknown>;
@@ -1895,6 +1897,7 @@ export function OrchestratorPanel({
 
   function saveToken() {
     onSaveToken(tokenInput);
+    setTaskUnlockOpen(false);
     setTokenInput("");
     setOperatorError("");
   }
@@ -1905,6 +1908,7 @@ export function OrchestratorPanel({
     try {
       const result = await onUnlockSession(passcode);
       if (result.ok) {
+        setTaskUnlockOpen(false);
         setPasscodeInput("");
         setOperatorError("");
       } else {
@@ -1981,7 +1985,7 @@ export function OrchestratorPanel({
   );
   const displayedHeadlessConversation = useMemo(() => ({
     ...visibleHeadlessConversation,
-    threads: visibleHeadlessConversation.threads.map((thread) => ({
+    threads: visibleHeadlessConversation.threads.filter(thread => !taskThread || thread.id === taskThread).map((thread) => ({
       ...thread,
       unseenCount: thread.id === headlessThreadKey ? 0 : headlessUnreadCounts[thread.id] ?? 0,
     })),
@@ -2095,7 +2099,7 @@ export function OrchestratorPanel({
       setHeadlessHasNewBelow(false);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [headlessHistoryLoading, headlessHistoryReady, headlessProjectId, headlessThreadKey, panelMode]);
+  }, [headlessHistoryLoading, headlessHistoryReady, headlessProjectId, headlessThreadKey, panelMode, taskHistoryOpen]);
   // Content changed (new turn / streamed delta / refresh). Only follow to the
   // bottom when the user is pinned there; otherwise surface a "New messages"
   // affordance instead of yanking their scroll position.
@@ -2146,12 +2150,13 @@ export function OrchestratorPanel({
       : "readonly";
   const fullscreen = panelMode === "fullscreen";
   const headlessCanChat = canUseAction("chat-orchestrator");
-  const headlessEmptyTitle = headlessCanChat ? "What should we work through?" : "Action token needed";
+  const headlessEmptyTitle = headlessCanChat ? "What should we work through?" : showTokenRow ? "Action token needed" : "Agent 对话";
   const headlessEmptyBody = headlessCanChat
     ? "Ask about this project, shape a plan, or prepare a controlled action."
-    : "Save a valid action token to send messages. Existing replies will still appear here.";
-  const headlessPlaceholder = !headlessCanChat
-    ? "Save action token to send..."
+    : chatAccessHint;
+  const headlessPlaceholder = taskThread ? "询问或补充这项任务…"
+    : !headlessCanChat
+    ? (showTokenRow ? "Save action token to send..." : chatAccessHint)
     : headlessPlanDiscussion
       ? `Ask about ${headlessPlanDiscussion.header || "this plan"}...`
     : taskRefOn && context.taskId
@@ -2170,11 +2175,17 @@ export function OrchestratorPanel({
   return (
     <section
       className={`panel orchestrator-panel ${panelMode}`}
-      role="dialog"
-      aria-modal={fullscreen}
-      aria-label="Kanban Agent"
+      role={taskThread ? "region" : "dialog"}
+      aria-modal={taskThread ? undefined : fullscreen}
+      aria-label={taskThread ? "任务 Agent" : "Kanban Agent"}
     >
-      <div className="agent-shell-header">
+      {taskThread ? <TaskChatHeader
+        thread={activeHeadlessThread} hasMore={headlessHistoryHasMore} open={taskHistoryOpen}
+        onToggle={() => setTaskHistoryOpen(open => !open)}
+        accessControl={passcodeRequired || showTokenRow ? <button type="button" aria-expanded={taskUnlockOpen}
+          onClick={() => setTaskUnlockOpen(open => !open)}>{taskUnlockOpen ? "收起解锁" : "解锁发送"}</button>
+          : access.mode === "remote_passcode" && sessionActionReady && <button type="button" onClick={onLockSession}>锁定会话</button>}
+      /> : <div className="agent-shell-header">
         <div className="agent-title-block">
           <button
             className="agent-window-button ghost"
@@ -2249,7 +2260,7 @@ export function OrchestratorPanel({
           </div>
         </div>
         <div className="agent-header-actions">
-          {webSession?.mode === "remote_passcode" && sessionActionReady ? (
+          {access.mode === "remote_passcode" && sessionActionReady ? (
             <button className="agent-lock-button" type="button" onClick={onLockSession}>
               Lock
             </button>
@@ -2273,9 +2284,9 @@ export function OrchestratorPanel({
             <Minus size={19} strokeWidth={1.9} />
           </button>
         </div>
-      </div>
+      </div>}
       <div className="orchestrator-body">
-        {passcodeRequired ? <form
+        {passcodeRequired && (!taskThread || taskUnlockOpen) ? <form
           className="token-row agent-auth-row"
           onSubmit={(event) => {
             event.preventDefault();
@@ -2294,7 +2305,7 @@ export function OrchestratorPanel({
           </button>
         </form> : null}
 
-        {showTokenRow ? <form
+        {showTokenRow && (!taskThread || taskUnlockOpen) ? <form
           className="token-row agent-auth-row"
           onSubmit={(event) => {
             event.preventDefault();
@@ -2316,17 +2327,19 @@ export function OrchestratorPanel({
           </button>
         </form> : null}
 
-        <div className={`headless-chat ${headlessWelcome ? "welcome" : ""}`}>
-          <AgentThreadNavigation
+        <div className={`headless-chat ${!taskThread && headlessWelcome ? "welcome" : ""}`}>
+          {!taskThread && <AgentThreadNavigation
             activeThreadId={headlessThreadKey}
             allowSplit={fullscreen}
             conversation={displayedHeadlessConversation}
             onActiveThreadChange={selectHeadlessThread}
             onSplitThreadChange={setHeadlessSplitThreadKey}
             splitThreadId={headlessSplitThreadKey}
-          />
+          />}
           <div
             className="headless-thread"
+            hidden={Boolean(taskThread && !((taskHistoryOpen && (activeHeadlessThread?.turns.length || headlessHistoryHasMore))
+              || pendingDurableInteractions.length || headlessHistoryError || inboxTargetUnavailable))}
             ref={headlessThreadRef}
             onScroll={(event) => {
               const nearBottom = isScrollElementNearBottom(event.currentTarget);
@@ -2335,7 +2348,7 @@ export function OrchestratorPanel({
               rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
             }}
           >
-            {headlessHistoryHasMore ? (
+            {headlessHistoryHasMore && (!taskThread || taskHistoryOpen) ? (
               <button
                 className="agent-history-load"
                 disabled={headlessHistoryLoading}
@@ -2365,7 +2378,7 @@ export function OrchestratorPanel({
               onDraftChange={updateWebChatInteractionDraft}
               onRespond={answerDurableInteraction}
             />
-            <AgentSessionTimeline
+            {(!taskThread || (taskHistoryOpen && Boolean(activeHeadlessThread?.turns.length))) && <AgentSessionTimeline
               actionBusyId={headlessProposalRunning}
               activeThreadId={headlessThreadKey}
               allowSplit={fullscreen && headlessConversation.threads.length > 1}
@@ -2384,7 +2397,7 @@ export function OrchestratorPanel({
                 }}>View child activity</button>;
               }}
               collapseCompletedRunDetails
-              emptyBody={headlessEmptyBody}
+              emptyBody={taskThread ? "" : headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
               onActiveThreadChange={selectHeadlessThread}
               onAdoptResearchResult={(card, cardId) => void adoptResearchResult(card, cardId)}
@@ -2406,9 +2419,9 @@ export function OrchestratorPanel({
               showRunProvider={false}
               showThreadChips={false}
               splitThreadId={headlessSplitThreadKey}
-            />
+            />}
           </div>
-          {headlessHasNewBelow ? (
+          {headlessHasNewBelow && (!taskThread || taskHistoryOpen) ? (
             <button className="channel-scroll-latest" type="button" onClick={showLatestHeadless}>
               <ChevronDown size={15} />
               New messages
@@ -2536,7 +2549,7 @@ export function OrchestratorPanel({
                       </button>
                       <button
                         className="headless-pending-run"
-                        disabled={!item.valid || pendingProposalBusy === item.proposal_event_id}
+                        disabled={!item.valid || !canUseAction(item.action) || pendingProposalBusy === item.proposal_event_id}
                         type="button"
                         onClick={() => void runPendingProposal(item)}
                       >
@@ -2583,7 +2596,7 @@ export function OrchestratorPanel({
             </div>
           ) : null}
           <div className="headless-composer">
-            {context.taskId ? (
+            {!taskThread && context.taskId ? (
               taskRefOn ? (
                 <div className="headless-task-ref" data-testid="agent-task-ref">
                   <span className="headless-task-ref-chip" title={context.title || context.taskId}>
@@ -2680,22 +2693,17 @@ export function OrchestratorPanel({
               </div>
             ) : operatorError ? (
               <div className="headless-composer-alert" role="alert">{operatorError}</div>
-            ) : !headlessCanChat ? (
+            ) : !headlessCanChat && !(taskThread && (passcodeRequired || showTokenRow)) ? (
               // Surfaced from the very moment the panel opens (not only after a
               // first failed send). Without this, users typed + pressed Enter,
               // the token gate (submitHeadlessMessage:7945) silently set
               // operatorError but the input had no visible block, and the
               // experience read as "first message hangs, refresh fixes it".
               <div
-                className={`headless-composer-alert ${snapshot ? "blocked" : "connecting"}`}
-                role={snapshot ? "alert" : "status"}
+                className={`headless-composer-alert ${awaitingAccess ? "connecting" : "blocked"}`}
+                role={awaitingAccess ? "status" : "alert"}
               >
-                {snapshot
-                  ? `${activeBackendTitle} is ${actionState}. Save a valid action token to send messages.`
-                  // Gate not resolved yet (first snapshot in flight): saying
-                  // "read only, save a token" here was a lie that flashed on
-                  // every panel open. Messages typed now park and auto-send.
-                  : "Connecting — messages send automatically once ready."}
+                {chatAccessHint}
               </div>
             ) : null}
             {!webChatAnswering ? (
@@ -2703,6 +2711,8 @@ export function OrchestratorPanel({
                 <textarea
                   ref={headlessInputRef}
                   className="headless-input"
+                  rows={taskThread ? 1 : undefined}
+                  aria-label={taskThread ? "询问或补充这项任务" : undefined}
                   placeholder={headlessPlaceholder}
                   aria-invalid={!headlessCanChat || undefined}
                   disabled={headlessSubmitting || Boolean(permissionEscalation)}
@@ -2729,7 +2739,7 @@ export function OrchestratorPanel({
                 />
                 <div className="headless-composer-footer">
                   <div className="headless-composer-tools">
-                    <WebChatAttachments
+                    {!taskThread && <WebChatAttachments
                       key={`${headlessProjectId}:${headlessThreadKey}`}
                       artifacts={webChatAttachments}
                       conversationId={headlessConversationId}
@@ -2754,13 +2764,13 @@ export function OrchestratorPanel({
                         id: plan.requestEventId, label: plan.header || plan.question || plan.requestId,
                         onSelect: () => chatAboutPlan(plan),
                       }))}
-                    />
+                    />}
                   </div>
-                  <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
+                  {(!taskThread || modelSelection.selectionUnavailable) && <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
                     catalogSupported={operatorBackend === "codex-headless"} unlocked={canUseAction("chat-orchestrator")}
-                    onReauthorize={tokenPresent ? () => onSaveToken("") : undefined}
+                    onReauthorize={hasToken ? () => onSaveToken("") : undefined}
                     onSwitchToCodex={headlessBackendOptions.some((item) => item.id === "codex-headless" && item.available !== false)
-                      ? () => selectOperatorBackend("codex-headless") : undefined} />
+                      ? () => selectOperatorBackend("codex-headless") : undefined} />}
                   {activeDurableTurn ? (
                     <DuringRunComposerActions
                       waitingForInput={activeDurableTurn.state === "waiting_input"}
@@ -2779,11 +2789,11 @@ export function OrchestratorPanel({
                   ) : (
                     <ComposerSubmitButton
                       className="headless-send-button"
-                      disabled={!headlessMessage.trim() || composerDraft.uploading || Boolean(permissionEscalation)}
+                      disabled={!headlessMessage.trim() || composerDraft.uploading || Boolean(permissionEscalation) || (!awaitingAccess && !headlessCanChat)}
                       iconSize={21}
                       status={deriveComposerStatus(activeHeadlessRun?.status ?? (hasDurableTurns ? "idle" : activeHeadlessThread?.status), headlessSubmitting)}
                       onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}
-                      title={canUseAction("chat-orchestrator") ? "Send" : `${actionState}; save action token first`}
+                      title={headlessCanChat ? "Send" : chatAccessHint}
                       onClick={() => void submitHeadlessMessage()}
                     />
                   )}

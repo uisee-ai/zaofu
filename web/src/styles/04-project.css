@@ -633,17 +633,6 @@ button.project-focus-card {
   overflow: auto;
 }
 
-.task-detail > .tab-row {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.task-detail > .tab-row .tab-button {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(108px, 132px) minmax(0, 1fr);

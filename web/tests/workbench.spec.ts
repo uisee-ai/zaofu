@@ -255,9 +255,9 @@ test("opens shared task details from the board and preserves direct task routes"
   }
   test.skip(!taskId, "task drilldown needs at least one projected task");
 
-  await page.goto("/");
+  await page.goto("/?page=board");
   await expectWorkbenchLoaded(page);
-  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+  await expect(page.locator(".tasks-heading h2")).toBeVisible();
   if (title) {
     await page.getByRole("button", { name: "Filter", exact: true }).click();
     await page.getByLabel("Signal", { exact: true }).selectOption("all");
@@ -266,35 +266,24 @@ test("opens shared task details from the board and preserves direct task routes"
     await page.goto(`/?page=task&task=${encodeURIComponent(taskId)}`);
   }
 
-  await expect(page.getByRole("heading", { name: "Task", exact: true })).toBeVisible();
+  await expect(page.locator(".reader-article h1")).toBeVisible();
   await expect(
     page.locator(".task-detail").getByText(taskId, { exact: true }).first(),
   ).toBeVisible({ timeout: 15_000 });
-  const detailTabs = page.locator(".task-detail .tab-row");
-  await expect(detailTabs.getByRole("button")).toHaveCount(4);
-  await expect(detailTabs.getByRole("button", { name: "Summary" })).toBeVisible();
-  await expect(detailTabs.getByRole("button", { name: "Activity" })).toBeVisible();
-  await expect(detailTabs.getByRole("button", { name: "Evidence" })).toBeVisible();
-  await expect(detailTabs.getByRole("button", { name: "Advanced" })).toBeVisible();
-  await expect(page.getByTestId("task-summary-view")).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("task-detail-summary.png"), fullPage: true });
-  await detailTabs.getByRole("button", { name: "Activity" }).click();
+  const reader = page.getByRole("region", { name: "任务详情" });
+  await expect(reader.locator(".tab-row")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("task-detail.png"), fullPage: true });
+  await reader.getByText("执行路线与更多动态", { exact: true }).click();
   await expect(page.getByTestId("task-activity-view")).toBeVisible();
-  await detailTabs.getByRole("button", { name: "Evidence" }).click();
+  await reader.getByText("查看输入与交付证据", { exact: true }).click();
   await expect(page.getByTestId("task-evidence-view")).toBeVisible();
-  await detailTabs.getByRole("button", { name: "Advanced" }).click();
+  await reader.getByText("执行现场", { exact: true }).click();
   await expect(page.getByTestId("task-advanced-view")).toBeVisible();
-  await expect(page.locator(".task-detail").getByRole("button", { name: "Agent" })).toBeVisible();
-  await expect(page.getByLabel("Move task status")).toHaveCount(0);
+  await expect(reader.getByRole("region", { name: "任务 Agent" })).toBeVisible();
+  await expect(reader.getByLabel("Move task status")).toHaveCount(0);
   await expect(page.locator(".task-card-actions")).toHaveCount(0);
-  await page.locator(".task-detail").getByRole("button", { name: "Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
-  await expect(page.locator(".orchestrator-panel .chat-surface-head")).toHaveCount(0);
-  await expect(page.locator(".side-panel")).toHaveCount(0);
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toHaveCount(0);
-  if (!title) await page.locator(".task-detail").getByRole("button", { name: "Board" }).click();
-  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+  await reader.getByRole("button", { name: "返回看板" }).click();
+  await expect(page.locator(".tasks-heading h2")).toBeVisible();
 });
 
 test("keeps event timeline readable and inspector structured", async ({ page }) => {
@@ -311,15 +300,15 @@ test("keeps event timeline readable and inspector structured", async ({ page }) 
   await expect(page.getByLabel("Audit projection summary")).toBeVisible();
   await expectEventTimeSeparated(page.locator(".event-list:not(.compact-events) .event-row").first());
 
-  await page.goto("/");
+  await page.goto("/?page=board");
   await expectWorkbenchLoaded(page);
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await page.getByLabel("Signal", { exact: true }).selectOption("all");
   await page.locator(".task-open").first().click();
-  await expect(page.getByRole("heading", { name: "Task", exact: true })).toBeVisible();
-  await page.locator(".task-detail").getByRole("button", { name: "Advanced" }).click();
+  await expect(page.locator(".reader-article h1")).toBeVisible();
+  await page.locator(".task-detail").getByText("执行现场", { exact: true }).click();
   await expectWorkbenchKeyValueSeparated(page.locator(".task-workbench"));
-  await page.locator(".task-detail").getByRole("button", { name: "Activity" }).click();
+  await page.locator(".task-detail").getByText("执行路线与更多动态", { exact: true }).click();
   await expect(page.locator(".compact-events .event-row").first()).toBeVisible();
   await expectEventTimeSeparated(page.locator(".compact-events .event-row").first());
 });

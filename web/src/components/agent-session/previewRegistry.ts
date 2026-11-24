@@ -111,7 +111,10 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
     push("digest", payload.artifact_digest);
   } else if (action === "update-task") {
     push("task", payload.task_id);
-    for (const key of ["status", "assigned_to", "blocked_reason", "priority"]) push(key, payload[key]);
+    for (const key of ["title", "status", "assigned_to", "blocked_reason", "priority"]) push(key, payload[key]);
+    for (const [key, value] of Object.entries(recordValue(payload.contract) ?? {})) {
+      push(key, typeof value === "string" ? value : JSON.stringify(value));
+    }
   } else if (action === "workflow-invoke") {
     push("workflow", payload.workflow_id || payload.pattern_id || payload.stage_id);
     push("task", payload.task_id);
