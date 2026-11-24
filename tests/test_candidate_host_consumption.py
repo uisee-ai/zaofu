@@ -16,12 +16,14 @@ from zf.runtime.task_host_evidence import IDENTITY
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def prepare(runtime, seeded, role):
+def prepare(runtime, seeded, role, *, parent_operation_id=None):
     payload = {'workflow_run_id': seeded['run_id'], 'task_id': 'FLOW-ANCHOR',
         'fanout_id': 'fanout-candidate', 'child_id': role, 'role_instance': role,
         'stage_id': 'issue-lanes-verify', 'output_profile_id': 'candidate-verify',
         'artifact_package_mode': 'shadow', 'target_commit': seeded['candidate_head'],
         'canonical_success_event': 'test.passed', 'canonical_failure_event': 'test.failed'}
+    if parent_operation_id:
+        payload['parent_operation_id'] = parent_operation_id
     prepared = prepare_call_operation(runtime, payload=payload, operation_type='fanout_reader_child',
         operation_key=role, stage_id='issue-lanes-verify', task_id='FLOW-ANCHOR',
         dispatch_id='attempt-' + role, causation_id='evt-candidate-ready')

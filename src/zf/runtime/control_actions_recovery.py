@@ -165,10 +165,15 @@ class RecoveryActionsMixin:
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
         if any(payload.get(k) for k in ("fanout_id", "fanout_child_id", "target_operation_id")):
-            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
-            error = reader_rebuild_error(self.state_dir, self.writer.event_log.read_all(), payload)
+            from zf.runtime.reader_rebuild_admission import reader_rebuild_error, reader_rebuild_key
+            events = self.writer.event_log.read_all()
+            error = reader_rebuild_error(self.state_dir, events, payload)
             if error:
                 return self._recovery_failed(requested, action, requested_action, error, 409)
+            try:
+                key = reader_rebuild_key(events, payload)
+            except ValueError as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
             action_id = f"child-rebuild-{requested.id}"
             emitted = self.writer.append(ZfEvent(
                 type="repair.action.requested", actor=self.actor, origin="kernel",
@@ -178,7 +183,9 @@ class RecoveryActionsMixin:
                     "target_operation_id", "active_attempt_id", "source_event_id") if k in payload},
                     "action_id": action_id, "kind": "rerun_fanout_child",
                     "recovery_action": action,
-                    "idempotency_key": f"reader-rebuild:{payload.get('target_operation_id') or payload['active_attempt_id']}:{payload['source_event_id']}",
+                    "idempotency_key": key,
+                    **({k: payload[k] for k in ("retry_after_rejection_event_id", "approval_ref")}
+                       if payload.get("retry_after_rejection_event_id") else {}),
                     "reason": str(payload.get("reason") or "retry the exact failed Reader")},
             ))
             return self._recovery_ok(requested, emitted, action, requested_action,

@@ -108,3 +108,32 @@ def test_execution_rechecks_unprepared_obligation_after_approval(tmp_path):
     runtime.run_once(events=[repair])
     assert not runtime.transport.sent
     assert any(e.type == 'repair.action.rejected' for e in runtime.event_log.read_all())
+
+
+def test_explicit_retry_after_bound_rebuild_rejection(tmp_path):
+    from zf.runtime.control_actions import ControlledActionService
+    from zf.runtime.repair_actions import build_repair_action_projection
+
+    runtime, _, _, action = _unprepared(tmp_path)
+    service = ControlledActionService(runtime.state_dir, runtime.event_writer, config=runtime.config,
+        project_root=runtime.project_root, actor='operator', source='operator', surface='cli')
+
+    def rebuild(**fields):
+        intent = runtime.event_writer.append(ZfEvent(type='operator.intent.created', origin='external'))
+        return service.execute(action='child-rebuild', requested_action='child-rebuild',
+                               requested=intent, payload={**action, **fields})
+
+    assert rebuild()['ok']
+    initial = next(e for e in runtime.event_log.read_all() if e.type == 'repair.action.requested')
+    fields = {'action_id': initial.payload['action_id'], 'kind': 'rerun_fanout_child'}
+    rejected = runtime.event_writer.append(ZfEvent(type='repair.action.rejected', origin='kernel',
+        causation_id=initial.id, payload={**fields, 'reason': 'reader retry preparation failed'}))
+    other = runtime.event_writer.append(ZfEvent(type='repair.action.rejected', origin='kernel',
+        causation_id=initial.id, payload={**fields, 'action_id': 'different-action'}))
+    assert not rebuild(retry_after_rejection_event_id=other.id, approval_ref='owner-review')['ok']
+    assert not rebuild(retry_after_rejection_event_id=rejected.id)['ok']
+    for _ in range(2):
+        assert rebuild(retry_after_rejection_event_id=rejected.id, approval_ref='owner-review')['ok']
+    actions = build_repair_action_projection(runtime.event_log.read_all())['actions']
+    assert [v['status'] for v in actions].count('pending') == 1
+    assert [v['status'] for v in actions].count('duplicate') == 1

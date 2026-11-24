@@ -73,6 +73,33 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
     return ""
 
 
+def reader_rebuild_key(events: list[ZfEvent], payload: dict[str, Any]) -> str:
+    """Deduplicate each authorized recovery of one still-current failed attempt."""
+    operation = payload.get("target_operation_id") or payload["active_attempt_id"]
+    key = f"reader-rebuild:{operation}:{payload['source_event_id']}"
+    rejection_id = payload.get("retry_after_rejection_event_id")
+    if not rejection_id:
+        return key
+    if not isinstance(rejection_id, str):
+        raise ValueError("retry requires a prior rejection event ID")
+    approval = payload.get("approval_ref")
+    if not isinstance(approval, str) or not approval.strip():
+        raise ValueError("retry after a rejected rebuild requires an approval ref")
+    by_id = {event.id: event for event in events}
+    rejection = by_id.get(rejection_id)
+    request = by_id.get(rejection.causation_id) if rejection else None
+    if (not rejection or rejection.type != "repair.action.rejected" or rejection.origin != "kernel"
+            or not request or request.type != "repair.action.requested" or request.origin != "kernel"
+            or request.payload.get("recovery_action") != "child-rebuild"
+            or request.payload.get("kind") != "rerun_fanout_child"
+            or request.payload.get("action_id") != rejection.payload.get("action_id")
+            or any(request.payload.get(k) != payload.get(k) for k in (
+                "fanout_id", "fanout_child_id", "workflow_run_id", "target_operation_id",
+                "active_attempt_id", "source_event_id"))):
+        raise ValueError("prior rejection does not bind this exact Reader rebuild")
+    return f"{key}:after:{rejection.id}"
+
+
 def _settled_execution_failure(state_dir: Path, events: list[ZfEvent],
                                operation: dict[str, Any], failed: ZfEvent) -> bool:
     """Retry an admitted inability to evaluate, never a product verdict."""
