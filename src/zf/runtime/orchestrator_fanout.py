@@ -3285,6 +3285,11 @@ class FanoutCoordinationMixin(
         if getattr(event, "type", "") == "plan.approved":
             self._resume_writer_fanout_on_plan_approved(event)
             return
+        from zf.runtime.candidate_repair_outcome import routable_candidate_repair
+
+        event = routable_candidate_repair(self, event)
+        if event is None:
+            return
         stages = [
             stage for stage in getattr(self.config.workflow, "stages", [])
             if stage.topology == "fanout_writer_scoped" and stage.trigger == event.type

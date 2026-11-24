@@ -17,7 +17,13 @@ def publish_candidate_rework(service: Any, event_type: str, **kwargs: Any) -> Zf
         for event in service.writer.event_log.read_all():
             if (event.type, event.payload.get("resume_checkpoint_ref"), event.correlation_id or "") != identity:
                 continue
-            if (event.payload != payload or event.causation_id != kwargs.get("causation_id")
+            expected = payload
+            if (event.origin == "kernel" and str(checkpoint).startswith("oa-candidate-repair-")
+                    and "flow_kind" not in event.payload and payload.get("flow_kind")):
+                # A previous build may have crashed after publishing just the amendment.
+                # Reuse its original id; the downstream route checks the frozen Plan.
+                expected = {k: v for k, v in payload.items() if k != "flow_kind"}
+            if (event.payload != expected or event.causation_id != kwargs.get("causation_id")
                     or event.actor != kwargs.get("actor") or event.origin in {"worker", "external"}):
                 raise ValueError("candidate rework checkpoint publication diverged")
             return event

@@ -240,6 +240,11 @@ class CandidateReworkActionsMixin:
         superseded_generation = ""
         if rework_summary.get("gap_tasks"):
             try:
+                if (str(payload.get("checkpoint_id") or "").startswith("oa-candidate-repair-")
+                        and rework_summary.get("preserve_task_rows") is True):
+                    from zf.runtime.candidate_repair_outcome import repair_flow_kind
+
+                    payload = {**payload, "flow_kind": repair_flow_kind(self.state_dir, payload)}
                 amend = _write_gap_task_map_amend(
                     # A validated explicit producer already describes the
                     # successor. Legacy rewriting would alter historical refs.
@@ -248,7 +253,7 @@ class CandidateReworkActionsMixin:
                     state_dir=self.state_dir,
                     project_root=self.project_root,
                 )
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, KeyError) as exc:
                 return {
                     "status": "rejected",
                     "reason": f"gap task_map amend failed: {exc}",

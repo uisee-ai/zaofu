@@ -619,7 +619,12 @@ def prepare_plan_artifact_package(
         ports=[*explicit_ports.values(), *inherited],
         required_ports=required_ports,
     )
+    from zf.runtime.plan_gap_task_owners import rebind_gap_task_owners
     from zf.runtime.plan_package_matrix_admission import validate_package_matrix_closure
+
+    rebind_gap_task_owners(state_dir=state_dir, payload=payload, task_map=task_map, prior=prior_body,
+                           flow_kind=flow_kind, run_contract_digest=run_contract["contract_digest"],
+                           explicit=explicit_ports, inherited=inherited, source_event_id=source_event_id)
 
     validate_package_matrix_closure(
         state_dir=state_dir, task_map=task_map,

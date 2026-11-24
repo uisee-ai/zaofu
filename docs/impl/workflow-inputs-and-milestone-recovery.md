@@ -186,3 +186,5 @@ Planner 可在批准的 `product_acceptance_spec` 中声明 `candidate_reader_as
 Candidate Reader 的首个产品反例若已准入、定位到条款且绑定本次冻结，可以触发 `candidate_reader_observation`。它沿用 OA 的 semantic_failure 开关。OA 在此处可提交只读诊断，记录的 `continue` 不会签收产品或提前终止其他 Reader。所有 Reader 终结后，正式决策可以引用该诊断。跨 Reader 的命令执行证据复用同时核对父合同、分工、冻结版本、依赖、宿主策略与命令，各 Reader 仍独立判断。
 
 2026-11-24 使用 8×8 的冻结产物做了三候选盲测。原候选保留 AVERAGE 溢出，第二个候选只修该例，第三个在第二个基础上把公开 SUM 控件错接到 AVERAGE。每个候选均运行 16 个模块对应的 70 项 Node 测试、数值边界检查和 Docker Chromium 旅程。三种读取方式最终均命中 9/9 条判断。全量、带进度摘要、分工再整合三组的中位耗时分别为 13.31、13.81、19.95 秒，每组仅三个样本。分工减少了简报字节，但额外的整合调用增加了用时及总输入 token。默认策略继续由获批 Plan 决定。摘要需包含实际执行的测试文件与模块映射，并保留边界输入的执行记录；缺少证据时允许返回 unknown。
+
+同一次 OA 定向产品返工还要让 Writer 能消费新一代 Task Map。受控发布从原决定绑定的 Plan 包继承 flow kind。对已经写入旧账本、缺少该字段的 ready，恢复入口核对原准入决定、受控动作、amendment、ready 与不可变 Task Map 后，在消费时补全路由。对于保留合同的 successor，包准入核对父代、按原受控修订规则重建 Task Map，并将结构化的任务归属更新到新的内容寻址端口。历史包和原始业务证据继续可追溯。已开启的 Owner 审批按新一代的实际摘要执行。
