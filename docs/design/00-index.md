@@ -5,7 +5,7 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 213；201–205 已在本地设计工作中占用，不复用。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 214；201–205 已在本地设计工作中占用，不复用。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
 
@@ -30,5 +30,6 @@
 | 211 | [Standalone 账号登录与云端个人工作台体验](211-standalone-login-and-cloud-workbench.md) | implemented | 定义本地默认账号、可选改密、旧 Token 迁移、云端 SSO 和登录页视觉对齐，列出两端工作台的实施与验收范围。 |
 | 212 | [Workflow artifact 读取与 Agent session 恢复规格](212-workflow-artifact-reading-and-session-resume.md) | candidate | 规定冻结输入的工作区读取、严格交付证据、断点选择和会话续行，以同合同三组对照及 8×8 中断场景验收。 |
 | 213 | [里程碑交接、独立验收与定时唤醒](specs/213-zaofu-antigravity-borrowings.md) | candidate | 根据 [Antigravity 调研](specs/antigravity-orchestration-review.zh-CN.md)，定义里程碑接手、验收缺口、事件与超时竞争，以及持久作业的重试和去重。 |
+| 214 | [Workflow Skill 任务评估与按需加载优化](../spec/214-workflow-skill-evaluation-and-optimization.md) | candidate | 以 8×8 Task Verify 为首批，定义每次派发的评分卡、独立复核和按模型与执行客户端比较 Skill 加载策略的配对实验。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。
