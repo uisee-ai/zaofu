@@ -401,6 +401,7 @@ function backendCapability(option: OperatorBackendOption, allowedActions: string
 
 
 export function OrchestratorPanel({
+  consumeTerminalQuote,
   actionResult,
   activeProjectId,
   context,
@@ -420,6 +421,7 @@ export function OrchestratorPanel({
   access,
 }: {
   actionResult: ActionResponse | null;
+  consumeTerminalQuote?: (project: string, target: string) => string;
   activeProjectId: string;
   context: OrchestratorContext;
   events: RecentEvent[];
@@ -488,6 +490,14 @@ export function OrchestratorPanel({
     localStorage?.setItem(kanbanThreadStorageKey(headlessProjectId), inboxTarget.thread);
   }, [visible, inboxTarget, headlessProjectId, localStorage]);
   const composerDraft = useKanbanComposerDraft(headlessProjectId, headlessThreadKey);
+  useEffect(() => {
+    if (!visible || !taskThread) return;
+    const quote = consumeTerminalQuote?.(headlessProjectId, taskThread);
+    if (quote) {
+      composerDraft.setMessage([composerDraft.message, quote].filter(Boolean).join("\n\n"));
+      headlessInputRef.current?.focus();
+    }
+  });
   const headlessPlanDiscussion = composerDraft.planDiscussion;
   const setHeadlessPlanDiscussion = composerDraft.setPlanDiscussion;
   const headlessMessage = composerDraft.message;
@@ -506,6 +516,7 @@ export function OrchestratorPanel({
   const [headlessDurableMessages, setHeadlessDurableMessages] = useState<NonNullable<WebChatRuntime["messages"]>>([]);
   const [webChatArtifacts, setWebChatArtifacts] = useState<WebChatArtifact[]>([]);
   const [webChatActivities, setWebChatActivities] = useState<WebChatChildActivity[]>([]);
+  const [activityParent, setActivityParent] = useState("");
   const [webChatDrawer, setWebChatDrawer] = useState<WebChatDrawerKind>("");
   const [webChatAnswering, setWebChatAnswering] = useState<WebChatInteraction | null>(null);
   const [webChatInteractionDrafts, setWebChatInteractionDrafts] = useState<Record<string, WebChatInteractionDraft>>({});
@@ -725,6 +736,7 @@ export function OrchestratorPanel({
     setHeadlessDurableMessages([]);
     setWebChatArtifacts([]);
     setWebChatActivities([]);
+    setActivityParent("");
     setWebChatDrawer("");
     setWebChatAnswering(null);
     setWebChatInteractionDrafts({});
@@ -832,7 +844,7 @@ export function OrchestratorPanel({
     if (!visible || webChatDrawer !== "activity") return undefined;
     let cancelled = false;
     const refresh = () => {
-      void getWebChatChildActivities(headlessProjectId).then((page) => {
+      void getWebChatChildActivities(headlessProjectId, activityParent).then((page) => {
         if (!cancelled) setWebChatActivities(page.items ?? []);
       }).catch(() => undefined);
     };
@@ -842,7 +854,7 @@ export function OrchestratorPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [headlessProjectId, visible, webChatDrawer]);
+  }, [headlessProjectId, visible, webChatDrawer, activityParent]);
 
   const lastFocusSignal = useRef(focusSignal);
   useEffect(() => {
@@ -2374,6 +2386,16 @@ export function OrchestratorPanel({
               compact={!fullscreen}
               compactRunHeader
               conversation={displayedHeadlessConversation}
+              renderRunSupplement={(run, turn) => {
+                const parent = webChatRuntime?.turns.find(item => item.turn_id === run.id
+                  || item.current_attempt_id === run.id || turn.id === `turn-${item.turn_id}` || turn.id === item.turn_id);
+                if (!parent) return null;
+                return <button className="agent-inline-button" type="button" onClick={() => {
+                  setWebChatActivities([]);
+                  setActivityParent(parent.turn_id);
+                  setWebChatDrawer("activity");
+                }}>View child activity</button>;
+              }}
               collapseCompletedRunDetails
               emptyBody={taskThread ? "" : headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
@@ -2736,7 +2758,7 @@ export function OrchestratorPanel({
                       activeDrawer={webChatDrawer}
                       activityCount={webChatActivities.length}
                       artifactCount={webChatArtifacts.length}
-                      onDrawerChange={setWebChatDrawer}
+                      onDrawerChange={kind => { setActivityParent(""); setWebChatActivities([]); setWebChatDrawer(kind); }}
                       toolCatalog={webChatRuntime?.tool_catalog}
                       plans={referenceablePlans.map((plan) => ({
                         id: plan.requestEventId, label: plan.header || plan.question || plan.requestId,

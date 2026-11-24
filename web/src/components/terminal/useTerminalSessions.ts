@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { LatestRequestGate } from "../../app/latestRequestGate";
 import {
   createTerminalSession,
   fetchTerminalSessions,
@@ -13,25 +14,43 @@ export function useTerminalSessions(projectId: string) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const refresh = useCallback(async () => {
+  const fetching = useRef(false);
+  const gate = useRef(new LatestRequestGate());
+  const refresh = useCallback(async (quiet = false) => {
+    const ticket = gate.current.issue();
     if (!projectId) {
       setPage(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    fetching.current = true;
+    if (!quiet) setLoading(true);
     try {
-      setPage(await fetchTerminalSessions(projectId));
+      const next = await fetchTerminalSessions(projectId);
+      if (!gate.current.isCurrent(ticket)) return;
+      setPage(next);
       setError("");
+      return next;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (gate.current.isCurrent(ticket)) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setLoading(false);
+      if (gate.current.isCurrent(ticket)) {
+        fetching.current = false;
+        setLoading(false);
+      }
     }
   }, [projectId]);
 
   useEffect(() => {
     void refresh();
+    const update = () => { if (!document.hidden && !fetching.current) void refresh(true); };
+    const timer = window.setInterval(update, 15000);
+    window.addEventListener("focus", update);
+    return () => {
+      gate.current.invalidate();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", update);
+    };
   }, [refresh]);
 
   const create = useCallback(async (provider: TerminalProvider, slot: string, title: string) => {

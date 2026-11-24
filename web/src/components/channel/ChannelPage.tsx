@@ -396,6 +396,7 @@ function escapeHtml(value: string): string {
 
 
 export function ChannelPage({
+  consumeTerminalQuote,
   actionReady,
   actionResult,
   channels,
@@ -435,6 +436,7 @@ export function ChannelPage({
   onReviewPlans,
   events = [],
 }: {
+  consumeTerminalQuote?: (project: string, target: string) => string;
   actionReady: boolean;
   actionResult: ActionResponse | null;
   channels: ChannelSummary[];
@@ -489,6 +491,16 @@ export function ChannelPage({
     composerRefs, setComposerRefs,
     retryClientMessageId, setRetryClientMessageId, composerError, setComposerError, currentDraftKey,
   } = useChannelComposerDraft(projectId || "", selectedChannelId, activeChannelThreadId, composerRef);
+  useEffect(() => {
+    const editor = composerRef.current;
+    if (!editor || detail?.channel_id !== selectedChannelId || !actionReady) return;
+    const quote = consumeTerminalQuote?.(projectId, "channel:" + selectedChannelId);
+    if (quote) {
+      editor.append(document.createTextNode((editor.textContent ? "\n\n" : "") + quote));
+      setComposerText(editor.innerText);
+      editor.focus();
+    }
+  });
   const [postingCount, setPostingCount] = useState(0);
   const [workflowDraft, setWorkflowDraft] = useState({ taskId: "", reason: "" });
   const [controlsBusy, setControlsBusy] = useState(false);

@@ -7,6 +7,7 @@ import base64
 import binascii
 from dataclasses import dataclass
 import json
+import logging
 import secrets
 from threading import Lock
 import time
@@ -294,6 +295,28 @@ class HerdrNDJSONBridge:
             ):
                 raise BridgeProtocolError("terminal.resize geometry is invalid")
             return {"type": kind, "cols": cols, "rows": rows}
+        if kind == "terminal.mouse" and self.spec.mouse:
+            column, row = value.get("column"), value.get("row")
+            modifiers = value.get("modifiers", 0)
+            if (
+                value.get("action") not in ("down", "up")
+                or value.get("button") != "left"
+                or type(column) is not int
+                or not 0 <= column < self.config.max_cols
+                or type(row) is not int
+                or not 0 <= row < self.config.max_rows
+                or type(modifiers) is not int
+                or not 0 <= modifiers <= 7
+            ):
+                raise BridgeProtocolError("terminal.mouse is invalid")
+            return {
+                "type": kind,
+                "action": value["action"],
+                "button": "left",
+                "column": column,
+                "row": row,
+                "modifiers": modifiers,
+            }
         if kind == "terminal.scroll":
             direction, lines = value.get("direction"), value.get("lines")
             source = value.get("source", "wheel")
@@ -392,13 +415,17 @@ async def relay_terminal_websocket(
         maxsize=config.bridge_queue_frames
     )
     queued_bytes = 0
+    peak_frames = peak_bytes = 0
     queue_lock = asyncio.Lock()
 
+    observer_eof = False
+
     async def read_bridge() -> None:
-        nonlocal queued_bytes
+        nonlocal queued_bytes, observer_eof, peak_frames, peak_bytes
         while True:
             record = await bridge.read_record()
             if record is None:
+                observer_eof = spec.mode == "observe"
                 try:
                     queue.put_nowait(None)
                 except asyncio.QueueFull as exc:
@@ -432,6 +459,8 @@ async def relay_terminal_websocket(
                     (encoded, payload, size, record.get("type") == "terminal.closed")
                 )
                 queued_bytes += size
+                peak_frames = max(peak_frames, queue.qsize())
+                peak_bytes = max(peak_bytes, queued_bytes)
             if record.get("type") == "terminal.closed":
                 return
 
@@ -481,6 +510,7 @@ async def relay_terminal_websocket(
         asyncio.create_task(receive_control()),
     }
     close_code = 1000
+    close_reason = ""
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         failure: BaseException | None = None
@@ -500,6 +530,9 @@ async def relay_terminal_websocket(
                     "terminal attachment could not drain; reconnect for a full frame"
                 )
         if isinstance(failure, BridgeBackpressureError):
+            logging.getLogger(__name__).debug("Terminal output overloaded: frames=%d bytes=%d", queue.qsize(), queued_bytes)
+            close_reason = "terminal output overloaded"
+        if isinstance(failure, BridgeBackpressureError) or observer_eof:
             close_code = 1013
         elif failure is not None:
             close_code = 1002 if isinstance(failure, BridgeProtocolError) else 1011
@@ -508,8 +541,14 @@ async def relay_terminal_websocket(
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        logging.getLogger(__name__).debug(
+            "Terminal relay mode=%s peak_frames=%d peak_bytes=%d", spec.mode, peak_frames, peak_bytes,
+        )
         await bridge.close()
         try:
-            await websocket.close(code=close_code)
+            if close_reason:
+                await websocket.close(code=close_code, reason=close_reason)
+            else:
+                await websocket.close(code=close_code)
         except RuntimeError:
             pass

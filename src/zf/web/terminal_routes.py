@@ -22,7 +22,7 @@ from zf.web.terminal_gateway import (
     relay_terminal_websocket,
     ticket_from_subprotocol_header,
 )
-from zf.web.terminal_service import TerminalService
+from zf.web.terminal_service import TerminalCapabilityCache, TerminalService
 
 
 MutationAuthorizer = Callable[..., dict[str, object] | None]
@@ -82,6 +82,7 @@ class TerminalServiceHub:
         self._lock = Lock()
         self._services: dict[tuple[str, str, str], TerminalService] = {}
         self._host_config = host_config
+        self._probe_caches: dict[tuple[str, str], TerminalCapabilityCache] = {}
 
     def service(self, project_id: str, ctx: Any) -> TerminalService:
         state_dir = Path(ctx.state_dir).resolve(strict=False)
@@ -113,12 +114,16 @@ class TerminalServiceHub:
                 or service.config != config
                 or service.allowed_providers != providers
             ):
+                policy = (config.herdr_binary, config.minimum_herdr_version)
+                if policy not in self._probe_caches:
+                    self._probe_caches[policy] = TerminalCapabilityCache()
                 service = TerminalService(
                     project_id=canonical_project_id,
                     project_root=project_root,
                     state_dir=state_dir,
                     config=config,
                     allowed_providers=providers,
+                    capability_cache=self._probe_caches[policy],
                 )
                 self._services[key] = service
             return service

@@ -20,16 +20,20 @@ function actionHeaders(): Record<string, string> {
     : {};
 }
 
+export class TerminalRequestError extends Error {
+  constructor(readonly status: number, reason: string) { super(reason); }
+}
+
 async function responseJson<T>(response: Response): Promise<T> {
-  const value = await response.json() as Record<string, unknown>;
   if (!response.ok) {
+    const value = await response.json().catch(() => ({})) as Record<string, unknown>;
     const detail = value.detail;
     const nested = typeof detail === "object" && detail !== null
       ? detail as Record<string, unknown>
       : null;
-    throw new Error(String(value.reason ?? nested?.reason ?? value.status ?? `request failed: ${response.status}`));
+    throw new TerminalRequestError(response.status, String(value.reason ?? nested?.reason ?? value.status ?? `request failed: ${response.status}`));
   }
-  return value as T;
+  return response.json() as Promise<T>;
 }
 
 export async function fetchTerminalSessions(projectId: string): Promise<TerminalSessionsPage> {

@@ -642,6 +642,13 @@ export function App() {
   );
   const [agentPanelHasOpened, setAgentPanelHasOpened] = useState(initial.openAgent);
   const [commandOpen, setCommandOpen] = useState(false);
+  const pendingTerminalQuote = useRef<{ project: string; target: string; text: string } | null>(null);
+  const consumeTerminalQuote = useCallback((project: string, target: string) => {
+    const pending = pendingTerminalQuote.current;
+    if (!pending || pending.project !== project || pending.target !== target) return "";
+    pendingTerminalQuote.current = null;
+    return pending.text;
+  }, []);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [newChannelDraft, setNewChannelDraft] = useState<NewChannelDraft>(() => emptyNewChannelDraft());
@@ -740,6 +747,7 @@ export function App() {
     [activeProjectId, workspaceProjects],
   );
   const activeProjectReady = projectCanOpenBoard(activeProject);
+  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
 
   useEffect(() => {
     selectedChannelIdRef.current = selectedChannelId;
@@ -834,6 +842,18 @@ export function App() {
     }
     return next;
   }, [activeProjectId]);
+
+  useEffect(() => {
+    if (terminalOpen && projectToolsAvailable && actionGate.actionReady) {
+      void loadChannels().catch(() => undefined);
+    }
+  }, [terminalOpen, projectToolsAvailable, actionGate.actionReady, loadChannels]);
+
+  useEffect(() => {
+    if (terminalOpen && projectToolsAvailable && !snapshot) void loadSnapshot("light").catch(() => undefined);
+  }, [terminalOpen, projectToolsAvailable, snapshot, loadSnapshot]);
+
+  useEffect(() => { pendingTerminalQuote.current = null; }, [activeProjectId]);
 
   const loadEarlierChannelMessages = useCallback(async () => {
     const channelId = selectedChannelId || "ch-zaofu";
@@ -2135,7 +2155,6 @@ export function App() {
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
 
-  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
   const agentPanelVisible = projectToolsAvailable && agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
@@ -2160,6 +2179,7 @@ export function App() {
       selectedTaskId={selectedTaskId}
       conversation={projectToolsAvailable && selectedTaskId && <TaskConversation
         key={JSON.stringify([activeProjectId, selectedTaskId])}
+        consumeTerminalQuote={consumeTerminalQuote}
         activeProjectId={activeProjectId} context={orchestratorContext} events={events} focusSignal={orchestratorFocusSignal}
         onAction={submitAction} onLockSession={() => void lockSession()} onOpenChannelThread={openChannelThread}
         onOpenTask={openTask} onSaveToken={saveWebActionToken} onUnlockSession={unlockSession}
@@ -2326,6 +2346,7 @@ export function App() {
             }} />
           ) : page === "channels" ? (
               <ChannelRoute
+                consumeTerminalQuote={consumeTerminalQuote}
                 actionReady={actionGate.actionReady}
                 actionResult={actionResult}
                 channels={channelsPage?.channels ?? []}
@@ -2490,6 +2511,16 @@ export function App() {
         {terminalOpen && projectToolsAvailable && activeProjectId ? (
           <Suspense fallback={<div className="web-terminal-loading">Loading terminal UI…</div>}>
             <TerminalDrawer
+              quoteTargets={actionGate.actionReady ? [
+                ...(snapshot?.runtime.actions?.allowed?.includes("channel-post-message") ? channelsPage?.channels ?? [] : []).map(c => ({kind: "channel" as const, id: c.channel_id, title: c.name || c.channel_id})),
+                ...(snapshot?.runtime.actions?.allowed?.includes("chat-orchestrator") ? allBoardTasks(snapshot) : []).map(t => ({kind: "task" as const, id: t.id, title: t.title || t.id})),
+              ] : []}
+              onQuote={(target, text) => {
+                pendingTerminalQuote.current = { project: activeProjectId, target: target.kind + ":" + target.id, text };
+                setTerminalOpen(false);
+                if (target.kind === "channel") openChannel(target.id);
+                else openTask(target.id);
+              }}
               key={activeProjectId}
               projectId={activeProjectId}
               themeMode={themeMode}

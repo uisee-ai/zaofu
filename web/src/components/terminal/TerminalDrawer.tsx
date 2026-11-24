@@ -3,6 +3,7 @@ import {
   CircleStop,
   Eye,
   Keyboard,
+  ListFilter,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -43,7 +44,9 @@ import type {
 import { useTerminalSessions } from "./useTerminalSessions";
 import "./terminal.css";
 
-interface TerminalDrawerProps {
+import type { QuoteDestinationProps } from "./TerminalQuote";
+
+interface TerminalDrawerProps extends QuoteDestinationProps {
   onClose: () => void;
   projectId: string;
   themeMode: ThemeMode;
@@ -116,7 +119,7 @@ function connectionTone(session: TerminalSession, connection?: TerminalConnectio
   return "pending";
 }
 
-export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawerProps) {
+export function TerminalDrawer({ onClose, projectId, themeMode, quoteTargets, onQuote }: TerminalDrawerProps) {
   const { page, loading, busy, error, refresh, create, rename, stop } = useTerminalSessions(projectId);
   const activeSessions = useMemo(
     () => activeTerminalSessions(page?.sessions ?? []),
@@ -129,6 +132,33 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
   );
   const [attachments, setAttachments] = useState<Record<string, TerminalAttachmentState>>({});
   const [connections, setConnections] = useState<Record<string, TerminalConnectionState>>({});
+  const [visited, setVisited] = useState<string[]>([]);
+  const [waitingOpen, setWaitingOpen] = useState(false);
+  const [waitingRows, setWaitingRows] = useState<TerminalSession[]>([]);
+  const [waitingInteraction, setWaitingInteraction] = useState(false);
+  const waitingSessions = useMemo(() => activeSessions.filter(item => item.agent_status === "blocked"), [activeSessions]);
+  const waitingLabel = waitingSessions.length === 1 ? "1 needs input" : `${waitingSessions.length} need input`;
+  useEffect(() => {
+    if (waitingOpen && !waitingInteraction) setWaitingRows(waitingSessions);
+  }, [waitingOpen, waitingInteraction, waitingSessions]);
+  const [waitingNotice, setWaitingNotice] = useState("");
+  const layerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setVisited(previous => {
+      const ids = previous.filter(id => tabs.openIds.includes(id));
+      if (tabs.activeId && !ids.includes(tabs.activeId)) ids.push(tabs.activeId);
+      return ids.length === previous.length && ids.every((id, i) => previous[i] === id) ? previous : ids;
+    });
+  }, [tabs]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const layer = layerRef.current;
+    if (!viewport || !layer) return;
+    const resize = () => layer.style.setProperty("--terminal-viewport", viewport.height + "px");
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => viewport.removeEventListener("resize", resize);
+  }, []);
   const [fullscreen, setFullscreen] = useState(true);
   const [dockHeight, setDockHeight] = useState(restoredDockHeight);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -182,13 +212,14 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
   }, []);
 
   useEffect(() => {
-    if (!fullscreen && !addMenuOpen && !actionsMenuOpen && !renamingSessionId) return undefined;
+    if (!fullscreen && !addMenuOpen && !actionsMenuOpen && !waitingOpen && !renamingSessionId) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (renamingSessionId) {
         setRenamingSessionId("");
         setRenameDraft("");
-      } else if (addMenuOpen || actionsMenuOpen) {
+      } else if (addMenuOpen || actionsMenuOpen || waitingOpen) {
+        setWaitingOpen(false);
         setAddMenuOpen(false);
         setActionsMenuOpen(false);
       } else {
@@ -198,6 +229,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
     const handlePointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Element)) return;
       if (event.target.closest(".web-terminal-menu-anchor")) return;
+      setWaitingOpen(false);
       setAddMenuOpen(false);
       setActionsMenuOpen(false);
     };
@@ -207,7 +239,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [actionsMenuOpen, addMenuOpen, fullscreen, renamingSessionId]);
+  }, [actionsMenuOpen, addMenuOpen, fullscreen, renamingSessionId, waitingOpen]);
 
   const openSessions = tabs.openIds
     .map((id) => page?.sessions.find((session) => session.session_id === id))
@@ -364,6 +396,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
 
   return (
     <div
+      ref={layerRef}
       className={`web-terminal-layer ${fullscreen ? "is-fullscreen" : ""}`}
       style={dockStyle}
     >
@@ -447,6 +480,11 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                         aria-hidden="true"
                       />
                       <span className="web-terminal-tab-label">{session.title}</span>
+                      {session.state === "active" && session.agent_status && (
+                        <small data-agent-status={session.agent_status}>
+                          {{ idle: "Idle", working: "Working", blocked: "Needs input", done: "Done" }[session.agent_status]}
+                        </small>
+                      )}
                     </button>
                   )}
                   <button
@@ -479,6 +517,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                   ? "New terminal"
                   : "This Project has no supported Coding Agent provider")}
               onClick={() => {
+                setWaitingOpen(false);
                 setAddMenuOpen((value) => !value);
                 setActionsMenuOpen(false);
               }}
@@ -527,6 +566,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                 aria-expanded={actionsMenuOpen}
                 title="Terminal actions"
                 onClick={() => {
+                  setWaitingOpen(false);
                   setActionsMenuOpen((value) => !value);
                   setAddMenuOpen(false);
                 }}
@@ -597,6 +637,35 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
             </div>
           ) : null}
 
+          <div className="web-terminal-menu-anchor">
+            <button type="button" className="web-terminal-toolbar-button web-terminal-waiting-button" title="Sessions needing input"
+              aria-label={waitingSessions.length ? waitingLabel : "Sessions needing input"} aria-expanded={waitingOpen} onClick={() => {
+                setWaitingRows(waitingSessions);
+                setActionsMenuOpen(false);
+                setAddMenuOpen(false);
+                setWaitingInteraction(false);
+                setWaitingNotice("");
+                setWaitingOpen(!waitingOpen);
+              }}><ListFilter aria-hidden="true" />{waitingSessions.length > 0 && waitingLabel}</button>
+            {waitingOpen && <div className="web-terminal-menu web-terminal-actions-menu" role="menu"
+              onPointerEnter={() => setWaitingInteraction(true)} onPointerLeave={() => setWaitingInteraction(false)}
+              onFocus={() => setWaitingInteraction(true)} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setWaitingInteraction(false); }}>
+              <span className="web-terminal-menu-heading">Needs input</span>
+              {waitingNotice && <span role="status">{waitingNotice}</span>}
+              {!waitingRows.length && <span>No waiting sessions</span>}
+              {waitingRows.map(item => <button type="button" role="menuitem" key={item.session_id} onClick={async () => {
+                const latest = await refresh(true);
+                if (!latest) { setWaitingNotice("Session could not be verified. Try again."); return; }
+                const target = latest.sessions.find(row => row.session_id === item.session_id && row.generation === item.generation);
+                if (!target || target.state !== "active" || target.agent_status !== "blocked") {
+                  setWaitingNotice("Session changed. Refresh the waiting list.");
+                  return;
+                }
+                openExistingSession(item.session_id);
+                setWaitingOpen(false);
+              }}>{item.title}</button>)}
+            </div>}
+          </div>
           <span className="web-terminal-toolbar-divider" aria-hidden="true" />
           <button
             className="web-terminal-toolbar-button"
@@ -658,7 +727,10 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                 data-session-id={session.session_id}
                 key={session.session_id}
               >
-                <TerminalView
+                {(selected || visited.includes(session.session_id)) && <TerminalView key={session.generation}
+                  quoteTargets={quoteTargets}
+                  onQuote={onQuote}
+                  mouse={page?.capability.mouse === true}
                   expectedClose={
                     session.state !== "active" || stoppingSessionIds.has(session.session_id)
                   }
@@ -667,9 +739,10 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                   session={session}
                   themeMode={themeMode}
                   takeoverNonce={attachment.takeoverNonce}
+                  onTakeOver={page?.allow_takeover ? () => takeOver(session.session_id) : undefined}
                   visible={selected}
                   onStatusChange={updateTerminalStatus}
-                />
+                />}
               </section>
             );
           })}
