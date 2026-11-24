@@ -162,11 +162,11 @@ def skill_rows(reader, root, dispatch, materialization, actions, sid, ended):
             {
                 "name": name,
                 "digest": member.get("digest") or None,
-                "auto_inject": meta.get(name, {}).get("auto_inject") if member else None,
+                "auto_inject": member.get("auto_inject", meta.get(name, {}).get("auto_inject")) if member else None,
                 "materialization": member.get("status", "unknown"),
                 "read_status": "observed_header" if read else "unknown",
                 "invocation": "observed" if invoked else "unknown",
-                "load_on_demand": meta.get(name, {}).get("load_on_demand") if member else None,
+                "load_on_demand": member.get("load_on_demand", meta.get(name, {}).get("load_on_demand")) if member else None,
                 "invocation_event_ids": sorted(set(invoked)),
                 "read_event_ids": sorted(set(read)),
                 "applicability": "unknown",

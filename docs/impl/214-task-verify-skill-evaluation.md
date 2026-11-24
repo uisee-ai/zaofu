@@ -1,6 +1,6 @@
 # Task Verify 的 Skill 评分卡
 
-[Spec 214](../spec/214-workflow-skill-evaluation-and-optimization.md) 的前三阶段已接入使用 `task-verify` 输出协议的工作流。卡片保留原任务裁决和独立的机械评分。Operator 可以先看关键项，再看分数的分母和覆盖率。即使可判定项全部通过，独立业务裁决仍可能待证。
+使用 `task-verify` 输出协议的工作流已接入按次评分和独立复核。首个加载策略试点已完成，结论为保留默认必读。卡片保留原任务裁决和独立的机械评分。Operator 可以先看关键项，再看分数的分母和覆盖率。即使可判定项全部通过，独立业务裁决仍可能待证。[Spec 214](../spec/214-workflow-skill-evaluation-and-optimization.md)
 
 ## 查询和回填
 
@@ -83,3 +83,39 @@ uv run python scripts/calibrate-skill-review.py --suite challenge --model qwen2.
 另一个独立项目经真实 CLI 调用本机模型，对缺宿主证据的任务产出弃评修订。再次请求时模型调用次数为 0，原任务判词保留为通过。
 
 本次实现验证覆盖 56 项定向后端测试和 53 项合并门检。Web 类型检查、单元测试、生产构建及 Docker Chromium 的评分卡交互测试通过。历史 60 张机械卡片与前一阶段的 JSONL 逐字节一致，SHA-256 为 `c0cfc99d2810c2d4b3053f53d6a80c965def0513eb51a8b95e84536b14f4d979`。
+
+## 加载策略和首个试点
+
+看板 → 任务详情 → Evidence → **Task Verify 技能评估**。展开一个 attempt 可核对分子、分母、未知项、关键告警、Skill 读取见证与独立复核。展开 **Skill 加载策略对照（参考试验）** 可查看随此版本发布的试验、切换案例集、核对提交偏差或下载逐例 JSON。表旁的本任务记录来自所选项目的派发，显示其模型、模式与 Skill 摘要是否吻合。切换项目会重新读取记录。[逐例结果](../../web/src/data/skill-loading-reference.json)
+
+2026-11-24 对 `zf-project-adapter-matrix-enrichment` 做三组配对。三组共享八项其他 Skills、同一输出合同及预算，分别移除目标、保持默认必读、只在方法匹配时读取。Codex CLI 0.171.0、模型 `gpt-6-luna`、推理强度 `high`。共七个案例，每例每组两次，共 42 次隔离调用，全部完成。两个案例从 8×8 的 SUM、MEDIAN 记录提炼，其余涵盖服务、CLI、矩阵缺口、错目标截图和无关请求。参考答案保留在容器外。[冻结案例及预设门槛](../../tests/fixtures/skill-loading/task-verify.json)
+
+| 案例集 | 加载策略 | 判词正确 | 判词、动作、收据均合规且正确 | 误放行 / 误阻塞 | 读取见证 | 平均输入 token | 耗时中位数 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 选择集 | 移除 | 4/4 | 4/4 | 0 / 0 | 0/4 | 46,282 | 24.61 s |
+| 选择集 | 默认必读 | 4/4 | 4/4 | 0 / 0 | 4/4 | 59,281 | 29.59 s |
+| 选择集 | 按需 | 4/4 | 4/4 | 0 / 0 | 0/4 | 34,478 | 21.81 s |
+| 保留测试集 | 移除 | 10/10 | 9/10 | 0 / 0 | 0/10 | 36,482 | 24.36 s |
+| 保留测试集 | 默认必读 | 10/10 | 10/10 | 0 / 0 | 10/10 | 44,274 | 24.63 s |
+| 保留测试集 | 按需 | 10/10 | 8/10 | 0 / 0 | 2/10 | 47,369 | 31.13 s |
+
+**采纳决定为保留默认必读。** 按需在矩阵缺口的两次试验均有实际读取，无关请求均未读取。选择集输入节省 41.84%，保留集反而增加 6.99%，低于预设的 5% 节省要求。两次 MEDIAN 都正确要求补证，其中一次将说明写入收据 ID，另一次增加了合同以外的字段，两次都触发了完整提交质量门槛。输入数含缓存部分，下载数据另列缓存和输出用量。小样本只支持本客户端、模型和案例集的决定。Claude Code 的 CLI 认证预检报告 OAuth 会话已过期，本轮没有该客户端的模型测量值。
+
+新项目可对已启用的 Skill 按角色或阶段配置模式。下面的 PrdFlow 配置片段用于显式试验。回退时删除该覆盖，后续新绑定会使用 Skill 自身声明。已有 Task-stage 绑定在重派时复用原加载设置，派发的冻结记录可还原当次锁与物化清单中的加载模式。
+
+```yaml
+spec:
+  roleDefaults:
+    skillLoadingByStage:
+      verify:
+        zf-project-adapter-matrix-enrichment: on_demand
+```
+
+对于显式定义的角色，在该角色已有 `skills` 列表旁使用 `skill_loading: {方法名: required}` 或 `on_demand`。首轮结果用于选定试点角色的默认策略。其他角色、项目及模型可以使用同一机制独立验证。
+
+在仓库根目录执行，选择一个尚未创建的输出目录。每轮保留冻结输入、三组物化清单、逐次调用记录及摘要。重算命令仅读取已有文件。
+
+```sh
+PYTHONPATH=src python scripts/eval-task-verify-loading.py --output /tmp/zf-verify-loading-trial --model gpt-6-luna --reasoning-effort high --jobs 3
+PYTHONPATH=src python scripts/skill_loading_comparison.py /tmp/zf-verify-loading-trial > /tmp/zf-verify-loading-replay.json
+```

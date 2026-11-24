@@ -52,6 +52,7 @@ def freeze_skill_dispatch_treatment(
             "digest": str(getattr(entry, "sha256", "") or ""),
             "source": str(getattr(entry, "source", "") or ""),
             "status": str(getattr(entry, "status", "") or ""),
+            **{k: getattr(entry, k) for k in ("auto_inject", "load_on_demand") if hasattr(entry, k)},
         }
         for entry in lock_entries
         if str(getattr(entry, "name", "") or "")
@@ -65,10 +66,16 @@ def freeze_skill_dispatch_treatment(
             "source": str(row.get("source") or ""),
             "status": str(row.get("status") or ""),
             "materialized_to": str(row.get("materialized_to") or ""),
+            **{k: row[k] for k in ("auto_inject", "load_on_demand") if k in row},
         }
         for row in manifest_rows
         if isinstance(row, Mapping) and str(row.get("name") or "")
     }
+
+    for name, member in materialized.items():
+        for field in ("auto_inject", "load_on_demand"):
+            if member.get(field) != locked.get(name, {}).get(field):
+                raise SkillDispatchTreatmentError(f"Skill loading policy mismatch for {name!r}")
 
     for overlay in selected:
         name = overlay["skill_name"]

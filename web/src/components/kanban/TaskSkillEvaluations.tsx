@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { cachedGetJson } from "../../api/queryClient";
+
+const SkillLoadingComparison = lazy(() => import("./SkillLoadingComparison"));
 
 interface Criterion {
   id: string; result: string; reason: string; critical: boolean; evidence_refs: string[];
@@ -11,6 +13,7 @@ interface Review {
     items: { id: string; finding: string; judgment: string; reason: string; citations: string[] }[] };
 }
 interface Card {
+  provider?: string | null; model?: string | null; configured_model?: string | null;
   independent_review?: Review; review_event_id?: string; review_input_ref?: string; review_evidence?: Record<string, string>;
   attempt_id: string; dispatch_id: string; workflow_run_id: string; operation_id: string;
   recommendation: { action: string }; task_outcome: string; revision: number; digest: string; predecessor: string | null;
@@ -22,6 +25,7 @@ interface Card {
 export function TaskSkillEvaluations({ taskId, projectId }: { taskId: string; projectId?: string }) {
   const prefix = projectId ? `/api/projects/${encodeURIComponent(projectId)}` : "/api";
   const [history, setHistory] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const [reload, setReload] = useState(0);
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState("");
@@ -40,6 +44,12 @@ export function TaskSkillEvaluations({ taskId, projectId }: { taskId: string; pr
       <button type="button" onClick={() => setReload(value => value + 1)}>刷新评估</button>
     </div>
     <label><input type="checkbox" checked={history} onChange={e => setHistory(e.target.checked)} /> 显示历史修订</label>
+    <details onToggle={event => setShowComparison(event.currentTarget.open)}>
+      <summary>Skill 加载策略对照（参考试验）</summary>
+      {showComparison && <Suspense fallback={<p role="status">正在加载对照表…</p>}>
+        <SkillLoadingComparison cards={cards ?? []} />
+      </Suspense>}
+    </details>
     {error && <p role="alert">{error}</p>}
     {!error && !cards && <p role="status">正在读取评分卡…</p>}
     {cards?.length === 0 && <p className="empty-text">尚无已发布的评分卡。</p>}

@@ -1,3 +1,4 @@
+import "../src/styles.css";
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TaskInputPanel } from "../src/components/kanban/TaskInputPanel";

@@ -1,6 +1,6 @@
 # 214 · Workflow Skill 任务评估与按需加载优化
 
-状态为 `partial`。阶段 1–3 已实现，操作入口和验收记录见[Task Verify 评分卡](../impl/214-task-verify-skill-evaluation.md)。首批对象为 PRD 8×8 的 Task Verify。本文定义评分卡、独立评审和待实施的对照实验。后文分别标明可复用的现有实现与新增要求。
+Task Verify 首批四阶段已实施。历史回放、在线评分和独立复核已接入任务页。首个加载策略试点在 Codex 上完成 42 次隔离运行，保留测试集未达到采纳门槛，Verify 继续默认必读。Claude Code 的实际效果待独立验证。[操作入口与试点数据](../impl/214-task-verify-skill-evaluation.md)
 
 ## 1. 两个决策
 

@@ -426,8 +426,15 @@ class RoleConfig:
     plugins: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     agent: str = ""
+    skill_loading: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.skill_loading, dict) or any(
+            name not in self.skills or mode not in ("required", "on_demand")
+            for name, mode in self.skill_loading.items()
+        ):
+            raise ValueError(f"role {self.name!r}: skill_loading requires enabled skills and required/on_demand modes")
+        self.skill_loading = dict(self.skill_loading)
         self.model_reasoning_effort = _normalize_model_reasoning_effort(
             self.model_reasoning_effort,
             owner=f"RoleConfig(name={self.name!r})",

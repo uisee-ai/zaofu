@@ -64,7 +64,7 @@ def dispatch_task_pipeline_stage(
             "selected Task Pipeline role is not present in runtime topology",
         )
     role = _effective_pipeline_role(
-        role,
+        runtime, role, workflow_run_id=workflow_run_id, task_map_generation=task_map_generation,
         policy=policy,
         stage=stage,
         task=task,

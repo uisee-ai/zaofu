@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 test("task score, unknowns, evidence and revision follow the selected project", async ({ page }, testInfo) => {
@@ -40,4 +41,47 @@ test("task score, unknowns, evidence and revision follow the selected project", 
   await page.getByRole("button", { name: "切换项目" }).click();
   await expect(panel).toContainText("尚无已发布的评分卡");
   await expect(panel).not.toContainText("evt-target");
+});
+
+test("reference comparison uses paired trial data and distinguishes project dispatches", async ({ page }, testInfo) => {
+  const report = JSON.parse(await readFile(new URL("../src/data/skill-loading-reference.json", import.meta.url), "utf-8"));
+  const card = {
+    workflow_run_id: "workflow-B", attempt_id: "verify-2", dispatch_id: "d2", revision: 1,
+    score: { percent: null, passed: 0, denominator: 0, unknown: 1 }, criteria: [],
+    skills: [{ name: report.skill, digest: report.skill_digest, auto_inject: true, load_on_demand: false,
+      read_event_ids: [], invocation_event_ids: [] }],
+    provider: "codex", configured_model: "project-assigned-model", recommendation: {action: "复核证据"},
+  };
+  await page.route("**/api/projects/*/tasks/same-task/skill-evaluations?*", route =>
+    route.fulfill({json: {cards: route.request().url().includes("/first/") ? [card] : []}}));
+  await page.goto("/tests/task-inputs.html?evaluations");
+  const panel = page.getByTestId("task-skill-evaluations");
+  await panel.getByText("Skill 加载策略对照（参考试验）").click();
+  const comparison = panel.getByRole("region", {name: "Skill 加载策略参考试验"});
+  await expect(comparison.getByRole("heading", {name: "保留默认必读"})).toBeVisible();
+  await expect(comparison).toContainText(report.model);
+  await expect(comparison).toContainText("project-assigned-model · 默认必读 · Skill 摘要一致");
+  for (const split of ["test","selection"]) {
+    await comparison.getByRole("combobox").selectOption(split);
+    const score = report.splits[split];
+    await expect(comparison).toContainText(`完整三组配对 ${score.matched_pairs}/${score.expected_pairs}`);
+    const row = comparison.getByRole("row", {name: /^按需加载/});
+    await expect(row.getByRole("cell").nth(0)).toHaveText(`${score.arms.candidate.verdict_correct}/${score.matched_pairs}`);
+    await expect(row.getByRole("cell").nth(1)).toHaveText(`${score.arms.candidate.correct}/${score.matched_pairs}`);
+    if (split === "test") {
+      await comparison.getByText("查看按需组的 2 次提交偏差").click();
+      await expect(comparison).toContainText("median-red · 第 2 次");
+      await expect(comparison.locator("code").last()).toContainText("missing_proof");
+      await comparison.getByText("查看按需组的 2 次提交偏差").click();
+      await comparison.screenshot({path: testInfo.outputPath("skill-loading-comparison.png")});
+    }
+  }
+  const jsonUrl = await comparison.getByRole("link", {name: "下载逐例 JSON"}).getAttribute("href");
+  const payload = await (await page.request.get(jsonUrl!)).json();
+  expect(payload.observations.length).toBe(42);
+  expect(payload.common_fingerprint).toBe(report.common_fingerprint);
+  await page.getByRole("button", {name: "切换项目"}).click();
+  await panel.getByText("Skill 加载策略对照（参考试验）").click();
+  await expect(panel).toContainText("尚无此 Skill 的记录");
+  await expect(panel).not.toContainText("project-assigned-model");
 });
