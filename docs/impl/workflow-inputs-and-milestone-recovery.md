@@ -179,7 +179,9 @@ Reader 的首次调用可以挂在同一 Run、同一 Task 的 Workflow operatio
 
 Planner 可在批准的 `product_acceptance_spec` 中声明 `candidate_reader_assignments`。每项列配置中的 `role_instance`、以原 `task_id` 和 `acceptance_id` 标识的 `acceptance` 数组，以及 `journey_ids`。多个角色可以独立承担同一高风险条款。可选的 `plan_reads` 把已授权 Plan port 的必读选择缩小到明确的 JSON 路径。给跨模块、端到端和媒体断言分配明确的旅程。冻结计划未声明分工时沿用完整 Candidate 读者合同。
 
-运行时从同一候选和批准计划派生各路合同与命令，保持原来的 role/attempt 绑定。分工 Reader 提交本路证据和观察。只有当前组所有必需读者都完成且成功，才可推进到 `product_completeness`。该角色读取各路已准入的引用，核查覆盖、独立性、未决发现与全局旅程，提交一份完整报告供后继阶段消费。恢复的同一会话用 `artifact read --required --resume` 补原生交付证据尚未覆盖的页面。发现证据缺口时仍需补读或返回待证。
+运行时从同一候选和批准计划派生各路合同与命令，保持原来的 role/attempt 绑定。分工 Reader 提交本路证据和观察。只有当前组所有必需读者都完成且成功，才可推进到 `product_completeness`。该角色读取各路已准入的引用，核查覆盖、独立性、未决发现与全局旅程，提交一份完整报告供后继阶段消费。恢复的同一会话用 `artifact read --required --resume` 补原生交付证据尚未覆盖的页面。
+
+当冻结的必读清单以 `critical-reader-repair-context` 开头时，新 briefing 指引 Reader 用同一个 `artifact read --required` 游标先读恢复依据，再继续读取其余必需输入。工具截断了某页时，以同一输入游标减小页预算重试。历史清单将恢复依据排在后面时，仍保留原顺序和优先定位入口。发现证据缺口时仍需补读或返回待证。
 
 原候选产品返工曾因旧计数逻辑误计 Plan 修订而被拒时，操作员可用 `zf recover candidate-repair --decision <原 OA 提交事件>` 检查同一决定的当前适用性。确认不可变目标、后继任务和预算后，加 `--apply --approval-ref <操作员批准引用>` 请求原受控动作。旧拒绝保留在账本；已发布结果沿原 checkpoint 去重。该命令沿用实际产品返工上限与原任务合同。
 
