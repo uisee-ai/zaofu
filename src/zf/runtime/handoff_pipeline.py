@@ -43,6 +43,8 @@ def pipeline_handoff(*, state_dir: Path, project_root: Path, config: Any,
                          and event.payload.get("dispatch_id") == task.active_dispatch_id), None) if live else None
         facts = dispatch.payload if dispatch else {}
         admitted = [{"kind": "admitted_result", "event_id": row["last_event_id"],
+                     "stage": row["stage"], "semantic_verdict": row.get("semantic_verdict"),
+                     "settled_at": row.get("last_event_at", ""),
                      "summary": f"{row['stage']} · generation {row['operation_generation']} · "
                                 f"{row.get('semantic_verdict') or 'verdict unknown'}"}
                     for row in projection["operations"]
@@ -51,6 +53,7 @@ def pipeline_handoff(*, state_dir: Path, project_root: Path, config: Any,
             "status": "current", "current_stage": current_stage, "pipeline_stage": stage,
             "workflow_run_id": view["workflow_run_id"], "generation_id": view["generation_id"],
             "operation_id": view["current_operation_id"] if live else "",
+            "operation_status": operation.get("status", "") if live else "",
             "attempt_id": facts.get("attempt_id", ""), "dispatch_id": facts.get("dispatch_id", ""),
             "target_ref": facts.get("task_ref") or facts.get("target_ref") or "",
             "owner": {"role": view.get("current_stage", "") if live else "",

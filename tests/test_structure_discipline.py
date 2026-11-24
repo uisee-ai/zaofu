@@ -525,7 +525,6 @@ _KNOWN_OVERSIZED_SOURCE_FILES = {
     "src/zf/web/projections/tasks.py",
     "web/src/app/shared.tsx",
     "web/src/components/channel/ChannelPage.tsx",
-    "web/src/components/kanban/TaskDetail.tsx",
     "web/src/components/observability/ObservabilityPage.tsx",
     "web/src/styles/07-agent.css",
     # Reconciliation 2026-07-03 (tasks/active/2026-07-03-0457-...): these crossed

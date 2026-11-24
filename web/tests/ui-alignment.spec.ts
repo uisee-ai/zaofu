@@ -60,7 +60,7 @@ test("General preferences change actual appearance, survive refresh, and synchro
   expect(writes).toEqual([]); expect(errors).toEqual([]);
 });
 
-test("Board, List and Table preserve filters and open one keyboard-safe detail drawer", async ({ page }, info) => {
+test("Board, List and Table preserve filters and open the task reading page", async ({ page }, info) => {
   const { writes, errors } = await installUiFixture(page);
   await page.goto("/?project=ui-review&page=board");
   await expect(page.locator(".board-grid .task-card")).toHaveCount(6);
@@ -87,7 +87,7 @@ test("Board, List and Table preserve filters and open one keyboard-safe detail d
   const first = page.locator(".workbench-task-row").first();
   const taskTitle = await first.locator(".task-row-title").innerText();
   await first.click();
-  const drawer = page.getByRole("dialog", { name: "Task details" });
+  const drawer = page.getByRole("region", { name: "任务详情" });
   await expect(drawer).toBeVisible();
   await expect(drawer).toContainText(taskTitle);
   await page.keyboard.press("Escape");

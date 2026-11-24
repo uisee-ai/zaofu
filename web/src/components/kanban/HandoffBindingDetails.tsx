@@ -1,10 +1,9 @@
 import type { HandoffSummaryProjection } from "../../api/types";
-import type { DetailTab } from "../../app/sharedTypes";
 import { asRecord, textValue } from "../../app/shared";
 
-export function HandoffBindingDetails({ summary, setTab }: {
+export function HandoffBindingDetails({ summary, onEvidence, onActivity }: {
   summary?: HandoffSummaryProjection;
-  setTab: (tab: DetailTab) => void;
+  onEvidence: () => void; onActivity: () => void;
 }) {
   const pipeline = asRecord(summary?.pipeline);
   const workspace = asRecord(pipeline.workspace);
@@ -34,8 +33,8 @@ export function HandoffBindingDetails({ summary, setTab }: {
     <p className="muted">快照不包含忽略文件、Git 历史和运行时状态；旧执行是否已停止仍需单独确认。</p>
     <p className="muted">保存与读取记录不授予执行权限。恢复仍需核对身份、任务现场和执行权。</p>
     <div className="button-row">
-      <button type="button" className="icon-button" onClick={() => setTab("Evidence")}>查看输入与成果</button>
-      <button type="button" className="icon-button" onClick={() => setTab("Activity")}>查看交接历史</button>
+      <button type="button" className="icon-button" onClick={onEvidence}>查看输入与成果</button>
+      <button type="button" className="icon-button" onClick={onActivity}>查看交接历史</button>
     </div>
   </details>;
 }

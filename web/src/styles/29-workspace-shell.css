@@ -47,7 +47,7 @@ body { font-size: var(--type-body); line-height: 1.45; }
 }
 @media (max-width: 980px) {
   .topbar { padding-inline: 16px; }
-  .app-shell:has(.board-panel:is([data-page="board"], [data-page="inbox"], [data-page="settings"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
+  .app-shell:has(.board-panel:is([data-page="board"], [data-page="task"], [data-page="inbox"], [data-page="settings"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
   .workspace { padding: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .workspace > .board-panel { grid-column: 1; grid-row: 2; min-height: 0; }
   .project-rail { max-height: none; border-bottom: 1px solid var(--line); }
@@ -74,7 +74,6 @@ body { font-size: var(--type-body); line-height: 1.45; }
   .topbar-tool-separator { display: none; }
 }
 
-.rail-account { margin-top:auto; flex:none; border-top:1px solid var(--line); padding:8px; }
 .account-switcher { position:relative; text-align:start; }
 .account-switcher summary { display:flex; gap:9px; min-height:36px; padding:4px 7px; align-items:center; border-radius:6px; cursor:pointer; color:var(--text); font-weight:550; list-style:none; }
 .account-switcher summary::-webkit-details-marker { display:none; }
@@ -83,13 +82,6 @@ body { font-size: var(--type-body); line-height: 1.45; }
 .account-name { overflow:hidden; text-overflow:ellipsis; }
 .account-chevron { margin-inline-start:auto; color:var(--muted-foreground); }
 .account-options { position:absolute; z-index:15; top:calc(100% + 4px); left:0; min-width:160px; padding:4px; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 4px 16px #0002; }
-.rail-account .account-options { bottom:calc(100% + 4px); top:auto; }
+.topbar .account-options { left:auto; right:0; }
 .account-options :is(a,button) { width:100%; display:flex; gap:8px; align-items:center; background:none; border:0; border-radius:5px; padding:8px; color:var(--text); font:inherit; text-decoration:none; cursor:pointer; }
 .account-options [role=alert] { display:block; padding:6px; }
-@media (min-width:981px) {
-  .is-collapsed .rail-account :is(.account-name,.account-chevron) { display:none; }
-  .is-collapsed .rail-account summary { justify-content:center; padding:4px 0; }
-}
-@media (max-width:980px) {
-  .project-rail:not(.mobile-open) .rail-account { display:none; }
-}

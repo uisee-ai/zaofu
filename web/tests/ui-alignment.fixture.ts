@@ -13,9 +13,10 @@ export async function installUiFixture(page: Page, options: { manyInbox?: boolea
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
     class MockSource {
-      onopen: (() => void) | null = null; onerror = null; onmessage = null;
-      constructor() { setTimeout(() => this.onopen?.(), 10); }
-      addEventListener() {} removeEventListener() {} close() {}
+      onopen: (() => void) | null = null; onerror = null; onmessage: ((event: MessageEvent) => void) | null = null;
+      deliver = (event: Event) => this.onmessage?.(new MessageEvent("message", { data: JSON.stringify((event as CustomEvent).detail) }));
+      constructor() { window.addEventListener("fixture:sse", this.deliver); setTimeout(() => this.onopen?.(), 10); }
+      addEventListener() {} removeEventListener() {} close() { window.removeEventListener("fixture:sse", this.deliver); }
     }
     Object.defineProperty(window, "EventSource", { value: MockSource });
   });
