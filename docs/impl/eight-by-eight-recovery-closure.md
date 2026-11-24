@@ -1086,3 +1086,5 @@ Plan 执行预览在 Critic 必读摘要中列出两类待核对情形。任务�
 对同一任务、同一验收 ID，若 Task Map 与验收矩阵都显式声明了 verification_owner 或 verification_tier，新计划预检和新包准入逐字段比较，返回具体 AC、字段和两侧取值。其他命令的测试分层仍独立；已接纳包按原代际重放。
 
 OA 对新的候选失败作出 `return_to_plan` 后，Planner 以本次决策与失败反馈为输入。上一轮 Owner 给 Reader 的指令、授权引用和阶段代次保存在 `historical_orchestration_context`，标记为 `observation_only`。已批准的 Plan 包及其端口仍按原绑定提供。对同一 Reader 重试和 Owner 明确批准的新代次分别沿用原恢复入口。
+
+当预授权宿主为已弃判的候选 Reader 收齐命令回执，且同组还有 Reader 在执行时，Run Manager 可以从该 Reader 的失败事件恢复单路验证。重试绑定同一 Run、候选提交、合同、operation 与 attempt，逐项检查回执及合同要求的媒体，再经受控 child-rebuild 派发新的独立 Reader。新 Reader 自行审阅证据并提交判词。请求中记录已移交的命令；同组、同目标、同合同及同宿主策略下，其他 Reader 可消费这些回执。已收口的整组走原有聚合恢复入口。

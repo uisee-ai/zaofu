@@ -181,4 +181,7 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         result = service.execute(action='stage-replan-new-generation', requested_action='stage-replan-new-generation',
                                  requested=requested, payload=payload)
         return bool(result.get('ok'))
+    if not failed_probe:
+        from zf.runtime.candidate_probe_source_retry import resume_probe_source
+        return resume_probe_source(service, operation, contract, policy, events, dispatch, receipts)
     return False

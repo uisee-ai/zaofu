@@ -133,6 +133,8 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
             return 0
         operations = reduce_workflow_operations(events)
         from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
+        from zf.runtime.candidate_probe_source_retry import handed_off_probe_commands
+        transferred = handed_off_probe_commands(events, policy)
         eligible = []
         candidate_probe_owners = {}
         for operation_id, operation in operations.items():
@@ -195,7 +197,7 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                 # this failure for handoff; do not spend its remaining probes.
                 continue
             for command in contract['verification_commands']:
-                if command['command_id'] in receipts:
+                if command['command_id'] in receipts or command['command_id'] in transferred.get(group, ()):
                     continue
                 if command.get('command') not in policy.commands:
                     continue
