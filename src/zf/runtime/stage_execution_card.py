@@ -358,14 +358,27 @@ def prepare_fanout_result_guidance(
     return guidance, semantic_submit, result_prefix
 
 
+def _plan_failure_submission_bound(payload: Mapping[str, Any]) -> bool:
+    validation = payload.get("plan_candidate_validation")
+    return bool(
+        payload.get("semantic_result_submit_mode") == "blocking"
+        and payload.get("operation_id")
+        and payload.get("output_profile_id") == "workflow-read"
+        and isinstance(validation, Mapping) and isinstance(validation.get("manifest"), Mapping)
+        and str(payload.get("canonical_failure_event") or "").strip()
+    )
+
+
 def render_fanout_submit_commands(
     *,
     success_command: str,
     failure_command: str,
     semantic_submit: bool,
+    child_payload: Mapping[str, Any],
 ) -> list[str]:
     if semantic_submit:
-        return ["Success command:", "```bash", success_command, "```", ""]
+        label = "Submit this operation's result:" if _plan_failure_submission_bound(child_payload) else "Success command:"
+        return [label, "```bash", success_command, "```", ""]
     return [
         "Success command:",
         "```bash",
@@ -537,6 +550,17 @@ def prepare_profiled_stage_result(
         cli_command=cli_command,
         semantic_template=semantic_body,
     )
+    plan_failure_bound = _plan_failure_submission_bound(child_payload)
+    failure_guidance = (
+        "- If unavailable required input or a tool or control-plane failure prevents producing the Plan, preserve partial artifacts "
+        "and record the actual cause and evidence in this scratch: `execution_status=failed`, "
+        "`recommendation=abstain`, a specific `summary`, and `findings` as a list. "
+        "Use the same validation and submission commands for this execution failure. "
+        "Correct repairable validation errors in place. Keep a business rejection in its independent review "
+        "and use the Owner-review draft only for a genuine blocking decision."
+        if plan_failure_bound else
+        "- For failure, set `execution_status`/`verdict` and exact findings before running the same command."
+    )
     lines = [
         "## Output Contract",
         "",
@@ -549,8 +573,7 @@ def prepare_profiled_stage_result(
         "The Kernel supplies immutable identity and selects the canonical event.",
         "- Update the prefilled scratch file in place. With apply_patch use "
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
-        "- For failure, set `execution_status`/`verdict` and exact findings before "
-        "running the same command.",
+        failure_guidance,
         "- Complete authoring contract: this briefing, prefilled result, and skills. "
         "Do not inspect ZaoFu runtime source/tests/examples/package for hidden fields.",
         "- Submit authorization is transport-owned; do not print or inspect it.",
@@ -611,13 +634,14 @@ def prepare_profiled_stage_result(
     if isinstance(plan_candidate_validation, Mapping):
         lines.extend(_render_plan_candidate_policy(plan_candidate_validation))
         validate_command = render_result_validate_command(command) + " --summary"
+        submit_label = "operation result submission command" if plan_failure_bound else "Success command"
         lines.extend([
             "- Plan candidate rule: after authoring, run only the pre-submit "
             "validation command below. It uses the same runtime evaluator as "
             "formal Plan admission and does not consume the submit capability.",
             "- If validation fails, edit this same scratch/artifact set from the "
             "structured diagnostics and rerun validation in this turn. After exit "
-            "0, the next tool call MUST be the Success command; do not run any "
+            f"0, the next tool call MUST be the {submit_label}; do not run any "
             "other audit, search, test, or readback.",
             "- On validation or submission rejection, follow structured "
             "diagnostics only; do not reverse-engineer the harness.",

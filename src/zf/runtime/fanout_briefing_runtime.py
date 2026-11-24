@@ -979,6 +979,7 @@ class FanoutBriefingMixin:
             success_command=success_command,
             failure_command=failure_command,
             semantic_submit=semantic_submit,
+            child_payload=child_payload,
         )
         result_preview_lines: list[str] = []
         if not semantic_submit:
