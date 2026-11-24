@@ -74,23 +74,110 @@ body { font-size: var(--type-body); line-height: 1.45; }
   .topbar-tool-separator { display: none; }
 }
 
-.rail-account { margin-top:auto; flex:none; border-top:1px solid var(--line); padding:8px; }
-.account-switcher { position:relative; text-align:start; }
-.account-switcher summary { display:flex; gap:9px; min-height:36px; padding:4px 7px; align-items:center; border-radius:6px; cursor:pointer; color:var(--text); font-weight:550; list-style:none; }
-.account-switcher summary::-webkit-details-marker { display:none; }
-.account-switcher summary:hover, .account-options :is(a,button):hover { background:var(--surface-2); }
-.account-avatar { display:grid; place-items:center; flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--accent-soft,var(--surface-2)); color:var(--text); font-size:var(--text-12); }
-.account-name { overflow:hidden; text-overflow:ellipsis; }
-.account-chevron { margin-inline-start:auto; color:var(--muted-foreground); }
-.account-options { position:absolute; z-index:15; top:calc(100% + 4px); left:0; min-width:160px; padding:4px; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 4px 16px #0002; }
-.rail-account .account-options { top:auto; bottom:calc(100% + 4px); }
-@media (min-width:981px) {
-  .project-rail.is-collapsed { overflow:visible; }
-  .is-collapsed .rail-account :is(.account-name,.account-chevron) { display:none; }
-  .is-collapsed .rail-account summary { padding-inline:0; justify-content:center; }
+.rail-footer {
+  flex: none;
+  margin-top: auto;
+  padding: 6px 8px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
 }
-@media (max-width:980px) {
-  .project-rail:not(.mobile-open) .rail-account { display:none; }
+.rail-footer .rail-nav-button { width: 100%; }
+.account-switcher { position: relative; text-align: start; }
+.account-switcher summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
 }
-.account-options :is(a,button) { width:100%; display:flex; gap:8px; align-items:center; background:none; border:0; border-radius:5px; padding:8px; color:var(--text); font:inherit; text-decoration:none; cursor:pointer; }
-.account-options [role=alert] { display:block; padding:6px; }
+.account-switcher summary::-webkit-details-marker { display: none; }
+.account-switcher summary:hover, .account-switcher[open] summary { background: var(--surface-2); }
+.account-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--brand-subtle);
+  color: var(--brand-strong);
+  font-size: var(--text-11);
+  font-weight: 600;
+}
+.account-name, .account-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-chevron { flex: none; margin-inline-start: auto; color: var(--muted-foreground); }
+.account-options {
+  position: absolute;
+  z-index: 15;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-end: 0;
+  width: min(248px, calc(100vw - 24px));
+  max-height: calc(100dvh - 60px);
+  overflow: auto;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.rail-account .account-options { inset: auto auto calc(100% + 4px) 0; width: 100%; }
+.account-identity { display: flex; align-items: center; gap: 10px; padding: 12px; border-bottom: 1px solid var(--line-soft); }
+.account-identity .account-avatar { width: 34px; height: 34px; font-size: var(--text-13); }
+.account-identity > div { min-width: 0; }
+.account-identity strong, .account-identity small { display: block; }
+.account-identity small { margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-12); }
+.account-theme { min-width: 0; margin: 10px 9px; padding: 0; border: 0; }
+.account-theme legend { margin-bottom: 6px; padding: 0; color: var(--muted-foreground); font-size: var(--text-11); font-weight: 600; }
+.account-theme > div { display: flex; padding: 2px; gap: 2px; border-radius: 6px; background: var(--surface-2); }
+.account-theme button {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-12);
+  cursor: pointer;
+}
+.account-theme button[aria-pressed="true"] { color: var(--text); background: var(--panel); box-shadow: 0 1px 3px var(--shadow); }
+.account-actions { padding: 4px; border-top: 1px solid var(--line-soft); }
+.account-actions :is(a, button) {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-actions :is(a, button):hover { background: var(--surface-2); }
+.account-options [role="alert"] { display: block; padding: 6px 12px; }
+@media (min-width: 981px) {
+  .project-rail.is-collapsed { overflow: visible; }
+  .is-collapsed .rail-account :is(.account-name, .account-chevron) { display: none; }
+  .is-collapsed .rail-account summary { padding-inline: 0; justify-content: center; }
+  .is-collapsed .rail-account .account-options { width: 248px; }
+}
+@media (max-width: 980px) {
+  .project-rail:not(.mobile-open) .rail-footer { display: none; }
+}
