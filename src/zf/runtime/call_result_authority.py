@@ -421,9 +421,9 @@ class CallResultAuthorityMixin:
     ) -> ZfEvent | None:
         """Return immutable candidate authority, excluding recovery signals."""
 
-        for event in reversed(self.event_log.read_all()):
-            if event.type != "candidate.ready":
-                continue
+        from zf.runtime.candidate_freeze_recovery_identity import frozen_candidate_occurrences
+
+        for event in frozen_candidate_occurrences(self.event_log.read_all()):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if str(payload.get("schema_version") or "") != (
                 "candidate-freeze-receipt.v1"

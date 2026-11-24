@@ -13,7 +13,7 @@ from zf.runtime.task_pipeline_contexts import (
 from zf.runtime.writer_fanout_generation import completed_writer_generation
 
 
-def _is_stall_copy(event: ZfEvent, original: ZfEvent) -> bool:
+def is_stall_trigger_copy(event: ZfEvent, original: ZfEvent) -> bool:
     body = dict(event.payload)
     if (event.actor != "zf-stall-redispatch" or event.type != original.type
             or event.correlation_id != original.correlation_id
@@ -39,7 +39,7 @@ def stall_trigger_original(events: Sequence[ZfEvent], trigger_event: ZfEvent) ->
     )
     if original is None or original.actor == "zf-stall-redispatch":
         return None
-    return original if trigger_event is original or _is_stall_copy(trigger_event, original) else None
+    return original if trigger_event is original or is_stall_trigger_copy(trigger_event, original) else None
 
 
 def suppress_handled_stall_trigger(
@@ -50,7 +50,7 @@ def suppress_handled_stall_trigger(
     original = stall_trigger_original(events, trigger_event)
     if original is None:
         return False
-    family = {original.id, *(event.id for event in events if _is_stall_copy(event, original))}
+    family = {original.id, *(event.id for event in events if is_stall_trigger_copy(event, original))}
     handled = next((event for event in events if (
         event.type == "fanout.started" and event.payload.get("stage_id") == stage_id
         and event.payload.get("trigger_event_id") in family - {trigger_event.id}

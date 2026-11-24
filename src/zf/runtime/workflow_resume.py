@@ -18,6 +18,7 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.workflow.graph import compile_workflow_graph
+from zf.runtime.candidate_freeze_recovery_identity import superseding_reader_freeze
 from zf.runtime.candidate_rework import _feedback_lines_from_payload
 from zf.runtime.failure_kind import (
     FAILURE_KIND_INFRA,
@@ -1781,6 +1782,12 @@ def _batch_checkpoint_superseded_reason(
         return _repair_checkpoint_superseded_reason(events, checkpoint)
     if checkpoint.safe_resume_action != "reemit_candidate_ready":
         return ""
+    current = superseding_reader_freeze(
+        reversed(events), checkpoint.workflow_run_id or checkpoint.trace_id,
+        checkpoint.freeze_id, checkpoint.candidate_head_commit,
+    )
+    if current:
+        return f"stale batch checkpoint superseded by current candidate freeze {current.id}"
     from zf.runtime.candidate_repair_resume import candidate_repair_supersedes
 
     repair_reason = candidate_repair_supersedes(events, checkpoint)

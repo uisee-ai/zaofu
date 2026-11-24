@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.candidate_reader_assignments import candidate_acceptance_id
-from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery
+from zf.runtime.candidate_freeze_recovery_identity import frozen_candidate_occurrences, native_freeze_for_recovery
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
     same_task_map_generation,
@@ -371,8 +371,8 @@ def _latest_frozen_candidate(
     *,
     authority_events: list[ZfEvent] | None = None,
 ) -> ZfEvent | None:
-    for event in reversed(events):
-        if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
+    for event in frozen_candidate_occurrences(events):
+        if not isinstance(event.payload, Mapping):
             continue
         body = event.payload
         event_run_id = str(
@@ -443,8 +443,8 @@ def frozen_candidate_for_payload(
         ).strip()
         current = candidates.get(parent_id) if parent_id else None
     if freeze_id and not candidate_event_id:
-        for event in reversed(events):
-            if event.type != "candidate.ready" or not isinstance(event.payload, Mapping):
+        for event in frozen_candidate_occurrences(events):
+            if not isinstance(event.payload, Mapping):
                 continue
             body = event.payload
             event_run_id = str(

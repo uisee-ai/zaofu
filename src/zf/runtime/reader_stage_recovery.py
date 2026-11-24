@@ -13,6 +13,45 @@ from zf.runtime.stage_failure_replan import (
 )
 
 
+SUPERSEDED_FANOUT_REASON = "reader failure has been superseded or has no causal fanout"
+
+
+def _candidate_fanout_is_current(
+    events: list[ZfEvent], run_id: str, start: ZfEvent, positions: dict[str, int],
+) -> bool | None:
+    """None means the causal freeze is unknown and cannot release a blocked retry."""
+    from zf.runtime.candidate_freeze_recovery_identity import native_freeze_for_recovery, superseding_reader_freeze
+    from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+    at = positions.get(start.payload.get("trigger_event_id"))
+    if start.origin != "kernel" or at is None or at >= positions[start.id]:
+        return None
+    source = events[at]
+    body = source.payload
+    freeze = body.get("freeze_id")
+    head = body.get("candidate_head_commit")
+    if (source.type != "candidate.ready" or source.origin != "kernel" or _event_run_id(source) != run_id
+            or not freeze or not head):
+        return None
+    try:
+        # A stale repair wrapper may still identify the older native receipt it actually dispatched.
+        # Never infer that receipt by matching only its mutable branch name or target SHA.
+        if source.actor == "zf-stall-redispatch":
+            native = native_freeze_for_recovery(events[:at + 1], source)
+        else:
+            parent = body.get("candidate_snapshot_event_id") or body.get("candidate_event_id") or source.id
+            native = frozen_candidate_for_payload(
+                events[:at + 1], run_id, authority_events=events,
+                payload={"candidate_event_id": parent, "freeze_id": freeze},
+            )
+    except ValueError:
+        return None
+    if (not native or native.origin != "kernel" or native.payload.get("freeze_id") != freeze
+            or native.payload.get("candidate_head_commit") != head):
+        return None
+    return superseding_reader_freeze(reversed(events), run_id, freeze, head) is None
+
+
 def repaired_reader_stage_trigger(
     state_dir: Path,
     config: ZfConfig,
@@ -45,9 +84,18 @@ def repaired_reader_stage_trigger(
     starts = [e for e in events if e.type == "fanout.started"
               and _event_run_id(e) == run_id and e.payload.get("stage_id") == stage.id]
     fanout_id = str(failure.payload.get("fanout_id") or "")
-    if not starts or not fanout_id or starts[-1].payload.get("fanout_id") != fanout_id:
-        raise ValueError("reader failure has been superseded or has no causal fanout")
     index = events.index(failure)
+    matches = [i for i, start in enumerate(starts) if fanout_id and start.payload.get("fanout_id") == fanout_id]
+    if len(matches) != 1 or events.index(starts[matches[0]]) >= index:
+        raise ValueError(SUPERSEDED_FANOUT_REASON)
+    newer = starts[matches[0] + 1:]
+    if newer:
+        positions = {event.id: i for i, event in enumerate(events)}
+        if (stage.trigger != "candidate.ready" or failure.origin != "kernel"
+                or _candidate_fanout_is_current(events, run_id, starts[matches[0]], positions) is not True
+                or any(_candidate_fanout_is_current(events, run_id, start, positions) is not False
+                       for start in newer)):
+            raise ValueError(SUPERSEDED_FANOUT_REASON)
     if any(e.payload.get("repaired_failure_event_id") == failure_id
            and e.type == stage.trigger for e in events):
         raise ValueError("reader failure has already been retried")

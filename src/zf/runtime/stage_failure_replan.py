@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_freeze_recovery_identity import superseding_reader_freeze
 from zf.runtime.reader_task_recovery_scope import ReaderTaskRecoveryScopes
 from zf.runtime.reader_replan_index import ReaderReplanIndex
 from zf.runtime.plan_artifact_package import (
@@ -564,6 +565,17 @@ def plan_reader_stage_replan(
             origin_payload = lineage
         else:
             origin_payload = {**lineage, **origin_payload}
+    if trigger_type == "candidate.ready":
+        failure_candidate = index.by_id.get(str(failure_payload.get("candidate_event_id") or ""))
+        binding = origin_payload
+        if (not failure_fanout_id and failure_candidate and failure_candidate.type == trigger_type
+                and _same_run(failure_candidate, failure_run_id)):
+            binding = failure_candidate.payload
+        if superseding_reader_freeze(
+            (event for _, event in reversed(index.rows("candidate.ready"))),
+            failure_run_id, binding.get("freeze_id", ""), binding.get("candidate_head_commit", ""),
+        ):
+            return None, "superseded_by_current_candidate_freeze"
     if (
         _requires_changed_scan_input(stage, failure_event.type)
         and _semantic_failure(failure_payload)

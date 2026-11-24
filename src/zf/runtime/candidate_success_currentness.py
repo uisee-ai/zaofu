@@ -212,9 +212,9 @@ def _latest_frozen_candidate(
 ) -> ZfEvent | None:
     if not workflow_run_id:
         return None
-    for candidate in reversed(events):
-        if candidate.type != "candidate.ready":
-            continue
+    from zf.runtime.candidate_freeze_recovery_identity import frozen_candidate_occurrences
+
+    for candidate in frozen_candidate_occurrences(events):
         body = candidate.payload if isinstance(candidate.payload, Mapping) else {}
         candidate_run = _text(
             body.get("workflow_run_id")

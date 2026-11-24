@@ -15,6 +15,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.store import TaskStore
+from zf.runtime.candidate_freeze_recovery_identity import superseding_reader_freeze
 from zf.runtime.workflow_resume import (
     STAGE_TRANSITION_STALLED_EVENT,
     TASK_REF_REPAIR_REQUESTED_EVENT,
@@ -820,6 +821,17 @@ def _apply_stage_replan(
             f"stage replan noop: {note}",
             emitted,
         )
+    if replan_event.type == "candidate.ready" and replan_event.payload.get("freeze_id"):
+        current = superseding_reader_freeze(
+            reversed(writer.event_log.read_all()),
+            checkpoint.workflow_run_id or replan_event.correlation_id or "",
+            replan_event.payload["freeze_id"], replan_event.payload.get("candidate_head_commit", ""),
+        )
+        if current:
+            reason = f"stage replan superseded by current candidate freeze {current.id}"
+            return WorkflowResumeApplyResult(
+                checkpoint, False, reason, _append_rejected(writer, checkpoint, emitted, reason),
+            )
     replan = writer.append(replan_event)
     emitted.append(replan.id)
     if replan.type != replan_event.type:
@@ -1278,6 +1290,16 @@ def _apply_batch_candidate_ready(
             "source": "workflow_resume_batch",
         },
     }
+    if checkpoint.freeze_id:
+        current = superseding_reader_freeze(
+            reversed(writer.event_log.read_all()), payload["workflow_run_id"],
+            checkpoint.freeze_id, checkpoint.candidate_head_commit,
+        )
+        if current:
+            return _reject_batch(
+                writer, checkpoint, emitted,
+                f"candidate retry superseded by current candidate freeze {current.id}",
+            )
     event = writer.append(ZfEvent(
         type="candidate.ready",
         origin="kernel",
