@@ -58,6 +58,7 @@ def build_canonical_required_reads(
     *,
     output_profile_id: str,
     explicit: Iterable[Mapping[str, Any]] = (),
+    state_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Declare the canonical artifact slices one stage must consume."""
 
@@ -159,6 +160,9 @@ def build_canonical_required_reads(
         profile == "plan-synth"
         or str(authority_contract.get("attempt_domain") or "") == "plan"
     ):
+        from zf.runtime.plan_diagnosis_read_scope import previous_candidate_slices
+
+        selected_previous = previous_candidate_slices(state_dir, manifest, profile)
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
             if (
@@ -184,8 +188,8 @@ def build_canonical_required_reads(
             ):
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
-                    if (source_id.startswith("previous-plan-candidate-")
-                        or source.get("kind") in {"plan_rework_candidate_partition", "plan_declared_input"})
+                    if (source_id in selected_previous or source.get("kind") == "plan_rework_candidate_partition"
+                        or (source.get("kind") == "plan_declared_input" and not source_id.startswith("previous-plan-candidate-")))
                     else ("$",)
                 )
 

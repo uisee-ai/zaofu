@@ -181,3 +181,45 @@ def test_legacy_existing_operation_is_not_reprojected(tmp_path, monkeypatch):
     second = prepare(runtime, second_payload)
     assert second.replay_hit and second.request_hash == first.request_hash
     assert manifest(runtime, second_payload) == manifest(runtime, first_payload)
+
+
+def test_legacy_partial_policy_only_replays_on_the_original_attempt(tmp_path, monkeypatch):
+    from zf.runtime import plan_diagnosis_read_scope
+
+    runtime = _runtime(tmp_path)
+    original = preflight()
+    def partial():
+        return payload(runtime, original, allowed_paths=["$.errors"])
+    with monkeypatch.context() as legacy:
+        # Reproduce the released policy that accepted partial preflight on its source ID alone.
+        legacy.setattr(plan_diagnosis_read_scope, "previous_candidate_slices",
+                       lambda *_: {"previous-plan-candidate-1"})
+        first = prepare(runtime, partial())
+    replay = prepare(runtime, partial())
+    assert replay.replay_hit and replay.request_hash == first.request_hash
+    different = payload(runtime, original, allowed_paths=["$.status"])
+    with pytest.raises(ValueError, match="outside the published source scope"):
+        prepare(runtime, different)
+    with pytest.raises(ValueError, match="outside the published source scope"):
+        prepare_call_operation(runtime, payload=partial(), operation_type="fanout_synth",
+            operation_key="new-critic", stage_id="plan", task_id="", dispatch_id="new-attempt")
+
+
+def test_producer_cannot_relabel_a_partial_previous_preflight_as_a_declared_input(tmp_path):
+    runtime = _runtime(tmp_path)
+    source = write_immutable_json_sidecar(runtime.state_dir, preflight(), root="fixtures/preflight",
+        kind="plan_declared_input", schema_version="plan-candidate-preflight.v1", created_by="test")
+    body = payload(runtime, preflight())
+    body["input_refs"] = build_plan_handoff_input_refs(state_dir=runtime.state_dir, project_root=runtime.project_root,
+        payload={"previous_plan_candidate_refs": [{**source, "allowed_paths": ["$.errors"]}]}, source_event_id="rework")
+    with pytest.raises(ValueError, match="outside the published source scope"):
+        prepare(runtime, body)
+
+
+def test_previous_candidate_grant_cannot_alias_another_artifact(tmp_path):
+    runtime = _runtime(tmp_path)
+    body = payload(runtime, preflight(), allowed_paths=["$.errors"])
+    source = next(s for s in body["input_refs"] if s["source_id"].startswith("previous-plan-candidate-"))
+    body["input_refs"].append({**source, "artifact_id": "another-artifact.json"})
+    with pytest.raises(ValueError, match="ambiguous previous Plan citation"):
+        prepare(runtime, body)

@@ -380,6 +380,7 @@ def prepare_call_operation(
         ]
     required_reads = canonical_required_reads(
         source_manifest,
+        state_dir=runtime.state_dir,
         output_profile_id=output_profile_id,
         explicit=(
             explicit_required_reads

@@ -253,6 +253,7 @@ def source_manifest_from_payload(
     )
     required_reads = canonical_required_reads(
         manifest,
+        state_dir=state_dir,
         output_profile_id=str(payload.get("output_profile_id") or ""),
         explicit=(payload.get("required_reads")
                   if isinstance(payload.get("required_reads"), list) else ()),
@@ -282,6 +283,7 @@ def canonical_required_reads(
     *,
     output_profile_id: str,
     explicit: Iterable[Mapping[str, Any]] = (),
+    state_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Declare the canonical artifact slices one stage must actually consume."""
     try:
@@ -289,6 +291,7 @@ def canonical_required_reads(
             manifest,
             output_profile_id=output_profile_id,
             explicit=explicit,
+            state_dir=state_dir,
         )
     except ArtifactReadRequirementError as exc:
         raise ArtifactReadError(str(exc)) from exc

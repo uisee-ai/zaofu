@@ -190,12 +190,28 @@ def test_candidate_diagnosis_uses_current_marker_inputs_for_planner(tmp_path, ex
     assert {s["source_id"] for s in sources} >= {"plan-rework-package", "plan-rework-decision", "plan-rework-context"}
     prior = [s for s in sources if s["source_id"].startswith("previous-plan-candidate-")]
     assert [(s["sha256"], s["allowed_paths"]) for s in prior] == [(s["sha256"], s["allowed_paths"]) for s in selected]
+    # Required sections must be selected by a durable kernel marker, not just
+    # a previous-ref descriptor copied into an otherwise genuine trigger.
+    if selected:
+        with pytest.raises(ValueError, match="outside the published source scope"):
+            _preregister(runtime, recovered)
+    signed_marker = replace(marker, id=ZfEvent(type=marker.type).id)
+    runtime.event_writer.append(signed_marker)
+    if selected:
+        wrong_path = [{**selected[0], "allowed_paths": ["$.other"]}]
+        wrong_scope = [{**selected[0], "access_scope": {"purposes": ["workflow-read"]}}]
+        for changed in (wrong_path, wrong_scope):
+            altered = replace(recovered, payload={**recovered.payload, "previous_plan_candidate_refs": changed})
+            with pytest.raises(ValueError, match="outside the published source scope"):
+                _preregister(runtime, altered)
     prepared = _preregister(runtime, recovered)
 
     required = required_reads_for_attempt(runtime.event_log.read_all(), prepared.attempt_id,
                                          state_dir=runtime.state_dir, operation_id=prepared.operation_id)
     assert [(r["artifact_sha256"], r["json_path"]) for r in required
             if r["source_id"].startswith("previous-plan-candidate-")] == [(r["sha256"], "$.clause") for r in selected]
+    retry = _preregister(runtime, recovered)
+    assert retry.replay_hit and retry.request_hash == prepared.request_hash
     # A checkpoint sweep must not replace a trigger already dispatched by an older release.
     legacy = replace(recovered, payload={**recovered.payload, **old_trigger.payload})
     assert plan_missing_replan_resynth_events([*prefix, legacy], config=runtime.config, state_dir=runtime.state_dir) == []
