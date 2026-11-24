@@ -512,6 +512,7 @@ class WorkflowRuntimeCoordinator(
         # _orphan_warned is per-task dedup so warnings don't flood.
         self._dispatch_epoch: dict[str, float] = {}
         self._orphan_warned: set[str] = set()
+        self._orphan_owner_waits: set[str] = set()
         # LH-0.T4: context hard-cap gate. instance_id → timestamp when
         # ratio first crossed context_hard_cap. Used by
         # _find_available_role (skip dispatch) and _check_context_

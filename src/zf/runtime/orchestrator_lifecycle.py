@@ -154,7 +154,10 @@ class LifecycleManagerMixin(
         from zf.runtime.pause_lifecycle import active_request_age_seconds, is_run_dispatch_paused
         from zf.runtime.run_admission import task_workflow_run_id
 
+        from zf.runtime.candidate_anchor_owner_wait import CandidateAnchorWaits
+
         pause_events = self.event_log.read_all()
+        owner_waits = CandidateAnchorWaits(pause_events)
         try:
             latest_dispatched = self._latest_dispatched_per_task()
         except Exception:
@@ -165,6 +168,7 @@ class LifecycleManagerMixin(
                 # prior warning mark so reentering in_progress gets a
                 # fresh clock.
                 self._orphan_warned.discard(task.id)
+                self._orphan_owner_waits.discard(task.id)
                 continue
             if self._task_has_admitted_writer_completion(task.id):
                 self._dispatch_epoch.pop(task.id, None)
@@ -246,6 +250,18 @@ class LifecycleManagerMixin(
             elapsed = active_request_age_seconds(pause_events,
                 created_at=datetime.fromtimestamp(epoch, timezone.utc),
                 now=datetime.fromtimestamp(now, timezone.utc), run_id=task_run)
+            was_waiting = task.id in self._orphan_owner_waits
+            if was_waiting or (not assignee and elapsed >= role.orphan_warning_seconds):
+                if not assignee and self.config.runtime.run_manager.resident_agent.enabled and owner_waits.holds(
+                    task_run, task.id,
+                ):
+                    self._orphan_owner_waits.add(task.id)
+                elif was_waiting:
+                    self._orphan_owner_waits.discard(task.id)
+                if was_waiting or task.id in self._orphan_owner_waits:
+                    self._dispatch_epoch[task.id] = now
+                    self._orphan_warned.discard(task.id)
+                    continue
             if elapsed >= role.orphan_escalate_seconds:
                 from zf.runtime.task_orphan_recovery import anchor_awaits_candidate_review
                 if anchor_awaits_candidate_review(self.state_dir, self.config, pause_events, task.id):
