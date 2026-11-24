@@ -393,10 +393,10 @@ dialog.reader-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; width: min
 }
 .reader-conversation .headless-composer > * { grid-column: 1 / -1; }
 .reader-conversation .headless-composer .headless-input {
-  grid-column: 1; min-width: 0; width: 100%; height: 44px; min-height: 44px; padding: 11px 12px;
+  grid-column: 1; min-width: 0; width: 100%; min-height: 44px; padding: 11px 12px;
+  field-sizing: content;
 }
-.reader-conversation .headless-composer-footer { grid-column: 2; padding: 4px; }
-.reader-conversation .headless-send-button { width: auto; min-width: 48px; padding-inline: 8px; }
+.reader-conversation .headless-composer-footer { grid-column: 2; align-self: end; padding: 4px; }
 .reader-conversation .headless-composer:focus-within { border-color: var(--brand); }
 @media (max-width: 800px) {
   .reader-toolbar { padding-inline: 12px; }

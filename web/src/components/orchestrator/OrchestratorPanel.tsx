@@ -2757,8 +2757,8 @@ export function OrchestratorPanel({
                   }}
                 />
                 <div className="headless-composer-footer">
-                  <div className="headless-composer-tools">
-                    {!taskThread && <WebChatAttachments
+                  {!taskThread && <div className="headless-composer-tools">
+                    <WebChatAttachments
                       key={`${headlessProjectId}:${headlessThreadKey}`}
                       artifacts={webChatAttachments}
                       conversationId={headlessConversationId}
@@ -2783,8 +2783,8 @@ export function OrchestratorPanel({
                         id: plan.requestEventId, label: plan.header || plan.question || plan.requestId,
                         onSelect: () => chatAboutPlan(plan),
                       }))}
-                    />}
-                  </div>
+                    />
+                  </div>}
                   {(!taskThread || modelSelection.selectionUnavailable) && <KanbanModelMenu selection={modelSelection} disabled={headlessSubmitting}
                     catalogSupported={operatorBackend === "codex-headless"} unlocked={canUseAction("chat-orchestrator")}
                     onReauthorize={hasToken ? () => onSaveToken("") : undefined}
@@ -2812,7 +2812,7 @@ export function OrchestratorPanel({
                       iconSize={21}
                       status={deriveComposerStatus(activeHeadlessRun?.status ?? (hasDurableTurns ? "idle" : activeHeadlessThread?.status), headlessSubmitting)}
                       onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}
-                      sendLabel={taskThread ? "Send" : undefined}
+                      aria-label={taskThread ? "Send" : undefined}
                       title={headlessCanChat ? "Send" : chatAccessHint}
                       onClick={() => void submitHeadlessMessage()}
                     />
