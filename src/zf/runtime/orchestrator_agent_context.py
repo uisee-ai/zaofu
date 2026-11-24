@@ -288,7 +288,8 @@ def build_orchestrator_agent_context(
             "allow_truncated": False,
         }
         for source in required_sources
-        if (checkpoint != "candidate_reader_observation" or source["source_id"] in {
+        if not (checkpoint == "semantic_failure" and source["source_id"].startswith("candidate-prior-repair-"))
+        and (checkpoint != "candidate_reader_observation" or source["source_id"] in {
             "checkpoint-input", "candidate-reader-counterexample",
         }) and (input_mode != "execution" or source["source_id"] in {
             "checkpoint-input", "execution-context", "effective-config",

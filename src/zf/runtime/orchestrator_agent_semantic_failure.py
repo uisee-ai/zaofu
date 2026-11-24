@@ -209,11 +209,16 @@ def request_semantic_failure_checkpoint(
             "Unknown/input/blocked outcomes require diagnosis; changed obligations require return_to_plan.",
         }
     media_refs = []
+    prior_feedback = []
     if aggregate_candidate:
+        from zf.runtime.candidate_prior_repair import aggregate_prior_repair_feedback
         from zf.runtime.diagnosis_host_recovery import host_recovery_context
         from zf.runtime.host_evidence_media import materialize_container_media
         from zf.runtime.milestone_task_lifecycles import aggregate_recovery_lifecycles
 
+        prior_feedback, feedback_index = aggregate_prior_repair_feedback(runtime, events, workflow_run_id, candidate)
+        if feedback_index:
+            failure_body["candidate_verify"]["prior_repair_feedback"] = feedback_index
         lifecycles = aggregate_recovery_lifecycles(runtime.state_dir, events, workflow_run_id, candidate)
         if lifecycles:
             failure_body["candidate_verify"]["task_pipeline_lifecycles"] = lifecycles
@@ -255,6 +260,7 @@ def request_semantic_failure_checkpoint(
         observation = admitted_reader_observation(runtime.state_dir, events, {m["child_event_id"] for m in candidate["members"]})
         if observation:
             artifact_refs.append(observation)
+        artifact_refs.extend(prior_feedback)
         artifact_refs.extend({**member["control_result_ref"],
             "source_id": f"candidate-verification-{member['child_id']}"}
             for member in candidate["members"])

@@ -191,6 +191,8 @@ Candidate Reader 的首个产品反例若已准入、定位到条款且绑定本
 
 同一次 OA 定向产品返工还要让 Writer 能消费新一代 Task Map。受控发布从原决定绑定的 Plan 包继承 flow kind。对已经写入旧账本、缺少该字段的 ready，恢复入口核对原准入决定、受控动作、amendment、ready 与不可变 Task Map 后，在消费时补全路由。对于保留合同的 successor，包准入核对父代、按原受控修订规则重建 Task Map，并将结构化的任务归属更新到新的内容寻址端口。历史包和原始业务证据继续可追溯。已开启的 Owner 审批按新一代的实际摘要执行。
 
+正式聚合 `semantic_failure` 的 `candidate_verify.prior_repair_feedback` 按历史 finding、原任务与后继任务给出索引。OA 可按 source ID 读取当时交给后继 Task Verify 的完整修复反馈。索引沿当前冻结的任务替代证明、Verify 事件及其请求回溯，并核验准入决定、访问权限和内容摘要。受限、损坏或缺失的绑定材料保留为未取得，业务判定仍由本轮 OA 根据当前独立证据给出。
+
 跨任务 ID 的定向返工在首个 successor 的 Impl 和 Verify 请求中绑定 `candidate-repair-feedback`。运行时从该任务对应的已准入决定提取产品反例、验收条款和关联证据，保留冻结版本与来源。该输入进入必读清单。同一操作的断点重放使用其原请求摘要；已发出的旧请求仍绑定到原内容，之后的新验证操作获得修复证据。
 
 Task Impl 的成功结果会把 `target_commit` 交给后续 Git 引用校验。对有受控工作树的派发，在提交预检和最终准入检查该值能否解析到本次工作树 HEAD；已绑定的宿主发布回执也必须与该 HEAD 一致。预检失败时返回可核验的目标，Worker 可在本 attempt 修改结果后重交，历史结果不会被改写。
