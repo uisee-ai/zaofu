@@ -82,7 +82,7 @@ async function fixture(page: Page, withTurn: boolean) {
     return route.fallback();
   });
   await page.goto("/?project=ui-review");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.locator("textarea.headless-input")).toBeVisible();
   await expect(page.getByRole("button", { name: /Agent backend: Codex/ })).toBeVisible();
   return { state, ...result };
@@ -146,7 +146,7 @@ test("unsubmitted question options and Other text survive reload and failed subm
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.getByRole("radio", { name: /Provide an existing repository/ }).check();
   await page.reload();
-  if (!await card.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  if (!await card.isVisible()) await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(card.getByRole("radio", { name: /Provide an existing repository/ })).toBeChecked();
   expect(state.answers).toBe(0);
   await card.getByRole("radio", { name: "Other", exact: true }).check();
@@ -155,7 +155,7 @@ test("unsubmitted question options and Other text survive reload and failed subm
   await card.getByRole("button", { name: "Continue", exact: true }).click();
   await expect.poll(() => state.answers).toBe(1);
   await page.reload();
-  if (!await card.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  if (!await card.isVisible()) await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(card.getByRole("radio", { name: "Other", exact: true })).toBeChecked();
   await expect(card.getByRole("textbox")).toHaveValue("Use the CSV export workspace");
   state.failAnswer = false;

@@ -3,7 +3,7 @@ import { useUiPreferences } from "../../app/UiPreferences";
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
 import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, PanelLeft, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
 
@@ -23,6 +23,7 @@ function shouldShowRailActionResult(result: ActionResponse): boolean {
 
 
 export function WorkspaceRail({
+  accountControls,
   actionResult,
   activePage,
   activeProjectId,
@@ -41,6 +42,7 @@ export function WorkspaceRail({
   selectedChannelId,
   snapshot,
 }: {
+  accountControls?: ReactNode;
   actionResult: ActionResponse | null;
   activePage: PageId;
   activeProjectId: string;
@@ -307,6 +309,7 @@ export function WorkspaceRail({
           <p className="empty-text compact-error">{actionResult.status}: {actionResult.reason}</p>
         ) : null}
       </div>
+      {accountControls && <footer className="rail-account">{accountControls}</footer>}
     </section>
     </>
   );

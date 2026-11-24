@@ -7,26 +7,15 @@ export function AccountControls({ username, local }: { username?: string; local:
   const details = useRef<HTMLDetailsElement>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const label = username || t("Local account");
+  const label = username || t(local ? "Local account" : "Cloud account");
 
   useEffect(() => {
-    if (!local) return;
     function dismiss(event: PointerEvent) {
       if (details.current?.open && !details.current.contains(event.target as Node)) details.current.open = false;
     }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && details.current?.open) {
-        details.current.open = false;
-        details.current.querySelector("summary")?.focus();
-      }
-    }
     document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [local]);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, []);
 
   async function signOut() {
     setError("");
@@ -52,15 +41,18 @@ export function AccountControls({ username, local }: { username?: string; local:
     } catch { setError(t("Sign out failed. Try again.")); setBusy(false); }
   }
 
-  if (!local) return <><button type="button" disabled={busy} onClick={() => void signOut()}>退出登录</button>
-    {error && <span role="alert">{error}</span>}</>;
-  return <details ref={details} className="account-switcher">
+  return <details ref={details} className="account-switcher" onKeyDown={event => {
+    if (event.key !== "Escape" || !event.currentTarget.open) return;
+    event.stopPropagation();
+    event.currentTarget.open = false;
+    event.currentTarget.querySelector("summary")?.focus();
+  }}>
     <summary aria-label={label} title={label}>
       <span className="account-avatar" aria-hidden="true">{username ? username[0].toUpperCase() : <UserRound size={15} />}</span>
       <span className="account-name">{label}</span><ChevronsUpDown className="account-chevron" size={14} aria-hidden="true" />
     </summary>
     <div className="account-options">
-      <a href="/?page=settings&settings=password"><KeyRound size={15} />{t("Password")}</a>
+      {local && <a href="/?page=settings&settings=password"><KeyRound size={15} />{t("Password")}</a>}
       <button type="button" disabled={busy} onClick={() => void signOut()}><LogOut size={15} />{t("Sign out")}</button>
       {error && <span role="alert">{error}</span>}
     </div>

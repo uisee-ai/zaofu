@@ -166,9 +166,9 @@ async function openAgent(page: Page, id: string): Promise<void> {
     window.localStorage.setItem("zf.webActionToken", actionToken);
   }, { actionToken: token });
   await page.goto(`/?project=${encodeURIComponent(id)}`);
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(
-    page.getByRole("dialog", { name: "Kanban Agent" }),
+    page.getByRole("dialog", { name: "zaofu" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Agent backend: Codex/ }),
@@ -180,9 +180,9 @@ async function openAgent(page: Page, id: string): Promise<void> {
 
 async function reopenAgent(page: Page): Promise<void> {
   await page.reload();
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   if (!(await dialog.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+    await page.getByRole("button", { name: "Open zaofu" }).click();
   }
   await expect(dialog).toBeVisible();
   await expect(

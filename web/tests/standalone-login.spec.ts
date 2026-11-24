@@ -55,10 +55,10 @@ test("local login, first use, and password change across two browsers", async ({
     await expect(wizard).toBeHidden();
     await second.goto("/");
     await signIn(second, "zaofu");
-    await expect(second.locator(".topbar .account-switcher summary")).toHaveAccessibleName("zaofu");
+    await expect(second.locator(".rail-account .account-switcher summary")).toHaveAccessibleName("zaofu");
     await expect(second.getByTestId("welcome-wizard")).toHaveCount(0);
 
-    for (const button of ["Open Kanban Agent", "Toggle Terminal"]) {
+    for (const button of ["Open zaofu", "Toggle Terminal"]) {
       await page.getByRole("button", { name: button }).click();
       const dialog = page.getByRole("dialog", { name: "Add/Open Project" });
       await expect(dialog).toBeVisible();
@@ -79,7 +79,7 @@ test("local login, first use, and password change across two browsers", async ({
     await second.reload();
     await expect(second.getByRole("heading", { name: "登录本地工作区" })).toBeVisible();
     await signIn(page, "browser-test-password");
-    await page.locator(".topbar .account-switcher summary").click();
+    await page.locator(".rail-account .account-switcher summary").click();
     await page.getByRole("button", { name: /Sign out|退出登录/ }).click();
     await expect(page.getByRole("heading", { name: "登录本地工作区" })).toBeVisible();
   } finally {

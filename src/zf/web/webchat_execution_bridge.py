@@ -496,7 +496,7 @@ def handle_headless_kanban_agent_chat(
         "status": "accepted",
         "action": action,
         "requested_action": requested_action,
-        "reason": "headless kanban agent turn accepted; stream events carry progress",
+        "reason": "zaofu agent turn accepted; stream events carry progress",
         "event_id": user_message.id,
         "turn_event_id": turn_started.id,
         "turn_id": turn_id,

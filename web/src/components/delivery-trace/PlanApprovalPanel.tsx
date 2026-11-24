@@ -771,7 +771,7 @@ function sourceLabel(source: string): string {
   if (source === "orchestrator") return "Orchestrator";
   if (source === "worker") return "Worker";
   if (source === "channel") return "Channel";
-  if (source === "kanban_agent") return "Kanban Agent";
+  if (source === "kanban_agent") return "zaofu agent";
   return source.replace(/_/g, " ");
 }
 

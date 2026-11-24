@@ -466,7 +466,7 @@ function isNoiseTask(task: Task): boolean {
   const source = String(task.source ?? "").toLowerCase();
   if (["playwright", "e2e", "test", "tests"].includes(source)) return true;
   const title = `${task.title} ${task.id}`.toLowerCase();
-  return /^(drag move|locked drag|workbench drilldown|operator task rebind|kanban agent lifecycle probe)\b/.test(title)
+  return /^(drag move|locked drag|workbench drilldown|operator task rebind|(?:kanban|zaofu) agent lifecycle probe)\b/.test(title)
     || title.includes("playwright");
 }
 
@@ -1667,7 +1667,7 @@ export function App() {
       await loadWorkspaceProjects();
       switchProject(projectId);
       if (recordValue(result.git_readiness)?.ready === false) {
-        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with the Kanban Agent, then approve initialization and retry preparation." });
+        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with zaofu agent, then approve initialization and retry preparation." });
       }
       setProjectWizardOpen(false);
     } catch (err) {
@@ -2283,7 +2283,6 @@ export function App() {
           >
             <Terminal size={16} strokeWidth={1.9} aria-hidden="true" />
           </button>
-          {accountControls}
         </div>
       </header>
 
@@ -2296,6 +2295,7 @@ export function App() {
 
       <main className={`workspace ${terminalOpen && projectToolsAvailable ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
+          accountControls={accountControls}
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
@@ -2533,7 +2533,7 @@ export function App() {
         <button
           className="agent-fab"
           type="button"
-          aria-label="Open Kanban Agent"
+          aria-label="Open zaofu"
           onClick={openTaskAgent}
         >
           <MessageCircle size={20} strokeWidth={1.9} aria-hidden="true" />
@@ -3380,7 +3380,7 @@ function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="command-actions">
-            <button className="icon-button" type="button" onClick={onOpenAgent}>Kanban Agent</button>
+            <button className="icon-button" type="button" onClick={onOpenAgent}>zaofu</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("triage")}>Triage</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("board")}>Board</button>
           </div>

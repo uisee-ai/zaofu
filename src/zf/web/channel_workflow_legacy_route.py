@@ -94,7 +94,7 @@ def run_legacy_channel_workflow_route(
     status_code = int(result.pop("_status_code", 202))
     result["deprecated_route"] = True
     result["replacement"] = (
-        "Channel PRD -> Leader -> Kanban Agent Plan -> Owner approval"
+        "Channel PRD -> Leader -> zaofu agent Plan -> Owner approval"
     )
     return result, status_code
 

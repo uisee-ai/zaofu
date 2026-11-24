@@ -84,9 +84,9 @@ test("narrow task reading keeps attributes optional and evidence in reach", asyn
   await attrs.click();
   await expect(page.locator(".headless-input")).toHaveCount(1);
   await page.keyboard.press("Control+k");
-  await page.getByRole("dialog", { name: "Command Palette" }).getByRole("button", { name: "Kanban Agent" }).click();
+  await page.getByRole("dialog", { name: "Command Palette" }).getByRole("button", { name: "zaofu" }).click();
   await expect(reader.locator(".headless-input")).toBeFocused();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toHaveCount(0);
   await reader.getByRole("button", { name: "返回看板" }).focus();
   await reader.locator(".reader-article").evaluate(el => el.scrollTop = 0);
   await page.screenshot({ path: info.outputPath("task-mobile.png") });
@@ -207,6 +207,11 @@ for (const mode of ["local_account", "controller_session", "read_only"]) {
       expect(writes).toEqual([]);
     }
     await expect(send).not.toHaveAttribute("title", /token/i);
+    const footer = page.locator(".rail-account");
+    await footer.getByLabel("zaofu", {exact: true}).click();
+    await expect(footer.getByRole("button", {name: /Sign out|退出登录/})).toBeVisible();
+    await expect(footer.getByRole("link", {name: /Password|密码/})).toHaveCount(mode === "local_account" ? 1 : 0);
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "返回看板" }).click();
     await expect(page.locator(".board-access")).toHaveCount(0);
   });

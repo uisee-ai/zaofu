@@ -71,8 +71,8 @@ test("approves AC14 option A and resumes the same PRD run through Kanban Agent",
   }, { actionToken: token });
   await page.goto(`/?project=${encodeURIComponent(projectId)}`);
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   await expect(dialog).toBeVisible();
 
   const input = dialog.locator("textarea.headless-input");

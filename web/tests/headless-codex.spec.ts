@@ -13,8 +13,8 @@ test("Codex headless Kanban Agent replies through the hidden thread", async ({ p
   }, token);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: /Agent backend: Codex/ })).toBeVisible();
 
   const input = page.locator("textarea.headless-input");

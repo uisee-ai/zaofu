@@ -114,13 +114,13 @@ async function openKanbanAgent(page: Page, id: string, withToken = true): Promis
   await primeBrowser(page, withToken);
   await page.goto(`/?project=${encodeURIComponent(id)}`);
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   await expect(dialog).toBeVisible();
   await expect(
     dialog.getByRole("radiogroup", { name: "Kanban Agent permission profile" }),
   ).toHaveCount(0);
-  await expect(dialog.getByText("Kanban Agent", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("zaofu", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Agent backend: Claude/ })).toBeVisible();
 }
 
@@ -132,7 +132,7 @@ async function sendMessage(page: Page, message: string): Promise<void> {
 
 async function captureAgent(page: Page, name: string): Promise<void> {
   if (!evidenceDir) return;
-  await page.getByRole("dialog", { name: "Kanban Agent" }).screenshot({
+  await page.getByRole("dialog", { name: "zaofu" }).screenshot({
     path: `${evidenceDir}/${name}.png`,
   });
 }
@@ -263,7 +263,7 @@ test("KBA-03 create-task proposal mutates canonical state only after acceptance"
 
   await page.reload();
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.locator(".agent-session")).toContainText(marker, { timeout: 30_000 });
 });
 
@@ -338,7 +338,7 @@ test("KBA-04 two turns resume one provider session and survive reload", async ({
 
   await page.reload();
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.locator(".agent-session")).toContainText(markerA, { timeout: 30_000 });
   await expect(page.locator(".agent-session")).toContainText(markerB, { timeout: 30_000 });
 });
@@ -364,7 +364,7 @@ test("KBA-PLAN Plan choice resumes into Approve and survives reload", async ({ p
   await expect(planCard.getByRole("button", { name: "Chat about" })).toBeEnabled();
   await expect(planCard.getByRole("button", { name: "Continue" })).toBeDisabled();
 
-  const composer = page.getByRole("dialog", { name: "Kanban Agent" });
+  const composer = page.getByRole("dialog", { name: "zaofu" });
   await composer.getByRole("button", { name: "Add to message" }).click();
   await composer.getByRole("button", { name: "Reference plan" }).last().click();
   await expect(composer.getByText("Discussing plan")).toBeVisible();
@@ -427,7 +427,7 @@ test("KBA-PLAN Plan choice resumes into Approve and survives reload", async ({ p
 
   await page.reload();
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   const refreshedPlan = page.locator(".agent-stack-card.plan").filter({ hasText: marker }).last();
   await expect(refreshedPlan).toContainText("Direct (Recommended)", { timeout: 30_000 });
   await expect(refreshedPlan.getByRole("button", { name: "Continue" })).toHaveCount(0);
@@ -542,10 +542,10 @@ test("KBA-CHANNEL Channel setup applies directly without a Workflow invoke", asy
 
   await page.setViewportSize({ width: 1440, height: 960 });
   await openKanbanAgent(page, id);
-  await page.getByRole("button", { name: "New Kanban Agent chat" }).click();
-  await page.getByRole("button", { name: "Fullscreen Kanban Agent" }).click();
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
-  await expect(dialog.getByText("Kanban Agent", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New zaofu chat" }).click();
+  await page.getByRole("button", { name: "Fullscreen zaofu" }).click();
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
+  await expect(dialog.getByText("zaofu", { exact: true })).toBeVisible();
   await sendMessage(
     page,
     channelRequest,
@@ -592,7 +592,7 @@ test("KBA-CHANNEL Channel setup applies directly without a Workflow invoke", asy
   const channelId = String(created.payload?.channel_id ?? "");
   expect(channelId).not.toBe("");
 
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   const channelButton = page.locator(".channel-nav-button").filter({
     hasText: "API authentication review",
   }).last();
@@ -717,10 +717,10 @@ test("KBA-WORKFLOW Create Task leads to Plan, then Approve, then invoke", async 
     element.scrollWidth > element.clientWidth + 1
   ));
   expect(mobileOverflow).toBeFalsy();
-  const mobileHeader = page.getByRole("dialog", { name: "Kanban Agent" }).locator(
+  const mobileHeader = page.getByRole("dialog", { name: "zaofu" }).locator(
     ".agent-shell-header",
   );
-  await expect(mobileHeader.getByText("Kanban Agent", { exact: true })).toBeVisible();
+  await expect(mobileHeader.getByText("zaofu", { exact: true })).toBeVisible();
   const mobileHeaderOverflow = await mobileHeader.evaluate((element) => (
     element.scrollWidth > element.clientWidth + 1
   ));

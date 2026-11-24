@@ -14,10 +14,10 @@ type Rect = {
 async function openKanbanAgent(page: Page) {
   const projectId = process.env.ZF_E2E_PROJECT_ID;
   await page.goto(projectId ? `/?project=${encodeURIComponent(projectId)}` : "/");
-  const openButton = page.getByRole("button", { name: "Open Kanban Agent" });
+  const openButton = page.getByRole("button", { name: "Open zaofu" });
   await expect(openButton).toBeVisible({ timeout: 90_000 });
   await openButton.click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
 }
 
 async function box(locator: Locator): Promise<Rect> {
@@ -61,7 +61,7 @@ async function expectThreadComposerSeparated(page: Page) {
 }
 
 async function createSecondThread(page: Page) {
-  await page.getByRole("button", { name: "New Kanban Agent chat" }).click();
+  await page.getByRole("button", { name: "New zaofu chat" }).click();
   await expect(page.getByRole("tablist", { name: "Agent threads" }).getByRole("button"))
     .toHaveCount(2);
 }
@@ -110,7 +110,7 @@ test("Kanban Agent docked and fullscreen layout stays inside the workbench", asy
   await expectInsideViewport(page, page.locator(".headless-composer"), "docked composer");
   await expectThreadComposerSeparated(page);
 
-  await page.getByRole("button", { name: "Fullscreen Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Fullscreen zaofu" }).click();
   await expect(page.locator(".agent-page-shell.fullscreen")).toBeVisible();
   await expectInsideViewport(page, page.locator(".agent-page-shell.fullscreen"), "fullscreen shell");
   await expectInsideViewport(page, page.locator(".orchestrator-panel.fullscreen"), "fullscreen panel");
@@ -133,7 +133,7 @@ test("Kanban Agent centers an empty chat and moves resources into the composer",
 
   await expect(page.locator(".orchestrator-panel .webchat-toolbar")).toHaveCount(0);
   await expect(page.locator(".orchestrator-panel .agent-state-pill")).toHaveCount(0);
-  await page.getByRole("button", { name: "New Kanban Agent chat" }).click();
+  await page.getByRole("button", { name: "New zaofu chat" }).click();
 
   const welcome = page.getByText("What should we work through?", { exact: true });
   const composer = page.locator(".headless-composer");
@@ -217,7 +217,7 @@ test("Kanban Agent session navigation stays fixed and preserves each thread posi
   await expect.poll(async () => Math.round(await thread.evaluate((node) => node.scrollTop))).toBe(320);
   await expect.poll(() => tabs.locator("span:nth-child(2)").allTextContents()).toEqual(initialTitles);
 
-  await page.getByRole("button", { name: "Fullscreen Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Fullscreen zaofu" }).click();
   await expect(navigation).toBeVisible();
   await expect(page.getByLabel("Compare with thread")).toBeVisible();
   const fullscreenNavigationTop = (await box(navigation)).top;
@@ -229,7 +229,7 @@ test("Kanban Agent session navigation stays fixed and preserves each thread posi
 test("Kanban Agent mobile fullscreen stacks split panes without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await openKanbanAgent(page);
-  await page.getByRole("button", { name: "Fullscreen Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Fullscreen zaofu" }).click();
   await createSecondThread(page);
   await selectSplitThread(page);
 
@@ -249,7 +249,7 @@ test("Kanban Agent light mode backend menu keeps readable foreground and backgro
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   await page.getByRole("button", { name: /Agent backend/ }).click();
-  const menu = page.getByRole("listbox", { name: "Kanban Agent backend options" });
+  const menu = page.getByRole("listbox", { name: "zaofu backend options" });
   await expect(menu).toBeVisible();
   await expectInsideViewport(page, menu, "backend menu");
   await expect(menu.getByRole("option", { name: /Claude/ })).toBeVisible();

@@ -121,9 +121,9 @@ async function capture(page: Page, name: string): Promise<void> {
 }
 
 async function openAgent(page: Page, id: string): Promise<void> {
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   if (await dialog.isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(dialog).toBeVisible();
   await expect(dialog.locator(".agent-state-pill")).toHaveText("active", {
     timeout: 30_000,
@@ -142,7 +142,7 @@ async function createTaskAndStartFlow(
     `${flow.marker} create a Task from the owner-confirmed PRD.`,
   );
   await channelPage.getByTestId("channel-create-task-from-prd").click();
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await expect(dialog.locator(".agent-state-pill")).toHaveText("active", {
     timeout: 30_000,
@@ -223,7 +223,7 @@ async function createTaskAndStartFlow(
   await expect(approve).toContainText("Workflow start requested", {
     timeout: 45_000,
   });
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   return taskId;
 }
 
@@ -247,7 +247,7 @@ test("creates a two-round PRD Channel and starts four workflows from its PRD", a
   await openAgent(page, id);
 
   const channelCursor = await eventCursor(request, id);
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   const input = dialog.locator("textarea.headless-input");
   await input.fill(
     "FOURFLOW_CHANNEL_SETUP discuss a minimal change: add one line to "
@@ -289,7 +289,7 @@ test("creates a two-round PRD Channel and starts four workflows from its PRD", a
     120_000,
   );
 
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   await page.goto(
     `/?project=${encodeURIComponent(id)}&page=channels`
       + `&channel=${encodeURIComponent(channelId)}`,

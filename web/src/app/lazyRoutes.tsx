@@ -33,7 +33,7 @@ export function TaskReaderRoute(props: ComponentProps<typeof LazyTaskReader>) {
 }
 
 export function OrchestratorRoute(props: ComponentProps<typeof LazyOrchestratorPanel>) {
-  return <Suspense fallback={<RouteLoading label="Kanban Agent" />}><LazyOrchestratorPanel {...props} /></Suspense>;
+  return <Suspense fallback={<RouteLoading label="zaofu" />}><LazyOrchestratorPanel {...props} /></Suspense>;
 }
 
 export function ProjectionRoute(props: ComponentProps<typeof LazyProjectionPage>) {

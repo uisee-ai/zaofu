@@ -9,7 +9,7 @@ export function TaskChatHeader({ thread, hasMore, open, onToggle, accessControl 
   const reply = latest?.runs.flatMap(run => run.parts).filter(part => part.kind === "text" || part.kind === "error").at(-1);
   const preview = reply?.content || reply?.summary || latest?.cards.at(-1)?.title || latest?.user?.content;
   return <header className="reader-chat-header">
-    <div><strong><MessageCircle size={15} aria-hidden="true" />Kanban Agent</strong>
+    <div><strong><MessageCircle size={15} aria-hidden="true" />zaofu</strong>
       <span className="reader-chat-actions">{accessControl}{(latest || hasMore) && <button type="button" aria-expanded={open} onClick={onToggle}>
         {open ? "收起对话" : "展开对话"}{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
       </button>}</span>

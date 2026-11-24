@@ -114,9 +114,9 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
   const disabledReason = generating ? "完整 PRD 生成并通过当前版本复审后，才能规划 Task。" : !document ? "Load and verify the full PRD first."
     : !flow.ready ? "Confirm the current PRD and resolve open questions first."
     : !actionReady ? "This session is read-only. Unlock actions to continue."
-    : submitted ? "Planning requested. Review the plan in Kanban Agent."
+    : submitted ? "Planning requested. Review the plan in zaofu."
     : flow.tasks.length ? "This version already has linked Tasks. Review them before requesting another plan. Execution still requires separate approval."
-    : "Process opens Kanban Agent to plan from this PRD version. Task creation and Workflow execution each require approval; results return to this Channel.";
+    : "Process opens zaofu to plan from this PRD version. Task creation and Workflow execution each require approval; results return to this Channel.";
   return <dialog ref={dialogRef} className={`channel-document channel-prd-document${fullscreen ? " is-fullscreen" : ""}`}
     aria-label="PRD preview" aria-modal={fullscreen} data-testid="channel-prd-preview"
     onCancel={(event) => { event.preventDefault(); setFullscreen(false); }}>

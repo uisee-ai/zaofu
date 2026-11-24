@@ -74,7 +74,7 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
   await expect(workspaceRail.getByText("Actions", { exact: true })).toHaveCount(0);
   await expect(workspaceRail.getByRole("button", { name: "Search" })).toHaveCount(0);
   await expect(workspaceRail.getByRole("button", { name: /New Task/ })).toHaveCount(0);
-  await expect(workspaceRail.getByRole("button", { name: "Kanban Agent", exact: true })).toHaveCount(0);
+  await expect(workspaceRail.getByRole("button", { name: "Open zaofu", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /New Task/ })).toBeVisible();
   await expect(workspaceRail.getByText("Primary", { exact: true })).toHaveCount(0);
   await expect(workspaceRail.getByRole("button", { name: "Command Palette" })).toHaveCount(0);
@@ -93,8 +93,8 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toHaveCount(0);
   await expect(page.getByPlaceholder("Ask Kanban Agent to create, move, inspect, or run tasks")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Kanban Agent collapsed" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Kanban Agent" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "zaofu" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open zaofu" })).toBeVisible();
   await workspaceRail.getByRole("button", { name: "Agents" }).click();
   await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Attention Queue" })).toBeVisible();
@@ -115,9 +115,9 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
     Math.round(el.getBoundingClientRect().width),
   );
   expect(firstColumnWidth).toBeGreaterThanOrEqual(240);
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open Kanban Agent" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open zaofu" })).toHaveCount(0);
   const agentPanel = page.locator(".orchestrator-panel");
   await expect(agentPanel.getByText("Scope", { exact: true })).toHaveCount(0);
   await expect(agentPanel.getByText("Delivery", { exact: true })).toHaveCount(0);
@@ -129,7 +129,7 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
   await expect(backendTrigger).toBeVisible();
   await expect(backendTrigger).toContainText(/Claude|Codex/);
   await backendTrigger.click();
-  const backendMenu = page.getByRole("listbox", { name: "Kanban Agent backend options" });
+  const backendMenu = page.getByRole("listbox", { name: "zaofu backend options" });
   await expect(backendMenu.getByRole("option", { name: /Claude/ })).toBeVisible();
   await expect(backendMenu.getByRole("option", { name: /Codex/ })).toBeVisible();
   await expect(backendMenu).not.toContainText("headless");
@@ -174,7 +174,7 @@ test("opens project home projection", async ({ page }) => {
   await expect(boundaryDetails.getByRole("heading", { name: "Control Plane" })).toBeVisible();
   await expect(boundaryDetails.getByRole("heading", { name: "Runtime State" })).toBeVisible();
   await expect(boundaryDetails.getByRole("heading", { name: "Project Boundary" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open zaofu" })).toBeVisible();
 });
 
 test("Loop V2 remains canonical and fills the dashboard workspace", async ({ page }, testInfo) => {

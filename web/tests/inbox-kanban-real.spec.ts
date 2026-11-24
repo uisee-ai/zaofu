@@ -16,7 +16,7 @@ test("Kanban questions stay in their conversation and answers continue to a prop
   await page.goto(`/?project=${encodeURIComponent(project)}&page=project&agent=open&agent_thread=thread-inbox&agent_request=${eventId}`);
   await expect(page).toHaveURL(/agent_thread=thread-inbox/);
   await expect(page).toHaveURL(new RegExp(`agent_request=${eventId}`));
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
   const question = page.locator(`[data-plan-request-id="${eventId}"]`);
   await expect(question).toBeVisible();
   await expect(question).toContainText("How should this Task run?");

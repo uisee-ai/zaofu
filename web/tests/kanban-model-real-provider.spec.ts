@@ -30,8 +30,8 @@ test("Web selection reaches the real Codex turn", async ({ page, request }) => {
     localStorage.setItem("zf.operatorBackend", "codex-headless");
   }, { actionToken: token });
   await page.goto(`/?project=${encodeURIComponent(projectId)}&page=board`);
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await expect(panel.getByRole("button", { name: /Agent backend: Codex/ })).toBeVisible();
   const trigger = panel.getByRole("button", { name: "Model and thinking effort" });
   const defaultModel = catalog.models.find((item: { model: string }) => item.model === catalog.session_defaults?.model);
@@ -76,7 +76,7 @@ test("Web selection reaches the real Codex turn", async ({ page, request }) => {
   await expect(panel.locator(".agent-text-part").filter({ hasText: "ZF_MODEL_E2E_OK" }).last()).toBeVisible({ timeout: 30_000 });
   await expect(trigger).toContainText(selected.label);
   await page.reload();
-  if (!(await panel.isVisible().catch(() => false))) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  if (!(await panel.isVisible().catch(() => false))) await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(trigger).toContainText(selected.label);
   await trigger.click();
   const secondSlider = menu.getByRole("slider", { name: "Thinking effort" });
