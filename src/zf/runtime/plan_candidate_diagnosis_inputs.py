@@ -9,7 +9,7 @@ from zf.runtime.candidate_failure_checkpoint import aggregate_candidate_binding
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _diagnosis_authority(state: Path, payload, context, decision, decision_ref):
+def _diagnosis_authority(state: Path, payload, context, decision, decision_ref, handoff_source_id):
     run = decision["identity"]["workflow_run_id"]
     anchor, failure = payload.get("pdd_id"), context.get("rework_of")
     scope = ("task_ids", "failed_task_ids", "downstream_task_ids")
@@ -17,6 +17,10 @@ def _diagnosis_authority(state: Path, payload, context, decision, decision_ref):
             or any(payload.get(key) or context.get(key) for key in scope)):
         raise ValueError("Candidate diagnosis requires its read-only anchor and empty Writer scope")
     events = EventLog(state / "events.jsonl").read_all()
+    if handoff_source_id or payload.get("stage_replan_generation") or payload.get("repaired_failure_event_id"):
+        from zf.runtime.plan_diagnosis_repair_lineage import diagnosis_repair_failure
+
+        failure = diagnosis_repair_failure(state, events, payload, context, handoff_source_id, run)
     marker_binding = {"workflow_run_id": run, "pdd_id": anchor, "resume_scope": "candidate_diagnosis_only",
                       "classification": "oa_semantic_return_to_plan", "candidate_failure_id": failure, "rework_of": failure,
                       "orchestrator_operation_id": decision["operation_id"], "orchestrator_decision_ref": decision_ref,
@@ -53,7 +57,7 @@ def _diagnosis_authority(state: Path, payload, context, decision, decision_ref):
                       "task_map_generation": bound["task_map_generation"], "source_commit": bound["source_commit"]}.items())]
     if len(directives) != 1:
         raise ValueError("Candidate diagnosis lacks a unique directive for its rejected Reader")
-    return bound, directives[0], history
+    return bound, directives[0], history, failure
 
 
 def _offered_sources(state, history, decision, bound, baseline_sources, failure_id):
@@ -104,9 +108,9 @@ def _permitted_paths(paths, limits):
     return [path for path in paths if path in limits]
 
 
-def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision_ref, baseline_sources):
-    bound, directive, history = _diagnosis_authority(state, payload, context, decision, decision_ref)
-    offered, origins, source_event_id = _offered_sources(state, history, decision, bound, baseline_sources, context["rework_of"])
+def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision_ref, baseline_sources, *, handoff_source_id=""):
+    bound, directive, history, failure_id = _diagnosis_authority(state, payload, context, decision, decision_ref, handoff_source_id)
+    offered, origins, source_event_id = _offered_sources(state, history, decision, bound, baseline_sources, failure_id)
     selected = {}
     actor = str(payload.get("role_instance") or "")
     identity = dict(actor=actor, role=str(payload.get("role_name") or actor),
@@ -133,7 +137,7 @@ def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision
             verify = failure.get("candidate_verify") or {}
             if (failure.get("workflow_run_id") != decision["identity"]["workflow_run_id"]
                     or failure.get("request_event_id") != source_event_id
-                    or verify.get("failure_event_id") != context["rework_of"]
+                    or verify.get("failure_event_id") != failure_id
                     or verify.get("candidate_event_id") != bound["candidate_event_id"]):
                 raise ValueError("Candidate diagnosis semantic failure input differs from its aggregate")
         for original in origin_refs:
@@ -171,5 +175,5 @@ def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision
                     if ref and member and member["control_result_ref"] == ref
                     else {"status": "unavailable", "reason": "no_admitted_reader_report"})
         reports.append({"finding_id": finding["finding_id"], **evidence})
-    return list(selected.values()), {"candidate_event_id": bound["candidate_event_id"], "failure_event_id": context["rework_of"],
+    return list(selected.values()), {"candidate_event_id": bound["candidate_event_id"], "failure_event_id": failure_id,
                                     "basis": basis, "reader_findings": reports}

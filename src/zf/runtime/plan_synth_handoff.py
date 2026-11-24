@@ -244,7 +244,7 @@ def build_plan_handoff_input_refs(
             state_dir=state_dir, project_root=project_root,
             payload={**trigger, **{key: value for key, value in payload.items()
                                    if value not in (None, "", [], {})}},
-            context=rework_context,
+            context=rework_context, handoff_source_id=source_event_id,
         ))
         canonical_snapshot = _canonical_rework_task_snapshot(
             state_dir=state_dir,

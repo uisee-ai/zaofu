@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 from zf.core.events.model import ZfEvent
@@ -513,9 +512,9 @@ class RecoveryActionsMixin:
                 "stage failure has no canonical workflow Run",
                 409,
             )
-        generation = "stage-replan-" + hashlib.sha256(
-            f"{run_id}|{escalation.id}".encode("utf-8")
-        ).hexdigest()[:20]
+        from zf.runtime.stage_replan_generation import escalation_generation_id
+
+        generation = escalation_generation_id(run_id, escalation.id)
         existing_trigger = next(
             (
                 event for event in events

@@ -217,6 +217,8 @@ Reader 领取工作前，若共享冻结依据无法通过校验，控制面记�
 
 对于 OA 已准入的 Candidate 聚合返规，`candidate_diagnosis_only` 把本次仲裁的输入记录在 `plan-rework-context.candidate_diagnosis_evidence`。Planner 可按来源索引读取该决定引用的依据，以及涉案 finding 对应的独立 Reader 报告。相同报告可供多个 finding 引用。来源受原 OA manifest、当前冻结目标、Planner 的访问权限和允许的 JSON 路径共同约束。索引记录不可用的原因。写入任务和宿主执行分别由任务派发与受控动作授权。
 
+技术性修复重发诊断 Planner 时，当前请求的 `rework_of` 记录本次直接失败，证据索引的 `failure_event_id` 保留原 Candidate 聚合失败。控制面从当前 fanout、已应用的修复动作和同代有界重试追溯到原 OA 决策，重新核对 Run、冻结版本、已准入计划包及空 Writer 范围。未获证实的链路、已被取代的冻结或计划包均不能交付旧证据。控制动作发布期间持有本次请求专属的文件锁，Reader fanout 等锁释放后重试；发布进程异常退出会释放锁，缺少成功回执会进入原有预登记失败流程。
+
 提交可执行计划时，若当前 OA 诊断范围保留任务图且授权 Writer 数量为零，预检返回 `candidate_diagnosis_no_writer_authority`，并列出草案的必要字段。确需决定受保护范围或新授权时，Planner 可把已核实的结论、来源和具体问题提交为 `owner_review` 草案，交独立 Critic 判断。新增工作、候选重验与计划批准分别沿用原有授权入口。
 
 Planner 或 Critic 从恢复触发中取得上一轮预检时，签发前也会将机械用量明细移入可按需读取的工件。必读视图保留失败项、验收依据及原件摘要，完整预检和用量分组可按摘要取回。已签发的旧 attempt 恢复时沿用它实际签收的视图。

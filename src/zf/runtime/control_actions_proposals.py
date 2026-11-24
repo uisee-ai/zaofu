@@ -105,23 +105,29 @@ class ProposalExecutionActionsMixin:
         proposal_event_id: str,
         proposal_gate: dict[str, Any],
     ) -> dict:
-        result = ControlledActionOrchestrator(
-            writer=self.writer,
-            actor=self.actor,
-            surface=self.surface,
-        ).run(
-            action=action,
-            requested_action=requested_action,
-            payload=payload,
-            requested=requested,
-            task_id=_task_id_from_payload(payload),
-            handler=lambda: self._execute_action(
+        from contextlib import nullcontext
+        from zf.runtime.stage_replan_generation import generation_publication_lock
+
+        publication = (locked_path(generation_publication_lock(self.state_dir, requested.id))
+                       if action == "stage-replan-new-generation" else nullcontext())
+        with publication:
+            result = ControlledActionOrchestrator(
+                writer=self.writer,
+                actor=self.actor,
+                surface=self.surface,
+            ).run(
                 action=action,
                 requested_action=requested_action,
                 payload=payload,
                 requested=requested,
-            ),
-        )
+                task_id=_task_id_from_payload(payload),
+                handler=lambda: self._execute_action(
+                    action=action,
+                    requested_action=requested_action,
+                    payload=payload,
+                    requested=requested,
+                ),
+            )
         if (
             proposal_event_id
             and bool(result.get("ok"))

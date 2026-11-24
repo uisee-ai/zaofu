@@ -2348,6 +2348,9 @@ class FanoutCoordinationMixin(
         stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
+        from zf.runtime.plan_diagnosis_repair_lineage import awaiting_diagnosis_repair_receipt
+        if awaiting_diagnosis_repair_receipt(event, self.state_dir):
+            return False
         from zf.runtime.writer_replan_frontier import suppress_retired_plan_branch
         if suppress_retired_plan_branch(self, event, stage_ids=[
             stage.id for stage in stages if stage.attempt_domain == "plan"

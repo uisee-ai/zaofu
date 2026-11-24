@@ -12,7 +12,7 @@ from zf.runtime.workflow_operation import load_workflow_operation
 
 def replan_authority_sources(
     *, state_dir: Path, project_root: Path, payload: Mapping[str, Any],
-    context: dict[str, Any],
+    context: dict[str, Any], handoff_source_id: str = "",
 ) -> list[dict[str, Any]]:
     package_ref = str(payload.get("plan_artifact_package_ref") or "")
     package_digest = str(payload.get("plan_artifact_package_digest") or "")
@@ -72,7 +72,8 @@ def replan_authority_sources(
             return refs
         from zf.runtime.plan_candidate_diagnosis_inputs import candidate_diagnosis_inputs
 
-        evidence, index = candidate_diagnosis_inputs(state_dir, payload, context, decision, decision_ref, refs)
+        evidence, index = candidate_diagnosis_inputs(
+            state_dir, payload, context, decision, decision_ref, refs, handoff_source_id=handoff_source_id)
         context["candidate_diagnosis_evidence"] = index
         return [*refs, *evidence]
     evidence = _decision_evidence_sources(state_dir, decision, task_ids=scope)
