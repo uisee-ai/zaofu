@@ -1088,3 +1088,6 @@ Plan 执行预览在 Critic 必读摘要中列出两类待核对情形。任务�
 OA 对新的候选失败作出 `return_to_plan` 后，Planner 以本次决策与失败反馈为输入。上一轮 Owner 给 Reader 的指令、授权引用和阶段代次保存在 `historical_orchestration_context`，标记为 `observation_only`。已批准的 Plan 包及其端口仍按原绑定提供。对同一 Reader 重试和 Owner 明确批准的新代次分别沿用原恢复入口。
 
 当预授权宿主为已弃判的候选 Reader 收齐命令回执，且同组还有 Reader 在执行时，Run Manager 可以从该 Reader 的失败事件恢复单路验证。重试绑定同一 Run、候选提交、合同、operation 与 attempt，逐项检查回执及合同要求的媒体，再经受控 child-rebuild 派发新的独立 Reader。新 Reader 自行审阅证据并提交判词。请求中记录已移交的命令；同组、同目标、同合同及同宿主策略下，其他 Reader 可消费这些回执。已收口的整组走原有聚合恢复入口。
+
+
+OA 请求修复冻结候选的产品缺陷时，运行时按同一 Run 和需求核对每一版任务图的返工来源。已绑定的 Plan 阶段失败和 Owner 拒绝 Plan 不占用候选产品返工次数。实际产品返工按不同失败事件计数，来源不明的历史记录保守计入。相同 OA 检查点继续沿用既有的幂等处理。
