@@ -521,9 +521,10 @@ def plan_reader_stage_replan(
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
     failure_fanout_id = str(failure_payload.get("fanout_id") or "")
-    from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+    from zf.runtime.failure_kind import FAILURE_KIND_INFRA
+    from zf.runtime.plan_reader_preregistration import plan_failure_kind
 
-    if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
+    if not authorized_generation and plan_failure_kind(events, failure_event) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
     rejected_id = str(
         failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
@@ -649,7 +650,7 @@ def plan_reader_stage_replan(
             continue
         if event.id == failure_event.id:
             continue
-        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
+        if plan_failure_kind(events, event) == FAILURE_KIND_INFRA:
             continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream

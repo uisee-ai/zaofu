@@ -555,20 +555,39 @@ class PlanSynthRuntimeMixin:
                     and report["report"].get("execution_status") == "failed"
                     and report["report"].get("failure_class") == "reader_execution_failure"
                 ]
-                if failed_readers:
+                preregistration = []
+                children = manifest.get("children") or []
+                if not failed_readers and children and all(c.get("status") == "failed"
+                        and c.get("failure_kind") == "infra" for c in children):
+                    from zf.runtime.plan_reader_preregistration import preregistration_failures
+
+                    preregistration = preregistration_failures(self.event_log.read_all(),
+                        fanout=fanout_id, stage=stage_id, run=trace_id, trigger=manifest.get("trigger_event_id"))
+                if failed_readers or preregistration:
                     findings = [finding for report in failed_readers
                                 for finding in (report.get("findings") or [])
                                 if isinstance(finding, dict)]
-                    summary = str(failed_readers[0].get("summary") or "Plan reader execution failed")
+                    summary = "Plan reader execution failed"
+                    recommendation = "reject"
+                    failure_metadata = {}
+                    if preregistration:
+                        summary = "Plan Reader operation preregistration failed before dispatch"
+                        recommendation = "abstain"
+                        failure_metadata = {"failure_kind": "infra", "semantic_attempt_consumed": False,
+                                            "semantic_rework_cost": 0}
+                        findings = [{"severity": "high", "message": item.payload.get("reason") or summary,
+                                     "evidence_refs": [f"events.jsonl#{item.id}"]} for item in preregistration]
+                    else:
+                        summary = str(failed_readers[0].get("summary") or summary)
                     failure_event = self.event_writer.append(ZfEvent(
                         type="fanout.synth.completed", actor="zf-cli",
                         payload={"fanout_id": fanout_id, "trace_id": trace_id,
                                  "review_request_event_id": manifest.get('review_request_event_id', ''),
                                  "stage_id": stage_id, "role_instance": role.instance_id,
-                                 "run_id": run_id, "status": "failed", "recommendation": "reject",
-                                 "failure_class": "reader_execution_failure", "summary": summary,
+                                 "run_id": run_id, "status": "failed", "recommendation": recommendation,
+                                 "failure_class": "reader_execution_failure", "summary": summary, **failure_metadata,
                                  "report": {"child_id": "synth", "status": "failed",
-                                            "recommendation": "reject", "summary": summary,
+                                            "recommendation": recommendation, "summary": summary,
                                             "findings": findings}},
                         causation_id=str(manifest.get("trigger_event_id") or "") or None,
                         correlation_id=trace_id,

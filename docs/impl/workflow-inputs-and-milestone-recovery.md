@@ -71,6 +71,8 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 
 现行 CLI 默认使用 JSON 与 8 KiB 批页。B 是显式文本批页试验。三组调用数来自模拟工具返回，无法据此估算真实模型 token 或从派发到准入的耗时。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
 
+Plan 的全部预期 Reader 在 operation 预注册时失败、且账本确认尚无调用或派发时，聚合记录基础设施失败和弃判。既有 Plan 预检失败仅在原触发、完整 roster、预注册事件及预检引用均能对齐时按这一规则恢复，仍沿用原受控恢复入口。
+
 ## 里程碑接手、静默与独立作业
 
 | 场景 | 实际入口 | 有效证据与失败处理 |
