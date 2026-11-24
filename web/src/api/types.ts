@@ -2302,7 +2302,23 @@ export interface HandoffSummaryProjection {
   error?: string;
 }
 
+export interface TaskRelation {
+  id: string;
+  title: string;
+  status: string;
+  waiting?: boolean;
+}
+
 export interface TaskDetail {
+  properties?: {
+    source: { kind: "task" | "feature"; id: string; title: string } | null;
+    upstream: TaskRelation[];
+    downstream: TaskRelation[];
+    children: TaskRelation[];
+    milestone: { label: string; at: string } | null;
+  };
+  fanout?: Task["fanout"];
+  deliverables?: Array<{ name: string; sha256: string }>;
   task: Task & Record<string, unknown>;
   contract: Record<string, unknown>;
   evidence: Record<string, unknown>;

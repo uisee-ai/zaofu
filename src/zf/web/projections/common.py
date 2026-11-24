@@ -524,7 +524,9 @@ def _contract_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def normalize_proposed_task_contract(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_proposed_task_contract(
+    payload: dict[str, Any], *, partial_update: bool = False,
+) -> dict[str, Any]:
     """Coerce an LLM-authored task contract into the shapes the kernel stores.
 
     The kanban agent (a headless LLM) tends to emit ``verification`` as a list
@@ -589,12 +591,15 @@ def normalize_proposed_task_contract(payload: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(acceptance, dict):
         contract["acceptance"] = _contract_text(acceptance)
     if not str(contract.get("verification") or "").strip():
-        for synonym in _CONTRACT_VERIFICATION_SYNONYMS:
+        # A partial edit inherits the task's verification. Only explicit aliases
+        # for verification belong there when changing an existing contract.
+        synonyms = ("verification_steps", "criteria") if partial_update else _CONTRACT_VERIFICATION_SYNONYMS
+        for synonym in synonyms:
             text = _contract_text(contract.pop(synonym, None))
             if text:
                 contract["verification"] = text
                 break
-    if "verification_tiers" not in contract and str(
+    if not partial_update and "verification_tiers" not in contract and str(
         contract.get("verification") or ""
     ).strip():
         # A concrete verification contract is mechanically a runtime tier.

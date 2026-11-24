@@ -147,6 +147,7 @@ export function ProjectionPage({
   if (isObservabilityPage(page) || page === "diagnostics") {
     return (
       <ObservabilityPage
+        selectedTaskId={selectedTaskId}
         activePage={page}
         activeProjectId={activeProjectId}
         eventFilter={eventFilter}

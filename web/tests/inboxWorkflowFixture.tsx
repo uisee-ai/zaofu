@@ -38,7 +38,7 @@ function Fixture() {
         seq: Number(items[0]?.seq || 1) + 1, type: "task.started", payload: {} } as RecentEvent])}>Graph event</button>
       <button onClick={() => setLiveState(value => value === "live" ? "reconnecting" : "live")}>Graph connection</button>
     </>}
-    {surface === "inbox" ? <PlanApprovalPanel projectId={project} autoOpenPlanId={new URLSearchParams(location.search).get("plan")} /> : surface === "board" ? selected ? <TaskReader task={tasks.find(item => item.id === selected) ?? null} selectedTaskId={selected} onBackToBoard={() => setSelected(null)} actionReady={false} actionResult={null} actionState="read only" detail={null} diff={null} events={[]} loadError={null} onAction={noop} onOpenProjection={noop} timeline={null} timelineError={null} timelineLoading={false} skillsSummary={null} /> : <BoardWorkbench
+    {surface === "inbox" ? <PlanApprovalPanel projectId={project} autoOpenPlanId={new URLSearchParams(location.search).get("plan")} /> : surface === "board" ? selected ? <TaskReader task={tasks.find(item => item.id === selected) ?? null} selectedTaskId={selected} onBackToBoard={() => setSelected(null)} actionReady={false} actionResult={null} actionState="read only" detail={null} loadError={null} onAction={noop} /> : <BoardWorkbench
       projectName="Fixture" onNewTask={noop} actionReady actionState="ready" actionResult={null} activeFanouts={[]} agents={[]} assignees={["dev-1"]} assigneeFilter="all"
       filteredTasks={tasks} mutationEnabled={false} onMoveTaskStatus={noop} onOpenFanout={noop} onOpenTask={setSelected}
       onSaveToken={noop} onUnlockSession={async () => ({ ok: true })} passcodeRequired={false} priorityFilter="all" quickFilter="all"

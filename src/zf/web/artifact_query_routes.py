@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from zf.core.config.schema import ZfConfig
 from zf.runtime.artifact_query import ArtifactQueryService
@@ -114,6 +114,26 @@ def build_artifact_query_router(
                 query=query, cursor=cursor))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+
+    @router.get("/api/projects/{project_id}/tasks/{task_id}/deliverables/{sha256}")
+    def task_deliverable(project_id: str, task_id: str, sha256: str) -> PlainTextResponse:
+        from zf.runtime.channel_document_source import ChannelDocumentError, read_referenced_text
+        from zf.web.projections.tasks import _task_artifact_refs
+        from zf.web.task_deliverables import verified_task_files
+
+        if resolve_ctx is None:
+            raise HTTPException(404, "Unknown project")
+        ctx = resolve_ctx(project_id)
+        ledger = _task_artifact_refs(ctx.state_dir, task_id, project_root=ctx.project_root)
+        files = verified_task_files(ledger, project_root=ctx.project_root, state_dir=ctx.state_dir)
+        if sha256 not in files:
+            raise HTTPException(404, "Task deliverable unavailable")
+        try:
+            doc = read_referenced_text(str(files[sha256]), project_root=ctx.project_root,
+                                       state_dir=ctx.state_dir, expected={sha256})
+        except ChannelDocumentError as exc:
+            raise HTTPException(exc.status_code, exc.detail) from exc
+        return PlainTextResponse(doc["content"], headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
     @router.get("/api/tasks/{task_id}/artifacts")
     def task_artifacts(task_id: str, limit: int = 200) -> JSONResponse:

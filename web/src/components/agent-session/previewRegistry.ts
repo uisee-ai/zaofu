@@ -63,6 +63,13 @@ export function previewProfileForRef(ref: Record<string, unknown>): PreviewProfi
   return "text";
 }
 
+export function taskUpdateFields(payload: Record<string, unknown>): Array<[string, unknown]> {
+  const fields = ["task_id", "title", "status", "assigned_to", "owner", "blocked_reason", "priority",
+    "blocked_by", "skills", "skills_required", "evidence"];
+  const rows: Array<[string, unknown]> = fields.filter(key => key in payload).map(key => [key, payload[key]]);
+  return rows.concat(Object.entries(recordValue(payload.contract) ?? {}));
+}
+
 export function actionImpactRows(action: string, payload: Record<string, unknown>): Array<{ label: string; value: string }> {
   const rows: Array<{ label: string; value: string }> = [];
   const push = (label: string, value: unknown) => {
@@ -110,10 +117,8 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
     push("artifact", payload.artifact_ref || payload.artifact_digest);
     push("digest", payload.artifact_digest);
   } else if (action === "update-task") {
-    push("task", payload.task_id);
-    for (const key of ["title", "status", "assigned_to", "blocked_reason", "priority"]) push(key, payload[key]);
-    for (const [key, value] of Object.entries(recordValue(payload.contract) ?? {})) {
-      push(key, typeof value === "string" ? value : JSON.stringify(value));
+    for (const [key, value] of taskUpdateFields(payload)) {
+      push(key === "task_id" ? "task" : key, typeof value === "object" ? JSON.stringify(value) : value);
     }
   } else if (action === "workflow-invoke") {
     push("workflow", payload.workflow_id || payload.pattern_id || payload.stage_id);

@@ -79,8 +79,6 @@ import {
   getRunDetail,
   invalidateProjectReadCache,
   getTaskDetail,
-  getTaskDiff,
-  getTaskTimeline,
   getWebSession,
   getWorkspaceProjects,
   getOnboarding,
@@ -179,9 +177,7 @@ import type {
   Snapshot,
   Task,
   TaskDetail as TaskDetailModel,
-  TaskDiff,
   TaskFlowStats,
-  TaskTimeline,
   TraceSummary,
   WorkdirSummary,
   WorkspaceProject,
@@ -607,10 +603,6 @@ export function App() {
   const [channelLoadError, setChannelLoadError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initial.task);
   const [taskDetail, setTaskDetail] = useState<TaskDetailModel | null>(null);
-  const [taskDiff, setTaskDiff] = useState<TaskDiff | null>(null);
-  const [taskTimeline, setTaskTimeline] = useState<TaskTimeline | null>(null);
-  const [taskTimelineLoading, setTaskTimelineLoading] = useState(false);
-  const [taskTimelineError, setTaskTimelineError] = useState<string | null>(null);
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const [page, setPage] = useState<PageId>(initial.page);
   useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
@@ -618,7 +610,7 @@ export function App() {
   const boardSource = snapshot?.project.project_id === activeProjectId ? snapshot : boardBootstrap;
   const [boardTaskOpen, setBoardTaskOpen] = useState(initial.page === "board" && Boolean(initial.task));
   const readingTask = Boolean(selectedTaskId && (page === "task" || (page === "board" && boardTaskOpen)));
-  const taskRefresh = useRef<{ taskId: string; schedule: () => void } | null>(null);
+  const taskRefresh = useRef<{ taskId: string; related: Set<string>; schedule: () => void } | null>(null);
   const boardOpener = useRef<HTMLElement | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
@@ -1280,7 +1272,10 @@ export function App() {
         if (seq) lastSeqRef.current = Math.max(lastSeqRef.current, seq);
         setEvents((current) => prependEvent(current, event));
         const reader = taskRefresh.current;
-        if (reader && event.task_id === reader.taskId && isTaskBusinessEvent(event.type)) reader.schedule();
+        if (!reader || !event.task_id || !isTaskBusinessEvent(event.type)) return;
+        // Creation and edits can add a new incoming dependency or child.
+        if (reader.taskId === event.task_id || reader.related.has(event.task_id)
+          || ["task.created", "task.updated", "task.contract.update"].includes(event.type)) reader.schedule();
       });
       eventBusRef.current = bus;
       bus.connect();
@@ -1301,10 +1296,6 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     setTaskDetail(null);
-    setTaskDiff(null);
-    setTaskTimeline(null);
-    setTaskTimelineLoading(false);
-    setTaskTimelineError(null);
     setActionResult(null);
     setTaskLoadError(null);
     if (!selectedTaskId || !activeProjectId) return;
@@ -1315,47 +1306,17 @@ export function App() {
         const detail = await getTaskDetail(taskId, activeProjectId || undefined);
         if (cancelled) return;
         setTaskDetail(detail);
+        const reader = taskRefresh.current;
+        if (reader?.taskId === taskId && detail.properties) {
+          const { upstream, downstream, children, source } = detail.properties;
+          reader.related = new Set([...upstream, ...downstream, ...children].map(row => row.id));
+          if (source?.kind === "task") reader.related.add(source.id);
+        }
         setTaskLoadError(null);
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
         setTaskLoadError(message);
-      }
-    }
-
-    async function loadDiff() {
-      try {
-        const diff = await getTaskDiff(taskId, activeProjectId || undefined);
-        if (cancelled) return;
-        setTaskDiff(diff);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setTaskDiff({
-          task_id: taskId,
-          base: "",
-          head: "",
-          files: [],
-          diff: "",
-          truncated: false,
-          error: message,
-        });
-      }
-    }
-
-    async function loadTimeline() {
-      setTaskTimelineLoading(true);
-      try {
-        const timeline = await getTaskTimeline(taskId, activeProjectId || undefined);
-        if (cancelled) return;
-        setTaskTimeline(timeline);
-        setTaskTimelineError(null);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setTaskTimelineError(message);
-      } finally {
-        if (!cancelled) setTaskTimelineLoading(false);
       }
     }
 
@@ -1372,11 +1333,11 @@ export function App() {
       timer = undefined;
       loading = true;
       pending = false;
-      await Promise.all([loadDetail(), loadDiff(), loadTimeline()]);
+      await loadDetail();
       loading = false;
       if (!cancelled && pending) schedule();
     }
-    if (readingTask) taskRefresh.current = { taskId, schedule };
+    if (readingTask) taskRefresh.current = { taskId, related: new Set(), schedule };
     void reload();
     return () => {
       cancelled = true;
@@ -2091,10 +2052,6 @@ export function App() {
     });
     setSelectedTaskId(null);
     setTaskDetail(null);
-    setTaskDiff(null);
-    setTaskTimeline(null);
-    setTaskTimelineLoading(false);
-    setTaskTimelineError(null);
     setProjectionDetail(null);
     setSearchResult(null);
     setEventFilter("");
@@ -2168,14 +2125,11 @@ export function App() {
       actionState={actionGate.actionState}
       key={JSON.stringify([activeProjectId, selectedTaskId])}
       detail={taskDetail?.task?.id === selectedTaskId ? taskDetail : null}
-      diff={taskDiff?.task_id === selectedTaskId ? taskDiff : null}
-      events={events}
       loadError={taskLoadError}
       onRetry={() => taskRefresh.current?.schedule()}
       onAction={(action, payload) => void runTaskAction(action, payload)}
       onBackToBoard={backToBoard}
       onOpenTask={page === "board" ? openBoardTask : openTask}
-      onOpenProjection={(kind, id) => void openProjection(kind, id)}
       selectedTaskId={selectedTaskId}
       conversation={projectToolsAvailable && selectedTaskId && <TaskConversation
         key={JSON.stringify([activeProjectId, selectedTaskId])}
@@ -2185,11 +2139,7 @@ export function App() {
         onOpenTask={openTask} onSaveToken={saveWebActionToken} onUnlockSession={unlockSession}
         snapshot={snapshot} access={actionGate} actionResult={actionResult}
       />}
-      skillsSummary={snapshot?.skills ?? null}
       task={selectedTask}
-      timeline={taskTimeline?.task_id === selectedTaskId ? taskTimeline : null}
-      timelineError={taskTimelineError}
-      timelineLoading={taskTimelineLoading}
     />
   );
 

@@ -1624,13 +1624,26 @@ class KanbanHeadlessAgent:
     ) -> str:
         from zf.web.headless_methods import document_method_context
 
+        thread_key = str(context.get("thread_key") or "")
+        task_guidance = []
+        if task_id and thread_key == f"task:{task_id}":
+            task_guidance.append(
+                "Task conversation: reply as zaofu agent. For a progress question, explain the "
+                "current stage, its evidence and any next step or missing information. Treat "
+                "background as context for this thread. For an explicit task edit, propose "
+                "update-task for the current task, showing the changed fields and preserving "
+                "existing acceptance criteria when adding one. Wait for confirmation through "
+                "the proposal. Report a task update only from its completed controlled action. "
+                "Claim delivery to the executing worker only from a matching delivery receipt."
+            )
         return "\n".join([
             "zaofu agent turn",
+            *task_guidance,
             document_method_context(),
             f"project_root: {self.project_root}",
             f"state_dir: {self.state_dir}",
             f"task_id: {task_id or ''}",
-            f"thread_key: {str(context.get('thread_key') or '')}",
+            f"thread_key: {thread_key}",
             f"zf_cli_cmd: {_headless_zf_cli_cmd()}",
             f"context: {json.dumps(context, ensure_ascii=False, sort_keys=True)}",
             "",

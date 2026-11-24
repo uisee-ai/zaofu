@@ -31,6 +31,7 @@ async function expectEventTimeSeparated(row: Locator) {
 }
 
 async function expectWorkbenchKeyValueSeparated(workbench: Locator) {
+  await expect(workbench.locator(".key-panel dt").first()).toBeVisible();
   const panels = await workbench.locator(".key-panel").evaluateAll((nodes) => (
     nodes.map((panel) => {
       const title = panel.querySelector("h3")?.textContent ?? "";
@@ -273,13 +274,9 @@ test("opens shared task details from the board and preserves direct task routes"
   const reader = page.getByRole("region", { name: "任务详情" });
   await expect(reader.locator(".tab-row")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("task-detail.png"), fullPage: true });
-  await reader.getByText("执行路线与更多动态", { exact: true }).click();
-  await expect(page.getByTestId("task-activity-view")).toBeVisible();
-  await reader.getByText("查看输入与交付证据", { exact: true }).click();
-  await expect(page.getByTestId("task-evidence-view")).toBeVisible();
-  await reader.getByText("执行现场", { exact: true }).click();
-  await expect(page.getByTestId("task-advanced-view")).toBeVisible();
-  await expect(reader.getByRole("region", { name: "任务 Agent" })).toBeVisible();
+  await expect(reader.getByText(/执行路线与更多动态|执行现场|^Contract$/)).toHaveCount(0);
+  await expect(reader.locator(".reader-status")).toBeVisible();
+  await expect(reader.getByRole("region", { name: "Task conversation" })).toBeVisible();
   await expect(reader.getByLabel("Move task status")).toHaveCount(0);
   await expect(page.locator(".task-card-actions")).toHaveCount(0);
   await reader.getByRole("button", { name: "返回看板" }).click();
@@ -306,9 +303,10 @@ test("keeps event timeline readable and inspector structured", async ({ page }) 
   await page.getByLabel("Signal", { exact: true }).selectOption("all");
   await page.locator(".task-open").first().click();
   await expect(page.locator(".reader-article h1")).toBeVisible();
-  await page.locator(".task-detail").getByText("执行现场", { exact: true }).click();
+  await page.getByRole("link", { name: "查看任务事件" }).click();
+  await page.getByText(/查看任务运行详情 ·/).click();
   await expectWorkbenchKeyValueSeparated(page.locator(".task-workbench"));
-  await page.locator(".task-detail").getByText("执行路线与更多动态", { exact: true }).click();
+  await page.getByText("执行路线与事件", { exact: true }).click();
   await expect(page.locator(".compact-events .event-row").first()).toBeVisible();
   await expectEventTimeSeparated(page.locator(".compact-events .event-row").first());
 });

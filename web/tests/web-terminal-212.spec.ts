@@ -188,7 +188,7 @@ for (const destination of ["channel", "task"] as const) {
     await drawer.getByLabel("Discussion destination").selectOption(destination === "task" ? "task:UI-101" : "channel:review");
     await drawer.getByLabel("Quoted text").fill("edited excerpt from the terminal");
     await drawer.getByRole("button", {name: "Open discussion draft"}).click();
-    const editor = destination === "task" ? page.getByRole("region", {name: "任务 Agent"}).getByRole("textbox", {name: "询问或补充这项任务"}) : page.locator(".channel-composer-input");
+    const editor = destination === "task" ? page.getByRole("region", {name: "Task conversation"}).getByRole("textbox", {name: "任务消息"}) : page.locator(".channel-composer-input");
     if (destination === "task") {
       await expect(editor).toHaveValue("edited excerpt from the terminal");
       await expect(editor).toBeFocused();

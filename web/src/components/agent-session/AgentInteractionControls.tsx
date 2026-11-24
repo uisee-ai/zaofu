@@ -12,7 +12,7 @@ import type {
   AgentSessionPlanRequest,
   AgentSessionPlanResponse,
 } from "./types";
-import { actionPresentation } from "./actionPresentation";
+import { actionPresentation, type ActionPresentation } from "./actionPresentation";
 
 function planOptionDetails(option?: AgentSessionPlanOption): string {
   const details = option?.submitDetails;
@@ -252,14 +252,17 @@ export function ApproveInteractionActions({
   onReject,
   onRevise,
   proposal,
+  presentation = actionPresentation(proposal.action),
+  taskEdit = false,
 }: {
+  presentation?: ActionPresentation;
+  taskEdit?: boolean;
   busy?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
   onRevise?: () => void;
   proposal: AgentSessionActionProposal;
 }) {
-  const presentation = actionPresentation(proposal.action);
   return (
     <div className="agent-approve-actions">
       <button
@@ -270,7 +273,7 @@ export function ApproveInteractionActions({
         onClick={onRevise}
       >
         <PencilLine aria-hidden="true" size={14} />
-        Edit
+        {taskEdit ? "修改提案" : "Edit"}
       </button>
       <button
         className="agent-inline-button"
@@ -280,7 +283,7 @@ export function ApproveInteractionActions({
         onClick={onReject}
       >
         <X aria-hidden="true" size={14} />
-        Cancel
+        {taskEdit ? "取消" : "Cancel"}
       </button>
       <button
         className="agent-inline-button primary agent-action-primary"

@@ -18,6 +18,7 @@ import type {
 import { getAgentSessionRawOutput } from "../../api/client";
 import { MarkdownText } from "./MarkdownText";
 import { completedRunNotices } from "./notices";
+import { TaskUpdatePreview, taskUpdatePresentation } from "../kanban/TaskUpdatePreview";
 import { actionImpactRows, previewItemsFromRefs, type PreviewItem } from "./previewRegistry";
 import { formatOutputStats, formatToolDuration, getOutputPreview, prettyPrintIfJson, rawOutputLabel, rawOutputRefFromRefs, type RawOutputRef } from "./toolOutput";
 import { actionPresentation } from "./actionPresentation";
@@ -262,6 +263,7 @@ function ThreadPane({
   showRunProvider: boolean;
   thread: AgentSessionThread;
 }) {
+  const taskConversation = !channelChatMode && thread.id.startsWith("task:");
   const [settledTurnLimit, setSettledTurnLimit] = useState(120);
   useEffect(() => setSettledTurnLimit(120), [thread.id]);
   const turnWindow = useMemo(
@@ -302,7 +304,7 @@ function ThreadPane({
             {turn.user ? (
               <div className={`agent-user-message ${turn.user.role}`}>
                 <div className="agent-message-meta">
-                  <span>{turn.user.label}</span>
+                  <span>{taskConversation && turn.user.label === "You" ? "你" : turn.user.label}</span>
                   {turn.user.origin?.channel ? (
                     <span
                       className="agent-origin-chip"
@@ -367,6 +369,7 @@ function ThreadPane({
             {remainingCards.length ? (
               <StackedCards
                 actionBusyId={actionBusyId}
+                taskConversation={taskConversation}
                 cards={remainingCards}
                 onAnswerQuestion={onAnswerQuestion}
                 onApproveProposal={onApproveProposal}
@@ -391,6 +394,7 @@ function ThreadPane({
       {extraCards.length ? (
         <StackedCards
           actionBusyId={actionBusyId}
+          taskConversation={taskConversation}
           cards={extraCards}
           onAnswerQuestion={onAnswerQuestion}
           onApproveProposal={onApproveProposal}
@@ -465,7 +469,7 @@ function RunBlock({
   const showThinkingIndicator = chatMode && runWorking && !replyParts.length && !chatVisibleThinking.length;
   // A kanban chat header with no member, no indicator, and no cancel action
   // would render a lone status dot on its own line — drop the row entirely.
-  const showChatHeader = showThinkingIndicator || Boolean(run.memberId) || Boolean(canCancel);
+  const showChatHeader = showThinkingIndicator || Boolean(run.memberId || renderRunIdentity || canCancel);
   const headerStatusLabel = channelChatMode && thinkingParts.length && (run.status === "streaming" || run.status === "submitted")
     ? `${statusLabel(run.status)} · Thinking`
     : statusLabel(run.status);
@@ -1149,6 +1153,7 @@ function AttachmentChips({ refs }: { refs?: Record<string, unknown> }) {
 }
 
 function StackedCards({
+  taskConversation,
   actionBusyId,
   cards,
   onAnswerQuestion,
@@ -1162,6 +1167,7 @@ function StackedCards({
 }: {
   actionBusyId: string;
   cards: AgentSessionCard[];
+  taskConversation: boolean;
   onAnswerQuestion?: (card: AgentSessionCard) => void;
   onApproveProposal?: (proposal: AgentSessionActionProposal, cardId: string) => void;
   onRejectProposal?: (proposal: AgentSessionActionProposal, cardId: string) => void;
@@ -1205,7 +1211,8 @@ function StackedCards({
             ? "approve proposal"
             : card.kind;
         const proposalExecuted = card.payload?.resolution === "executed";
-        const presentation = card.proposal
+        const taskEdit = taskConversation && card.proposal?.action === "update-task" ? card.proposal : undefined;
+        const presentation = taskEdit ? taskUpdatePresentation(taskEdit.payload) : card.proposal
           ? actionPresentation(card.proposal.action)
           : null;
         const receiptSubject = card.proposal
@@ -1225,11 +1232,11 @@ function StackedCards({
           {!planCompleted && !(isApprove && card.status === "completed") ? (
             <div className="agent-interaction-copy">
               <span className="agent-card-kind">
-                {isPlan ? "Question" : isApprove ? "Confirmation" : isResult ? "Result" : card.kind}
+                {isPlan ? "Question" : taskEdit ? "待确认" : isApprove ? "Confirmation" : isResult ? "Result" : card.kind}
               </span>
               <strong>{presentation?.title || card.title}</strong>
               {card.body ? <p>{card.body}</p> : null}
-              {isApprove && card.proposal ? (
+              {taskEdit ? <TaskUpdatePreview payload={taskEdit.payload} /> : isApprove && card.proposal ? (
                 <ActionPreviewBody proposal={card.proposal} refs={card.refs} />
               ) : isResult ? (
                 <WorkflowResultIdentity refs={card.refs} />
@@ -1240,7 +1247,7 @@ function StackedCards({
           ) : null}
           {isApprove && card.proposal ? (
             card.status === "completed" ? (
-              <div className={`agent-action-receipt ${proposalExecuted ? "" : "muted"}`}>
+              <div className={`agent-action-receipt ${proposalExecuted ? "" : "muted"}`} role={taskEdit ? "status" : undefined}>
                 {proposalExecuted
                   ? <Check aria-hidden="true" size={14} />
                   : <XCircle aria-hidden="true" size={14} />}
@@ -1255,6 +1262,8 @@ function StackedCards({
               </div>
             ) : (
               <ApproveInteractionActions
+                presentation={presentation ?? undefined}
+                taskEdit={Boolean(taskEdit)}
                 busy={actionBusyId === card.id}
                 proposal={card.proposal}
                 onApprove={onApproveProposal
