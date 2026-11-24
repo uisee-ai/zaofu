@@ -43,7 +43,9 @@ def execution_policy(config: Any) -> dict[str, Any]:
     from zf.runtime.workflow_route_policy import effective_execution_policy_digest
 
     workflow = getattr(config, "workflow", None)
+    host = getattr(getattr(config, "runtime", None), "host_verification", None)
     return {
+        "host_verification_commands": list(host.commands) if host and host.enabled else [],
         "effective_policy_digest": effective_execution_policy_digest(config),
         "setup_declared": bool(str(getattr(getattr(config, "project", None),
                                          "setup_script", "") or "").strip()),
@@ -113,6 +115,16 @@ def review_execution(
     stages = [s for s in policy.get("stages", [])
               if not kind or str(s.get("id") or "").startswith(kind + "-")]
     candidate_trigger = any(s.get("trigger") == "candidate.ready" for s in stages)
+    host_commands = set(policy.get("host_verification_commands") or ())
+    unregistered = [
+        {"task_id": task.get("task_id") or task.get("id"), "command_id": cmd.get("id"),
+         "command": cmd["command"]}
+        for task in tasks for cmd in _rows(_object(task.get("validation")).get("commands"))
+        if isinstance(cmd, Mapping) and cmd.get("owner") == "candidate_verify"
+        and isinstance(cmd.get("command"), str) and host_commands and cmd["command"] not in host_commands
+    ]
+    if unregistered:
+        items.append("candidate_commands_outside_host_registry")
     if owners.get("task_verify") and not per_task:
         items.append("task_verify_after_candidate" if candidate_trigger else "verify_wiring_unconfirmed")
     if setup_commands and not policy.get("setup_declared"):
@@ -169,6 +181,7 @@ def review_execution(
             "write_scope_validation": write_scope,
         },
         "verification": {
+            "candidate_commands_outside_host_registry": unregistered,
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
@@ -186,7 +199,9 @@ def review_execution(
         "review_items": items,
         "limitations": [
             "Counts do not establish slice quality or elapsed execution time.",
-            "Task verification ownership does not create a dispatch stage.",
+            ("The blocking Task Pipeline dispatches independent Task Verify when its task is ready; "
+             "Candidate Verify begins after candidate.ready." if per_task and candidate_trigger else
+             "Check the compiled Task Pipeline and stage triggers for actual Verify dispatch."),
             "Required-by owners use runtime selectors; declared execution_stage is only an annotation.",
             "Setup presence does not prove installation or product execution.",
             "Port byte counts are JSON serialization sizes, not model token usage.",
@@ -395,13 +410,13 @@ def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     workflow = getattr(config, "workflow", None)
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
-    host = getattr(getattr(config, "runtime", None), "host_verification", None)
+    compiled = execution_policy(config)
     return {
         "frozen_candidate_reader": has_candidate_verification_consumer(config),
-        "host_verification_commands": list(host.commands) if host and host.enabled else [],
+        "host_verification_commands": compiled["host_verification_commands"],
         "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
-        "execution": execution_policy(config),
+        "execution": compiled,
         "candidate_quality_source": str(
             getattr(workflow, "candidate_quality_source", "auto") or "auto"
         ),
