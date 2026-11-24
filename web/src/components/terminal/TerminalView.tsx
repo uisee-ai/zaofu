@@ -33,6 +33,7 @@ interface TerminalViewProps extends QuoteDestinationProps {
   session: TerminalSession;
   themeMode: ThemeMode;
   takeoverNonce: number;
+  onTakeOver?: () => void;
   visible: boolean;
 }
 
@@ -161,6 +162,7 @@ export function TerminalView({
   session,
   themeMode,
   takeoverNonce,
+  onTakeOver,
   visible,
 }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -180,6 +182,7 @@ export function TerminalView({
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
   const lastInputSocket = useRef<WebSocket | null>(null);
+  const [takeoverConfirmed, setTakeoverConfirmed] = useState(false);
   const [inputNotice, setInputNotice] = useState("");
   const [selection, setSelection] = useState(false);
   const resolvedTheme = useResolvedDashboardTheme(themeMode);
@@ -409,6 +412,7 @@ export function TerminalView({
     let streaming = false;
     let ended = false;
     let stableTimer: number | undefined;
+    let takeoverTimer: number | undefined;
     let parsedBacklog = 0;
     let parsedSeq: number | null = null;
     const scheduleRetry = () => {
@@ -421,6 +425,7 @@ export function TerminalView({
     };
 
     const connect = async () => {
+      setTakeoverConfirmed(false);
       setStatus("authorizing");
       setError("");
       if (mode === "control" && visibleRef.current) fitRef.current?.fit();
@@ -477,6 +482,10 @@ export function TerminalView({
               if (mode === "control") writableSocket.current = socket;
               stableTimer = window.setTimeout(() => { retryAttemptRef.current = 0; }, 10000);
               setStatus(mode === "control" ? "controlling" : "observing");
+              if (takeover) {
+                setTakeoverConfirmed(true);
+                takeoverTimer = window.setTimeout(() => setTakeoverConfirmed(false), 4000);
+              }
             }
             return;
           }
@@ -549,6 +558,7 @@ export function TerminalView({
       cancelled = true;
       writableSocket.current = null;
       lastInputSocket.current = null;
+      window.clearTimeout(takeoverTimer);
       window.clearTimeout(stableTimer);
       if (retryTimerRef.current !== null) {
         window.clearTimeout(retryTimerRef.current);
@@ -580,6 +590,15 @@ export function TerminalView({
       data-terminal-theme={resolvedTheme}
     >
       {terminalRef.current && quoteTargets.length > 0 && <TerminalQuote hasSelection={selection} terminal={terminalRef.current} session={session} quoteTargets={quoteTargets} onQuote={onQuote} />}
+      {mode === "observe" && status === "observing" && (
+        <div className="web-terminal-observer-bar">
+          <span>Read-only</span>
+          {onTakeOver && <button type="button" onClick={onTakeOver}>Take over control</button>}
+        </div>
+      )}
+      {takeoverConfirmed && status === "controlling" && !expectedClose && (
+        <div className="web-terminal-takeover-feedback" role="status">Control transferred. You can type now.</div>
+      )}
       {inputNotice && <div role="status" className="web-terminal-input-notice">{inputNotice} <button type="button" onClick={() => setInputNotice("")}>Dismiss</button></div>}
       {visibleNotice ? (
         <div className="web-terminal-connection-notice" role="status">

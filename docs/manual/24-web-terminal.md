@@ -124,6 +124,8 @@ Dock 模式可拖动顶部调整高度；全屏、Dock、主题切换、Tab 名�
 | Control | 正常可写 attach；发送按键、resize、scroll，同一 Session 同时只有一个 controller | 日常操作 |
 | Take over control | 显式用 Herdr `--takeover` 替换现有 controller；旧 controller 随即失去控制权 | 原设备失联或明确跨设备交接 |
 
+旁观连接就绪后，终端上方显示 Read-only。允许接管时可直接点 Take over control，拿到控制连接的首个完整画面后会短暂显示「Control transferred. You can type now.」。有 Agent 等待输入时，工具栏显示数量（如「1 needs input」），点击可选中对应终端。
+
 建议顺序是：查看用 Observe，输入用 Control，只有确认要替换现有操作者时才 Take over。该选项
 受 `allow_takeover`、mutation auth 和 takeover receipt 约束。
 

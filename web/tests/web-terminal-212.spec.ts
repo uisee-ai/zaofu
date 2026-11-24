@@ -30,7 +30,10 @@ function frame(socket: WebSocketRoute, text: string) {
 
 test("restored tabs attach on visit and waiting items revalidate their generation", async ({page}) => {
   let generation = 1;
-  await page.route(api, route => route.fulfill({json: {...projection, sessions: [first, {...second, generation}]}}));
+  let firstStatus = "idle";
+  await page.route(api, route => route.fulfill({json: {...projection, sessions: [
+    {...first, agent_status: firstStatus}, {...second, generation},
+  ]}}));
   const attached: string[] = [];
   await page.routeWebSocket("**/control", socket => {
     const id = new URL(socket.url()).pathname.split("/").at(-2)!;
@@ -41,7 +44,11 @@ test("restored tabs attach on visit and waiting items revalidate their generatio
   await expect(drawer.getByRole("tab")).toHaveCount(2);
   await expect(drawer.locator(".is-active .xterm-screen")).toContainText("history-one");
   expect(attached).toEqual(["one"]);
-  const waiting = drawer.getByRole("button", {name: "Sessions needing input"});
+  const waiting = drawer.getByRole("button", {name: "1 needs input"});
+  await expect(waiting).toHaveText("1 needs input");
+  if (process.env.ZF_TERMINAL_SCREENSHOTS) {
+    await drawer.locator(".web-terminal-toolbar").screenshot({path: process.env.ZF_TERMINAL_SCREENSHOTS + "/waiting-count.png"});
+  }
   await waiting.click();
   const target = drawer.getByRole("menuitem", {name: second.title});
   await target.focus();
@@ -55,6 +62,9 @@ test("restored tabs attach on visit and waiting items revalidate their generatio
   await drawer.getByRole("tab", {name: /First terminal/}).click();
   await expect(drawer.locator(".is-active .xterm-screen")).toContainText("history-one");
   expect(attached).toEqual(["one", "two"]);
+  firstStatus = "blocked";
+  await drawer.getByRole("button", {name: "Refresh terminal sessions"}).click();
+  await expect(drawer.getByRole("button", {name: "2 need input"})).toHaveText("2 need input");
 });
 
 test("older list success and failure cannot overwrite the latest title or error", async ({page}) => {
@@ -244,7 +254,7 @@ test("a frozen observer pauses at the parser limit while the controller can inte
   const observer = await browser.newPage({baseURL: process.env.ZF_WEB_BASE_URL});
   try {
     await observer.clock.install();
-    await observer.route(api, route => route.fulfill({json: projection}));
+    await observer.route(api, route => route.fulfill({json: {...projection, allow_takeover: false}}));
     await observer.routeWebSocket("**/control", socket => socket.close({code: 1008}));
     const observers: WebSocketRoute[] = [];
     await observer.routeWebSocket("**/observe", socket => {
@@ -255,6 +265,8 @@ test("a frozen observer pauses at the parser limit while the controller can inte
     await drawer.getByRole("button", {name: "Terminal actions"}).click();
     await drawer.getByRole("menu").getByText("Observe", {exact: true}).click();
     await expect(drawer.locator(".is-active .xterm-screen")).toContainText(baseline);
+    await expect(drawer.getByText("Read-only", {exact: true})).toBeVisible();
+    await expect(drawer.getByRole("button", {name: "Take over control"})).toHaveCount(0);
     await observer.clock.pauseAt(new Date(Date.now() + 3000));
     const batch = Buffer.alloc(1024 * 1024);
     const report = observer.waitForEvent("console", msg => msg.text().startsWith("Terminal parser backlog"));

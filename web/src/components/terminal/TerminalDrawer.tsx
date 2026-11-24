@@ -137,6 +137,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode, quoteTargets, on
   const [waitingRows, setWaitingRows] = useState<TerminalSession[]>([]);
   const [waitingInteraction, setWaitingInteraction] = useState(false);
   const waitingSessions = useMemo(() => activeSessions.filter(item => item.agent_status === "blocked"), [activeSessions]);
+  const waitingLabel = waitingSessions.length === 1 ? "1 needs input" : `${waitingSessions.length} need input`;
   useEffect(() => {
     if (waitingOpen && !waitingInteraction) setWaitingRows(waitingSessions);
   }, [waitingOpen, waitingInteraction, waitingSessions]);
@@ -638,14 +639,14 @@ export function TerminalDrawer({ onClose, projectId, themeMode, quoteTargets, on
 
           <div className="web-terminal-menu-anchor">
             <button type="button" className="web-terminal-toolbar-button web-terminal-waiting-button" title="Sessions needing input"
-              aria-label="Sessions needing input" aria-expanded={waitingOpen} onClick={() => {
+              aria-label={waitingSessions.length ? waitingLabel : "Sessions needing input"} aria-expanded={waitingOpen} onClick={() => {
                 setWaitingRows(waitingSessions);
                 setActionsMenuOpen(false);
                 setAddMenuOpen(false);
                 setWaitingInteraction(false);
                 setWaitingNotice("");
                 setWaitingOpen(!waitingOpen);
-              }}><ListFilter aria-hidden="true" />{waitingSessions.length || ""}</button>
+              }}><ListFilter aria-hidden="true" />{waitingSessions.length > 0 && waitingLabel}</button>
             {waitingOpen && <div className="web-terminal-menu web-terminal-actions-menu" role="menu"
               onPointerEnter={() => setWaitingInteraction(true)} onPointerLeave={() => setWaitingInteraction(false)}
               onFocus={() => setWaitingInteraction(true)} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setWaitingInteraction(false); }}>
@@ -738,6 +739,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode, quoteTargets, on
                   session={session}
                   themeMode={themeMode}
                   takeoverNonce={attachment.takeoverNonce}
+                  onTakeOver={page?.allow_takeover ? () => takeOver(session.session_id) : undefined}
                   visible={selected}
                   onStatusChange={updateTerminalStatus}
                 />}

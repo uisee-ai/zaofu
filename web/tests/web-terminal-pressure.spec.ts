@@ -43,6 +43,12 @@ test("a real Herdr PTY survives an overloaded observer and acknowledges the cont
     await mirror.getByRole("menu").getByText("Observe", {exact: true}).click();
     const observer = mirror.locator(".is-active .web-terminal-view");
     await expect(observer.locator(".xterm-screen")).toContainText("PRESSURE READY pid=" + pid);
+    await expect(observer.getByText("Read-only", {exact: true})).toBeVisible();
+    const takeOver = observer.getByRole("button", {name: "Take over control"});
+    await expect(takeOver).toBeInViewport();
+    if (process.env.ZF_TERMINAL_SCREENSHOTS) {
+      await mirror.screenshot({path: process.env.ZF_TERMINAL_SCREENSHOTS + "/mobile-observer.png"});
+    }
     await mirror.clock.pauseAt(new Date(Date.now() + 2000));
     await input.pressSequentially("stream");
     await input.press("Enter");
@@ -64,14 +70,20 @@ test("a real Herdr PTY survives an overloaded observer and acknowledges the cont
     const listing = await (await request.get(api)).json();
     expect(listing.sessions.find((s: {session_id: string}) => s.session_id === session.session_id))
       .toMatchObject({state: "active", generation: session.generation});
-    await mirror.getByRole("button", {name: "Terminal actions"}).click();
-    await mirror.getByRole("menu").getByText("Take over control", {exact: true}).click();
+    await takeOver.click();
     await expect(observer).toHaveAttribute("data-terminal-status", "controlling");
+    const confirmation = observer.getByRole("status").filter({hasText: "Control transferred. You can type now."});
+    await expect(confirmation).toBeVisible();
+    await expect(takeOver).toHaveCount(0);
+    if (process.env.ZF_TERMINAL_SCREENSHOTS) {
+      await mirror.screenshot({path: process.env.ZF_TERMINAL_SCREENSHOTS + "/mobile-controller.png"});
+    }
     const phoneInput = observer.locator(".xterm-helper-textarea");
     await mirror.setViewportSize({width: 390, height: 460});
     await phoneInput.pressSequentially("mobile");
     await phoneInput.press("Enter");
     await expect(observer.locator(".xterm-screen")).toContainText("MOBILE pid=" + pid);
+    await expect(confirmation).toHaveCount(0, {timeout: 7000});
     console.log("Real PTY pressure", {...reports[0], observerAttachments: connections, sameProcess: true});
   } finally {
     await phone.close();

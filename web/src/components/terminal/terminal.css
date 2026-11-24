@@ -132,6 +132,9 @@
   cursor: pointer;
 }
 
+.web-terminal-tab small,
+.web-terminal-waiting-button { white-space: nowrap; }
+
 .web-terminal-waiting-button {
   display: inline-flex;
   width: auto;
@@ -400,6 +403,7 @@
   margin-left: auto;
 }
 
+.web-terminal-observer-bar,
 .web-terminal-input-notice,
 .web-terminal-notice,
 .web-terminal-connection-notice {
@@ -413,6 +417,35 @@
   background: var(--wt-surface);
   font-family: var(--font-mono);
   font-size: var(--text-11);
+}
+
+.web-terminal-observer-bar {
+  justify-content: space-between;
+  font-family: inherit;
+}
+
+.web-terminal-observer-bar button {
+  cursor: pointer;
+  padding: 3px 8px;
+  border: 1px solid var(--wt-line);
+  border-radius: 4px;
+  background: var(--wt-chrome);
+  color: var(--wt-text);
+}
+
+.web-terminal-takeover-feedback {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 4px 10px;
+  border: 1px solid var(--wt-line);
+  border-radius: 4px;
+  background: var(--wt-chrome);
+  color: var(--wt-text);
+  font-size: var(--text-12);
+  pointer-events: none;
 }
 
 .web-terminal-notice.is-error,
