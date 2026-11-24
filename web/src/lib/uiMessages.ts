@@ -3,6 +3,7 @@ export const CHINESE_MESSAGES: Record<string, string> = {
   "Security": "安全",
   "Password": "密码",
   "Local account": "本地账号",
+  "Cloud account": "云端账号",
   "Sign out": "退出登录",
   "Sign out failed. Try again.": "退出失败，请重试。",
   "Current password": "当前密码",

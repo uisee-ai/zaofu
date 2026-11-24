@@ -140,7 +140,7 @@ export function channelMemberLabel(member: Row): string {
   const labels: Record<string, string> = {
     product_pm: "产品负责人", product: "产品负责人", business_owner: "业务负责人",
     arch: "架构师", architect: "架构师", security: "安全专家", synthesizer: "综合分析师",
-    qa: "质量专家", designer: "设计师", kanban: "Kanban Agent",
+    qa: "质量专家", designer: "设计师", kanban: "zaofu agent",
     critic: "评审专家", security_reviewer: "安全评审",
   };
   return labels[role] || role || display || "成员";

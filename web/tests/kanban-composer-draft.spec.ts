@@ -18,8 +18,8 @@ test("drafts and late attachments stay with their original thread", async ({ pag
     } } });
   });
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   const input = panel.locator("textarea.headless-input");
   await panel.getByRole("button", { name: "Add to message" }).click();
   const search = panel.getByLabel("Search attachments, context and tools");
@@ -37,7 +37,7 @@ test("drafts and late attachments stay with their original thread", async ({ pag
   await input.fill("main draft");
   await panel.locator('input[type="file"]').setInputFiles({ name: "spec.txt", mimeType: "text/plain", buffer: Buffer.from("spec") });
   await expect(panel.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
-  await panel.getByRole("button", { name: "New Kanban Agent chat" }).click();
+  await panel.getByRole("button", { name: "New zaofu chat" }).click();
   await expect(input).toHaveValue("");
   await input.fill("second draft");
   releaseUpload?.();
@@ -46,7 +46,7 @@ test("drafts and late attachments stay with their original thread", async ({ pag
   await expect(input).toHaveValue("main draft");
   await expect(panel.getByText("spec.txt", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.locator("textarea.headless-input")).toHaveValue("main draft");
   await expect(page.getByText("spec.txt", { exact: true })).toBeVisible();
 });
@@ -63,15 +63,15 @@ test("Plan reference follows its draft across threads and reload", async ({ page
     }));
   });
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await expect(panel.getByText("Delivery plan", { exact: true })).toBeVisible();
-  await panel.getByRole("button", { name: "New Kanban Agent chat" }).click();
+  await panel.getByRole("button", { name: "New zaofu chat" }).click();
   await expect(panel.getByText("Delivery plan", { exact: true })).toHaveCount(0);
   await panel.locator(".agent-thread-chip").filter({ hasText: "main" }).click();
   await expect(panel.getByText("Delivery plan", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.getByText("Delivery plan", { exact: true })).toBeVisible();
   await expect(page.locator("textarea.headless-input")).toHaveValue("Question about plan");
 });
@@ -103,8 +103,8 @@ test("draft and delayed upload remain in their original project", async ({ page 
   });
   try {
     await page.goto("/?project=ui-review&page=board");
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-    const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+    await page.getByRole("button", { name: "Open zaofu" }).click();
+    const panel = page.getByRole("dialog", { name: "zaofu" });
     const input = panel.locator("textarea.headless-input");
     await input.fill("project A draft");
     await panel.locator('input[type="file"]').setInputFiles({ name: "a.txt", mimeType: "text/plain", buffer: Buffer.from("a") });
@@ -138,8 +138,8 @@ test("partial upload failure preserves successful attachments", async ({ page })
     }
   });
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await panel.locator('input[type="file"]').setInputFiles([
     { name: "first.txt", mimeType: "text/plain", buffer: Buffer.from("one") },
     { name: "second.txt", mimeType: "text/plain", buffer: Buffer.from("two") },

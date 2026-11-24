@@ -5011,7 +5011,7 @@ def _agents(
             "transport": "web-terminal" if surface["terminal_backed"] else "projection",
             "log_path": "",
             "briefing_paths": [],
-            "attach_hint": "Kanban Agent uses controlled Web actions; no role pane attach",
+            "attach_hint": "zaofu agent uses controlled Web actions; no role pane attach",
             "tmux_session": "",
             "tmux_target": "",
             "state_inference": "projection_not_truth",
@@ -7738,9 +7738,9 @@ def _run_headless_kanban_agent_turn(
     agent_stream.complete(
         status=logical_turn_state,
         reason=(
-            "headless kanban agent is waiting for owner input"
+            "zaofu agent is waiting for owner input"
             if logical_turn_state == "waiting_input"
-            else "headless kanban agent reply completed"
+            else "zaofu agent reply completed"
         ),
         provider_session_id=result.provider_session_id,
         usage=result.usage,
@@ -7857,9 +7857,9 @@ def _run_headless_kanban_agent_turn(
         "action": action,
         "requested_action": requested_action,
         "reason": (
-            "headless kanban agent is waiting for owner input"
+            "zaofu agent is waiting for owner input"
             if logical_turn_state == "waiting_input"
-            else "headless kanban agent reply completed"
+            else "zaofu agent reply completed"
         ),
         "event_id": user_message.id,
         "reply_event_id": reply_event.id,
@@ -7974,7 +7974,7 @@ def _handle_kanban_agent_lifecycle_probe(
         "title": title,
         "source": "kanban-agent",
         "contract": {
-            "behavior": "Probe Kanban Agent task creation and lifecycle status management.",
+            "behavior": "Probe zaofu agent task creation and lifecycle status management.",
             "verification": "Created and moved through backlog -> in_progress -> done by controlled Web actions.",
             "acceptance": "snapshot shows final done/archive projection",
         },
@@ -8086,7 +8086,7 @@ def _handle_kanban_agent_lifecycle_probe(
         "status": "completed",
         "action": action,
         "requested_action": requested_action,
-        "reason": "Kanban Agent lifecycle probe completed through controlled task actions",
+        "reason": "zaofu agent lifecycle probe completed through controlled task actions",
         "event_id": user_message.id,
         "reply_event_id": reply_event.id,
         "task_id": task_id,
@@ -8168,7 +8168,7 @@ def _lifecycle_probe_failed_response(
         "source": "deterministic_lifecycle_probe",
         "scope": "project",
         "task_id": task_id or "",
-        "answer": f"Kanban Agent lifecycle probe stopped at {step}: {reason}",
+        "answer": f"zaofu agent lifecycle probe stopped at {step}: {reason}",
         "mutates_task_state": True,
         "runtime_followup": "failed",
         "failed_step": step,
@@ -8235,7 +8235,7 @@ def _lifecycle_probe_title(payload: dict, message: str) -> str:
         if tail:
             return tail
     suffix = hashlib.sha1(message.encode("utf-8")).hexdigest()[:8]
-    return f"Kanban Agent lifecycle probe {suffix}"
+    return f"zaofu agent lifecycle probe {suffix}"
 
 
 def _handle_request_fanout(

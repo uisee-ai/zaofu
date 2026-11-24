@@ -92,7 +92,7 @@ export function WebChatActivityDrawer({
               <strong>{item.role || item.activity_id}</strong>
               <small>{kindLabel(item.kind)} · {item.status}</small>
             </button>
-          )) : <p className="muted">No child activity for this conversation.</p>}
+          )) : <p className="muted">No child activity in this project.</p>}
         </div>
         {selected ? (
           <section className="webchat-resource-detail">
@@ -101,6 +101,7 @@ export function WebChatActivityDrawer({
               <span className="webchat-activity-kind">{kindLabel(selected.kind)}</span>
             </div>
             <dl className="webchat-resource-meta">
+              {selected.parent_turn_id && <div><dt>Parent turn</dt><dd>{selected.parent_turn_id}</dd></div>}
               <div><dt>Provider</dt><dd>{selected.provider || "-"}</dd></div>
               <div><dt>Permission</dt><dd>{selected.permission_profile || "-"}</dd></div>
               <div><dt>Stage</dt><dd>{selected.current_stage || "-"}</dd></div>

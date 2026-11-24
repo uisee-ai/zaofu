@@ -14,8 +14,8 @@ test("model picker remains visible at the screenshot viewport", async ({ page })
     models: [{ model: "m", label: "GPT-6.1 Terra", default: true, default_effort: "low", efforts: ["low", "high", "xhigh"] }],
   } }));
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   const trigger = panel.getByRole("button", { name: "Model and thinking effort" });
   await expect(trigger).toContainText("Extra High");
   await trigger.click();
@@ -48,8 +48,8 @@ test("invalid action token explains authorization and lets the user unlock again
   await page.addInitScript(() => localStorage.setItem("zf.webActionToken", "expired-token"));
   await page.route("**/webchat/model-catalog**", (route) => route.fulfill({ status: 403, json: { status: "unauthorized" } }));
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await panel.getByRole("button", { name: "Model and thinking effort" }).click();
   await expect(panel.getByText("Dashboard authorization was rejected. Unlock again to load Codex models.")).toBeVisible();
   await panel.getByRole("button", { name: "Re-enter action token" }).click();
@@ -70,8 +70,8 @@ test("default displays the actual Codex model and effort without overriding them
     ],
   } }));
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   const trigger = panel.getByRole("button", { name: "Model and thinking effort" });
   await expect(trigger).toContainText("Current Model");
   await expect(trigger).toContainText("Extra High");
@@ -105,8 +105,8 @@ test("selected model and effort are sent and remain selected across turns and re
     tool_catalog: { schema_version: "webchat-tool-catalog.v1", digest: "fixture", surface: "kanban_agent", credentials_exposed: false, items: [] },
   } }));
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   const trigger = panel.getByRole("button", { name: "Model and thinking effort" });
   await trigger.click();
   const menu = panel.getByRole("dialog", { name: "Model and thinking effort" });
@@ -132,7 +132,7 @@ test("selected model and effort are sent and remain selected across turns and re
   await expect(effort).toBeVisible();
   expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   await page.reload();
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
   await expect(page.getByRole("button", { name: "Model and thinking effort" })).toContainText("Other");
   await expect(page.getByRole("button", { name: "Model and thinking effort" })).toContainText("High");
 });
@@ -156,8 +156,8 @@ test("model catalog failure is visible and retry revalidates effort selection", 
     } });
   });
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await panel.getByRole("button", { name: "Model and thinking effort" }).click();
   await expect(panel.getByText("Model catalog unavailable.")).toBeVisible();
   await panel.getByRole("button", { name: "Retry", exact: true }).click();
@@ -186,8 +186,8 @@ test("effort can be selected without changing the session model", async ({ page 
     { model: "two", label: "Two", default: false, default_effort: "high", efforts: ["high", "xhigh"] },
   ] } }));
   await page.goto("/?project=ui-review&page=board");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  const panel = page.getByRole("dialog", { name: "Kanban Agent" });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  const panel = page.getByRole("dialog", { name: "zaofu" });
   await panel.getByRole("button", { name: "Model and thinking effort" }).click();
   const slider = panel.getByRole("slider", { name: "Thinking effort" });
   await expect(slider).toBeEnabled();

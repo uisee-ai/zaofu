@@ -103,16 +103,16 @@ async function openAgent(page: Page, id: string): Promise<void> {
   }, { actionToken: token });
   await page.goto(`/?project=${encodeURIComponent(id)}`);
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
 }
 
 async function reopenAgent(page: Page): Promise<void> {
   await page.reload();
   await expect(page.locator(".status-pill.status-live")).toBeVisible({ timeout: 90_000 });
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   if (!(await dialog.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+    await page.getByRole("button", { name: "Open zaofu" }).click();
   }
   await expect(dialog).toBeVisible();
 }
@@ -123,7 +123,7 @@ async function sendProposal(
   previewText: string,
   actionLabel: string,
 ): Promise<void> {
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   await expect(dialog.locator(".agent-state-pill")).toHaveText("active", {
     timeout: 15_000,
   });
@@ -144,7 +144,7 @@ async function approveProposal(page: Page, previewText: string, actionLabel: str
 
 async function captureAgent(page: Page, name: string): Promise<void> {
   if (!evidenceDir) return;
-  await page.getByRole("dialog", { name: "Kanban Agent" }).screenshot({
+  await page.getByRole("dialog", { name: "zaofu" }).screenshot({
     path: `${evidenceDir}/${name}.png`,
   });
 }
@@ -184,7 +184,7 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
     "DOC156_CHANNEL_SETUP review the delivery design, identify implementation "
     + "and test risks, and produce a structured recommendation."
   );
-  const setupDialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const setupDialog = page.getByRole("dialog", { name: "zaofu" });
   const agentInput = setupDialog.locator("textarea.headless-input");
   await agentInput.fill(channelRequirement);
   await setupDialog.getByRole("button", { name: "Send message" }).click();
@@ -267,7 +267,7 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
     (member) => member.member_id === "tech_leader",
   )?.permissions).toContain("propose_workflow");
 
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   await page.goto(
     `/?project=${encodeURIComponent(id)}&page=channels&channel=${encodeURIComponent(channelId)}`,
   );
@@ -374,8 +374,8 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
     && event.payload?.channel_id === channelId
   )), 90_000);
 
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
   const synthesisSummary = synthesisEvents.find((event) => (
     event.type === "channel.synthesis.proposed"
     && event.payload?.channel_id === channelId
@@ -399,7 +399,7 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
 
   await reopenAgent(page);
   await expect(
-    page.getByRole("dialog", { name: "Kanban Agent" }).locator(".agent-session"),
+    page.getByRole("dialog", { name: "zaofu" }).locator(".agent-session"),
   ).toContainText("DOC156_RESEARCH_START");
   await expect(
     page.locator(".agent-stack-card.proposal").filter({
@@ -441,7 +441,7 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
   expect(researchResult.payload?.artifact_digest).toBe(
     aggregate.payload?.research_artifact_digest,
   );
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   const resultCard = channelPage
     .locator(".agent-stack-card.workflow-result")
     .filter({ hasText: String(researchResult.payload?.artifact_digest ?? "") })
@@ -458,8 +458,8 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
     resultCard.getByRole("button", { name: "Adopt result" }),
   ).toBeEnabled();
   await capturePage(page, "06-research-result-returned");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
 
   const adoption = {
     result_event_id: researchResult.id,
@@ -494,18 +494,18 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
   const adopted = await hydrateEvent(request, id, adoptedSummary as EventItem);
   expect(adopted.payload?.request_id).toBe(requestId);
   expect(adopted.payload?.artifact_digest).toBe(adoption.artifact_digest);
-  await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+  await page.getByRole("button", { name: "Minimize zaofu" }).click();
   await expect(resultCard).toContainText("Adopted", { timeout: 30_000 });
   await expect(
     resultCard.getByRole("button", { name: "Adopt result" }),
   ).toHaveCount(0);
   await capturePage(page, "06-research-result-adopted");
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
 
   const deliveryCursor = await eventCursor(request, id);
   const workflowMarker = "DOC156_WORKFLOW_PLAN";
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   await expect(dialog.locator(".agent-state-pill")).toHaveText("active", {
     timeout: 15_000,
   });
@@ -663,7 +663,7 @@ test("Doc 156 Kanban Agent closes Channel, Research, adoption, and live Workflow
 
   await reopenAgent(page);
   const agentSession = page
-    .getByRole("dialog", { name: "Kanban Agent" })
+    .getByRole("dialog", { name: "zaofu" })
     .locator(".agent-session");
   for (const marker of markers) {
     await expect(agentSession).toContainText(marker);

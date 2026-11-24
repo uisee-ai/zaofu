@@ -516,7 +516,6 @@ export function OrchestratorPanel({
   const [headlessDurableMessages, setHeadlessDurableMessages] = useState<NonNullable<WebChatRuntime["messages"]>>([]);
   const [webChatArtifacts, setWebChatArtifacts] = useState<WebChatArtifact[]>([]);
   const [webChatActivities, setWebChatActivities] = useState<WebChatChildActivity[]>([]);
-  const [activityParent, setActivityParent] = useState("");
   const [webChatDrawer, setWebChatDrawer] = useState<WebChatDrawerKind>("");
   const [webChatAnswering, setWebChatAnswering] = useState<WebChatInteraction | null>(null);
   const [webChatInteractionDrafts, setWebChatInteractionDrafts] = useState<Record<string, WebChatInteractionDraft>>({});
@@ -736,7 +735,6 @@ export function OrchestratorPanel({
     setHeadlessDurableMessages([]);
     setWebChatArtifacts([]);
     setWebChatActivities([]);
-    setActivityParent("");
     setWebChatDrawer("");
     setWebChatAnswering(null);
     setWebChatInteractionDrafts({});
@@ -844,7 +842,7 @@ export function OrchestratorPanel({
     if (!visible || webChatDrawer !== "activity") return undefined;
     let cancelled = false;
     const refresh = () => {
-      void getWebChatChildActivities(headlessProjectId, activityParent).then((page) => {
+      void getWebChatChildActivities(headlessProjectId).then((page) => {
         if (!cancelled) setWebChatActivities(page.items ?? []);
       }).catch(() => undefined);
     };
@@ -854,7 +852,7 @@ export function OrchestratorPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [headlessProjectId, visible, webChatDrawer, activityParent]);
+  }, [headlessProjectId, visible, webChatDrawer]);
 
   const lastFocusSignal = useRef(focusSignal);
   useEffect(() => {
@@ -1414,7 +1412,7 @@ export function OrchestratorPanel({
       const result = await Promise.resolve(onAction("kanban-proposal-dismiss", {
         project_id: headlessProjectId,
         proposal_event_id: proposal.proposalEventId,
-        reason: "rejected from Kanban Agent Approve interaction",
+        reason: "rejected from zaofu Approve interaction",
       }));
       if (actionFailed(result)) {
         setOperatorError(actionFailureReason(result));
@@ -1674,7 +1672,7 @@ export function OrchestratorPanel({
       const result = await Promise.resolve(onAction("kanban-proposal-dismiss", {
         project_id: headlessProjectId,
         proposal_event_id: item.proposal_event_id,
-        reason: "dismissed from Kanban Agent panel",
+        reason: "dismissed from zaofu panel",
       }));
       if (actionFailed(result)) {
         setPendingProposalErrors((current) => ({
@@ -1739,7 +1737,7 @@ export function OrchestratorPanel({
         conversation_id: headlessConversationId,
         thread_id: headlessThreadKey,
         run_id: runId,
-        reason: "operator cancelled from Kanban Agent UI",
+        reason: "operator cancelled from zaofu UI",
       }));
       if (actionFailed(result)) {
         setOperatorError(actionFailureReason(result));
@@ -2177,7 +2175,7 @@ export function OrchestratorPanel({
       className={`panel orchestrator-panel ${panelMode}`}
       role={taskThread ? "region" : "dialog"}
       aria-modal={taskThread ? undefined : fullscreen}
-      aria-label={taskThread ? "任务 Agent" : "Kanban Agent"}
+      aria-label={taskThread ? "任务 Agent" : "zaofu"}
     >
       {taskThread ? <TaskChatHeader
         thread={activeHeadlessThread} hasMore={headlessHistoryHasMore} open={taskHistoryOpen}
@@ -2190,7 +2188,7 @@ export function OrchestratorPanel({
           <button
             className="agent-window-button ghost"
             type="button"
-            aria-label="New Kanban Agent chat"
+            aria-label="New zaofu chat"
             title="New chat"
             onClick={resetHeadlessThread}
           >
@@ -2198,7 +2196,7 @@ export function OrchestratorPanel({
           </button>
           <span className="agent-surface-title">
             <MessageCircle aria-hidden="true" size={16} strokeWidth={1.9} />
-            Kanban Agent
+            zaofu
           </span>
           <div
             className="agent-model-dropdown header-agent-switch"
@@ -2229,7 +2227,7 @@ export function OrchestratorPanel({
               <div
                 className="agent-model-menu"
                 role="listbox"
-                aria-label="Kanban Agent backend options"
+                aria-label="zaofu backend options"
               >
                 {headlessBackendOptions.map((backend) => {
                   const active = backend.id === operatorBackend;
@@ -2268,7 +2266,7 @@ export function OrchestratorPanel({
           <button
             className="agent-window-button emphasized"
             type="button"
-            aria-label={fullscreen ? "Restore Kanban Agent" : "Fullscreen Kanban Agent"}
+            aria-label={fullscreen ? "Restore zaofu" : "Fullscreen zaofu"}
             title={fullscreen ? "Restore" : "Fullscreen"}
             onClick={() => onPanelModeChange(fullscreen ? "docked" : "fullscreen")}
           >
@@ -2277,7 +2275,7 @@ export function OrchestratorPanel({
           <button
             className="agent-window-button ghost"
             type="button"
-            aria-label="Minimize Kanban Agent"
+            aria-label="Minimize zaofu"
             title="Minimize"
             onClick={() => onPanelModeChange("collapsed")}
           >
@@ -2386,16 +2384,6 @@ export function OrchestratorPanel({
               compact={!fullscreen}
               compactRunHeader
               conversation={displayedHeadlessConversation}
-              renderRunSupplement={(run, turn) => {
-                const parent = webChatRuntime?.turns.find(item => item.turn_id === run.id
-                  || item.current_attempt_id === run.id || turn.id === `turn-${item.turn_id}` || turn.id === item.turn_id);
-                if (!parent) return null;
-                return <button className="agent-inline-button" type="button" onClick={() => {
-                  setWebChatActivities([]);
-                  setActivityParent(parent.turn_id);
-                  setWebChatDrawer("activity");
-                }}>View child activity</button>;
-              }}
               collapseCompletedRunDetails
               emptyBody={taskThread ? "" : headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
@@ -2758,7 +2746,7 @@ export function OrchestratorPanel({
                       activeDrawer={webChatDrawer}
                       activityCount={webChatActivities.length}
                       artifactCount={webChatArtifacts.length}
-                      onDrawerChange={kind => { setActivityParent(""); setWebChatActivities([]); setWebChatDrawer(kind); }}
+                      onDrawerChange={setWebChatDrawer}
                       toolCatalog={webChatRuntime?.tool_catalog}
                       plans={referenceablePlans.map((plan) => ({
                         id: plan.requestEventId, label: plan.header || plan.question || plan.requestId,

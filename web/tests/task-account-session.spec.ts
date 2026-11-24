@@ -24,9 +24,21 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   expect(await page.evaluate(() => localStorage.getItem("zf.webActionToken"))).toBeNull();
 
   await page.setViewportSize({ width: 1440, height: 960 });
-  const account = page.locator(".topbar .account-switcher summary");
+  const account = page.locator(".rail-account .account-switcher summary");
   await expect(account.locator(".account-name")).toHaveText("zaofu");
   await expect(account).toBeInViewport({ ratio: 1 });
+  const desktop = (await account.boundingBox())!;
+  expect(desktop.x).toBeLessThan(30);
+  expect(desktop.y).toBeGreaterThan(880);
+  await page.getByRole("button", {name: /Collapse sidebar|收起侧栏/}).click();
+  await expect(account.locator(".account-name")).toBeHidden();
+  await account.click();
+  const password = page.getByRole("link", {name: /Password|密码/});
+  await expect(password).toBeInViewport({ratio: 1});
+  await password.focus();
+  await page.keyboard.press("Escape");
+  await expect(account).toBeFocused();
+  await page.getByRole("button", {name: /Expand sidebar|展开侧栏/}).click();
   await expect(reader.getByRole("heading", { name: "验收条件" })).toBeVisible();
   await page.screenshot({ path: info.outputPath("desktop.png") });
   const input = chat.getByPlaceholder("询问或补充这项任务…");
@@ -49,7 +61,10 @@ test("password login authorizes a task conversation and logout revokes it", asyn
   await reader.getByRole("button", { name: "属性", exact: true }).click();
   await expect(reader.getByRole("complementary")).toContainText("TASK-DATASET");
   await page.screenshot({ path: info.outputPath("mobile.png") });
+  await expect(account).toBeHidden();
+  await page.getByRole("button", {name: /Open navigation|打开导航/}).click();
   await expect(account.locator(".account-name")).toBeInViewport({ ratio: 1 });
+  expect((await account.boundingBox())!.y).toBeGreaterThan(760);
   await account.click();
   const logoutButton = page.getByRole("button", { name: /Sign out|退出登录/ });
   await expect(logoutButton).toBeInViewport({ ratio: 1 });

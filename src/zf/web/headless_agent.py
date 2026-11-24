@@ -797,7 +797,7 @@ class CodexHeadlessBackend:
                 client.request("initialize", {
                     "clientInfo": {
                         "name": "zaofu-kanban-agent",
-                        "title": "ZaoFu Kanban Agent",
+                        "title": "zaofu agent",
                         "version": __version__,
                     },
                     "capabilities": {"experimentalApi": True},
@@ -1275,7 +1275,8 @@ class KanbanHeadlessAgent:
             ),
         }[profile]
         return (
-            "You are the ZaoFu Kanban Agent. You explain runtime projections and "
+            "Your name is zaofu agent. Use this exact lowercase name when referring to yourself in any language. "
+            "You explain runtime projections and "
             "can perform normal project development when the active permission "
             f"profile allows it. Active permission profile: {profile}. "
             f"{execution_contract} "
@@ -1624,7 +1625,7 @@ class KanbanHeadlessAgent:
         from zf.web.headless_methods import document_method_context
 
         return "\n".join([
-            "ZaoFu Kanban Agent turn",
+            "zaofu agent turn",
             document_method_context(),
             f"project_root: {self.project_root}",
             f"state_dir: {self.state_dir}",

@@ -5,8 +5,8 @@ test("Kanban Agent no longer exposes an Advanced Terminal surface", async ({ pag
   await expect(page.locator(".status-pill.status-live"))
     .toBeVisible({ timeout: 90_000 });
 
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
   await expect(page.locator("textarea.headless-input")).toBeEditable();
   await expect(page.locator(".terminal-fallback")).toHaveCount(0);
   await expect(page.getByLabel("Operator xterm")).toHaveCount(0);

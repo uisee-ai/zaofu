@@ -203,43 +203,56 @@ for (const destination of ["channel", "task"] as const) {
   });
 }
 
-test("a settled parent opens only its own child activity and source evidence", async ({page}) => {
-  await installUiFixture(page);
-  const thread = "kanban:ui-review";
-  const binding = {project_id: "ui-review", conversation_id: thread, thread_key: thread,
-    turn_id: "turn-review", backend: "codex-headless"};
-  const events = [
-    ["user.message", {target: "kanban-agent", runtime_delivery: "headless", message: "Check the release"}],
-    ["kanban.agent.turn.created", {message_event_id: "child-fixture-1"}],
-    ["kanban.agent.reply", {answer: "Parent has replied"}],
-    ["kanban.agent.turn.completed", {status: "completed"}],
-  ].map(([type, payload], i) => ({id: "child-fixture-" + (i + 1), seq: i + 1, ts: "2026-11-23T09:00:00Z",
-    type, payload: {...binding, ...(payload as object)}}));
-  await page.route("**/agent-session/history?**", route => route.fulfill({json: {items: events, has_more: false}}));
-  await page.route("**/webchat/runtime?**", route => route.fulfill({json: {turns: [{...binding, thread_id: thread,
-    state: "completed", current_attempt_id: "attempt-one"}], interactions: [], queue: [], threads: [], artifacts: [],
-    messages: [], capabilities: {controls: [], actions: []}}}));
-  const parents: string[] = [];
-  await page.route("**/webchat/child-activities**", route => {
-    parents.push(new URL(route.request().url()).searchParams.get("parent_turn_id") || "");
-    return route.fulfill({json: {items: [
-      {activity_id: "child-review", role: "Reviewer", provider: "codex", status: "active",
-        why_not_done: "No host-observed terminal evidence."},
-      {activity_id: "child-test", role: "Tester", provider: "codex", status: "terminal", terminal_evidence: [
-        {event_id: "test-event", event_type: "worker.done", ref: "tests/receipt.json"}]},
-    ]}});
+for (const hasChildren of [false, true]) {
+  test(`a completed reply with ${hasChildren ? "two children" : "no children"} keeps activity in the resource menu`, async ({page}) => {
+    await installUiFixture(page);
+    const thread = "kanban:ui-review";
+    const binding = {project_id: "ui-review", conversation_id: thread, thread_key: thread,
+      turn_id: "turn-review", backend: "codex-headless"};
+    const events = [
+      ["user.message", {target: "kanban-agent", runtime_delivery: "headless", message: "Check the release"}],
+      ["kanban.agent.turn.created", {message_event_id: "child-fixture-1"}],
+      ["kanban.agent.reply", {answer: "Parent has replied"}],
+      ["kanban.agent.turn.completed", {status: "completed"}],
+    ].map(([type, payload], i) => ({id: "child-fixture-" + (i + 1), seq: i + 1, ts: "2026-11-23T09:00:00Z",
+      type, payload: {...binding, ...(payload as object)}}));
+    await page.route("**/agent-session/history?**", route => route.fulfill({json: {items: events, has_more: false}}));
+    await page.route("**/webchat/runtime?**", route => route.fulfill({json: {turns: [{...binding, thread_id: thread,
+      state: "completed", current_attempt_id: "attempt-one"}], interactions: [], queue: [], threads: [], artifacts: [],
+      messages: [], capabilities: {controls: [], actions: []}}}));
+    const activityRequests: URL[] = [];
+    await page.route("**/webchat/child-activities**", route => {
+      activityRequests.push(new URL(route.request().url()));
+      return route.fulfill({json: {items: hasChildren ? [
+        {activity_id: "child-review", parent_turn_id: binding.turn_id, role: "Reviewer", provider: "codex", status: "active",
+          why_not_done: "No host-observed terminal evidence."},
+        {activity_id: "child-test", parent_turn_id: binding.turn_id, role: "Tester", provider: "codex", status: "terminal", terminal_evidence: [
+          {event_id: "test-event", event_type: "worker.done", ref: "tests/receipt.json"}]},
+      ] : []}});
+    });
+    await page.goto("/?project=ui-review");
+    await page.getByRole("button", {name: "Open zaofu"}).click();
+    await expect(page.getByText("Parent has replied", {exact: true})).toBeVisible();
+    await expect(page.getByRole("button", {name: "View child activity"})).toHaveCount(0);
+    const detail = page.getByRole("dialog", {name: "Child activity"});
+    await expect(detail).toHaveCount(0);
+    expect(activityRequests).toHaveLength(0);
+    await page.getByRole("button", {name: "Add to message"}).click();
+    await page.getByRole("button", {name: /Activity.*Follow child agents/}).click();
+    await expect.poll(() => activityRequests.length).toBeGreaterThan(0);
+    expect(activityRequests[0].pathname).toBe("/api/projects/ui-review/webchat/child-activities");
+    expect(activityRequests[0].searchParams.has("parent_turn_id")).toBe(false);
+    if (!hasChildren) {
+      await expect(detail).toContainText("No child activity in this project.");
+      return;
+    }
+    await expect(detail).toContainText(binding.turn_id);
+    await expect(detail).toContainText("No host-observed terminal evidence");
+    await detail.getByRole("button", {name: /Tester/}).click();
+    await detail.getByText("Terminal evidence", {exact: true}).click();
+    await expect(detail).toContainText("tests/receipt.json");
   });
-  await page.goto("/?project=ui-review");
-  await page.getByRole("button", {name: "Open Kanban Agent"}).click();
-  await expect(page.getByText("Parent has replied", {exact: true})).toBeVisible();
-  await page.getByRole("button", {name: "View child activity"}).first().click();
-  const detail = page.getByRole("dialog", {name: "Child activity"});
-  await expect(detail).toContainText("No host-observed terminal evidence");
-  await detail.getByRole("button", {name: /Tester/}).click();
-  await detail.getByText("Terminal evidence", {exact: true}).click();
-  await expect(detail).toContainText("tests/receipt.json");
-  expect(parents.every(id => id === binding.turn_id)).toBe(true);
-});
+}
 
 test("a frozen observer pauses at the parser limit while the controller can interrupt", async ({page, browser}) => {
   const baseline = "Shared terminal";

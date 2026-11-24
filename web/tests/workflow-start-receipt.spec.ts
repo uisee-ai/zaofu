@@ -35,7 +35,7 @@ for (const proposedBackend of [undefined, "claude-headless"]) {
       await route.fulfill({ json: { ok: true, status: "accepted", run_id: "workflow-test" } });
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Open Kanban Agent", exact: true }).click();
+    await page.getByRole("button", { name: "Open zaofu", exact: true }).click();
     await page.getByLabel("Pending proposals").getByRole("button", { name: "Start workflow", exact: true }).click();
     await expect.poll(() => submitted).toBeDefined();
     expect(submitted?.backend).toBe(proposedBackend);

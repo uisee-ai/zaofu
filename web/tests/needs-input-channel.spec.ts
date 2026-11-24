@@ -82,7 +82,7 @@ test("Channel decisions and Inbox links close through their source surfaces", as
     hasText: "Which workflow should execute this task?",
   });
   await kanbanDecision.click();
-  await kanbanDecision.getByRole("link", { name: "Open Kanban Agent" }).click();
+  await kanbanDecision.getByRole("link", { name: "Open zaofu" }).click();
   await expect(page).toHaveURL(/page=project/);
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
 });

@@ -237,7 +237,7 @@ export function ObservabilityPage({
       active: parsedEventFilter.prefix === "runtime.",
     },
     {
-      label: "Kanban Agent",
+      label: "zaofu",
       filter: "prefix:kanban.agent.",
       count: eventPrefixCount(eventItems, "kanban.agent."),
       description: "operator chat and headless turns",

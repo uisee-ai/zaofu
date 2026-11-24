@@ -501,7 +501,7 @@ class OperatorSessionManager:
                 "-c",
                 (
                     "import sys\n"
-                    "print('ZaoFu Kanban Agent deterministic operator ready', flush=True)\n"
+                    "print('zaofu agent deterministic operator ready', flush=True)\n"
                     "print('Allowed: read projections; submit controlled /api/actions', flush=True)\n"
                     "print('Forbidden: direct .zf writes; git mutation; role terminal control', flush=True)\n"
                     "for line in sys.stdin:\n"
@@ -650,9 +650,10 @@ class OperatorSessionManager:
         skills = contract["skills_available"]
         skill_names = [str(name) for name in skills.get("names", [])][:24]
         skills_line = ", ".join(skill_names) if skill_names else "none projected"
-        profile = f"""# ZaoFu Kanban Operator Agent
+        profile = f"""# zaofu agent
 
-You are the Kanban/project management agent for this ZaoFu project.
+Your name is zaofu agent. Use this exact lowercase name when referring to yourself.
+You manage the board and project for this ZaoFu project.
 You are NOT a coding agent in this session.
 You are an operator/action requester, not the orchestrator scheduler.
 
@@ -705,7 +706,7 @@ Useful controlled action examples:
 - `/action archive-task {{"task_id":"TASK-001","status":"done"}}`
 - `/action link-evidence {{"task_id":"TASK-001","run_id":"RUN-001","trace_id":"trace-001"}}`
 - `/action request-fanout {{"stage_id":"verify","reason":"parallel browser coverage"}}`
-- `/action start-collaboration {{"intent":"implement the accepted Kanban Agent evidence split"}}`
+- `/action start-collaboration {{"intent":"implement the accepted zaofu agent evidence split"}}`
 
 Durable business truth belongs in ZaoFu event/action contracts, not in this terminal transcript.
 """
@@ -719,7 +720,7 @@ Durable business truth belongs in ZaoFu event/action contracts, not in this term
             "skills_available": skills,
         }
         skills_doc = "\n".join([
-            "# ZaoFu Kanban Agent Skills Context",
+            "# zaofu agent Skills Context",
             "",
             f"Pool path: `{skills.get('pool_path') or ''}`",
             f"Pool count: `{skills.get('pool_count', 0)}`",

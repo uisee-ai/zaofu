@@ -61,9 +61,9 @@ async function capture(page: Page, name: string) {
   writeFileSync(`${evidence}/checkpoint.json`, JSON.stringify({ journey, stage: name, url: page.url() }, null, 2));
 }
 async function send(page: Page, text: string) {
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent", exact: true });
-  await expect(dialog.or(page.getByRole("button", { name: "Open Kanban Agent" })).first()).toBeVisible();
-  if (!await dialog.isVisible()) await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  const dialog = page.getByRole("dialog", { name: "zaofu", exact: true });
+  await expect(dialog.or(page.getByRole("button", { name: "Open zaofu" })).first()).toBeVisible();
+  if (!await dialog.isVisible()) await page.getByRole("button", { name: "Open zaofu" }).click();
   const input = dialog.locator("textarea.headless-input");
   await expect(input).toBeEnabled({ timeout: turnTimeout });
   await input.fill(text);
@@ -130,9 +130,9 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     localStorage.setItem("zf.operatorBackend", "codex-headless");
   }, process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST || "");
   await page.goto(`/?project=${project}`);
-  await expect(page.getByRole("dialog", { name: "Kanban Agent", exact: true }).or(page.getByRole("button", { name: "Open Kanban Agent" })).first()).toBeVisible();
-  if (!await page.getByRole("dialog", { name: "Kanban Agent", exact: true }).isVisible())
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu", exact: true }).or(page.getByRole("button", { name: "Open zaofu" })).first()).toBeVisible();
+  if (!await page.getByRole("dialog", { name: "zaofu", exact: true }).isVisible())
+    await page.getByRole("button", { name: "Open zaofu" }).click();
   if (journey === "kanban") {
     await send(page, productInput ? productRequest("UI_PRD_DISCUSS，当前 Kanban 讨论，不创建 Channel，先确认本轮终点，暂不创建 Task") : "UI_PRD_DISCUSS：请在当前 Kanban 会话讨论需求，不创建 Channel。需求：保持 README.md 可读，缺失文件时明确报告错误。验证入口固定为系统已有 cat README.md，不新增读取程序。先问我确认失败行为和本轮终点，暂不创建 Task。仅操作当前临时项目。");
     const discussionTurn = await waitEvent(request, project, "kanban.agent.turn.completed");
@@ -163,7 +163,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
     const created = await waitEvent(request, project, "channel.created");
     const channelId = String(created.payload?.channel_id);
     const threadId = String(created.payload?.thread_id || "main");
-    await page.getByRole("button", { name: "Minimize Kanban Agent" }).click();
+    await page.getByRole("button", { name: "Minimize zaofu" }).click();
     // Pin the created thread before typing; late detail hydration can otherwise
     // switch the default thread and restore a different (empty) composer draft.
     await page.goto(`/?project=${project}&page=channels&channel=${encodeURIComponent(channelId)}&thread=${encodeURIComponent(threadId)}`);
@@ -208,7 +208,7 @@ test(`UI ${journey}: discussion → PRD → v5 workflow → generated Plan previ
   const task = await waitEvent(request, project, "task.created");
   await capture(page, "04-task-created");
   // Open the prepared request from the actual Workflow navigation.
-  const minimize = page.getByRole("button", { name: "Minimize Kanban Agent" });
+  const minimize = page.getByRole("button", { name: "Minimize zaofu" });
   if (await minimize.isVisible()) await minimize.click();
   await page.getByRole("button", { name: "Workflows", exact: true }).click();
   await expect(page.getByTestId("workflow-proposal-page")).toBeVisible({ timeout: turnTimeout });
