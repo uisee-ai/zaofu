@@ -2179,6 +2179,7 @@ export function App() {
       selectedTaskId={selectedTaskId}
       conversation={projectToolsAvailable && selectedTaskId && <TaskConversation
         key={JSON.stringify([activeProjectId, selectedTaskId])}
+        consumeTerminalQuote={consumeTerminalQuote}
         activeProjectId={activeProjectId} context={orchestratorContext} events={events} focusSignal={orchestratorFocusSignal}
         onAction={submitAction} onLockSession={() => void lockSession()} onOpenChannelThread={openChannelThread}
         onOpenTask={openTask} onSaveToken={saveWebActionToken} onUnlockSession={unlockSession}
@@ -2518,7 +2519,7 @@ export function App() {
                 pendingTerminalQuote.current = { project: activeProjectId, target: target.kind + ":" + target.id, text };
                 setTerminalOpen(false);
                 if (target.kind === "channel") openChannel(target.id);
-                else { openTask(target.id); openTaskAgent(); }
+                else openTask(target.id);
               }}
               key={activeProjectId}
               projectId={activeProjectId}
@@ -2546,7 +2547,6 @@ export function App() {
           role="presentation"
         >
             <OrchestratorRoute
-              consumeTerminalQuote={consumeTerminalQuote}
               actionResult={actionResult}
               activeProjectId={activeProjectId}
               context={orchestratorContext}

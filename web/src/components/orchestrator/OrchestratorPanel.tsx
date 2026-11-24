@@ -491,11 +491,11 @@ export function OrchestratorPanel({
   }, [visible, inboxTarget, headlessProjectId, localStorage]);
   const composerDraft = useKanbanComposerDraft(headlessProjectId, headlessThreadKey);
   useEffect(() => {
-    if (!visible || !context.taskId) return;
-    const quote = consumeTerminalQuote?.(headlessProjectId, "task:" + context.taskId);
+    if (!visible || !taskThread) return;
+    const quote = consumeTerminalQuote?.(headlessProjectId, taskThread);
     if (quote) {
-      composerDraft.setTaskReferenced(context.taskId, true);
       composerDraft.setMessage([composerDraft.message, quote].filter(Boolean).join("\n\n"));
+      headlessInputRef.current?.focus();
     }
   });
   const headlessPlanDiscussion = composerDraft.planDiscussion;
