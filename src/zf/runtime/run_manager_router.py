@@ -176,6 +176,11 @@ def decide_action_policy(
     payload: dict[str, Any],
     mutating_resume_supported: bool = False,
 ) -> dict[str, Any]:
+    if action in {"candidate-reader-reassess", "candidate-reader-results-review"}:
+        preflight = preflight_action(action=action, payload=payload)
+        ok = preflight["status"] == "passed"
+        return _decision("auto_decide" if ok else "needs_approval", executable=ok,
+                         payload=payload, preflight=preflight, reason="Bound OA Reader evidence follow-up")
     if action in RESIDENT_RECOVERY_ACTIONS and action != "stage-replan-new-generation":
         preflight = recovery_preflight(action, payload)
         automatic = action == "child-rebuild" and preflight["status"] == "passed"
@@ -450,6 +455,15 @@ def preflight_action(
     payload: dict[str, Any],
     mutating_resume_supported: bool = False,
 ) -> dict[str, Any]:
+    if action in {"candidate-reader-reassess", "candidate-reader-results-review"}:
+        required = ["reader_marker_id", "checkpoint_id", "task_map_generation", "workflow_run_id", "task_id"]
+        if action == "candidate-reader-reassess":
+            required += ["reader_source_operation_id", "reader_finding_ids"]
+        else:
+            required.append("reader_receipt_digest")
+        missing = [key for key in required if not payload.get(key)]
+        return {"status": "blocked" if missing else "passed", "failures": missing, "warnings": [],
+                "expected_downstream_events": payload.get("expected_downstream_events", [])}
     if action in RESIDENT_RECOVERY_ACTIONS and action != "stage-replan-new-generation":
         return recovery_preflight(action, payload)
     failures = []

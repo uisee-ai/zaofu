@@ -921,6 +921,9 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.worker_assistance import dispatch_pending_assistance
 
         dispatch_pending_assistance(self)
+        from zf.runtime.candidate_reader_reassessment import dispatch_pending_reassessments
+        if periodic_sweep or any(e.type == "candidate.reader.reassessment.requested" for e in events):
+            self._safe_housekeeping("candidate_reader_reassessment", lambda: dispatch_pending_reassessments(self))
         # doc 69 S-f: emit delivery.phase.* milestones for active features
         # (deterministic, idempotent; counts kernel verdicts, never re-judges).
         self._safe_housekeeping("phase_milestones", self._emit_phase_milestones)

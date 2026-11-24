@@ -53,9 +53,9 @@ def candidate_findings(state_dir: Path, members: list, unresolved: list, events:
     return findings
 
 
-def partition_product_tasks(findings: list[dict], dispositions: object) -> tuple[set[str], list[dict]]:
+def partition_candidate_findings(findings: list[dict], dispositions: object) -> tuple[set[str], list[dict]]:
     if not isinstance(dispositions, list):
-        raise ValueError("mixed candidate repair requires finding_dispositions")
+        raise ValueError("candidate decision requires finding_dispositions")
     expected = {row["finding_id"]: row for row in findings}
     seen, affected, retained = set(), set(), []
     for row in dispositions:
@@ -76,8 +76,15 @@ def partition_product_tasks(findings: list[dict], dispositions: object) -> tuple
             affected.update(finding["task_ids"])
         retained.append({**finding, "disposition": dict(row), "status": "pending"})
         seen.add(key)
-    if seen != set(expected) or not affected:
-        raise ValueError("candidate finding dispositions must cover every finding and select a product repair")
+    if not expected or seen != set(expected):
+        raise ValueError("candidate finding dispositions must cover every finding")
+    return affected, retained
+
+
+def partition_product_tasks(findings: list[dict], dispositions: object) -> tuple[set[str], list[dict]]:
+    affected, retained = partition_candidate_findings(findings, dispositions)
+    if not affected:
+        raise ValueError("candidate product repair requires at least one eligible product finding")
     return affected, retained
 
 
@@ -93,8 +100,10 @@ def retained_candidate_obligations(events: list, *, run_id: str, task_id: str) -
     return list(retained.values())
 
 
-def pending_obligation_diagnoses(events: list) -> list[dict]:
-    actions = []
+def pending_obligation_diagnoses(events: list, *, state_dir=None, run_id="", config=None) -> list[dict]:
+    from zf.runtime.candidate_obligation_followup import pending_reader_obligations
+
+    actions = pending_reader_obligations(state_dir, events, run_id=run_id, config=config) if state_dir else []
     for event in events:
         p = event.payload
         if event.origin != "kernel" or event.type != "task_map.ready":

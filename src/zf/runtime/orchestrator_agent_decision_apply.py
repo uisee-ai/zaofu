@@ -17,6 +17,17 @@ from zf.runtime.workflow_operation import load_workflow_operation
 
 
 def apply_orchestrator_agent_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
+    decision = event.payload.get("orchestration_decision")
+    if isinstance(decision, Mapping) and decision.get("decision") == "return_to_plan":
+        from zf.core.state.locks import locked_path
+
+        key = hashlib.sha256(event.id.encode()).hexdigest()
+        with locked_path(runtime.state_dir / "locks" / f"oa-return-{key}"):
+            return _apply_decision(runtime, event)
+    return _apply_decision(runtime, event)
+
+
+def _apply_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
     existing = _existing_outcome(runtime, event.id)
     if existing:
         return existing
@@ -243,6 +254,9 @@ def _apply_semantic_failure(
             correlation_id=event.correlation_id,
         ))
         return {**outcome, "status": "escalated", "applied": False}
+    expected = _operation_checkpoint_context(runtime, outcome)
+    if expected.get("candidate_failure_scope") == "reader_obligation_report":
+        return _reject_semantic_directive(runtime, event, outcome, "reader_obligation_report_is_evidence_only")
     delta = decision.get("delta")
     directives = delta.get("directives") if isinstance(delta, Mapping) else []
     action_directives = [
@@ -266,7 +280,11 @@ def _apply_semantic_failure(
         created_by="orchestrator-agent-admission",
         source_event_id=event.id,
     )
-    expected = _operation_checkpoint_context(runtime, outcome)
+    from zf.runtime.candidate_replan_acknowledgment import published_candidate_replan
+
+    previously_published = published_candidate_replan(runtime, event, outcome, expected, delta_ref)
+    if previously_published:
+        return previously_published
     candidate = {}
     if expected.get("candidate_operation_id"):
         from zf.runtime.candidate_plan_recovery import candidate_checkpoint_binding
@@ -338,6 +356,19 @@ def _apply_semantic_failure(
                     str(repaired.get("reason") or "candidate repair action rejected"))
             return {**outcome, "candidate_repair_event_ids": repaired["emitted_event_ids"]}
         if action == "return_to_plan":
+            if expected.get("candidate_failure_scope") == "aggregate":
+                from zf.runtime.candidate_finding_partition import partition_candidate_findings
+
+                try:
+                    if len(action_directives) != 1:
+                        raise ValueError("candidate replan requires one complete finding partition")
+                    affected, obligations = partition_candidate_findings(
+                        candidate["findings"], directive.get("finding_dispositions"),
+                    )
+                except ValueError as exc:
+                    return _reject_semantic_directive(runtime, event, outcome, str(exc))
+                candidate = {**candidate, "failed_task_ids": sorted(affected),
+                             "candidate_obligations": obligations}
             return _apply_return_to_plan(
                 runtime,
                 event,
@@ -561,9 +592,16 @@ def _apply_return_to_plan(
             "candidate_failure_id": expected["candidate_failure_id"], "rework_of": expected["candidate_failure_id"],
             "failed_task_ids": candidate["failed_task_ids"], "task_ids": [], "resume_scope": "",
         })
-        payload.update(_replan_task_scope_payload(
-            payload, state_dir=runtime.state_dir, project_root=getattr(runtime, "project_root", None),
-        ))
+        if "candidate_obligations" in candidate:
+            # Source Tasks identify evidence. Only the OA's admitted product findings
+            # can select Writer work; the independent duties are durable at this marker.
+            payload["rework_summary"]["candidate_obligations"] = candidate["candidate_obligations"]
+            payload["task_ids"] = list(candidate["failed_task_ids"])
+            payload["resume_scope"] = "failed_children_only" if payload["task_ids"] else "candidate_diagnosis_only"
+        else:
+            payload.update(_replan_task_scope_payload(
+                payload, state_dir=runtime.state_dir, project_root=getattr(runtime, "project_root", None),
+            ))
     marker = runtime.event_writer.append(ZfEvent(
         type="orchestrator.replan_requested",
         actor="zf-cli",
@@ -691,11 +729,14 @@ def _semantic_replan_breaker_open(
     decision: Mapping[str, Any],
 ) -> bool:
     policy = runtime.config.workflow.orchestration
+    run = decision["identity"]["workflow_run_id"]
     prior = [
         event
         for event in runtime.event_log.read_all()
         if event.type == "orchestrator.semantic.decision.applied"
-        and isinstance(event.payload, dict)
+        and event.origin == "kernel"
+        and isinstance(event.payload, dict) and event.payload.get("applied") is True
+        and (event.payload.get("workflow_run_id") or event.correlation_id) == run
         and event.payload.get("decision") in {"return_to_plan", "replan"}
     ]
     if len(prior) >= int(policy.max_plan_revisions):

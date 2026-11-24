@@ -39,6 +39,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "review.rejected",
     # B14 (doc 93): plan 审核门事件 — operator 的 approved 必须唤醒
     # 重入孵化;requested/rejected 供投影与通知。
+    "candidate.reader.reassessment.requested",
     "plan.approval.requested",
     "plan.approved",
     "plan.rejected",

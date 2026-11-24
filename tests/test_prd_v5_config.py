@@ -68,6 +68,8 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert task_pipeline["candidate"]["final_verify_target"] == "frozen_exact_commit"
 
     prd_policy = config.workflow.orchestration.flow_policies["prd"]
+    assert "reassess_reader_evidence" in prd_policy.autonomous_actions
+    assert "rebind" not in prd_policy.autonomous_actions
     assert prd_policy.checkpoint_policies["pre_impl"] == "shadow"
     assert prd_policy.checkpoint_policies["semantic_failure"] == "blocking"
     assert prd_policy.shadow_sample_percent == 100

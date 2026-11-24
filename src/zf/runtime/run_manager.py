@@ -1219,11 +1219,11 @@ def build_run_manager_projection(
     from zf.runtime.candidate_finding_partition import pending_obligation_diagnoses
     from zf.runtime.autoresearch_failure_handoff import pending_autoresearch_followups
 
-    for diagnosis in [*pending_dispatch_diagnoses(events), *pending_obligation_diagnoses(events),
-                      *pending_autoresearch_followups(events)]:
+    obligations = pending_obligation_diagnoses(events, state_dir=state_dir, run_id=current_run_id, config=config)
+    for diagnosis in [*pending_dispatch_diagnoses(events), *obligations, *pending_autoresearch_followups(events)]:
         if not _action_seen(events, diagnosis):
-            diagnosis["preflight"] = preflight_action(action="diagnose-attention", payload=diagnosis)
-            diagnosis["policy_decision"] = decide_action_policy(action="diagnose-attention", payload=diagnosis)
+            diagnosis["preflight"] = preflight_action(action=diagnosis["action"], payload=diagnosis)
+            diagnosis["policy_decision"] = decide_action_policy(action=diagnosis["action"], payload=diagnosis)
             repair_validation_actions.append(diagnosis)
     repair_apply_actions = _pending_repair_apply_actions(
         merge_queue,
@@ -6028,6 +6028,23 @@ def _execute_controlled_run_action(
     ) or not _operation_precondition_holds(events, action):
         return "blocked"
     action_name = str(action.get("action") or "")
+    if action_name in {"candidate-reader-reassess", "candidate-reader-results-review"}:
+        from zf.runtime.candidate_obligation_followup import execute_reader_obligation
+        from zf.runtime.control_actions import ControlledActionService
+
+        service = ControlledActionService(state_dir, writer, config=config, project_root=project_root,
+            actor="run-manager", source="run-manager", surface="run-manager")
+        try:
+            receipt = execute_reader_obligation(service, action)
+        except (ValueError, KeyError, OSError) as exc:
+            _emit_failed_action(writer, action, causation_id=causation_id, reason=str(exc))
+            return "failed"
+        outcome = writer.emit(RUN_MANAGER_ACTION_APPLIED, actor="run-manager", task_id=action["task_id"],
+            causation_id=causation_id, payload={**_action_payload(action), "status": "applied",
+                                               "emitted_event_ids": [receipt.id]})
+        _post_verify_action(writer, action, {"ok": True, "emitted_event_ids": [receipt.id]},
+                            causation_id=outcome.id, state_dir=state_dir, config=config)
+        return "applied"
     if action_name == "diagnose-attention":
         return _execute_diagnose_attention(
             state_dir=state_dir,
@@ -11607,6 +11624,8 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 
 def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
     return {
+        **{key: action[key] for key in ("reader_marker_id", "reader_source_operation_id",
+                                       "reader_finding_ids", "reader_receipt_digest") if key in action},
         "fanout_child_id": str(action.get("fanout_child_id") or ""),
         "escalation_event_id": str(action.get("escalation_event_id") or ""),
         **{key: str(action.get(key) or "") for key in (

@@ -141,6 +141,16 @@ Worker、Supervisor、操作员和计划检查点均可提供事实或请求，�
 明确责任方，混合问题移交时携带原案卷、原因、证据与待回答问题；多个专家可协作，
 但不让 RM agent 与 OA 无依据地重复分诊或互相等待。复用故障矩阵和动作注册，不另造 router。
 
+#### 冻结候选的混合失败
+
+阻塞式 OA 收到同一冻结候选的聚合失败后，在 `return_to_plan` 的指令里给出逐 finding 分类、责任人、下一动作及理由。Kernel 核对完整覆盖、来源 Reader、Run 和候选版本，将义务绑定在 `orchestrator.replan_requested`。只有明确判为可修复产品缺陷的任务进入 Writer 范围。全为取证与合同问题时，`candidate_diagnosis_only` 将原任务图留给 Planner 查阅，空的 Writer 选择在后续派发入口仍为空。新写入工作需要正常的计划审查和授权。
+
+PRD v5 的 `workflow.orchestration.flow_policies.prd.autonomous_actions` 可显式配置 `reassess_reader_evidence`。当原 Candidate Reader 请求已冻结此权限，且当前 Flow 仍允许时，Run Manager 为各 Reader 请求独立的只读补证。补证结果绑定具体 finding、冻结目标及证据引用，保留原 fanout 的判词。所需证据位于另一个角色的授权范围或需要新增宿主操作时，按原授权路径处理。合同和受保护用例的问题交 Planner 判断，需要 Owner 决定时保留具体请求。
+
+Run Manager 用原决定与 Reader operation 跟踪请求、派发和回执。控制面重启后依据账本恢复；相同请求只消费一次。缺少补证权限、执行失败或证据仍无法回答时，回传原决定、未决 finding、已经尝试的动作及证据，由 OA 判断后续处置。补证回执供原工作流消费，最终交付仍需独立 Candidate Verify、Judge 与 Goal 终态。
+
+[OA 分诊回归](../../tests/test_candidate_replan_dispositions.py) · [Reader 补证](../../src/zf/runtime/candidate_reader_reassessment.py) · [Run Manager 交接](../../src/zf/runtime/candidate_obligation_followup.py)
+
 ### 3.2 WRC 是任务恢复的执行主体
 
 WRC 不是 OA，也不是只管首次派发。当前实际链路为

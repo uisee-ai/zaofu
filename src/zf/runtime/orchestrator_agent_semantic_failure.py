@@ -192,6 +192,12 @@ def request_semantic_failure_checkpoint(
                 "It grants one stage replay per native freeze, no host execution, product verdict or contract change."
                 if can_rebind else "Verification rebind is not authorized by the current configuration."
             ),
+            **({"return_to_plan_contract": "For an aggregate return_to_plan, put finding_dispositions on the "
+                "directive. Account for each supplied finding_id exactly once with classification "
+                "product_defect/contract_question/execution_unknown, owner, next_action and rationale. "
+                "Identify the independent evidence to obtain; the source Task alone does not authorize "
+                "Writer repair. Separate evidence recovery from a protected scope decision."}
+               if aggregate_candidate else {}),
             "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "
             "exact-target directive: classification=product_defect, contract_changed=false, rationale, "
             "and gap_tasks copied exactly from the pinned Task Map. For mixed outcomes supply "
@@ -237,7 +243,13 @@ def request_semantic_failure_checkpoint(
         **failure_ref,
         "source_id": "semantic-failure-input",
     }]
-    if aggregate_candidate:
+    if payload.get("reader_marker_id"):
+        from zf.runtime.candidate_obligation_followup import report_sources
+        try:
+            artifact_refs.extend(report_sources(runtime.state_dir, events, event))
+        except (OSError, ValueError, KeyError) as exc:
+            raise SemanticFailureCheckpointError(str(exc)) from exc
+    elif aggregate_candidate:
         artifact_refs.extend({**member["control_result_ref"],
             "source_id": f"candidate-verification-{member['child_id']}"}
             for member in candidate["members"])
@@ -266,7 +278,8 @@ def request_semantic_failure_checkpoint(
         "failure_fingerprint": fingerprint,
         "candidate_failure_id": failures[-1].id if candidate else "",
         "candidate_operation_id": operation_id if candidate else "",
-        "candidate_failure_scope": "aggregate" if aggregate_candidate else "",
+        "candidate_failure_scope": ("reader_obligation_report" if payload.get("reader_marker_id")
+                                    else "aggregate" if aggregate_candidate else ""),
         "workflow_run_id": workflow_run_id,
         "flow_kind": flow_kind,
         "plan_revision": str(package.get("plan_revision") or ""),

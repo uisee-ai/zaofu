@@ -76,9 +76,12 @@ def prepare_call_operation(
     correlation_id: str = "",
     workdir_write_scopes: list[str] | None = None,
     scheduler_attempt_id: str = "",
+    reassessment_scope_ref: dict | None = None,
 ) -> PreparedCallOperation:
     """Pin call identity and immutable inputs before provider dispatch."""
 
+    if (stage_id == "reader-evidence-reassessment") != bool(reassessment_scope_ref):
+        raise ValueError("Reader evidence reassessment requires the kernel's scoped request")
     mode = result_protocol_mode(runtime.config, payload)
     workflow_run_id = str(
         payload.get("workflow_run_id")
@@ -247,6 +250,8 @@ def prepare_call_operation(
         role_instance=role_instance,
         payload=payload,
     )
+    if reassessment_scope_ref:
+        semantic_submit_mode = "blocking"
     payload["semantic_result_submit_mode"] = semantic_submit_mode
 
     if output_profile_id == "artifact-delivery":
@@ -353,6 +358,7 @@ def prepare_call_operation(
         attempt_id=attempt_id,
         dispatch_id=dispatch_id,
         source_event_id=causation_id,
+        **({"read_purpose": "candidate-verify"} if reassessment_scope_ref else {}),
     )
     payload.pop("_context_delivery_enabled", None)
     payload.update({
@@ -660,6 +666,19 @@ def prepare_call_operation(
             )
         },
     }
+    if output_profile_id == "candidate-verify":
+        from zf.runtime.candidate_reader_reassessment import enabled, policy_kind
+        if previous_request is not None:
+            authorized = previous_request.get("candidate_reader_reassessment") is True
+            flow_kind = previous_request.get("candidate_reassessment_flow_kind", "")
+        else:
+            flow_kind = policy_kind(runtime.config, payload)
+            authorized = enabled(runtime.config, flow_kind)
+        if authorized:
+            request["candidate_reader_reassessment"] = True
+            request["candidate_reassessment_flow_kind"] = flow_kind
+    if reassessment_scope_ref:
+        request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
     if payload.get("milestone_handoff_ref"):
         request["milestone_handoff_ref"] = dict(payload["milestone_handoff_ref"])
     if payload.get("candidate_host_evidence_ref"):

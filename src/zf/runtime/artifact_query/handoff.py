@@ -64,6 +64,7 @@ class CanonicalHandoffResolver:
         attempt_id: str,
         dispatch_id: str,
         source_event_id: str = "",
+        read_purpose: str = "",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         mutable = dict(payload)
         currentness = self._validate_currentness(
@@ -212,7 +213,7 @@ class CanonicalHandoffResolver:
                 "selection": "canonical-authority-matrix",
             },
             "source_event_id": source_event_id,
-            "read_purpose": profile,
+            "read_purpose": read_purpose or profile,
             "handoff_authority_contract": authority_contract,
             "candidate_snapshot": candidate_snapshot,
             "orchestrator_context_route_source_ids": [
