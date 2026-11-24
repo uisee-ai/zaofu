@@ -444,6 +444,19 @@ when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
 Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
 章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。
 
+## Planner 在预检受阻时保留进度
+
+当重复预检仍有未解错误，或本轮将中断，且已有值得接续的判断或草稿时，查看当前 attempt 的
+`artifact recover`。若返回 `work_record_publish`，按其中的绑定命令用 `--stdin` 发布一次非终态工作记录。
+`completed_actions` 写明已核对的 finding、条款和当前输入摘要；`pending` 保留最新预检的实际错误码、
+字段和未决事项；`next_step` 给出恢复后第一个获准动作。可在 `report_draft` 留下有用草稿，
+大工件记录已持久化的准确 ref 和 SHA-256。`evidence_files` 使用空列表，保留正式 result scratch。
+重送同一记录复用相同 request-id 和正文，只有产生新进展才另发。
+
+恢复时从同一 attempt 的 `artifact recover` 取得 `work_record_read`，核对记录与当前输入和草稿绑定，
+按需补读遗忘的条款，再继续预检或正式提交。工作记录仅保存未经独立验证的进度，原有必读、
+验证和授权仍有效。已经能够提交结果时，使用该 operation 的正式结果入口。
+
 ## 无法完成可执行计划时的草案审查
 
 当冻结请求为 `candidate_diagnosis_only`，任务图用于追溯已获批的工作。即使图中保留全部

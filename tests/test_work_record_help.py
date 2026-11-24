@@ -33,7 +33,8 @@ def test_publish_help_example_reaches_existing_work_record_caller(tmp_path, monk
 
 
 @pytest.mark.parametrize("name", ["zf-harness-evidence-collection", "zf-yoke-dev-worker-role-context",
-                                  "zf-yoke-test-evaluator-role-context", "zf-harness-done-contract"])
+                                  "zf-yoke-test-evaluator-role-context", "zf-harness-done-contract",
+                                  "zf-prd-plan-synth"])
 def test_work_record_method_provider_copies_match_canonical(name):
     root = Path(__file__).resolve().parents[1]
     source = root / "skills" / name

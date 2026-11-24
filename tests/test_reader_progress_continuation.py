@@ -211,7 +211,7 @@ def test_complete_inputs_allow_one_bounded_result_completion_turn(tmp_path):
     close_turn(runtime, "reads-complete")
     first_continuation = transport.sent[-1][2]
     assert "historical_missing is zero" in first_continuation
-    assert "existing result scratch" in first_continuation
+    assert "existing result scratch" in first_continuation and "--scratch path" in first_continuation
     assert "source index" in first_continuation
     close_turn(runtime, "result-in-progress")
     claims = [e for e in log.read_all() if e.type == "worker.continuation.claimed"
