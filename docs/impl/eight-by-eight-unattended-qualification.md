@@ -223,3 +223,15 @@ mixed：6路环境弃权、1路依赖阻塞、1路语义拒绝。宿主成功不
 本补修相对aa4a9611的自动影响闭包6072 passed/8 skipped；sentinel53 passed，flow mock10 passed；聚焦108 passed与闭包有重叠，不合并计数。未运行全pytest或coverage。真实账本只读回放确认8路结果与19条宿主收据绑定同一冻结候选，实际OA接续尚待部署验证。
 
 真实接续已验证：69b2a6e1载入后，OA输入包含8路结果、19条回执及浏览器媒体索引；其return_to_plan决定于20:38:45由Kernel接纳应用，自动启动限定原16任务范围的Planner恢复。保留原失败和冻结候选，未直接重开Task或授予产品通过。最终Candidate/Judge/Goal/交付仍待后续原生结果，初始无人监工失败不变。
+
+
+## 2026-11-24 扫描工作目录的沙箱可见性
+
+批准前的 Run `workflow-c87649819cbe0bb7` 派发了两个扫描 Agent。宿主能够读取简报，
+实际 Codex 工作目录却看不到相邻的简报和 attempt manifest。原启动探针只运行
+`/usr/bin/true`，因此放行了这个目录布局。相同 Provider 沙箱的只读探针复现了该差异。
+
+受限 Codex 角色启动时，`zf start` 在配置的 state_dir 中创建临时工作目录，
+从该目录经同一 workspace profile 读取相邻的随机标记，并核对内容。失败沿已有
+`env.preflight.failed` 入口在模型派发前返回。探针文件由宿主清理。实际 Reader
+仍须通过正式接口提交与本 attempt 绑定的收据；Plan 批准后另计无人干预资格。

@@ -1,5 +1,6 @@
 """Provider capability must be observed through Codex, not a privileged unshare probe."""
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -53,16 +54,29 @@ def test_configured_probe_checks_shared_substrate_once_for_restricted_roles(tmp_
         RoleConfig(name=name, backend="codex", provider_session=ProviderSessionConfig(sandbox="workspace-write"))
         for name in ("dev", "verify")
     ] + [RoleConfig(name="legacy", backend="codex"), RoleConfig(name="test", backend="mock")])
+    config.project.state_dir = "runtime-state"
+    state = tmp_path / config.project.state_dir
+    state.mkdir()
     calls = []
-    def probe(root):
-        calls.append(root)
-        return {"returncode": 0, "phase": "launch", "stderr": "", "stdout": ""}
-    monkeypatch.setattr("zf.runtime.provider_sandbox.probe_codex_sandbox", probe)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[-1] == "--help":
+            return subprocess.CompletedProcess(argv, 0, "--permission-profile --include-managed-config", "")
+        workdir = Path(argv[argv.index("-C") + 1])
+        marker = Path(argv[-1])
+        assert workdir == kwargs["cwd"] and workdir.is_dir()
+        assert marker.is_relative_to(state) and not marker.is_relative_to(workdir)
+        assert argv[-2] == "/bin/cat"
+        return subprocess.CompletedProcess(argv, 0, marker.read_text(), "")
+
+    monkeypatch.setattr("zf.runtime.provider_sandbox.subprocess.run", run)
 
     result = probe_configured_codex_sandbox(config, tmp_path)
     assert result["roles"] == ["dev", "verify"]
     assert result["probe"]["returncode"] == 0
-    assert calls == [tmp_path]
+    assert len(calls) == 2
+    assert not list(state.iterdir())
 
 
 def test_configured_probe_preserves_unrestricted_and_mock_policies(tmp_path, monkeypatch):
@@ -74,3 +88,21 @@ def test_configured_probe_preserves_unrestricted_and_mock_policies(tmp_path, mon
     monkeypatch.setattr("zf.runtime.provider_sandbox.probe_codex_sandbox", unexpected)
     config = ZfConfig(roles=[RoleConfig(name="legacy", backend="codex"), RoleConfig(name="test", backend="mock")])
     assert probe_configured_codex_sandbox(config, tmp_path) is None
+
+
+def test_empty_sandbox_view_fails_with_a_bound_input_diagnostic(tmp_path, monkeypatch):
+    from zf.core.config.schema import ProviderSessionConfig, RoleConfig, ZfConfig
+    from zf.runtime.provider_sandbox import probe_configured_codex_sandbox
+
+    config = ZfConfig(roles=[RoleConfig(name="scan", backend="codex",
+        provider_session=ProviderSessionConfig(sandbox="workspace-write"))])
+    (tmp_path / config.project.state_dir).mkdir()
+    def nothing_visible(argv, **kwargs):
+        output = "--permission-profile --include-managed-config" if argv[-1] == "--help" else ""
+        return subprocess.CompletedProcess(argv, 0, output, "")
+    monkeypatch.setattr("zf.runtime.provider_sandbox.subprocess.run", nothing_visible)
+
+    result = probe_configured_codex_sandbox(config, tmp_path)["probe"]
+    assert result["returncode"] != 0
+    assert result["phase"] == "bound_input"
+    assert "bound input" in result["stderr"]

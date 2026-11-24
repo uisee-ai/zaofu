@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from secrets import token_hex
 import subprocess
+from tempfile import TemporaryDirectory
 
 from zf.core.config.schema import ZfConfig
 
@@ -16,10 +18,31 @@ def probe_configured_codex_sandbox(config: ZfConfig, root: Path) -> dict | None:
     ]
     if not roles:
         return None
-    return {"roles": roles, "probe": probe_codex_sandbox(root)}
+    state_dir = (root / config.project.state_dir).resolve()
+    try:
+        with TemporaryDirectory(prefix=".codex-input-probe-", dir=state_dir) as temporary:
+            # Workers run in their own cwd and receive absolute references outside it.
+            worker = Path(temporary, "worker")
+            worker.mkdir()
+            marker = Path(temporary, "bound-input")
+            expected = token_hex(16)
+            marker.write_text(expected, encoding="ascii")
+            result = probe_codex_sandbox(worker, bound_input=marker)
+            if result["phase"] == "bound_input":
+                if result["returncode"] or result["stdout"] != expected:
+                    result["returncode"] = result["returncode"] or 1
+                    result["stderr"] = (
+                        f"Worker sandbox could not read the bound input in {state_dir}. "
+                        + result["stderr"].strip()
+                    ).rstrip()
+                result["stdout"] = ""
+    except OSError as exc:
+        result = {"phase": "bound_input", "command": [], "returncode": 1,
+                  "stdout": "", "stderr": f"Cannot prepare sandbox input probe in {state_dir}: {exc}"}
+    return {"roles": roles, "probe": result}
 
 
-def probe_codex_sandbox(root: Path, *, codex: str = "codex") -> dict:
+def probe_codex_sandbox(root: Path, *, codex: str = "codex", bound_input: Path | None = None) -> dict:
     """Probe the installed interface; never infer capability from unshare or bypass."""
     def run(command: list[str], phase: str) -> dict:
         try:
@@ -43,4 +66,7 @@ def probe_codex_sandbox(root: Path, *, codex: str = "codex") -> dict:
                 "Unqualified Codex sandbox interface; require --permission-profile and --include-managed-config. "
                 "No weaker fallback was attempted."}
     command = [codex, "sandbox", "--permission-profile", ":workspace", "--include-managed-config"]
-    return run([*command, "-C", str(root.resolve()), "--", "/usr/bin/true"], "launch")
+    command.extend(["-C", str(root.resolve()), "--"])
+    if bound_input is not None:
+        return run([*command, "/bin/cat", str(bound_input)], "bound_input")
+    return run([*command, "/usr/bin/true"], "launch")
