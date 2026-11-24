@@ -366,3 +366,14 @@ def test_unknown_seed_test_is_unmapped_instead_of_executable(mini_repo):
     plan = dev_verify.build_plan(mini_repo, [path])
     assert path not in plan.selected_tests
     assert any("unmapped Python change" in error for error in plan.errors)
+
+@pytest.mark.parametrize("available", [False, True])
+def test_changed_skill_plans_native_compatibility_check(mini_repo, monkeypatch, available):
+    skill = mini_repo / "skills/demo/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: demo\n---\n")
+    monkeypatch.setattr(dev_verify.shutil, "which", lambda name: f"/bin/{name}" if available else None)
+    plan = dev_verify.build_plan(mini_repo, ["skills/demo/SKILL.md"])
+    check = next(s for s in plan.steps if s.id == "skill-harness-compatibility")
+    assert check.automatic is available
+    assert check.command[-2:] == ("--changed-skill", "demo")

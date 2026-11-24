@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -45,7 +46,7 @@ DOMAIN_RULES = (
     ),
     DomainRule(
         "skills",
-        ("skills/**", ".claude/skills/**", ".codex/skills/**"),
+        ("skills/**", "yoke/**", "yoke", ".claude/skills/**", ".codex/skills/**"),
     ),
     DomainRule("web_ui", ("web/**",)),
     DomainRule("web_backend", ("src/zf/web/**",)),
@@ -656,6 +657,17 @@ def build_plan(
             )
         )
 
+    if "skills" in domains or any(path.startswith(("src/zf/runtime/backend", "src/zf/core/skills/materialize")) for path in paths):
+        names = sorted({path.split("/")[1] for path in paths if path.startswith(("skills/", "yoke/"))
+                        and len(path.split("/")) >= 3 and (root / Path(path).parts[0] / Path(path).parts[1] / "SKILL.md").is_file()})
+        available = all(shutil.which(tool) for tool in ("skillevaluator", "codex", "claude"))
+        plan.steps.append(VerificationStep(
+            id="skill-harness-compatibility", tier="skill_compatibility",
+            command=(sys.executable, "scripts/eval-skill-compatibility.py",
+                     *(arg for name in names for arg in ("--changed-skill", name))),
+            reasons=("advisory static predictions on materialized catalogs; requires skillevaluator, codex and claude on PATH",),
+            automatic=available,
+        ))
     if PREMERGE_DOMAINS.intersection(domains):
         plan.steps.append(
             VerificationStep(

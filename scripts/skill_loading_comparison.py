@@ -16,6 +16,25 @@ ARMS = ("raw", "current", "candidate")
 FIELDS = ("verdict", "action", "receipt")
 
 
+def score_submission(value, ref):
+    answer = value if isinstance(value, dict) else {}
+    submitted = (
+        set(answer) == set(FIELDS)
+        and answer["verdict"] in ("release", "withhold", "outside")
+        and answer["action"]
+        in ("accept", "request_evidence", "return_to_planner", "no_verification")
+        and isinstance(answer["receipt"], str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", answer["receipt"]) is not None
+    )
+    return {
+        "submitted": submitted,
+        "verdict_correct": answer.get("verdict") == ref[0],
+        "correct": submitted and [answer[k] for k in FIELDS] == ref,
+        "false_release": ref[0] != "release" and answer.get("verdict") == "release",
+        "false_block": ref[0] == "release" and answer.get("verdict") == "withhold",
+    }
+
+
 def loading_report(manifest: dict, suite: dict, observations: list[dict]) -> dict:
     comparison = compare_skill_treatment_identities(
         [manifest["treatments"][arm] for arm in ARMS]
@@ -52,26 +71,12 @@ def loading_report(manifest: dict, suite: dict, observations: list[dict]) -> dic
         ):
             raise ValueError("unexpected or duplicate trial observation")
         ref = cases[key[0]]["expected"]
-        answer = row["answer"] if isinstance(row["answer"], dict) else {}
-        submitted = (
-            set(answer) == set(FIELDS)
-            and answer["verdict"] in ("release", "withhold", "outside")
-            and answer["action"]
-            in ("accept", "request_evidence", "return_to_planner", "no_verification")
-            and isinstance(answer["receipt"], str)
-            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", answer["receipt"])
-            is not None
-        )
         rows[key] = {
             **row,
             "reference": ref,
             "route": cases[key[0]]["route"],
             "split": cases[key[0]]["split"],
-            "submitted": submitted,
-            "verdict_correct": answer.get("verdict") == ref[0],
-            "correct": submitted and [answer[k] for k in FIELDS] == ref,
-            "false_release": ref[0] != "release" and answer.get("verdict") == "release",
-            "false_block": ref[0] == "release" and answer.get("verdict") == "withhold",
+            **score_submission(row["answer"], ref),
         }
     splits = {}
     for split in ("selection", "test"):

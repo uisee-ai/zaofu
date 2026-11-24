@@ -39,9 +39,13 @@ def _database(state: Path) -> Path:
 
 
 def query_cards(state: Path, *, history: bool = False, **filters: str) -> list[dict]:
+    return list(_iter_cards(state, history=history, **filters))
+
+
+def _iter_cards(state: Path, *, history: bool = False, **filters: str) -> Iterator[dict]:
     path = _database(state)
     if not path.exists():
-        return []
+        return
     conditions = []
     values = []
     for field in FILTERS:
@@ -53,22 +57,53 @@ def query_cards(state: Path, *, history: bool = False, **filters: str) -> list[d
     where = " AND ".join(conditions) or "1"
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
-            return []
+            return
         found = db.execute(
             f"""SELECT body, revision, digest, predecessor, change_reason FROM cards c
             WHERE {where} ORDER BY workflow_run_id, operation_id, attempt_id, dispatch_id, revision""",
             values,
         )
-        return [
-            {
+        for body, revision, digest, predecessor, reason in found:
+            yield {
                 **json.loads(body),
                 "revision": revision,
                 "digest": digest,
                 "predecessor": predecessor,
                 "change_reason": reason,
             }
-            for body, revision, digest, predecessor, reason in found
-        ]
+
+
+def project_skill_decisions(state: Path) -> list[dict]:
+    """Latest frozen dispatch observations, grouped by measured scope, never causal lift."""
+    groups = {}
+    for card in _iter_cards(state):
+        review = card.get("independent_review") or {}
+        decision = review.get("decision") or {}
+        adjudicated_release = (card.get("task_outcome") == "passed" and review.get("status") == "reviewed"
+                               and decision.get("result") in ("pass", "fail"))
+        false_release = decision.get("critical_false_release") if adjudicated_release else None
+        for skill in card.get("skills") or []:
+            mode = ("required" if skill.get("auto_inject") else
+                    "on_demand" if skill.get("load_on_demand") else "unknown")
+            scope = {field: card.get(field) for field in
+                     ("role", "output_profile_id", "provider", "harness_version", "model", "configured_model")}
+            scope.update(name=skill["name"], digest=skill.get("digest"), mode=mode)
+            key = tuple(scope.values())
+            row = groups.setdefault(key, {
+                **scope, "dispatches": 0, "materialized": 0, "observed_reads": 0,
+                "task_keys": set(), "reviewed_dispatches": 0, "confirmed_false_releases": None,
+                "evidence": {field: card.get(field) for field in (*IDENTITY, "task_id")},
+            })
+            row["dispatches"] += 1
+            row["task_keys"].add((card["workflow_run_id"], card["task_id"]))
+            row["materialized"] += skill.get("materialization") == "resolved"
+            row["observed_reads"] += skill.get("read_status") == "observed_header"
+            if type(false_release) is bool:
+                row["reviewed_dispatches"] += 1
+                row["confirmed_false_releases"] = (row["confirmed_false_releases"] or 0) + false_release
+    for row in groups.values():
+        row["tasks"] = len(row.pop("task_keys"))
+    return sorted(groups.values(), key=lambda r: (r["name"], str(r["role"]), str(r["model"] or r["configured_model"])))
 
 
 def _publish(path: Path, cards: Iterator[dict]) -> None:

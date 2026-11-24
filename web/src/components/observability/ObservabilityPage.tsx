@@ -10,9 +10,11 @@ import { buildObservabilityEventWindow } from "../../app/observabilityModel";
 import { buildProjectCostPresentation } from "../../app/costPrecision";
 import { useProjectCost } from "../../app/useProjectCost";
 import { Archive, Bell, Boxes, ChevronRight, FolderGit2, Gauge, GitFork, Map as MapIcon, PauseCircle, PlayCircle, Radio, SkipBack, SkipForward, Wrench, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { LiveState, PageId, ParsedEventFilter, ProjectionKind, ProjectionMetricSpec, UiTone } from "../../app/sharedTypes";
 import { EventTable, PreBlock, ProjectionEmptyState, ProjectionList, ProjectionMetricGrid, TablePage, TraceDetailPanel, TraceIndexList, asRecord, asStringArray, eventChannelId, eventFamily, eventKey, eventPayload, eventSummary, formatUsd, parseEventFilter, stringify, textValue, truncateInline } from "../../app/shared";
+
+const ProjectSkillDecisions = lazy(() => import("./ProjectSkillDecisions"));
 
 type ObservabilityTab = "traces" | "events" | "logs" | "operations" | "runs" | "fanouts" | "candidates" | "pipeline" | "integration" | "repair";
 
@@ -186,6 +188,7 @@ export function ObservabilityPage({
     setTab(activePage === "observability" ? readInitialObservabilityTab(activePage) : observabilityTabForPage(activePage));
   }, [activePage]);
   const snapshotReady = Boolean(snapshot);
+  const [showSkillDecisions, setShowSkillDecisions] = useState(false);
   const traces = scopedTraceRows ?? snapshot?.traces ?? [];
   const scopedTraceMode = scopedTraceRows !== null && scopedTraceRows !== undefined;
   const runs = [...(snapshot?.active_runs ?? []), ...(snapshot?.runs ?? [])];
@@ -571,6 +574,12 @@ export function ObservabilityPage({
         </div>
       ) : null}
 
+      {tab === "runs" && <details onToggle={e=>setShowSkillDecisions(e.currentTarget.open)}>
+        <summary>项目 Skill 决策表</summary>
+        {showSkillDecisions && <Suspense fallback={<p role="status">正在加载决策表…</p>}>
+          <ProjectSkillDecisions key={activeProjectId} projectId={activeProjectId || snapshot?.project.project_id} />
+        </Suspense>}
+      </details>}
       {tab === "runs" ? (
         <div className="run-dossier-workspace">
           <ProjectionList

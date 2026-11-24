@@ -12,6 +12,7 @@ export interface LoadingContext {
 
 type Arm = "raw" | "current" | "candidate";
 interface ArmScore {
+  input_tokens: number | null; cached_input_tokens: number | null; output_tokens: number | null;
   complete: number; verdict_correct: number; correct: number; false_releases: number; false_blocks: number; observed_reads: number;
   missed_required_reads: number; unrelated_reads: number; mean_input_tokens: number | null; median_seconds: number | null;
 }
@@ -34,6 +35,10 @@ const reasonNames: Record<string, string> = {
 };
 
 export default function SkillLoadingComparison({ cards }: { cards: LoadingContext[] }) {
+  return <SkillLoadingReference cards={cards} />;
+}
+
+export function SkillLoadingReference({ cards }: { cards?: LoadingContext[] }) {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState(false);
   const [split, setSplit] = useState<"selection" | "test">("test");
@@ -49,7 +54,7 @@ export default function SkillLoadingComparison({ cards }: { cards: LoadingContex
   if (error) return <p role="alert">加载策略报告读取失败。</p>;
   if (!report) return <p role="status">正在读取对照报告…</p>;
   const metrics = report.splits[split];
-  const matches = cards.flatMap(card => card.skills.filter(s => s.name === report.skill).map(s => {
+  const matches = (cards ?? []).flatMap(card => card.skills.filter(s => s.name === report.skill).map(s => {
     const mode = s.auto_inject ? "默认必读" : s.load_on_demand ? "按需加载" : "策略未知";
     return [card.provider || "客户端未知", card.model || card.configured_model || "模型未知", mode,
       !s.digest ? "版本未知" : s.digest === report.skill_digest ? "Skill 摘要一致" : "Skill 摘要不同"].join(" · ");
@@ -60,7 +65,7 @@ export default function SkillLoadingComparison({ cards }: { cards: LoadingContex
   return <section className="skill-loading-comparison" aria-label="Skill 加载策略参考试验">
     <h4>{report.decision === "canary_candidate" ? "建议进入限定灰度" : "保留默认必读"}</h4>
     <p>{report.skill} · {report.client} · {report.model}（{report.effort}）</p>
-    <p>本任务派发记录 · {Array.from(new Set(matches)).join("；") || "尚无此 Skill 的记录"}</p>
+    {cards && <p>本任务派发记录 · {Array.from(new Set(matches)).join("；") || "尚无此 Skill 的记录"}</p>}
     <label>案例集 <select value={split} onChange={e => setSplit(e.target.value as typeof split)}>
       <option value="test">保留测试集</option><option value="selection">选择集</option>
     </select></label>
@@ -74,6 +79,16 @@ export default function SkillLoadingComparison({ cards }: { cards: LoadingContex
           <td>{row.false_releases}</td><td>{row.false_blocks}</td><td>{row.observed_reads}</td>
           <td>{row.mean_input_tokens?.toLocaleString() ?? "未知"}</td><td>{row.median_seconds == null ? "未知" : row.median_seconds+" s"}</td></tr>;
       })}</tbody></table></div>
+    <details><summary>成本明细与独立案例数</summary>
+      <p>{new Set(report.observations.filter(r=>r.split===split).map(r=>r.case)).size} 个独立案例 · 实际费用未记录</p>
+      <div style={{overflowX:"auto"}}><table className="data-table"><caption>完整配对合计 · 缓存已计入总输入</caption>
+        <thead><tr>{["策略","总输入 token","缓存输入","未缓存输入","输出 token"].map(s=><th key={s}>{s}</th>)}</tr></thead>
+        <tbody>{arms.map(([key,label])=>{
+          const r=metrics.arms[key];
+          const counts=[r.input_tokens,r.cached_input_tokens,r.input_tokens!=null && r.cached_input_tokens!=null ? r.input_tokens-r.cached_input_tokens : null,r.output_tokens];
+          return <tr key={key}><th scope="row">{label}</th>{counts.map((v,i)=><td key={i}>{v?.toLocaleString() ?? "未知"}</td>)}</tr>;
+        })}</tbody></table></div>
+    </details>
     <p>按需组应读未读 {metrics.arms.candidate.missed_required_reads} 次，无关读取 {metrics.arms.candidate.unrelated_reads} 次。</p>
     {misses.length > 0 && <details>
       <summary>查看按需组的 {misses.length} 次提交偏差</summary>

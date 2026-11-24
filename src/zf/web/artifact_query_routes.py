@@ -115,6 +115,16 @@ def build_artifact_query_router(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @router.get("/api/skill-decisions")
+    @router.get("/api/projects/{project_id}/skill-decisions")
+    def skill_decisions(project_id: str = "") -> JSONResponse:
+        from zf.runtime.skill_evaluation_projection import project_skill_decisions
+
+        if project_id and resolve_ctx is None:
+            raise HTTPException(404, "unknown project")
+        selected = resolve_ctx(project_id).state_dir if project_id else state_dir
+        return JSONResponse({"rows": project_skill_decisions(selected)})
+
     @router.get("/api/tasks/{task_id}/skill-evaluations")
     @router.get("/api/projects/{project_id}/tasks/{task_id}/skill-evaluations")
     def task_skill_evaluations(task_id: str, project_id: str = "", history: bool = False) -> JSONResponse:

@@ -246,6 +246,7 @@ def main():
     from skill_loading_comparison import loading_report
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--suite", type=Path, default=SUITE, help="Frozen Task Verify suite JSON")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--model", required=True)
     parser.add_argument("--reasoning-effort", choices=["low", "medium", "high"], default="high")
@@ -259,7 +260,7 @@ def main():
             "requires a standalone installation, local Codex authentication and a 1–600 second timeout"
         )
     args.output.mkdir(parents=True, exist_ok=False)
-    suite = json.loads(SUITE.read_text())
+    suite = json.loads(args.suite.read_text())
     prompts, manifest = prepare(args, suite)
     jobs = [
         (case, rep, arm)

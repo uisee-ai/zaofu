@@ -119,3 +119,44 @@ spec:
 PYTHONPATH=src python scripts/eval-task-verify-loading.py --output /tmp/zf-verify-loading-trial --model gpt-6-luna --reasoning-effort high --jobs 3
 PYTHONPATH=src python scripts/skill_loading_comparison.py /tmp/zf-verify-loading-trial > /tmp/zf-verify-loading-replay.json
 ```
+
+## 第二轮评估
+
+在 **Observability → Runs → 项目 Skill 决策表** 查看本项目的已发布派发记录，按 Skill、正文摘要、角色、模式、客户端和模型区分。同一派发的历史评分修订只计一次；同一 run 内同一任务的重试分别计入派发数。误放行分母只含原判放行且独立复核有明确结论的派发。点开「核对策略依据」可看同版本方法的角色包依赖、静态预测和适用的参考试验。已配置的模型与实际观测值分别显示。项目 API 为 `GET /api/projects/{project_id}/skill-decisions`。本轮试验和首轮历史对照均可在该页展开，逐例 JSON 可下载。[第二轮证据](../../web/src/data/skill-policy-round2.json)
+
+### Planner 完整清单与短索引
+
+2026-11-24 使用 Codex CLI 0.171.0、`gpt-6-luna`、`high` 完成 16 次调用。参照 8×8 最大 Planner 简报的 31 个工件引用及 12 项真实角色 Skills，构造 4 组独立交接案例，包括服务、CLI、需查上游依赖的导出任务和前置工件缺失的浏览器任务。每案两次、每次两组。两组共享同一份冻结清单、只读正文、方法包、输出合同和时限。完整组复用 ZaoFu 的 Workflow Input Manifest 渲染，试验段为 47,601–47,622 字节。短索引段为 190 字节，指向可读清单及其 SHA-256。实验对存在的必读文件核对完整工具返回，对缺失文件核对实际失败回执。实测是容器内缩小的交接协议，生产的受控读取与多阶段交付仍由原路径负责。[冻结案例与预设门槛](../../tests/fixtures/skill-loading/planner-manifest.json)
+
+| 案例集 | 组别 | 完整交接正确 | 读取义务已核对 | 工具调用次数 | 总输入 token | 未缓存输入 | 输出 token | 耗时中位数 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 选择 | 完整 | 2/2 | 4/4 | 6 | 207,250 | 63,890 | 2,153 | 30.4 s |
+| 选择 | 短索引 | 2/2 | 4/4 | 9 | 259,840 | 70,656 | 3,036 | 46.7 s |
+| 保留 | 完整 | 6/6 | 16/16 | 24 | 1,222,201 | 229,433 | 6,563 | 48.9 s |
+| 保留 | 短索引 | 6/6 | 16/16 | 47 | 978,694 | 213,126 | 12,986 | 65.9 s |
+
+两组均无错误放行。门槛在试验前固定为两个案例集各节省至少 5% 总输入，且交接无误、零漏读。短索引在保留集节省 19.92%，选择集增加 25.38%，因此保留完整清单。历史最大样本的 `workflow_input_manifest_ref` 为空；将同一短入口推广到这样的旧记录，需要先建立可验证的清单定位，或沿用完整渲染。当前报告的时间是端到端单次容器调用时间，受并发与服务延迟影响，费用未记录。
+
+### 评分器校准、Verify 复测与组合试验
+
+确定性评分器对 8 条带预期标签的响应逐字段符合预期，旧报告的完整正确性与误放行标记可回放。修订后的 MEDIAN 只要求三项协议字段，保留测试集采用另外四个案例。这里校准的是可执行的输出评分规则，独立语义审查模型的校准数据仍保留在前文。[校准标签](../../tests/fixtures/skill-loading/grader-cases.json) · [新版案例](../../tests/fixtures/skill-loading/task-verify-v2.json)
+
+矩阵方法复测共 30 次。选择集三组均为 2/2，按需输入节省 7.16%。保留集三组均为 8/8，均无误放行。必读组有 8 次读见证，按需组为 0，两次要求使用矩阵方法时均缺少读取见证；按需总输入增加 1.07%。在这组案例上继续默认必读。正确的独立模型行为和规定方法的实际读取分别报告。
+
+四组组合试验另运行 40 次，与上述复测共用冻结案例。准备时发现 `verify-review` 和 `zf-harness-verification-checklist` 同为常驻 Verify 角色包的声明依赖，删除显式配置仍会触发依赖展开。保持该角色包后，选择能独立移除的 A（`zf-workflow-adaptation-boundary`）和 B（`zf-project-adapter-matrix-enrichment`），沿用各自当前模式。保留集的“都移除、仅 A、仅 B、两者都在”完整正确数依次为 **8/8、8/8、7/8、7/8**，均无误放行。A 在相关案例无读取见证，四组对照无法判定两份正文的组合增益，保留既有方法。三个实验合计实际调用 86 次，多次重复及多个实验共用的案例均不增加独立案例数。
+
+### 静态兼容性和复现
+
+取 Planner 12 项、Verify 9 项，在 ZaoFu 为 Codex 与 Claude Code 实际物化的隔离目录上运行 NVIDIA SkillEvaluator 1.0.1。42 项均已物化，41 项预测可加载。Codex 对 Planner 的 `zf-plan-task-map-contract` 报告 `CX-SHELL-READ`，正文 67,147 字节，当前规则预测一次 shell 读取有截断风险。Codex 规则验证于 0.166.0，本机为 0.171.0；Claude Code 规则验证于 2.1.316，本机为 2.1.233。42 项均有版本差异提示。此处的 Claude Code 结果是静态预测，本轮模型行为试验只使用 Codex。[上游检查含义](https://docs.nvidia.com/skills/skillevaluator/harness-check)
+
+开发验证计划会在 Skill、对应分发文件或后台适配代码变化时列出兼容性检查，本机具有所需可执行文件时可由计划自动运行。项目可用 `--config /path/to/zf.yaml --role <角色>` 选择自己的方法包。静态检查是 advisory。独立安装的评估器、模型、工具镜像和输出目录与生产 Run 隔离。以下命令从仓库根目录执行，工作目录下的每个输出子目录需要是新的：
+
+```sh
+export PYTHONPATH=src
+trial_dir=$(mktemp -d)
+python scripts/eval-planner-manifest.py --output "$trial_dir/planner" --jobs 3
+python scripts/eval-task-verify-loading.py --suite tests/fixtures/skill-loading/task-verify-v2.json --model gpt-6-luna --reasoning-effort high --output "$trial_dir/verify" --jobs 3
+python scripts/eval-verify-interaction.py --output "$trial_dir/interaction" --jobs 3
+python scripts/eval-skill-compatibility.py --output "$trial_dir/compat" --evaluator skillevaluator
+python scripts/publish-skill-round.py --planner "$trial_dir/planner" --verify "$trial_dir/verify" --interaction "$trial_dir/interaction" --compat "$trial_dir/compat" > "$trial_dir/round2.json"
+```

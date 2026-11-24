@@ -85,3 +85,37 @@ test("reference comparison uses paired trial data and distinguishes project disp
   await expect(panel).toContainText("尚无此 Skill 的记录");
   await expect(panel).not.toContainText("project-assigned-model");
 });
+
+test("project decision evidence is scoped and offers replayable round results", async ({page}, testInfo)=>{
+  const frozen=JSON.parse(await readFile(new URL("../src/data/skill-policy-round2.json",import.meta.url),"utf-8"));
+  let reads=0;
+  await page.route("**/api/projects/*/skill-decisions",route=>{
+    const first=route.request().url().includes("/first/");
+    return route.fulfill({json:{rows:first?[{name:frozen.verify.skill,digest:frozen.verify.skill_digest,role:"verify",output_profile_id:"task-verify",provider:"codex",mode:"required",tasks:2,dispatches:3,
+      configured_model:"m",observed_reads:1,materialized:3,reviewed_dispatches:0,confirmed_false_releases:null,
+      evidence:{task_id:"project-one",attempt_id:"a-1",dispatch_id:"d-1"}}]:[]}});
+  });
+  page.on("request", req=>{if(req.url().endsWith("skill-policy-round2.json")) reads++;});
+  await page.goto("/tests/task-inputs.html?decisions");
+  const panel=page.getByRole("region",{name:"项目 Skill 决策表"});
+  await expect(panel).toContainText("2 / 3");
+  await expect(panel).toContainText("未知 / 0");
+  expect(reads).toBe(0);
+  await panel.getByText("核对策略依据").click();
+  await expect(panel).toContainText("同版 Skill 的参考决定 · 保留必读");
+  await panel.getByText("本轮策略决定与依据").click();
+  const round=panel.getByRole("region",{name:"第二轮评估"});
+  await expect(round).toContainText("短索引读取义务已核对");
+  await expect(round).toContainText("19.92%");
+  await round.getByText(/两项方法的组合试验/).click();
+  await expect(round).toContainText("组合增益待证");
+  await round.getByText("静态兼容性与评分器校准").click();
+  await expect(round).toContainText("zf-plan-task-map-contract");
+  await expect(round).toContainText("8/8");
+  const report=await (await page.request.get((await round.getByRole("link").getAttribute("href"))!)).json();
+  expect(report.planner.observations).toHaveLength(16);
+  await round.screenshot({path:testInfo.outputPath("round2.png")});
+  await page.getByRole("button",{name:"切换项目"}).click();
+  await expect(panel).toContainText("该项目尚无已评分的 Skill 派发");
+  await expect(panel).not.toContainText("project-one");
+});
