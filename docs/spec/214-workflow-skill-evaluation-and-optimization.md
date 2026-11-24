@@ -1,6 +1,6 @@
 # 214 · Workflow Skill 任务评估与按需加载优化
 
-状态为 `candidate`。首批对象为 PRD 8×8 的 Task Verify。本文定义拟交付的评分卡、独立评审和对照实验。后文分别标明可复用的现有实现与新增要求。
+状态为 `partial`。阶段 1、2 已实现，操作入口和验收记录见[Task Verify 评分卡](../impl/214-task-verify-skill-evaluation.md)。首批对象为 PRD 8×8 的 Task Verify。本文定义拟交付的评分卡、独立评审和对照实验。后文分别标明可复用的现有实现与新增要求。
 
 ## 1. 两个决策
 

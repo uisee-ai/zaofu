@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 
 from zf.core.config.loader import ConfigError
@@ -24,6 +25,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     missing.add_argument("attempt_id")
     missing.add_argument("--state-dir", default=None)
     missing.set_defaults(func=_run_missing_reads)
+
+    evaluation = sub.add_parser("skill-evaluation", help="Query Task Verify skill scorecards")
+    selection = evaluation.add_mutually_exclusive_group(required=True)
+    selection.add_argument("attempt_id", nargs="?")
+    selection.add_argument("--run", dest="workflow_run_id")
+    selection.add_argument("--task", dest="task_id")
+    evaluation.add_argument("--operation", dest="operation_id")
+    evaluation.add_argument("--dispatch", dest="dispatch_id")
+    mode = evaluation.add_mutually_exclusive_group()
+    mode.add_argument("--replay", action="store_true", help="Recompute from archived events without writing")
+    mode.add_argument("--history", action="store_true", help="Include previous published revisions")
+    evaluation.add_argument("--state-dir")
+    evaluation.set_defaults(func=_run_skill_evaluation)
 
     parser.set_defaults(func=lambda _args: parser.print_help() or 0)
 
@@ -73,4 +87,21 @@ def _run_missing_reads(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_skill_evaluation(args: argparse.Namespace) -> int:
+    from zf.runtime.skill_evaluation_projection import FILTERS, query_cards, replay_cards
+
+    try:
+        ctx = resolve_project_context(explicit_state_dir=args.state_dir, load_config_with_explicit=True)
+        filters = {key: getattr(args, key) for key in FILTERS if getattr(args, key, None)}
+        if args.replay:
+            cards = replay_cards(ctx.state_dir, ctx.project_root, ctx.config, **filters)
+        else:
+            cards = query_cards(ctx.state_dir, history=args.history, **filters)
+    except (ConfigError, OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps({"cards": cards}, ensure_ascii=False, indent=2))
     return 0
