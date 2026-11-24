@@ -245,3 +245,5 @@ B 轮 05:04 UTC，watcher 已选出在用角色，检查其生命周期时再读
 ## Candidate 预检缺少宿主回执引用
 
 实跑中，Reader 拿到同一冻结目标的 20 条宿主回执，首次通过草稿只引用了 3 条，预检准确指出另 17 条命令缺少证据，却只指向 `probe_receipts`。Reader 随后自行在 `host_execution_receipt_ids` 补齐 20 条，独立评价 16 项验收条件，原 attempt 得到通过。对已绑定宿主证据索引的 Candidate，预检现在同时指出这两个证据入口。Reader 按 `command_id` 查找、审阅并显式引用对应的宿主回执，只把自己实际执行的检查登记为 probe。缺失、越权和过期的证据继续按原门禁退回。
+
+候选提交草稿还会按当前 Reader 已绑定的宿主观察区分证据来源。对已有可用宿主观察的命令，模板省去预填的本地成功 probe 行，`host_execution_receipt_ids` 初始为空，由 Reader 查验后填写。缺少可用宿主观察的命令仍有本地 probe 模板；所有命令 ID 及验收义务继续来自冻结合同。当前草稿、已提交判词及旧 attempt 的证据不会被模板更新重写。

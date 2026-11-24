@@ -202,6 +202,22 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
     return item, sources
 
 
+def available_host_command_ids(state_dir: Path, request: dict) -> set[str]:
+    """Identify offered host observations for the draft; receipt selection remains explicit."""
+    try:
+        binding = hydrate_sidecar_ref(state_dir, request['candidate_host_evidence_ref']).payload
+        consumer = binding['consumer']
+        if (binding.get('schema_version') != 'candidate-host-evidence.v1'
+                or binding.get('authorizes_execution') is not False
+                or any(not request.get(key) or consumer.get(key) != request[key]
+                       for key in (*BOUND_FIELDS, 'operation_id', 'role_instance'))
+                or consumer.get('attempt_id') != request.get('attempt_id')):
+            return set()
+        return {row['command_id'] for row in binding['receipts'] if row['status'] == 'available'}
+    except (OSError, ValueError, TypeError, KeyError):
+        return set()  # Read/admission gates retain responsibility for unavailable evidence.
+
+
 def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | None,
                             events: list | None) -> list[dict]:
     """Read-only validation against this consumer's immutable request and ledger."""

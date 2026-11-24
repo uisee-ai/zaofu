@@ -134,6 +134,37 @@ def test_new_consumers_receive_bound_facts_without_reexecuting_or_mutating_sourc
     assert not any(e.type in {'test.passed', 'task.done'} for e in runtime.event_log.read_all())
 
 
+@pytest.mark.parametrize("evidence,probe_count", [("", 0), ("bad-media-sha", 1)], indirect=["evidence"])
+def test_candidate_draft_keeps_only_uncovered_local_probes(evidence, probe_count):
+    import json
+
+    from zf.core.config.schema import FanoutAggregateConfig, ProjectConfig, RoleConfig, ZfConfig
+    from zf.runtime.fanout import FanoutContext
+    from zf.runtime.orchestrator import Orchestrator
+
+    runtime, seeded, _, _, _, _ = evidence
+    role = "consumer-submit"
+    prepared, payload = prepare(runtime, seeded, role)
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.state_dir, orch.project_root, orch.event_log = runtime.state_dir, runtime.project_root, runtime.event_log
+    orch.config = ZfConfig(project=ProjectConfig(name="reader-draft"))
+    payload.update(operation_id=prepared.operation_id, semantic_result_submit_mode="blocking",
+                   attempt_id="attempt-" + role)
+    context = FanoutContext("fanout-candidate", payload["stage_id"], "fanout_reader",
+                            seeded["run_id"], "evt-candidate-ready", payload.get("target_ref", ""))
+    briefing = orch._write_fanout_briefing(
+        role=RoleConfig(name=role, instance_id=role, backend="mock", role_kind="reader"),
+        context=context, child_id=role, run_id=payload["attempt_id"],
+        aggregate=FanoutAggregateConfig(mode="wait_for_all", child_success_event="verify.child.completed",
+            child_failure_event="verify.child.failed", success_event="test.passed", failure_event="test.failed"),
+        child_payload=payload,
+    )
+    draft = json.loads((runtime.state_dir / prepared.result_scratch_ref).read_bytes())
+    assert len(draft["probe_receipts"]) == probe_count
+    assert draft["host_execution_receipt_ids"] == []
+    assert "host_execution_receipt_ids" in briefing.read_text()
+
+
 def test_shared_host_fact_validation_is_read_only_and_accepts_generation_zero(evidence):
     from zf.runtime.task_host_evidence import host_execution_facts
     runtime, _, source_op, _, _, completed = evidence

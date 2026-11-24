@@ -331,7 +331,8 @@ def prepare_fanout_result_guidance(
             guidance.append(
                 "Read candidate-host-execution and its bound fact/media sources. You may consume "
                 f"only its receipt_id values in `{verification_prefix}host_execution_receipt_ids` beside verdict, preserving the source "
-                "operation's identity. These are execution facts, not Impl reusable receipts or "
+                "operation's identity. An available host observation has no prefilled local probe row. "
+                "These are execution facts, not Impl reusable receipts or "
                 "your fresh probe_receipts. Do not repeat a command solely because reusable=false; "
                 "that flag governs Impl self-check reuse. Independently judge every required "
                 "acceptance criterion and product report; host exit 0 supplies no product verdict."
@@ -560,7 +561,7 @@ def prepare_profiled_stage_result(
         ))
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
-            "for an exact command already present in the prefilled template; "
+            "for an exact command in the frozen verification contract; "
             "record extra independent probes without `command_id` and attach "
             "their command/evidence through requirement reproduction evidence.",
         ]

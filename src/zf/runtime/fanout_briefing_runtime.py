@@ -290,6 +290,13 @@ class FanoutBriefingMixin:
                 success_payload["reusable_impl_receipts"] = reusable_receipts
             verification_template = verification_result_template(contract_snapshot)
             if child_payload.get("candidate_host_evidence_ref"):
+                from zf.runtime.candidate_host_consumption import available_host_command_ids
+
+                host_commands = available_host_command_ids(self.state_dir, child_payload)
+                verification_template["probe_receipts"] = [
+                    row for row in verification_template["probe_receipts"]
+                    if row.get("command_id") not in host_commands
+                ]
                 verification_template["host_execution_receipt_ids"] = []
             verification_template["reused_command_receipt_ids"] = [
                 str(item.get("receipt_id") or "")
