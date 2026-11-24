@@ -1,0 +1,826 @@
+{
+  "siblings": {
+    "source_sha256": "fdeea143d4fd40ef768d67cdc29b1e806ee7b80a2bc3f0f58c87cd260973fc5d",
+    "model": "gpt-6-luna",
+    "client": "codex-cli 0.171.0",
+    "effort": "high",
+    "image": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "scope": "Single-Skill visibility probe and two bounded handoff decisions; eligibility for a wider pilot only.",
+    "gate": "All four candidate handoffs correct with witnessed and recalled receipts; lower total input on both cases.",
+    "observations": [
+      {
+        "case": "visibility",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 1,
+        "verified_return_bytes": [
+          67287
+        ],
+        "prompt_sha256": "99ca9fe5812bfe67d2d1bba3c1f8d8ea866165f61f825e022101858f4727c55a",
+        "usage": {
+          "input_tokens": 32241,
+          "cached_input_tokens": 20608,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 357,
+          "reasoning_output_tokens": 252
+        },
+        "schema_exact": false,
+        "trace_sha256": "89c4ea5af210edb1faeabceeff39b8385af8f27742d6848a8b6fd9fe386ac356"
+      },
+      {
+        "case": "visibility",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          981,
+          1206,
+          1144
+        ],
+        "prompt_sha256": "8bdff3af504f5bd5324601444df1b23dce0d2851c31bf9ba56c30ae57e334fde",
+        "usage": {
+          "input_tokens": 49009,
+          "cached_input_tokens": 44928,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 268,
+          "reasoning_output_tokens": 50
+        },
+        "schema_exact": true,
+        "trace_sha256": "96ca99ce9d7b68997bdd5a7c15a6f4077c9517bbff294fe05c263cecc1fec52d"
+      },
+      {
+        "case": "visibility",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 1,
+        "verified_return_bytes": [
+          67287
+        ],
+        "prompt_sha256": "99ca9fe5812bfe67d2d1bba3c1f8d8ea866165f61f825e022101858f4727c55a",
+        "usage": {
+          "input_tokens": 32231,
+          "cached_input_tokens": 20608,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 374,
+          "reasoning_output_tokens": 282
+        },
+        "schema_exact": true,
+        "trace_sha256": "c7153cadf771ddf535ab19198ea116f76761e6aa06657190686969ea5192f46a"
+      },
+      {
+        "case": "visibility",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          981,
+          1206,
+          1144
+        ],
+        "prompt_sha256": "8bdff3af504f5bd5324601444df1b23dce0d2851c31bf9ba56c30ae57e334fde",
+        "usage": {
+          "input_tokens": 49075,
+          "cached_input_tokens": 44928,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 429,
+          "reasoning_output_tokens": 192
+        },
+        "schema_exact": false,
+        "trace_sha256": "b961f7f110d568818760e7a646a2394bd347c93fd8d721d20ad3fd3f50d7f998"
+      },
+      {
+        "case": "source",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          67287,
+          13544,
+          9465
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 81822,
+          "cached_input_tokens": 53120,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 967,
+          "reasoning_output_tokens": 759
+        },
+        "schema_exact": null,
+        "trace_sha256": "4e0d2b38319fc3bc9093c5010a560b5183314c8e7352677b98a5aedcdaac6d2d"
+      },
+      {
+        "case": "source",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": false,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 6,
+        "verified_return_bytes": [
+          10173,
+          null,
+          null,
+          3064,
+          null,
+          7157
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 102555,
+          "cached_input_tokens": 93440,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 869,
+          "reasoning_output_tokens": 537
+        },
+        "schema_exact": null,
+        "trace_sha256": "1fe7426ab8b16220401d41c84c75c68fa3fa670d85fc8046f1ae2589e21e78e9"
+      },
+      {
+        "case": "source",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          67287,
+          14270,
+          4943
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 81281,
+          "cached_input_tokens": 62592,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 675,
+          "reasoning_output_tokens": 474
+        },
+        "schema_exact": null,
+        "trace_sha256": "7bc44ad8f69cf0d9e57a09911be80669e0cf1ed2efb2f8d372f67f97d3eda5ea"
+      },
+      {
+        "case": "source",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": false,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 5,
+        "verified_return_bytes": [
+          10173,
+          null,
+          null,
+          null,
+          3064
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 84834,
+          "cached_input_tokens": 67200,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 762,
+          "reasoning_output_tokens": 470
+        },
+        "schema_exact": null,
+        "trace_sha256": "8fc5207bbd912daced3a55ca5c88cd5ef4cf29d9e6f9fafb552a0a4d6a43d6d1"
+      },
+      {
+        "case": "review",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          67287,
+          2984
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 53975,
+          "cached_input_tokens": 41216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 429,
+          "reasoning_output_tokens": 279
+        },
+        "schema_exact": null,
+        "trace_sha256": "a397789bd679e5bf9cc3602366cbe7d5912aa8186079f4fce6bb12d551a67947"
+      },
+      {
+        "case": "review",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": false,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 4,
+        "verified_return_bytes": [
+          10173,
+          null,
+          null,
+          4934
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 70808,
+          "cached_input_tokens": 63104,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 761,
+          "reasoning_output_tokens": 500
+        },
+        "schema_exact": null,
+        "trace_sha256": "47f4e51ad2addf08a86349a9471c7152c03f2c02b72c91b40d6fe90d8b9cc671"
+      },
+      {
+        "case": "review",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          67287,
+          8810
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 55558,
+          "cached_input_tokens": 41216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 726,
+          "reasoning_output_tokens": 571
+        },
+        "schema_exact": null,
+        "trace_sha256": "9be1b77090cb161725e322f5279fb06886c1eaff2c1621dd06ec2162e76dfba8"
+      },
+      {
+        "case": "review",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          10173,
+          4934
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 41189,
+          "cached_input_tokens": 32000,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 448,
+          "reasoning_output_tokens": 284
+        },
+        "schema_exact": null,
+        "trace_sha256": "3c209f4a145b2613016adc64e8ad34c7944624d2558fcbc7a6cc1b4887375e66"
+      }
+    ],
+    "layout": "siblings"
+  },
+  "references": {
+    "layout": "references",
+    "source_sha256": "fdeea143d4fd40ef768d67cdc29b1e806ee7b80a2bc3f0f58c87cd260973fc5d",
+    "model": "gpt-6-luna",
+    "client": "codex-cli 0.171.0",
+    "effort": "high",
+    "image": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "scope": "Single-Skill visibility probe and two bounded handoff decisions; eligibility for a wider pilot only.",
+    "gate": "All four candidate handoffs correct with witnessed and recalled receipts; lower total input on both cases.",
+    "observations": [
+      {
+        "case": "visibility",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 1,
+        "verified_return_bytes": [
+          67287
+        ],
+        "prompt_sha256": "6b33101ad3afcec00877a9fb41d3bcdb8f927f0984a8f29c9770b12403cd81ea",
+        "usage": {
+          "input_tokens": 32318,
+          "cached_input_tokens": 20736,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 407,
+          "reasoning_output_tokens": 322
+        },
+        "schema_exact": true,
+        "trace_sha256": "b58bdb83cb0acea7504634bbe63cc7e448e954260a8d310612c85d0bc46e5394"
+      },
+      {
+        "case": "visibility",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          981,
+          1206,
+          1144
+        ],
+        "prompt_sha256": "8a44c20467dc973dbec4bd968de32b0816e81d9b1fd1cfcfe2b7e08d08fc16fe",
+        "usage": {
+          "input_tokens": 24613,
+          "cached_input_tokens": 20480,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 381,
+          "reasoning_output_tokens": 179
+        },
+        "schema_exact": true,
+        "trace_sha256": "1bfda94a48238f93758771d751b5474913541b4e796e1e90be79c2fc44e91e52"
+      },
+      {
+        "case": "visibility",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 1,
+        "verified_return_bytes": [
+          67287
+        ],
+        "prompt_sha256": "6b33101ad3afcec00877a9fb41d3bcdb8f927f0984a8f29c9770b12403cd81ea",
+        "usage": {
+          "input_tokens": 32249,
+          "cached_input_tokens": 23040,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 266,
+          "reasoning_output_tokens": 175
+        },
+        "schema_exact": true,
+        "trace_sha256": "1cba287dfea46295f65471176b7db5dd31c7161fab0b92ffb237fb9f87ebcdd6"
+      },
+      {
+        "case": "visibility",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "recalled": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "handoff_correct": null,
+        "required": [
+          "opening",
+          "provenance",
+          "review"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          981,
+          1206,
+          1144
+        ],
+        "prompt_sha256": "8a44c20467dc973dbec4bd968de32b0816e81d9b1fd1cfcfe2b7e08d08fc16fe",
+        "usage": {
+          "input_tokens": 49150,
+          "cached_input_tokens": 41856,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 382,
+          "reasoning_output_tokens": 195
+        },
+        "schema_exact": true,
+        "trace_sha256": "c98032efbf81f7eae4fc596562b05fa9314834eaec31474f4b6f415dc3584d49"
+      },
+      {
+        "case": "source",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          67287,
+          13544,
+          4334
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 80829,
+          "cached_input_tokens": 64768,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 802,
+          "reasoning_output_tokens": 574
+        },
+        "schema_exact": null,
+        "trace_sha256": "11ee2e0006e4c00ce89c2610bcf06d09122b6fb6dd1b3f5c6c951291b18b498c"
+      },
+      {
+        "case": "source",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          10250,
+          3064
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 40683,
+          "cached_input_tokens": 34560,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 430,
+          "reasoning_output_tokens": 246
+        },
+        "schema_exact": null,
+        "trace_sha256": "5f0afd49bcf26bde95e1224c4aab08fa67e38aef634169d59ce2df3c0f061774"
+      },
+      {
+        "case": "source",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": false,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 3,
+        "verified_return_bytes": [
+          67287,
+          null,
+          6858
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 77163,
+          "cached_input_tokens": 62720,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 611,
+          "reasoning_output_tokens": 368
+        },
+        "schema_exact": null,
+        "trace_sha256": "675f3f1899152e6be18e42e67bd10a75e2a9c3f99bbca36efd9a950ef9b33146"
+      },
+      {
+        "case": "source",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "provenance"
+        ],
+        "recalled": [
+          "provenance"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "provenance"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          10250,
+          3064
+        ],
+        "prompt_sha256": "74defef02ade47f22617c402118ca376b2b3d7a8a847e368ef82e940da23af15",
+        "usage": {
+          "input_tokens": 40724,
+          "cached_input_tokens": 36352,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 636,
+          "reasoning_output_tokens": 472
+        },
+        "schema_exact": null,
+        "trace_sha256": "b29f350780ff677946ff2117d21aff625b596a8a9a5ac143d34e5794564c0a55"
+      },
+      {
+        "case": "review",
+        "repeat": 1,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          67287,
+          17833
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 57958,
+          "cached_input_tokens": 40960,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1270,
+          "reasoning_output_tokens": 1072
+        },
+        "schema_exact": null,
+        "trace_sha256": "b83dcc8afa15c8503666a0603a520baf4a0959fc5de031e482cd75b7677b2dfd"
+      },
+      {
+        "case": "review",
+        "repeat": 1,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          10250,
+          4926
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 41304,
+          "cached_input_tokens": 32000,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 448,
+          "reasoning_output_tokens": 256
+        },
+        "schema_exact": null,
+        "trace_sha256": "6f0d201d90c4604ae9abbb88e7fdf307a178f6c3bdc2affc0fa6cb2fb245cf8d"
+      },
+      {
+        "case": "review",
+        "repeat": 2,
+        "arm": "whole",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 1,
+        "verified_return_bytes": [
+          67287
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 32347,
+          "cached_input_tokens": 20736,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 391,
+          "reasoning_output_tokens": 284
+        },
+        "schema_exact": null,
+        "trace_sha256": "617b3e671afb878307dfe898039a0412e85250e9cbf4a1dac47c8e93b9026ea6"
+      },
+      {
+        "case": "review",
+        "repeat": 2,
+        "arm": "sections",
+        "valid": true,
+        "witnessed": [
+          "review"
+        ],
+        "recalled": [
+          "review"
+        ],
+        "handoff_correct": true,
+        "required": [
+          "review"
+        ],
+        "commands": 2,
+        "verified_return_bytes": [
+          10250,
+          4926
+        ],
+        "prompt_sha256": "3c14d96c3089ae4dd6731bb591f859aa85a96ee153f1f2684fb7e75d3cb98e31",
+        "usage": {
+          "input_tokens": 41368,
+          "cached_input_tokens": 36608,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 681,
+          "reasoning_output_tokens": 514
+        },
+        "schema_exact": null,
+        "trace_sha256": "f0ce7d6641e863a5108742fdb79d0f26496c7c7703c8cea652b0a60f482beaed"
+      }
+    ]
+  }
+}

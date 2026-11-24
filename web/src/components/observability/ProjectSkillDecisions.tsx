@@ -3,6 +3,8 @@ import { cachedGetJson } from "../../api/queryClient";
 import { FrozenSkillBasis, SkillPolicyRound } from "./SkillPolicyRound";
 import { SkillLoadingReference } from "../kanban/SkillLoadingComparison";
 
+const fieldReportUrl = new URL("../../data/workflow-skill-observations.csv", import.meta.url).href;
+
 interface Row {
   name: string;
   digest: string | null;
@@ -133,8 +135,13 @@ export default function ProjectSkillDecisions({ projectId }: { projectId?: strin
           </table>
         </div>
       )}
+      <details>
+        <summary>8×8 与 Loshu FMS 构建复盘</summary>
+        <p>按项目批次和角色查看 Skill 的声明、物化、读取见证、尝试结果及当前加载模式。</p>
+        <a href={fieldReportUrl} download="workflow-skill-observations.csv">下载跨项目评估明细（CSV）</a>
+      </details>
       <details onToggle={(e) => setRoundOpen(e.currentTarget.open)}>
-        <summary>本轮策略决定与依据</summary>
+        <summary>第二轮策略决定与依据</summary>
         {roundOpen && <SkillPolicyRound />}
       </details>
       <details onToggle={(e) => setHistoryOpen(e.currentTarget.open)}>

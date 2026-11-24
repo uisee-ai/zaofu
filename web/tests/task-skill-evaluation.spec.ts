@@ -103,7 +103,16 @@ test("project decision evidence is scoped and offers replayable round results", 
   expect(reads).toBe(0);
   await panel.getByText("核对策略依据").click();
   await expect(panel).toContainText("同版 Skill 的参考决定 · 保留必读");
-  await panel.getByText("本轮策略决定与依据").click();
+  await panel.getByText("8×8 与 Loshu FMS 构建复盘").click();
+  const fieldLink = panel.getByRole("link", {name:"下载跨项目评估明细（CSV）"});
+  const evidence = await page.request.get((await fieldLink.getAttribute("href"))!);
+  expect(evidence.ok()).toBe(true);
+  const archive = await evidence.text();
+  expect(archive).toContain("historic_read_environments");
+  expect(archive).toContain("ls-v1,dev,incremental-delivery,on_demand");
+  expect(archive).toContain("unattended-20261121T132814Z,planner,zf-plan-task-map-contract,on_demand");
+  await panel.screenshot({path:testInfo.outputPath("field-audit.png")});
+  await panel.getByText("第二轮策略决定与依据").click();
   const round=panel.getByRole("region",{name:"第二轮评估"});
   await expect(round).toContainText("短索引读取义务已核对");
   await expect(round).toContainText("19.92%");
