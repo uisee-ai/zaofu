@@ -100,6 +100,8 @@ def _publish(path: Path, cards: Iterator[dict]) -> None:
                     if old["rubric_version"] != card["rubric_version"]
                     else "terminal_updated"
                     if old["terminal_event_id"] != card["terminal_event_id"]
+                    else "independent_review_updated"
+                    if old.get("independent_review") != card.get("independent_review")
                     else "evidence_updated"
                 )
             db.execute(

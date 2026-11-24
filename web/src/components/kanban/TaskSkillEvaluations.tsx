@@ -4,7 +4,14 @@ import { cachedGetJson } from "../../api/queryClient";
 interface Criterion {
   id: string; result: string; reason: string; critical: boolean; evidence_refs: string[];
 }
+interface Review {
+  status: string; trigger: string; rule: string; requested_model: string; input_digest: string;
+  pending_reason?: string; reviewer?: { model: string; model_digest: string; backend_version: string };
+  decision?: { critical_false_release: boolean; limitation: string; owner: string;
+    items: { id: string; finding: string; judgment: string; reason: string; citations: string[] }[] };
+}
 interface Card {
+  independent_review?: Review; review_event_id?: string; review_input_ref?: string; review_evidence?: Record<string, string>;
   attempt_id: string; dispatch_id: string; workflow_run_id: string; operation_id: string;
   recommendation: { action: string }; task_outcome: string; revision: number; digest: string; predecessor: string | null;
   change_reason: string; critical_status: string; criteria: Criterion[];
@@ -47,6 +54,19 @@ export function TaskSkillEvaluations({ taskId, projectId }: { taskId: string; pr
         <li key={skill.name}>{skill.name} · {skill.auto_inject ? "自动加载" : skill.load_on_demand ? "按需加载" : "加载策略待证"} · 调用 {skill.invocation} · 读取 {skill.read_status}
           <div className="mono">{skill.digest}</div>
           <div className="mono">{[...skill.invocation_event_ids, ...skill.read_event_ids].join(" · ")}</div></li>)}</ul></details>
+      {card.independent_review && <details>
+        <summary>独立语义复核 · {card.independent_review.status === "abstained" ? "弃评" : card.independent_review.status === "pending" ? "待评" : "已复核"}</summary>
+        {card.independent_review.decision?.critical_false_release && <p role="alert">独立评审发现关键误放行</p>}
+        <p>{card.independent_review.requested_model} · {card.independent_review.rule} · {card.independent_review.trigger}</p>
+        {card.independent_review.pending_reason && <p>待评原因 · {card.independent_review.pending_reason}</p>}
+        {card.independent_review.decision && <>
+          <ul>{card.independent_review.decision.items.map(item => <li key={item.id}>{item.id} · {item.finding} · {item.judgment} · {item.reason} · {item.citations.map(ref => card.review_evidence?.[ref] ?? ref).join("、")}</li>)}</ul>
+          <p>局限 · {card.independent_review.decision.limitation}</p><p>建议对象 · {card.independent_review.decision.owner}</p>
+        </>}
+        {card.independent_review.reviewer && <p className="mono">模型摘要 {card.independent_review.reviewer.model_digest} · Ollama {card.independent_review.reviewer.backend_version}</p>}
+        <p className="mono">{card.review_input_ref}</p>
+        <p className="mono">输入摘要 {card.independent_review.input_digest} · {card.review_event_id}</p>
+      </details>}
       <p>{card.recommendation.action}</p>
       <p className="mono">{card.change_reason} · {card.digest}{card.predecessor && ` ← ${card.predecessor}`}</p>
     </details>)}

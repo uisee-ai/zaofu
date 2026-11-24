@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.artifact_access import artifact_access_allowed
+from zf.runtime.call_result_envelope import canonical_json_sha256
 from zf.runtime.skill_attempt_evidence import (
     EvidenceReader,
     entries,
@@ -16,6 +18,14 @@ from zf.runtime.skill_attempt_evidence import (
     probe_agreement,
     skill_action,
     skill_rows,
+)
+from zf.runtime.skill_review_model import blinded_input
+from zf.runtime.skill_semantic_review import (
+    REVIEW_EVENT,
+    REVIEWER,
+    RULE,
+    review_packet,
+    validate_decision,
 )
 
 IDENTITY = ("workflow_run_id", "operation_id", "attempt_id", "dispatch_id")
@@ -62,6 +72,9 @@ class EvaluationHistory:
         self.current = {}
         self.terminal = {}
         self.terminal_ids = set()
+        self.review_events = defaultdict(list)
+        self.host_events = defaultdict(list)
+        self.host_completions = {}
         self.materializations = {}
         self.latest_materialization = {}
         self.actions = defaultdict(list)
@@ -115,6 +128,32 @@ class EvaluationHistory:
                 )
             return
         if event.origin != "kernel" or not artifact_access_allowed(p.get("access_scope")):
+            return
+        if event.type == REVIEW_EVENT:
+            key = tuple(p.get(k) for k in IDENTITY)
+            if event.actor == REVIEWER and all(isinstance(v, str) and v for v in key):
+                self.review_events[key].append(event)
+                self.dirty.add(key)
+            return
+        if event.type in {
+            "workflow.operation.settled",
+            "runtime.action.attempt.started",
+            "runtime.action.attempt.completed",
+        }:
+            if event.type != "workflow.operation.settled" and p.get("action") != "task-host-assist":
+                return
+            op = (p.get("workflow_run_id"), p.get("operation_id"))
+            if all(isinstance(v, str) for v in op):
+                self.host_events[op].append(event)
+                self.dirty.update(
+                    k
+                    for k in self.review_events
+                    if k[0] == op[0]
+                    and k in self.dispatches
+                    and self.dispatches[k][1].get("task_id") == (event.task_id or p.get("task_id"))
+                )
+                if event.type == "runtime.action.attempt.completed":
+                    self.host_completions[event.id] = event
             return
         if event.type == "skills.materialized":
             if event.id in self.materializations:
@@ -209,9 +248,67 @@ class EvaluationHistory:
     def cards(self, keys=None):
         for key in self.dispatches if keys is None else sorted(keys):
             if key in self.terminal and key in self.dispatches:
-                yield self._card(key)
+                card = self.mechanical_card(key)
+                if self.review_events.get(key):
+                    packet = review_packet(self, key, card)
+                    match = self.matching_review(key, card, packet)
+                    if match:
+                        event, receipt = match
+                        apply_review(card, receipt, packet)
+                        card["review_event_id"] = event.id
+                        card["review_ref"] = event.payload["review_ref"]["ref"]
+                        card["review_input_ref"] = event.payload["input_ref"]["ref"]
+                yield card
 
-    def _card(self, key):
+    def matching_review(self, key, card, packet):
+        reader = EvidenceReader(self.state)
+        current = canonical_json_sha256(packet)
+        for event in reversed(self.review_events.get(key, [])):
+            if event.causation_id != card["terminal_event_id"] or event.task_id != card["task_id"]:
+                continue
+            receipt = reader.object(event.payload.get("review_ref"))
+            input_ref = event.payload.get("input_ref")
+            if (
+                receipt.get("schema_version") != "skill-independent-review.v1"
+                or receipt.get("rule") != RULE
+                or receipt.get("reviewer_role") != REVIEWER
+                or receipt.get("identity") != list(key)
+                or receipt.get("input_digest") != current
+                or receipt.get("base_digest") != packet["base_digest"]
+                or reader.object(input_ref) != packet
+            ):
+                continue
+            if receipt.get("status") == "pending":
+                if reader.pending:
+                    self.missing.setdefault(key, {}).update(reader.pending)
+                return event, receipt
+            try:
+                validated = validate_decision(packet, receipt["decision"])
+            except (ValueError, KeyError, TypeError):
+                continue
+            reviewer = receipt.get("reviewer")
+            if (
+                card["role"] != REVIEWER
+                and receipt.get("model_input_digest") == canonical_json_sha256(blinded_input(packet))
+                and validated == receipt["decision"]
+                and receipt.get("status") == validated["status"]
+                and receipt.get("session_id")
+                and isinstance(reviewer, dict)
+                and reviewer.get("model") == receipt.get("requested_model")
+                and reviewer.get("backend") == "ollama"
+                and reviewer.get("backend_version")
+                and re.fullmatch("[0-9a-f]{64}", str(reviewer.get("model_digest")))
+                and re.fullmatch("[0-9a-f]{64}", str(receipt.get("prompt_digest")))
+                and isinstance(receipt.get("inference_options"), dict)
+            ):
+                if reader.pending:
+                    self.missing.setdefault(key, {}).update(reader.pending)
+                return event, receipt
+        if reader.pending:
+            self.missing.setdefault(key, {}).update(reader.pending)
+        return None
+
+    def mechanical_card(self, key):
         dispatch_id, d, (material_id, m) = self.dispatches[key]
         terminal = self.terminal[key]
         p = terminal.payload
@@ -339,10 +436,7 @@ class EvaluationHistory:
             critical=True,
             source="independent_review",
         )
-        counts = Counter(c["result"] for c in criteria)
-        den = counts["pass"] + counts["fail"]
-        applicable = den + counts["unknown"]
-        failures = [c["id"] for c in criteria if c["critical"] and c["result"] == "fail"]
+        failures, critical_status, score = summarize(criteria)
         if reader.pending:
             self.missing[key] = reader.pending
         else:
@@ -391,29 +485,67 @@ class EvaluationHistory:
                 "elapsed_seconds": elapsed if elapsed is not None and elapsed >= 0 else None,
                 "tokens": None,
             },
-            "critical_status": "failed"
-            if failures
-            else "pending"
-            if any(c["result"] == "unknown" and c["critical"] for c in criteria)
-            else "passed",
+            "critical_status": critical_status,
             "missing_mandatory_ids": missing_ids if result and contract else None,
             "archived_probe_comparisons": len(probes),
             "skills": skills,
             "criteria": criteria,
             "critical_failures": failures,
             "per_skill_cost": None,
-            "score": {
-                "passed": counts["pass"],
-                "failed": counts["fail"],
-                "unknown": counts["unknown"],
-                "not_applicable": counts["not_applicable"],
-                "percent": round(100 * counts["pass"] / den, 2) if den else None,
-                "denominator": den,
-                "coverage": round(den / applicable, 3) if applicable else None,
-            },
+            "score": score,
             "review_status": "pending",
             "recommendation": {
                 "target": "evidence" if failures else "observation",
                 "action": "核对关键证据的目标与来源" if failures else "按任务义务独立复核业务判词",
             },
         }
+
+
+def apply_review(card, receipt, packet):
+    card["review_status"] = receipt["status"]
+    card["independent_review"] = receipt
+    if receipt["status"] == "pending":
+        return
+    review = receipt["decision"]
+    criterion = next(c for c in card["criteria"] if c["source"] == "independent_review")
+    cited = {ref for row in review["items"] for ref in row["citations"]}
+    evidence = {
+        "contract": card["evidence"]["contract"],
+        "result": card["evidence"]["control_result"],
+        **{k: v["event_id"] for k, v in packet["host_facts"].items()},
+    }
+    card["review_evidence"] = {k: evidence[k] for k in sorted(cited) if evidence.get(k)}
+    criterion.update(
+        result=review["result"],
+        reason=" / ".join(i["reason"] for i in review["items"]),
+        evidence_refs=list(card["review_evidence"].values()),
+    )
+    card["recommendation"] = {"target": review["owner"], "action": review["action"]}
+    card["critical_failures"], card["critical_status"], card["score"] = summarize(card["criteria"])
+
+
+def summarize(criteria):
+    counts = Counter(c["result"] for c in criteria)
+    den = counts["pass"] + counts["fail"]
+    applicable = den + counts["unknown"]
+    failures = [c["id"] for c in criteria if c["critical"] and c["result"] == "fail"]
+    status = (
+        "failed"
+        if failures
+        else "pending"
+        if any(c["critical"] and c["result"] == "unknown" for c in criteria)
+        else "passed"
+    )
+    return (
+        failures,
+        status,
+        {
+            "passed": counts["pass"],
+            "failed": counts["fail"],
+            "unknown": counts["unknown"],
+            "not_applicable": counts["not_applicable"],
+            "percent": round(100 * counts["pass"] / den, 2) if den else None,
+            "denominator": den,
+            "coverage": round(den / applicable, 3) if applicable else None,
+        },
+    )

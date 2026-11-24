@@ -1,4 +1,4 @@
-"""Read-only attempt artifact inspection."""
+"""Inspect attempt artifacts and request independent Task Verify reviews."""
 
 from __future__ import annotations
 
@@ -38,6 +38,16 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     mode.add_argument("--history", action="store_true", help="Include previous published revisions")
     evaluation.add_argument("--state-dir")
     evaluation.set_defaults(func=_run_skill_evaluation)
+
+    review = sub.add_parser("skill-review", help="Independently review frozen Task Verify evidence")
+    review.add_argument("attempt_id", nargs="?")
+    review.add_argument("--run", dest="run_id", help="Select or disambiguate a workflow run")
+    review.add_argument("--model", required=True, help="Installed local Ollama model tag")
+    review.add_argument("--max-calls", type=int, default=3)
+    review.add_argument("--sample-percent", type=int, default=10)
+    review.add_argument("--timeout", type=int, default=90)
+    review.add_argument("--state-dir")
+    review.set_defaults(func=_run_skill_review)
 
     parser.set_defaults(func=lambda _args: parser.print_help() or 0)
 
@@ -104,4 +114,27 @@ def _run_skill_evaluation(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     print(json.dumps({"cards": cards}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_skill_review(args: argparse.Namespace) -> int:
+    from zf.runtime.skill_review_batch import review_batch
+
+    try:
+        ctx = resolve_project_context(explicit_state_dir=args.state_dir, load_config_with_explicit=True)
+        result = review_batch(
+            ctx.state_dir,
+            ctx.project_root,
+            ctx.config,
+            run_id=args.run_id,
+            attempt_id=args.attempt_id,
+            model=args.model,
+            max_calls=args.max_calls,
+            sample_percent=args.sample_percent,
+            timeout=args.timeout,
+        )
+    except (ConfigError, OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

@@ -179,7 +179,7 @@ def skill_rows(reader, root, dispatch, materialization, actions, sid, ended):
 def probe_agreement(reader, dispatch, result):
     evidence = []
     for probe in entries(result.get("probe_receipts")):
-        if not isinstance(probe, dict):
+        if not isinstance(probe, dict) or not artifact_access_allowed(probe.get("access_scope")):
             continue
         for path in entries(probe.get("evidence_refs")):
             if not isinstance(path, str) or not re.fullmatch(
