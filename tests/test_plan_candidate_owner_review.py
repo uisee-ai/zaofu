@@ -137,3 +137,54 @@ def test_malformed_question_fields_return_diagnostics_without_consuming_submit(t
     del body["owner_decision_items"][0][field]
     submitted = service.submit(**kwargs, semantic_result=body)
     assert submitted.canonical_event_type == "issue.triage.child.completed"
+
+
+def test_diagnosis_only_explains_zero_selected_tasks_without_granting_execution(tmp_path):
+    from tests.test_plan_candidate_diagnosis_inputs import _diagnosis
+    from tests.test_plan_candidate_preflight import _task_map
+    from zf.cli.result import _validation_summary
+
+    runtime, trigger, _ = _diagnosis(tmp_path)
+    trigger["workflow_run_id"] = trigger["trace_id"]  # Pinned in the downstream Planner WRC.
+    report = {"task_map": _task_map(), "source_index": _source_index(), "plan_md": "# Independent diagnosis"}
+    kwargs = dict(state_dir=runtime.state_dir, project_root=runtime.project_root, profile_id="workflow-read")
+
+    from zf.runtime.stage_execution_card import _render_plan_candidate_policy
+
+    def scope_brief(pinned):
+        return "\n".join(_render_plan_candidate_policy({"manifest": {"trigger_payload": pinned}}))
+
+    assert "zero Writers" in scope_brief(trigger)
+    def check(semantic, pinned):
+        return validate_plan_candidate_semantic(**kwargs, semantic=semantic, request={
+            "plan_candidate_validation": {"manifest": {"trigger_payload": pinned}}})
+
+    result = check(report, trigger)
+    assert result["status"] == "failed"
+    error, = [e for e in result["errors"] if e["code"] == "candidate_diagnosis_no_writer_authority"]
+    assert error["field"] == "task_map.tasks"
+    assert "submitted tasks=1, authorized Writers=0" in error["message"]
+    assert error in _validation_summary(result)["errors"]
+    assert not any(e["code"] == "writer_fanout_task_map_invalid" for e in result["errors"])
+
+    # Neither semantic text nor a task-map annotation selects the diagnosis route.
+    missing = {k: v for k, v in trigger.items() if k != "orchestrator_decision_ref"}
+    for pinned in [missing, {**trigger, "resume_scope": "failed_children_only", "task_ids": ["TASK-1"]}]:
+        assert "zero Writers" not in scope_brief(pinned)
+        unbound = check({**report, "summary": "candidate_diagnosis_only", "task_map": {
+            **report["task_map"], "resume_scope": "candidate_diagnosis_only"}}, pinned)
+        assert not any(e["code"] == error["code"] for e in unbound["errors"])
+
+    empty = check({**report, "task_map": {**report["task_map"], "tasks": []}}, trigger)
+    assert empty["status"] == "failed"
+    assert not any(e["code"] == error["code"] for e in empty["errors"])
+
+    draft = candidate(runtime.project_root)
+    draft["summary"] = "The pinned requirement is clear. A new independent verification needs a separate authorization."
+    draft["owner_decision_items"] = [{"decision_id": "reverification", "blocking": True,
+        "question": "May the frozen candidate be independently reverified under the existing acceptance contract?"}]
+    admitted = check(draft, trigger)
+    assert admitted["status"] == "passed" and admitted["execution_ready"] is False
+    no_decision = check({**draft, "owner_decision_items": []}, trigger)
+    assert no_decision["status"] == "failed"
+    assert any(e["field"] == "owner_decision_items" for e in no_decision["errors"])

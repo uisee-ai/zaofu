@@ -67,7 +67,9 @@ def evaluate_plan_candidate_preflight(
         for row in reports
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
-    from zf.runtime.plan_candidate_owner_review import owner_review_preflight
+    from zf.runtime.plan_candidate_owner_review import (
+        bound_candidate_diagnosis, diagnosis_only_writer_error, owner_review_preflight,
+    )
 
     draft_review = owner_review_preflight(
         candidates, state_dir=state_dir, project_root=project_root,
@@ -218,14 +220,17 @@ def evaluate_plan_candidate_preflight(
                 )
             if task_items:
                 try:
-                    selected, _, _, _ = select_writer_task_items(dict(task_map), task_items, trigger)
+                    selected, _, _, scope = select_writer_task_items(dict(task_map), task_items, trigger)
                 except (RuntimeError, ValueError) as exc:
                     _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
                 else:
                     try:
                         validate_writer_task_items(selected)
                     except (RuntimeError, ValueError) as exc:
-                        _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
+                        if not selected and scope == "candidate_diagnosis_only" and bound_candidate_diagnosis(trigger):
+                            errors.append(diagnosis_only_writer_error(len(task_items)))
+                        else:
+                            _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
                         from zf.runtime.writer_fanout_admission import writer_task_map_dispatch_target
 

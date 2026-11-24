@@ -16,6 +16,35 @@ from zf.runtime.task_map import resolve_artifact_file, validate_source_index_pay
 from zf.runtime.workflow_read_result import workflow_read_finding_issues
 
 
+def bound_candidate_diagnosis(trigger: object) -> bool:
+    """Recognize the existing typed OA scope in kernel-pinned Plan validation."""
+    if not isinstance(trigger, Mapping):
+        return False
+    decision = trigger.get("orchestrator_decision_ref")
+    return bool(trigger.get("resume_scope") == "candidate_diagnosis_only"
+                and trigger.get("replan_classification") == "oa_semantic_return_to_plan"
+                and all(trigger.get(key) for key in ("workflow_run_id", "candidate_event_id", "rework_of",
+                                                     "pdd_id", "source_commit", "plan_artifact_package_digest"))
+                and isinstance(decision, Mapping) and decision.get("ref") and decision.get("sha256")
+                and not any(trigger.get(key) for key in ("task_ids", "failed_task_ids", "downstream_task_ids")))
+
+
+def diagnosis_only_writer_error(task_count: int) -> dict[str, str]:
+    """Explain a nonempty Plan that has no authorized Writer selection."""
+    return {
+        "code": "candidate_diagnosis_no_writer_authority",
+        "field": "task_map.tasks",
+        "message": (
+            f"candidate_diagnosis_only: submitted tasks={task_count}, authorized Writers=0. "
+            "Record independent findings with sources. For a genuine blocking Owner choice submit a "
+            "Critic draft: candidate_kind=owner_review, execution_status=completed, "
+            "result_semantics=artifact_production, recommendation=abstain or blocked, summary, "
+            "plan_artifact_ref + plan_artifact_sha256, source_index_ref + source_index_sha256, "
+            "owner_decision_items[{decision_id,question,blocking:true}]. New work/re-verification needs separate authority."
+        ),
+    }
+
+
 def owner_review_preflight(
     candidates: list[dict[str, Any]], *, state_dir: Path, project_root: Path,
 ) -> dict[str, Any] | None:

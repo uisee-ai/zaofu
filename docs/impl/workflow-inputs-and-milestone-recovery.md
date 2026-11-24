@@ -212,3 +212,5 @@ Reader 领取工作前，若共享冻结依据无法通过校验，控制面记�
 仅获准在执行受阻后采集宿主证据的 Run，首次派发可能还没有该候选的回执。收到真实的受阻结果后，宿主按授权执行命令；恢复调度同时追踪提出采集的 Reader 和可消费这些事实的其他 Reader。每个角色有独立的重试身份和判词。换候选后要重新匹配目标和合同。观察进度时分别统计冻结、成功登记、实际启动的操作和准入的判词，聚合失败数不能代表产品缺陷数。
 
 对于 OA 已准入的 Candidate 聚合返规，`candidate_diagnosis_only` 把本次仲裁的输入记录在 `plan-rework-context.candidate_diagnosis_evidence`。Planner 可按来源索引读取该决定引用的依据，以及涉案 finding 对应的独立 Reader 报告。相同报告可供多个 finding 引用。来源受原 OA manifest、当前冻结目标、Planner 的访问权限和允许的 JSON 路径共同约束。索引记录不可用的原因。写入任务和宿主执行分别由任务派发与受控动作授权。
+
+提交可执行计划时，若当前 OA 诊断范围保留任务图且授权 Writer 数量为零，预检返回 `candidate_diagnosis_no_writer_authority`，并列出草案的必要字段。确需决定受保护范围或新授权时，Planner 可把已核实的结论、来源和具体问题提交为 `owner_review` 草案，交独立 Critic 判断。新增工作、候选重验与计划批准分别沿用原有授权入口。

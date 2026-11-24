@@ -401,7 +401,14 @@ def _render_plan_candidate_policy(
     candidate = candidate if isinstance(candidate, Mapping) else {}
 
     policy_rows: list[str] = []
+    from zf.runtime.plan_candidate_owner_review import bound_candidate_diagnosis
     from zf.runtime.plan_artifact_package import required_plan_ports
+
+    manifest = validation.get("manifest")
+    if isinstance(manifest, Mapping) and bound_candidate_diagnosis(manifest.get("trigger_payload")):
+        policy_rows.append("- candidate_diagnosis_only authorizes independent diagnosis and zero Writers. "
+                           "Retain findings and source refs. Only a genuine blocking Owner decision warrants an "
+                           "owner_review draft for independent Critic review; see the PRD Plan skill's draft contract.")
 
     ports = required_plan_ports(flow_kind=str(metadata.get("flow_kind") or ""), metadata=metadata)
     authored_ports = list(dict.fromkeys([
