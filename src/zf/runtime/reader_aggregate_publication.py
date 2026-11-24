@@ -49,6 +49,10 @@ def publication_payload(*, manifest, artifact_payload, final_status, publish_eve
                 first_message = str(
                     failure_findings[0].get("message") or "",
                 )[:160]
+            groups = publish_payload.get("reader_outcomes") or {}
+            if groups:
+                counts = ", ".join(f"{outcome}={len(children)}" for outcome, children in sorted(groups.items()))
+                first_message = f"{counts}. {first_message}" if first_message else counts
             publish_payload["reason"] = (
                 f"{len(failed_children)}/{len(children)} children failed"
                 + (f": {first_message}" if first_message else "")

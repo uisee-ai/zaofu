@@ -145,6 +145,14 @@ def _is_simple_controlled_zf_result_command(
     }
     if any(token in shell_operators for token in tokens):
         return False
+    # A source-launched host service issues this exact interpreter/module pair
+    # for both its provider hook and its generated result-validation command.
+    if stdin_only and tokens[:3] == [sys.executable, "-m", "zf.cli.main"]:
+        return (
+            command == shlex.join(tokens)
+            and tokens[3:5] == ["result", "validate"]
+            and "--stdin" in tokens[5:]
+        )
     index = 0
     while index < len(tokens) and re.fullmatch(
         r"[A-Za-z_][A-Za-z0-9_]*=.*",

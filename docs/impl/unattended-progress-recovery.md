@@ -541,6 +541,11 @@ here-doc。正文作为CLI输入交给既有身份、权限、schema及一次性
 runtime目录写权限，也不把hook放行当作提交成功或产品通过。未引用delimiter、
 头部替换/重定向/管道/分号、尾随命令、提前结束、其他程序等仍走原保守检查。
 
+宿主服务也会用启动 hook 的绝对 Python 路径和固定模块 `-m zf.cli.main`
+生成这个命令。分类器识别该启动形式时逐字对照生成器的 shell 引用和参数。
+2026-11-24 的 Candidate `706f8284` 中，lane 1 的两次误拒记录为
+`evt-8ebaa6ed6872` 和 `evt-cce725e60b8d`。该 lane 最终没有提交验证结果。
+
 回归`tests/test_hook_literal_result_stdin.py`直接使用真实提示生成器和Codex/Claude
 hook入口，覆盖合法正文及shell副作用反例。运行中的旧实验不因源码修复而变为
 新源码验证；任何批准后的源码维护仍须明确计入人工介入。

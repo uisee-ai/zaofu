@@ -338,6 +338,9 @@ def build_resident_run_manager_briefing(
         "  stage-replan-new-generation、rescan-grant 由 owner 审批后执行，不据此宣称可自动恢复。",
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
+        "- 请求 owner 时给出具体 question 和 blocking_scope。仅当决定只涉及独立诊断记录或归档、",
+        "  且已有证据表明产品推进不依赖该决定时，使用 side。任务级决定给出 task 和 task_id；",
+        "  涉及整个 run 或影响范围未明时使用 run。已有门禁继续有效。",
         "",
         f"现在开始观察当前 run。先执行一次 `{status_command}`，再按上述请求与引用定位证据。",
     ])

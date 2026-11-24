@@ -131,6 +131,8 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
             if recollection_base is not None:
                 fields.update(recollection_of_start_id=manifest['recollection_of_start_id'],
                               original_manifest_digest=manifest['original_manifest_digest'])
+                if manifest.get('recollection_of_receipt_id'):
+                    fields['recollection_of_receipt_id'] = manifest['recollection_of_receipt_id']
             start = service.writer.emit("runtime.action.attempt.started", actor=service.actor,
                 task_id=fields["task_id"], correlation_id=fields["workflow_run_id"], payload=fields)
             prefix = f"artifacts/task-host-actions/{reviewed_digest}"

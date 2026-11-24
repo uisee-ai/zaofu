@@ -91,12 +91,16 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
         return required, {}, False
     from zf.runtime.host_verification_retained import retained_reader_probes
     receipts = retained_reader_probes(service, operation, contract, policy, events)
-    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()]
+    from zf.runtime.host_probe_recollection import replaced_capture_refs
+    replaced = replaced_capture_refs(service.state_dir, operation['operation_id'], events, policy)
+    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()
+                if ref.get('sha256') not in replaced]
     failed_probe = any(row.get('exit_code') != 0 or row.get('status') == 'failed' for row in retained)
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
-                or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'):
+                or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'
+                or (p.get('receipt_ref') or {}).get('sha256') in replaced):
             continue
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
         from zf.runtime.host_verification_policy import policy_receipt_matches

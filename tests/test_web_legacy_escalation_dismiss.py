@@ -59,3 +59,26 @@ def test_legacy_dismissal_keeps_auth_and_exact_review_requirements(escalation, f
         payload[{"event": "escalation_event_id", "approval": "approval_ref", "reason": "reason"}[fault]] = ""
     assert not submit(escalation, payload, **kwargs)["ok"]
     assert not any(e.type == "human.escalation.acknowledged" for e in writer.event_log.read_all())
+
+
+def test_review_only_recommendation_can_be_dismissed_with_a_recorded_reason(escalation):
+    state, writer, config, _ = escalation
+    event = writer.emit("human.escalate", actor="run-manager", payload={
+        "decision_token": "review-only", "checkpoint_id": "recommendation:source",
+        "action": "agent-recommendation", "safe_resume_action": "agent_recommendation",
+        "blocking_scope": "run",
+    })
+    payload = {"decision_token": "review-only", "created_event_id": event.id,
+               "reason": "归档留作不完整，保留诊断记录。"}
+    result = submit(escalation, payload, action="human-decision-approve-controlled-action")
+    assert result["_status_code"] == 409
+    assert not any(e.type == "human.escalation.acknowledged" for e in writer.event_log.read_all())
+    assert submit(escalation, payload)["ok"]
+    events = writer.event_log.read_all()
+    _consume_human_decisions(state_dir=state, writer=writer, config=config,
+                             project_root=state.parent, events=events, causation_id="test-tick")
+    events = writer.event_log.read_all()
+    applied, = [e for e in events if e.type == "run.manager.human_decision.applied"]
+    assert applied.payload["decision"] == "dismissed"
+    assert applied.payload["reason"] == payload["reason"]
+    assert not any(e.type == "run.manager.action.applied" for e in events)

@@ -7,6 +7,7 @@ from typing import Any
 from zf.core.events import EventWriter, ZfEvent
 from zf.core.state.locks import locked_path
 from zf.runtime.control_actions_helpers import _task_id_from_payload
+from zf.runtime.run_manager_recovery_actions import review_only_escalation
 from zf.runtime.run_manager import (
     _human_decision_event_token, _human_escalations_by_token, _pending_human_decisions,
 )
@@ -36,6 +37,8 @@ def submit_human_decision(
         escalation = _human_escalations_by_token(events).get(token)
         if not escalation:
             return _conflict(action, requested_action, "human decision is unavailable")
+        if action == "human-decision-approve-controlled-action" and review_only_escalation(escalation):
+            return _conflict(action, requested_action, "review-only recommendation has no controlled action to approve")
         has_contract = any(
             str(escalation.get(key) or "").strip()
             for key in ("checkpoint_id", "approval_command")
@@ -80,6 +83,7 @@ def submit_human_decision(
                 "schema_version": "human-escalation-acknowledged.v1",
                 "decision_token": token,
                 "decision": decision,
+                "reason": str(payload.get("reason") or ""),
                 "source": str(payload.get("source") or "operator-inbox"),
                 "surface": "web",
                 "project_id": project_id,

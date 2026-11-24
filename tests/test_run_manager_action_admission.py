@@ -217,3 +217,62 @@ def test_current_diagnostic_advice_survives_a_temporary_gate(tmp_path, route, co
         effect.assert_called_once()
     receipts = [e for e in log.read_all() if e.type == "run.manager.agent.recommendation.consumed"]
     assert [e.payload["status"] for e in receipts] == ["deferred", "consumed"]
+
+
+@pytest.mark.parametrize("scope", ["run", "side"])
+def test_resident_review_only_gate_shows_question_and_real_owner_actions(tmp_path, scope):
+    from zf.runtime.operator_inbox import build_runtime_requests
+    from zf.runtime.run_manager import _pending_human_decisions
+
+    state, log, writer = _state(tmp_path)
+    writer.emit("run.goal.started", payload={"run_id": "r", "objective": "deliver"})
+    question = "是否接受隔离诊断的现有归档，并保留报告缺失记录？"
+    _recommend(writer, task_id="", recommended_route="human", safe_resume_action="agent_recommendation",
+               workflow_run_id="r", blocking_scope=scope, summary="归档处置",
+               recommended_replan_or_resume_action={"decision_required": question})
+    for _ in range(2):
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    events = log.read_all()
+    assert len([e for e in events if e.type == "human.escalate"]) == 1
+    gate, = _pending_human_decisions(events)
+    assert gate["blocking_scope"] == scope
+    last_tick = next(e for e in reversed(events) if e.type == "run.manager.tick.completed")
+    if scope == "run":
+        assert last_tick.payload["transition"] == "continue_waiting"
+        assert last_tick.payload["wait_reason"] == "human_decision_pending"
+        assert last_tick.payload["blocking_event_ids"] == [gate["event_id"]]
+    else:
+        assert "blocking_event_ids" not in last_tick.payload
+    assert gate["question"] == question
+    assert "dismissed" in gate["suggested_options"]
+    assert "approve_controlled_action" not in gate["suggested_options"]
+    assert "/actions/human-decision-dismiss " in gate["approval_command"]
+    item, = [i for i in build_runtime_requests(state, events) if i["kind"] == "human_decision"]
+    assert item["summary"] == question
+    assert "human-decision-approve-controlled-action" not in {op["action"] for op in item["actions"]}
+    assert not any(e.type == "run.manager.human_decision.applied" for e in events)
+
+
+def test_legacy_review_gate_recovers_bound_question_without_dismissing_gate(tmp_path):
+    from zf.core.events import ZfEvent
+    from zf.runtime.operator_inbox import build_runtime_requests
+    from zf.runtime.run_manager import _pending_human_decisions
+
+    state, log, writer = _state(tmp_path)
+    question = "是否接受现有诊断记录？"
+    rec = _recommend(writer, recommended_route="human",
+                     recommended_replan_or_resume_action={"decision_required": question})
+    log.append(ZfEvent(type="human.escalate", origin="kernel", actor="run-manager", payload={
+        "action": "agent-recommendation", "safe_resume_action": "agent_recommendation",
+        "source_event_ids": [rec.id], "checkpoint_id": f"recommendation:{rec.id}",
+        "decision_token": "test-gate", "blocking_scope": "run", "reason": "generic owner input",
+        "question": "default approval question", "suggested_options": ["approve_controlled_action"],
+        "approval_command": "POST /api/projects/<id>/actions/human-decision-approve-controlled-action payload={}",
+    }))
+    events = log.read_all()
+    gate, = _pending_human_decisions(events)
+    assert gate["question"] == question and gate["blocking_scope"] == "run"
+    assert "/actions/human-decision-dismiss " in gate["approval_command"]
+    item, = build_runtime_requests(state, events)
+    assert item["summary"] == question and item["status"] == "pending"
+    assert log.read_all() == events

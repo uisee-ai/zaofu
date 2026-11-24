@@ -892,6 +892,14 @@ def _run_manager_tick_unlocked(
         str(transition.payload.get("transition") or "")
         if transition is not None else "continue_waiting"
     )
+    wait_context = {}
+    status_explain = projection.get("status_explain") or {}
+    if transition is None and status_explain.get("next_auto_action") == "wait_for_human_decision":
+        wait_context = {
+            "wait_reason": status_explain.get("wait_reason"),
+            "blocking_event_ids": [ref["event_id"] for ref in status_explain.get("blocking_refs") or []
+                                   if ref.get("event_id")],
+        }
     completed = writer.emit(
         RUN_MANAGER_TICK_COMPLETED,
         actor="run-manager",
@@ -917,6 +925,7 @@ def _run_manager_tick_unlocked(
             "transition_event_id": transition.id if transition is not None else "",
             "transition_event_written": transition is not None,
             "transition": transition_name,
+            **wait_context,
         },
     )
     projection = build_run_manager_projection(
@@ -928,6 +937,7 @@ def _run_manager_tick_unlocked(
     projection["last_tick_event_id"] = completed.id
     projection["last_tick_summary"] = {
         "schema_version": "run-manager.tick-summary.v1",
+        **wait_context,
         "started_event_id": started.id,
         "completed_event_id": completed.id,
         "transition_event_id": transition.id if transition is not None else "",
@@ -4721,6 +4731,10 @@ def emit_human_escalation_package(
     causation_id: str | None = None,
 ) -> ZfEvent:
     from zf.runtime.run_continuation import escalation_blocking_scope
+    from zf.runtime.run_manager_recovery_actions import review_only_escalation
+
+    review_only = review_only_escalation(action)
+    endpoint = "human-decision-dismiss" if review_only else "human-decision-approve-controlled-action"
     workflow_run_id = str(
         action.get("workflow_run_id")
         or action.get("run_id")
@@ -4803,11 +4817,10 @@ def emit_human_escalation_package(
         ),
         "resume_condition": str(action.get("resume_condition") or ""),
         "suggested_options": _string_list(action.get("suggested_options"))
-        or ["approve_controlled_action", "request_autoresearch", "safe_halt"],
+        or ["dismissed" if review_only else "approve_controlled_action", "request_autoresearch", "safe_halt"],
         "blocking_scope": escalation_blocking_scope(action),
         "approval_command": (
-            "POST /api/projects/<id>/actions/"
-            "human-decision-approve-controlled-action "
+            f"POST /api/projects/<id>/actions/{endpoint} "
             f"payload={{\"decision_token\": \"{_human_decision_token(action)}\"}}"
         ),
         "question": str(action.get("question") or "")
@@ -5088,10 +5101,13 @@ def _consume_agent_recommendations(
                 status = "wait"
                 reason = "terminal closeout is handled by deterministic run manager closeout"
             else:
+                from zf.runtime.run_manager_recovery_actions import resident_decision_question
+
+                question = resident_decision_question(payload)
                 escalation = emit_human_escalation_package(
                     writer,
-                    action=action,
-                    reason=str(payload.get("reason") or "resident Run Manager requested human decision"),
+                    action={**action, "question": question},
+                    reason=str(payload.get("reason") or question or "resident Run Manager requested human decision"),
                     causation_id=causation_id,
                 )
                 downstream_event_ids.append(escalation.id)
@@ -11991,6 +12007,8 @@ def _human_decision_action(
 
 
 def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+    from zf.runtime.run_manager_recovery_actions import resident_decision_question, review_only_escalation
+
     escalations = _human_escalations_by_token(events)
     resolved = _seen_human_decisions(events)
     terminal_closeout = _current_run_completed_closeout(events)
@@ -12001,6 +12019,16 @@ def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
         source_event = _event_by_id(events, str(payload.get("event_id") or ""))
         if source_event is not None and _event_superseded_by_later_progress(events, source_event):
             continue
+        question = str(payload.get("question") or "")
+        review_only = review_only_escalation(payload)
+        if review_only and source_event is not None and source_event.origin == "kernel":
+            # Recover the recommendation text from legacy packages without changing their authority.
+            for ref in source_event.payload.get("source_event_ids") or []:
+                source = _event_by_id(events, ref)
+                if (source is not None and source.type == RUN_MANAGER_AGENT_RECOMMENDATION
+                        and payload.get("checkpoint_id") == f"recommendation:{source.id}"):
+                    question = resident_decision_question(source.payload) or question
+                    break
         blocking_scope = str(payload.get("blocking_scope") or "run")
         if (
             terminal_closeout is not None
@@ -12019,17 +12047,22 @@ def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
             "checkpoint_id": str(payload.get("checkpoint_id") or ""),
             "fingerprint": str(payload.get("fingerprint") or ""),
             "reason": str(payload.get("reason") or ""),
+            "question": question,
+            "review_only": review_only,
             "source_event_ids": [
                 str(value) for value in payload.get("source_event_ids") or []
                 if str(value).strip()
             ],
             "suggested_options": [
-                str(value) for value in payload.get("suggested_options") or []
+                "dismissed" if review_only and value == "approve_controlled_action" else str(value)
+                for value in payload.get("suggested_options") or []
             ],
             # FIX-3:blocking_scope/approval_command 随包透传;legacy 无
             # scope 的包按 run 处理(fail-closed)。
             "blocking_scope": blocking_scope,
-            "approval_command": str(payload.get("approval_command") or ""),
+            "approval_command": str(payload.get("approval_command") or "").replace(
+                "/actions/human-decision-approve-controlled-action ", "/actions/human-decision-dismiss ", 1,
+            ) if review_only else str(payload.get("approval_command") or ""),
         })
     return sorted(rows, key=lambda item: item.get("created_ts") or "")
 

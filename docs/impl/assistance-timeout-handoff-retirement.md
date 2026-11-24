@@ -16,3 +16,5 @@ ls-v1 的 FMS13 曾在咨询超时后收到 `human.escalate`。OA 随后回答�
 真实旧事件可以直接重放得到同一投影；缺少完整证据的历史通知仍需精确的操作员审核。本次现场先使用已授权的 `human-decision-dismiss` 解除单条旧通知，再用回放证明通用修复覆盖该事故，不能将这次手动解锁描述为新代码的自然自动恢复。
 
 回归覆盖实际 `build_run_manager_projection` 和 continuation 选择入口，并保留同一 Task 的另一条 Owner 门禁；反例覆盖来源、Run/Task/operation/attempt/lease、摘要、准入和分诊缺失、终止分诊、迟到回答和真实审批。
+
+Resident 请求人工处置时应给出具体的 `question`、作用范围及证据。独立诊断报告的采纳或归档可以标为 `blocking_scope=side`，前提是 resident 确认产品推进不依赖该决定。影响范围未明时沿用 run 门禁。仅供人工审阅的建议通过已授权的 `human-decision-dismiss` 关闭，历史门禁保留原作用范围，运行面板可从其绑定建议还原待决定的具体问题。采纳报告不会补发缺失证据或授予重试权限。
