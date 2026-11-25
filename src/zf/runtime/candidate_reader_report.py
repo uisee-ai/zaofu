@@ -11,6 +11,16 @@ from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutab
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
+def reader_fanout_trigger(
+    events: Sequence[ZfEvent], by_id: Mapping[str, ZfEvent], fanout_id: str,
+) -> ZfEvent | None:
+    if not fanout_id:
+        return None
+    start = next((e for e in reversed(events) if e.type == "fanout.started" and e.origin == "kernel"
+                  and e.payload.get("fanout_id") == fanout_id), None)
+    return by_id.get(start.payload.get("trigger_event_id")) if start else None
+
+
 def scoped_journey_spec(spec: Mapping[str, Any], scope: Mapping[str, Any]) -> dict:
     """Derive a report view; an explicitly assigned journey is required for this Reader."""
     ids = set(scope["journey_ids"])
@@ -100,12 +110,7 @@ def validate_integration_readers(
         raise ValueError("Candidate integration needs a frozen discovery fanout")
     by_id = {event.id: event for event in events}
 
-    def triggering_event(fanout_id: str) -> ZfEvent | None:
-        start = next((e for e in reversed(events) if e.type == "fanout.started" and e.origin == "kernel"
-                      and e.payload.get("fanout_id") == fanout_id), None)
-        return by_id.get(start.payload.get("trigger_event_id")) if start else None
-
-    discovery = triggering_event(fanout)
+    discovery = reader_fanout_trigger(events, by_id, fanout)
     if (not discovery or discovery.type != "flow.discovery.requested" or discovery.origin != "kernel"
             or discovery.payload.get("workflow_run_id") != run):
         raise ValueError("Candidate integration lacks its exact discovery request")
@@ -114,7 +119,7 @@ def validate_integration_readers(
             or source.payload.get("workflow_run_id") != run):
         raise ValueError("Candidate integration lacks a successful Candidate fanout")
     readers = source.payload.get("fanout_id")
-    trigger = triggering_event(readers)
+    trigger = reader_fanout_trigger(events, by_id, readers)
     if not trigger or trigger.type != "candidate.ready" or trigger.origin != "kernel":
         raise ValueError("Candidate integration lacks a frozen Candidate fanout trigger")
     history = list(events)
