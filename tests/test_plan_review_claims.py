@@ -42,7 +42,7 @@ def test_preflight_and_submit_reject_false_current_value(tmp_path):
     before = [e.id for e in runtime.event_log.read_all()]
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
-    assert any(e['code'] == 'plan_review_evidence_invalid' for e in check['errors']), check
+    assert {e['code'] for e in check['errors']} >= {'plan_review_evidence_invalid', 'required_read_missing'}, check
     with pytest.raises(ResultSubmitError, match='output binding failed'):
         service.submit(operation_id=prepared.operation_id, semantic_result=result,
                        role_instance='plan-critic', credential=token)
@@ -65,7 +65,10 @@ def test_preflight_identifies_the_exact_failed_citation_in_the_submitted_result(
 
 
 def test_legacy_frozen_request_preserves_old_contract_and_exposes_original_gap(tmp_path):
-    _, prepared, service, token, result, _ = _case(tmp_path, policy='')
+    from tests.test_plan_review_comparisons import read_current_review_inputs
+
+    runtime, prepared, service, token, result, _ = _case(tmp_path, policy='')
+    read_current_review_inputs(runtime, prepared.operation_id)
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
     assert not check['errors'], check  # Old admission bound identities, but not the claimed current value.

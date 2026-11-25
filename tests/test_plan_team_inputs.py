@@ -147,11 +147,14 @@ def test_each_expert_reads_its_section_and_planner_opens_every_admitted_report(a
     request = {"operation_id": planner.payload["operation_id"], "semantic_result": _plan_candidate(),
                "role_instance": "planner", "credential": token}
     check = service.validate_plan_candidate(**request, project_root=root)
-    assert check["status"] == "passed", json.dumps(check["errors"])
+    assert check["status"] == "failed"
+    assert {e["code"] for e in check["errors"]} == {"required_read_missing"}
     with pytest.raises(ResultSubmitError) as unread:
         service.submit(**request)
     assert "read" in str(unread.value).lower() or "delivery" in str(unread.value).lower(), str(unread.value)
     read_plan_member_inputs(runtime, planner)
+    check = service.validate_plan_candidate(**request, project_root=root)
+    assert check["status"] == "passed", json.dumps(check["errors"])
     result = service.submit(**request)
     assert result.canonical_event_type == "prd.plan.child.completed"
     path.write_text("Later unrelated amendment.")
