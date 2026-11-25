@@ -131,6 +131,7 @@ def evaluate_plan_candidate_preflight(
                 f"required plan artifact port {canonical!r} has no producer",
             )
 
+    plan_input_diagnostics: dict[str, dict[str, str]] = {}
     if task_map:
         from zf.runtime.plan_candidate_input_lineage import validate_input_body_partitions
 
@@ -183,12 +184,15 @@ def evaluate_plan_candidate_preflight(
         from zf.runtime.task_map_required_ports import plan_input_declaration_errors, selected_input_body_errors
 
         binding_errors = plan_input_declaration_errors(
-            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS, diagnostics=plan_input_diagnostics,
             require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
         )
         binding_errors.extend(selected_input_body_errors(dict(task_map), port_bodies))
         for message in dict.fromkeys([*validation.errors, *binding_errors]):
-            _error(errors, "task_map_invalid", "task_map", message)
+            if message in plan_input_diagnostics:
+                errors.append(plan_input_diagnostics[message])
+            else:
+                _error(errors, "task_map_invalid", "task_map", message)
         for diagnostic in validation.summary.get("goal_coverage", {}).get(
             "diagnostics", []
         ):
@@ -277,10 +281,12 @@ def evaluate_plan_candidate_preflight(
         source_validation = validate_source_index_payload(
             source_index,
             task_map=dict(task_map),
-            require_canonical=True,
+            require_canonical=True, task_map_validation=validation,
         )
+        already_reported = {f"task_map: {item}" for item in validation.errors}
         for message in source_validation.errors:
-            _error(errors, "source_index_invalid", "source_index", message)
+            if message not in already_reported:
+                _error(errors, "source_index_invalid", "source_index", message)
 
     if task_map:
         from zf.runtime.source_index_gate import evaluate_source_index_gate
@@ -344,6 +350,10 @@ def evaluate_plan_candidate_preflight(
         "task_map_producer": producer,
         "required_ports": required_with_source,
         "available_ports": sorted(available),
+        **({"plan_input_contract": {
+            "flow_required_ports": required_plan_ports(flow_kind=flow_kind, metadata=metadata),
+            "task_map_required_plan_ports": task_map.get("required_plan_ports", []),
+        }} if plan_input_diagnostics else {}),
         "errors": errors,
         "summary": {
             "error_count": len(errors),

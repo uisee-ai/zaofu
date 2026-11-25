@@ -27,7 +27,7 @@ def active_codex_turn(
 
 
 def active_codex_turn_from_events(
-    events: Iterable[ZfEvent], instance_id: str,
+    events: Iterable[ZfEvent], instance_id: str, *, require_unique: bool = False,
 ) -> dict[str, object] | None:
     """Reconstruct an open turn from an already loaded event window."""
 
@@ -125,7 +125,7 @@ def active_codex_turn_from_events(
                 if key[0] == session_id:
                     active.pop(key, None)
 
-    if not active:
+    if not active or (require_unique and len(active) != 1):
         return None
 
     latest_key, latest_event = max(

@@ -37,7 +37,8 @@ def pending_failure_diagnoses(
     from zf.runtime.reader_wait_recovery import pending_reader_wait_diagnoses
     from zf.runtime.host_probe_diagnosis import pending_host_probe_diagnoses
     from zf.runtime.candidate_infrastructure_recovery import pending_candidate_infrastructure_diagnoses
-    actions = [*pending_candidate_infrastructure_diagnoses(events),
+    from zf.runtime.durable_mailbox_question_liveness import pending_peer_diagnoses
+    actions = [*pending_peer_diagnoses(events), *pending_candidate_infrastructure_diagnoses(events),
                *pending_reader_wait_diagnoses(events),
                *pending_host_probe_diagnoses(state_dir, events, config)]
     for task_id, (index, event) in latest.items():

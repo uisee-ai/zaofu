@@ -127,8 +127,7 @@ def run_post_dispatch_sweep(
         from zf.runtime.durable_mailbox import reconcile_mailbox
         from zf.runtime.workflow_schedule import reconcile_schedules
 
-        runtime._safe_housekeeping("durable_mailbox", lambda: reconcile_mailbox(
-            runtime, events=runtime.event_log.read_all()))
+        runtime._safe_housekeeping("durable_mailbox", lambda: reconcile_mailbox(runtime))
 
         runtime._safe_housekeeping("workflow_schedules", lambda: reconcile_schedules(runtime))
         runtime._safe_housekeeping("orphaned_tasks", runtime._check_orphaned_tasks)

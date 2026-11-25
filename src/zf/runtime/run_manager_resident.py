@@ -253,7 +253,7 @@ def build_resident_run_manager_briefing(
         "   reader_rebuild 如存在，核对该失败与执行条件是否已改变。其 recommendation 只供提案；",
         "   有 method_change 时核对原派发的 delivered_method_ref 和当前预览的 added_routes。仅将业务上适用的新入口作为方法改善依据，"
         "保留原 recommendation 的 reader_method_digest。unchanged/unknown 时诊断具体缺口或走其他已有授权路径；预览尚未派送，派送也不证明读取。",
-        "   保留 WRC active_attempt_id，先核对 blocking_human_decisions 与最新门禁，再决定是否建议精确重试。",
+        "   transport_task_attempt_id 标识一次传输派发，重派时会更新。用嵌套 dispatch_call_attempt_id、durable_request_hash 和来源事件核对 durable_operation_active_attempt_id。两种编号不同不能单独判定提案失效。核对当前 binding_preflight、blocking_human_decisions 和执行条件后，自主选择是否建议重试。",
         "   同时核对 preauthorized_host_recovery 的宿主策略、同Run执行事件和绑定收据；",
         "   reflect/source_repair关闭不代表宿主验证关闭。策略声明不证明执行，单条命令",
         "   通过不证明产品验收；部分非浏览器收据也不证明浏览器恢复队列不存在。",

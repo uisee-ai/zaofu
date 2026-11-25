@@ -343,6 +343,7 @@ def validate_source_index_payload(
     *,
     task_map: dict[str, Any] | None = None,
     require_canonical: bool = True,
+    task_map_validation: TaskMapValidationResult | None = None,
 ) -> TaskMapValidationResult:
     """Validate task_id -> source provenance coverage for a task-map.
 
@@ -409,12 +410,8 @@ def validate_source_index_payload(
 
     missing: list[str] = []
     if task_map is not None:
-        validation = validate_task_map_payload(
-            task_map,
-            require_task_verification=False,
-        )
-        if not validation.passed:
-            errors.extend(f"task_map: {item}" for item in validation.errors)
+        validation = task_map_validation or validate_task_map_payload(task_map, require_task_verification=False)
+        errors.extend(f"task_map: {item}" for item in validation.errors)
         for raw in task_map.get("tasks") or []:
             if not isinstance(raw, dict):
                 continue

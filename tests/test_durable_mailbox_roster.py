@@ -147,6 +147,10 @@ def test_pre_dispatch_obligation_pulls_only_after_real_wrc_dispatch(assembly, tm
             text="Old consumer",
             delivery_id=delivery["delivery_id"],
         )
+    # A failed old claimant is superseded by the same approved obligation's genuine retry.
+    mail.reconcile_mailbox(rt)
+    assert not any(e.type == "workflow.mailbox.disposition" and e.payload.get("status") == "diagnosis_required"
+                   for e in rt.event_log.read_all())
     successor = {**recipient, "attempt_id": "renewed"}
     restored = mail.prepare(rt, successor, request_id="first", message_ids=[msg["message_key"]])
     assert restored["delivery_id"] != delivery["delivery_id"]

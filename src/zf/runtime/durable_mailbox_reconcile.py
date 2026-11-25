@@ -11,12 +11,22 @@ def reconcile_mailbox(runtime, events=None):
     from zf.core.state.locks import locked_path
     from zf.runtime.durable_mailbox_authority import operation_binding, terminal, owner_role
     from zf.runtime.workflow_operation import reduce_workflow_operations
+    from zf.runtime.durable_mailbox_question_liveness import peer_loss
+    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
 
+    # An unconfigured project should not allocate a mailbox index. During drain,
+    # losing the cache must still discover previously accepted ledger entries.
+    if events is None:
+        from zf.runtime.durable_mailbox_authority import enabled
+
+        if not enabled(runtime.config) and not (runtime.state_dir / "private/durable-mailbox-index").exists():
+            events = runtime.event_log.read_all()
     if events is not None and not any(record(e, "accepted") for e in events):
         return 0
     with locked_path(runtime.state_dir / "locks/durable-mailbox"):
         index = MailboxIndex(runtime)
-        canonical = [e for e in index.read(open_only=True) if e.origin == "kernel"]
+        indexed = index.read(open_only=True)
+        canonical = [e for e in indexed if e.origin == "kernel"]
         expected = index.offset
         by_run = {}
         operations = reduce_workflow_operations(canonical)
@@ -32,6 +42,11 @@ def reconcile_mailbox(runtime, events=None):
             if record(e, "disposition") and e.payload["status"] in {"cancelled", "timed_out"}
         }
         states = _question_states(canonical)
+        waits = {e.payload["message_key"]: e for e in canonical if record(e, "question") and e.payload.get("action") == "wait"}
+        claims = {e.payload["message_key"]: e for e in canonical
+                  if record(e, "question") and e.payload.get("action") == "claim"}
+        diagnosed = {e.causation_id for e in canonical if record(e, "disposition")
+                     and e.payload.get("status") == "diagnosis_required"}
         bindings = {
             (e.payload["message_key"], e.payload["recipient_digest"]): e.payload["consumer"]
             for e in canonical
@@ -95,7 +110,44 @@ def reconcile_mailbox(runtime, events=None):
                     "recipient_digest": pair[1],
                     "recipient": addr,
                 }
-                if reason:
+                claim = (
+                    claims.get(key)
+                    if last.get("action") in {"claim", "wait"}
+                    and addr["mode"] != "coordination"
+                    else None
+                )
+                cause = e.id
+                if claim and reason in {"", "execution_ended"}:
+                    if is_run_dispatch_paused(canonical, run):
+                        continue
+                    if last["action"] == "wait" and not _expired(
+                        canonical, waits[key], last["deadline"]
+                    ):
+                        continue
+                    consumer = claim.payload["consumer"]
+                    if claim.id not in diagnosed and (
+                        loss := peer_loss(
+                            indexed,
+                            claim,
+                            operations.get(consumer["operation_id"]),
+                            binding,
+                        )
+                    ):
+                        facts.update(
+                            status="diagnosis_required",
+                            reason="question_taker_stopped_without_answer",
+                            previous_status=last["status"],
+                            consumer=consumer,
+                            recovery_owner="run_manager",
+                            source_event_ids=[e.id, claim.id, loss.id],
+                        )
+                        cause = claim.id
+                    elif reason == "execution_ended":
+                        # Retain responsibility when the exact claimant's end is unproven or already routed.
+                        continue
+                if cause != e.id:
+                    kind = "disposition"
+                elif reason:
                     kind = "disposition"
                     facts.update(
                         status="timed_out" if reason == "message_deadline_elapsed" else "cancelled",
@@ -109,7 +161,7 @@ def reconcile_mailbox(runtime, events=None):
                     continue
                 token = admission_offset.set(expected)
                 try:
-                    receipt = _write(runtime, kind, {"workflow_run_id": run}, facts, e.id)
+                    receipt = _write(runtime, kind, {"workflow_run_id": run}, facts, cause)
                 finally:
                     admission_offset.reset(token)
                 written += 1

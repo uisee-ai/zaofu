@@ -358,9 +358,16 @@ def _run_manager_tick_unlocked(
         ),
     )
     events = _read_events(state_dir, event_log=event_log)
-    if auto_execute and config.runtime.run_manager.reflect.enabled and not config.runtime.run_manager.resident_agent.enabled:
+    if auto_execute and config.runtime.run_manager.reflect.enabled:
+        from zf.runtime.resident_reader_reflection import missed_reader_reflection
         from zf.runtime.on_demand_reader_diagnosis import publish_selected_options
-        if publish_selected_options(state_dir, writer, events):
+        if reconsider := missed_reader_reflection(state_dir, events, config):
+            action, amendment = reconsider
+            _maybe_invoke_run_manager_reflect(state_dir=state_dir, writer=writer, config=config,
+                project_root=project_root, action=action, projection={}, causation_id=amendment["predecessor_event_id"],
+                reflect_fn=reflect_fn, reader_amendment=amendment)
+
+        if publish_selected_options(state_dir, writer, events, resident=config.runtime.run_manager.resident_agent.enabled):
             events = _read_events(state_dir, event_log=event_log)
     if _settle_pending_action_effects(events, writer):
         events = _read_events(state_dir, event_log=event_log)
@@ -4475,7 +4482,7 @@ def _write_run_manager_context_sidecars(
         continuation_refs = []
         continuation_error = str(exc)
 
-    reader_rebuild = diagnosis_reader_rebuild(state_dir, events, action)
+    reader_rebuild = diagnosis_reader_rebuild(state_dir, events, action, config=config)
     context_payload = redact_obj({
         "schema_version": RUN_MANAGER_CONTEXT_SIDECAR_SCHEMA_VERSION,
         **({"reader_rebuild": reader_rebuild} if reader_rebuild else {}),
@@ -4907,6 +4914,13 @@ def _consume_agent_recommendations(
                     state_dir=state_dir, config=config, events=events, payload=payload,
                 )
             action = _action_from_agent_recommendation(event, payload)
+            if event.origin == "kernel" and event.actor == "run-manager" and payload.get("diagnosis_operation_id"):
+                # A signed reflection answers the resident's existing delegated step.
+                referral = payload.get("resident_referral")
+                if referral:
+                    if not isinstance(referral, dict) or not referral.get("request_id") or not referral.get("recorded_event_id"):
+                        raise ValueError("invalid_resident_reflection_referral")
+                    action.update(request_id=referral["request_id"], recorded_event_id=referral["recorded_event_id"])
             if _recommendation_route(payload) == "controlled_action" and action.get("action") == "child-rebuild":
                 from zf.runtime.candidate_reader_method import validate_resident_reader_method
                 validate_resident_reader_method(state_dir, writer.event_log.read_all(), action)
@@ -5663,10 +5677,12 @@ def _maybe_invoke_run_manager_reflect(
     causation_id: str,
     reflect_fn: Callable[..., Any] | None,
     force: bool = False,
+    reader_amendment: dict | None = None,
 ) -> bool:
     if not force and not _run_manager_reflect_enabled(config, reflect_fn):
         return False
-    request_id = _run_manager_reflect_request_id(action, writer.event_log.read_all())
+    request_id = (reader_amendment["request_id"] if reader_amendment
+                  else _run_manager_reflect_request_id(action, writer.event_log.read_all()))
     if _request_id_seen(writer.event_log, RUN_MANAGER_REFLECT_COMPLETED, request_id):
         return False
     try:
@@ -5693,18 +5709,34 @@ def _maybe_invoke_run_manager_reflect(
         state_dir=state_dir, project_root=project_root, action=action, projection=projection,
     )
     option = {}
-    if config.runtime.run_manager.reflect.enabled and not config.runtime.run_manager.resident_agent.enabled:
+    resident_referral = {}
+    if config.runtime.run_manager.reflect.enabled:
+        from zf.runtime.autoresearch_failure_handoff import resident_reflection_followup
         from zf.runtime.on_demand_reader_diagnosis import reader_option
 
-        option = reader_option(state_dir, writer.event_log.read_all(), action)
+        events = writer.event_log.read_all()
+        diagnosis = (resident_reflection_followup(events, action)
+                     if config.runtime.run_manager.resident_agent.enabled else action)
+        if diagnosis:
+            option = reader_option(state_dir, events, diagnosis, config=config)
+            if option and config.runtime.run_manager.resident_agent.enabled:
+                resident_referral = {"checkpoint_id": diagnosis["checkpoint_id"],
+                                     "request_id": action["request_id"],
+                                     "recorded_event_id": action["source_event_ids"][0]}
         if option:
-            prompt += ("\n已核对的 Reader 恢复选项如下。如证据支持重新执行这一专项，请在上述 JSON 中附加 "
+            prompt += ("\n已核对的 Reader 恢复选项如下。用 failure_event_id、dispatch_event_id 和 action_payload.task_id 定位任务；"
+                       "比较嵌套 dispatch_call_attempt_id 和 durable_operation_active_attempt_id，transport_task_attempt_id 属于外层派发。"
+                       "如证据支持重新执行这一专项，请在上述 JSON 中附加 "
                        "selected_reader_recovery 为精确 option_id，并在 rec_for_next_iter 说明依据。"
                        "如需更多证据或其他策略，省略该字段。\n" + json.dumps(option, ensure_ascii=False))
+    if reader_amendment and option.get("option_id") != reader_amendment["option_id"]:
+        return False
     return submit_reflection(
         state_dir=state_dir, writer=writer, request_id=request_id, prompt=prompt,
         metadata={
             **({"reader_recovery_option": option} if option else {}),
+            **({"resident_referral": resident_referral} if resident_referral else {}),
+            **({"reader_option_amendment": reader_amendment} if reader_amendment else {}),
             "checkpoint_id": str(action.get("checkpoint_id") or ""),
             "recovery_case_id": recovery_case_id_from_payload(action),
             "fingerprint": _fingerprint(action, fallback=request_id),

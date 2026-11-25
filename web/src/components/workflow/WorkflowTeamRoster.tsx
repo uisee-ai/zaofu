@@ -10,7 +10,7 @@ export const TeamViewContext = createContext({clock: 0, historical: false, sessi
 
 type Message = {sender: string; recipient: string; source_event_id: string; posted: string; posted_seq?: number; seen_seq?: number; consumed_seq?: number; seen: string; consumed: string};
 type Mailbox = {pending:number; unanswered:number; sent_unanswered:number; unknown:number; oldest_at:string; owner:string; deadline:string;
-  last_claimed_at:string; last_answered_at:string; recovery_owner:string};
+  response_timeout_seconds?:number; response_started_at?:string; last_claimed_at:string; last_answered_at:string; recovery_owner:string};
 type Member = {mailbox?:Mailbox; instances?:string[]; selection_reason?:string; completion_condition?:string; admission_evidence_id?:string; judge_objectives?:string[]; source_seq?:number; attempt_count?:number; wait?:{reason:string; wake_event?:string; deadline?:string}; judge_questions?:{question_id:string;question:string}[]; integration_check_ids?:string[];
   obligation_id: string; stage: string; role: string; status: string; instance: string; task_ids: string[]; required?: boolean; reused?: boolean; source_operation_id?: string; source_result_event_id?: string; original_work_unit_id?: string; coverage_owner?: string; disposition?: {reason:string};
   recipient?: string; question?: string; expected_output?: string; owner: string; last_event_at: string; status_since: string;
@@ -102,6 +102,7 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
         {m.recipient && ` · 交给 ${m.recipient}`}{m.owner && ` · 责任人 ${m.owner}`}
         {m.mailbox && <span> · 待接手 {m.mailbox.pending} · 已接手待答 {m.mailbox.unanswered} · 已发待答 {m.mailbox.sent_unanswered} · 交付待核实 {m.mailbox.unknown}
           {m.mailbox.oldest_at && ` · 最早等待 ${m.mailbox.oldest_at}`}{m.mailbox.owner && ` · 邮件责任人 ${m.mailbox.owner}`}
+          {m.mailbox.response_timeout_seconds && ` · 自 ${m.mailbox.response_started_at} 起 ${m.mailbox.response_timeout_seconds} 秒内答复（暂停不计）`}
           {m.mailbox.deadline && ` · 邮件截止 ${m.mailbox.deadline}`}{m.mailbox.last_claimed_at && ` · 最近接手 ${m.mailbox.last_claimed_at}`}
           {m.mailbox.last_answered_at && ` · 最近回答 ${m.mailbox.last_answered_at}`}{m.mailbox.recovery_owner && ` · 恢复责任人 ${m.mailbox.recovery_owner}`}</span>}
         {m.wait && ` · ${m.wait.reason} · 唤醒 ${m.wait.wake_event || '待核实'}`}{m.wait?.deadline && ` · 截止 ${m.wait.deadline}`}

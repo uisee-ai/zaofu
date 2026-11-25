@@ -756,6 +756,16 @@ def question_action(
             "delivery_id": delivery_id,
             "deadline": until,
         }
+        if action == "claim":
+            from zf.runtime.durable_mailbox_question_liveness import claim_turn
+
+            claimant = actor
+            if actor.get("credential_generation"):
+                from zf.runtime.artifact_read_capability import _credential_metadata
+
+                provider = _credential_metadata(runtime.state_dir, actor["actor"]).get("provider")
+                claimant = {**actor, "provider": provider}
+            fact["provider_turn"] = claim_turn(events, claimant)
         if new_target:
             fact["target"] = new_target
         if text:

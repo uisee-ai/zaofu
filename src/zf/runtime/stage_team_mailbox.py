@@ -42,11 +42,13 @@ def member_mailbox(member, index, proposal_digest, freeze_id):
     observed = [r for _, r in rows]
     unknown = [r for r in observed if "unknown" in {r.get("status"), r.get("notification_status"), r.get("delivery_status")}
                or r["status"] == "evidence_unavailable"]
+    diagnoses = [r for r in observed if r["status"] == "diagnosis_required"]
     first = min(pending + claimed + sent + unknown, key=lambda r: r["posted_ts"], default={})
     return {"pending": len(pending), "unanswered": len(claimed), "sent_unanswered": len(sent), "unknown": len(unknown),
             "oldest_at": first.get("posted_ts", ""), "owner": first.get("owner", ""),
             "deadline": first.get("deadline", ""),
+            **{k: first[k] for k in ("response_started_at", "response_timeout_seconds") if k in first},
             "last_claimed_at": max((r.get("claimed_at") or "" for r in observed), default=""),
             "last_answered_at": max((r.get("answered_at") or "" for r in observed), default=""),
-            "recovery_owner": next((r.get("recovery_owner") or r.get("owner") for r in unknown
+            "recovery_owner": next((r.get("recovery_owner") or r.get("owner") for r in diagnoses + unknown
                                     if r.get("recovery_owner") or r.get("owner")), "")}

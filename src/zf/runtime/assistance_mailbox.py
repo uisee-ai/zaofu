@@ -138,9 +138,10 @@ def advisory_identity(runtime, request_id):
         for e in events
     ):
         raise ValueError("advisory dispatch has not reached this owner")
-    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+    from zf.runtime.durable_mailbox_question_liveness import claim_turn
 
-    turn = active_codex_turn_from_events(events, credential["role_instance"]) or {}
+    turn = claim_turn(events, {"actor":credential["role_instance"], "provider":credential["provider"],
+                               "workflow_run_id":request.payload["workflow_run_id"], "assistance_request_id":request_id})
     return {
         "provider_session_id": turn.get("session_id", ""),
         "provider_turn_id": turn.get("turn_id", ""),
@@ -266,12 +267,20 @@ def _record_notice(runtime, request, status, **facts):
     )
 
 
+def _notice_events(runtime, request, *, governance_types=None):
+    identity = {
+        "workflow_run_id": request.payload["workflow_run_id"],
+        "assistance_request_id": request.payload["request_id"],
+    }
+    return MailboxIndex(runtime).read(identity, select_versions=lambda *_: [], governance_types=governance_types)
+
+
 def reserve_notice(runtime, request):
     """Before attempted is committed no transport call is allowed; reservations are recoverable."""
     if request.origin != "kernel" or request.actor != "run-manager":
         return False
     with locked_path(runtime.state_dir / "locks" / request.payload["request_id"]):
-        events = runtime.event_log.read_all()
+        events = _notice_events(runtime, request, governance_types=())
         status = notification_states(events).get(request.payload["request_id"])
         accepted = accepted_question(events, request.payload["request_id"])
         if accepted is None or accepted.payload["message_key"] != request.payload.get(
@@ -289,7 +298,7 @@ def send_notice(runtime, request, send):
     from zf.runtime.durable_mailbox_authority import terminal
 
     with locked_path(runtime.state_dir / "locks" / request.payload["request_id"]):
-        events = runtime.event_log.read_all()
+        events = _notice_events(runtime, request)
         rid = request.payload["request_id"]
         if (
             notification_states(events).get(rid) != "reserved"
@@ -306,7 +315,7 @@ def send_notice(runtime, request, send):
             return
         _record_notice(runtime, request, "attempted")
         try:
-            send()
+            delivery = send()
         except Exception as error:
             from zf.runtime.provider_dispatch_wait import external_gate_reason
             from zf.runtime.provider_interaction import ProviderInteractionRequired
@@ -328,16 +337,21 @@ def send_notice(runtime, request, send):
                 )
                 _record_notice(runtime, request, "unknown", reason=reason)
             raise
-        _record_notice(runtime, request, "confirmed")
+        from zf.runtime.transport import DispatchContext, MailboxPointerWrite
+
+        receipt = delivery.mailbox_pointer_write if isinstance(delivery, DispatchContext) else None
+        if (
+            isinstance(receipt, MailboxPointerWrite)
+            and receipt.role_instance == request.payload["owner_instance"]
+        ):
+            _record_notice(runtime, request, "confirmed")
+        else:
+            _record_notice(runtime, request, "unknown", reason="transport_pointer_write_unverified")
 
 
-def unanswered_state(runtime, request, events):
+def unanswered_state(request, events, key):
     """Resolve only message facts. Business outcomes still require the original gates."""
     p = request.payload
-    if is_run_dispatch_paused(events, request.payload["workflow_run_id"]):
-        return "", "dispatch_paused"
-    mail = ensure_question(runtime, request, events)
-    key = mail["message_key"]
     disposition = next(
         (
             e
@@ -408,30 +422,19 @@ def unanswered_state(runtime, request, events):
 
 def _taker_stopped(events, claim, owner, message_key):
     """Correlate a provider close to the exact claim; unrelated idle panes have no bearing."""
-    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+    from zf.runtime.durable_mailbox_question_liveness import stopped_turn
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
-    index = next(i for i, event in enumerate(events) if event.id == claim.id)
-    consumer = claim.payload.get("consumer") or {}
-    turn_id = consumer.get("provider_turn_id") or (
-        active_codex_turn_from_events(events[: index + 1], owner) or {}
-    ).get("turn_id")
-    if not turn_id:
-        return False
-    closed = any(
-        e.actor == owner
-        and e.type in {"codex.hook.stop", "provider.turn.closed"}
-        and e.payload.get("turn_id") == turn_id
-        for e in events[index + 1 :]
-    )
-    if not closed:
+    if claim.payload["consumer"].get("actor") != owner or not stopped_turn(events, claim):
         return False
     # Related successors must carry the actual question binding; unrelated work is not a handoff.
     operations = reduce_workflow_operations(events)
+    claim_index = next(i for i, event in enumerate(events) if event.id == claim.id)
     linked = {
         e.payload.get("operation_id")
-        for e in events
+        for e in events[claim_index + 1:]
         if e.origin == "kernel"
+        and e.payload.get("workflow_run_id") == claim.payload["workflow_run_id"]
         and e.payload.get("question_id") == claim.payload.get("question_id")
         and e.payload.get("message_key") == message_key
     }
@@ -449,7 +452,7 @@ def recover_interrupted_notice(runtime, request):
     run = request.payload["workflow_run_id"]
     try:
         with locked_path(runtime.state_dir / "locks" / rid, timeout_seconds=0):
-            events = runtime.event_log.read_all()
+            events = _notice_events(runtime, request, governance_types=("run.resumed", "runtime.action.completed"))
             last = next(
                 (
                     e

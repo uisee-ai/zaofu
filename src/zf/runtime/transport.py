@@ -60,6 +60,13 @@ class WorkerLifecycleSnapshot:
 
 
 @dataclass(frozen=True)
+class MailboxPointerWrite:
+    """The selected adapter observed submitting this pointer to its named endpoint."""
+
+    role_instance: str
+
+
+@dataclass(frozen=True)
 class DispatchContext:
     """Stable context for one task delivery through a transport/provider."""
 
@@ -89,6 +96,7 @@ class DispatchContext:
     worker_reply_request_hash: str | None = None
     # Kernel-selected delivery policy, local to the transport call.
     mailbox_notice: bool = False
+    mailbox_pointer_write: MailboxPointerWrite | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -171,8 +179,8 @@ class TransportAdapter(ABC):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
-        """Deliver a task briefing as a user-turn prompt."""
+    ) -> MailboxPointerWrite | None:
+        """Deliver a task briefing; an optional mailbox receipt attests only the pointer write."""
 
     def compact_context(self, role_name: str, command: str) -> bool:
         """Request provider-native context compaction when supported."""
@@ -455,7 +463,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
+    ) -> MailboxPointerWrite | None:
         alive, dead_reason = self._agent_process_liveness(role_name)
         if not alive:
             command = self.pane_current_command(role_name).strip()
@@ -473,7 +481,8 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             raise err
         self._assert_expected_cwd(role_name)
         if context and context.mailbox_notice:
-            return self._send_admitted_task(role_name, briefing_path, prompt, context=context)
+            self._send_admitted_task(role_name, briefing_path, prompt, context=context)
+            return None if self.tmux.dry_run else MailboxPointerWrite(role_name)
         backend = context.backend if context else self.pane_current_command(role_name).strip()
         if backend == "codex":
             from zf.runtime.provider_interaction import (
@@ -717,8 +726,8 @@ class CompositeTransport(TransportAdapter):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
-        self.for_role(role_name).send_task(
+    ) -> MailboxPointerWrite | None:
+        return self.for_role(role_name).send_task(
             role_name, briefing_path, prompt, context=context,
         )
 

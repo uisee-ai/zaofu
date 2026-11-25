@@ -30,7 +30,7 @@ OBSERVATIONS = frozenset(
     }
 )
 MAIL = "workflow.mailbox."
-SCHEMA = 2
+SCHEMA = 3
 
 
 def _labels(value):
@@ -72,7 +72,7 @@ def _add(db, file, pos, length, e):
     run = run if isinstance(run, str) else ""
     op = p.get("operation_id") if isinstance(p.get("operation_id"), str) else ""
     key = p.get("message_key") if isinstance(p.get("message_key"), str) else ""
-    db.execute("INSERT INTO fact VALUES(?,?,?,?,?,?,?)", (file, pos, length, run, is_mail, op, key))
+    db.execute("INSERT INTO fact VALUES(?,?,?,?,?,?,?,?)", (file, pos, length, run, is_mail, op, key, e.type))
     if not is_mail:
         return
     labels = _labels(p.get("sender")) | _labels(p.get("sender_address")) | _labels(p.get("consumer"))
@@ -129,10 +129,11 @@ def _open_rows(db):
 def _schema(db):
     db.executescript("""
         CREATE TABLE IF NOT EXISTS segment(path TEXT PRIMARY KEY,stamp TEXT,consumed INTEGER);
-        CREATE TABLE IF NOT EXISTS fact(file TEXT,pos INTEGER,n INTEGER,run TEXT,mail INTEGER,op TEXT,k TEXT,
+        CREATE TABLE IF NOT EXISTS fact(file TEXT,pos INTEGER,n INTEGER,run TEXT,mail INTEGER,op TEXT,k TEXT,kind TEXT,
             PRIMARY KEY(file,pos)) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS by_run ON fact(mail,run);
         CREATE INDEX IF NOT EXISTS by_op ON fact(op);
+        CREATE INDEX IF NOT EXISTS by_kind ON fact(kind,run);
         CREATE TABLE IF NOT EXISTS label(file TEXT,pos INTEGER,value TEXT,PRIMARY KEY(value,file,pos)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS thread(file TEXT,pos INTEGER,value TEXT,PRIMARY KEY(value,file,pos)) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS thread_fact ON thread(file,pos);
@@ -170,7 +171,7 @@ def _scan(db, log, path, name, old):
     return True
 
 
-def _read_rows(db, log, identity, run, versions, all_mail):
+def _read_rows(db, identity, run, versions, all_mail, governance_types=None):
     if not run and identity and identity.get("operation_id"):
         runs = {
             r[0]
@@ -204,6 +205,11 @@ def _read_rows(db, log, identity, run, versions, all_mail):
     params = () if not run else (run,)
     if all_mail or versions is None:
         clause = scope if all_mail else scope + " AND f.mail=0"
+        if governance_types is not None:
+            # Corrupt ledger records invalidate negative lookups even for a narrow recovery read.
+            kinds = sorted(set(governance_types) | {"event.malformed"})
+            clause += " AND (f.mail=1 OR f.kind IN (" + ",".join("?" for _ in kinds) + "))"
+            params = (*params, *kinds)
         rows = db.execute("SELECT f.file,f.pos,f.n FROM fact f WHERE " + clause, params)
     else:
         labels = sorted(_labels(identity) | {"version:" + v for v in versions})
@@ -230,7 +236,7 @@ class MailboxIndex:
         self.log = runtime.event_log
         self.state = Path(runtime.state_dir)
 
-    def read(self, identity=None, *, select_versions=None, all_mail=False, open_only=False):
+    def read(self, identity=None, *, select_versions=None, all_mail=False, open_only=False, governance_types=None):
         log = self.log
         root = self.state / "projections/durable-mailbox"
         root.mkdir(parents=True, exist_ok=True)
@@ -317,12 +323,12 @@ class MailboxIndex:
                         self.offset = log.current_offset()
                         return [row for _, row in hydrate(_open_rows(db))]
                     run, locations = _read_rows(
-                        db, log, identity, identity.get("workflow_run_id") if identity else "", None, all_mail
+                        db, identity, identity.get("workflow_run_id") if identity else "", None, all_mail, governance_types
                     )
                     facts = hydrate(locations)
                     if select_versions is not None:
                         versions = select_versions(run, [event for _, event in facts])
-                        _, locations = _read_rows(db, log, identity, run, versions, False)
+                        _, locations = _read_rows(db, identity, run, versions, False)
                         facts.extend(hydrate(locations))
                     self.offset = log.current_offset()
                     return [event for _, event in sorted(facts, key=lambda row: row[0])]

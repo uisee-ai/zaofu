@@ -38,12 +38,22 @@ def project_mailbox(events, *, run_id, cursor=None, stage="", obligation_id="", 
     rows = defaultdict(dict)
     refs = defaultdict(list)
     visible_seq = 0
+    response_windows = {}
     for i, entry in enumerate(events, 1):
         seq, e = entry if isinstance(entry, tuple) else (i, entry)
         if cursor is not None and seq > cursor:
             break
         p = e.payload
-        if p.get("workflow_run_id") != run_id or not e.type.startswith(PREFIX):
+        if p.get("workflow_run_id") != run_id:
+            continue
+        if e.type == "worker.assistance.requested" and e.origin == "kernel" and p.get("durable_mailbox") is True:
+            seconds = p.get("timeout_seconds")
+            if type(seconds) in (float, int) and seconds > 0:
+                response_windows[(p.get("request_id"), e.actor, p.get("operation_id"))] = {
+                    "response_started_at": e.ts, "response_timeout_seconds": seconds,
+                }
+            continue
+        if not e.type.startswith(PREFIX):
             continue
         kind = e.type[len(PREFIX) :]
         if not record(e, kind):
@@ -62,6 +72,8 @@ def project_mailbox(events, *, run_id, cursor=None, stage="", obligation_id="", 
                 )
                 rows[key][digest(addr)] = {
                     **_address(addr),
+                    **response_windows.get((p.get("question_id"), p.get("sender", {}).get("actor"),
+                                            p.get("sender", {}).get("operation_id")), {}),
                     "status": pending,
                     "message_key": key,
                     "sender_version": p.get("sender_address", {}).get("version", ""),
@@ -114,6 +126,7 @@ def project_mailbox(events, *, run_id, cursor=None, stage="", obligation_id="", 
                         delivery_status="pending",
                         consumer=p["consumer"]["actor"],
                         consumer_attempt_id=p["consumer"]["attempt_id"],
+                        recovery_owner="", cause="",
                     )
                     if row.get("question_status") in {"claimed", "waiting"}:
                         row["status"] = row["question_status"]
@@ -122,6 +135,9 @@ def project_mailbox(events, *, run_id, cursor=None, stage="", obligation_id="", 
                     row["notification_status"] = p.get("status", "")
                     if p.get("status") == "unknown":
                         row["recovery_owner"] = "run_manager"
+                    continue
+                if p.get("status") == "diagnosis_required":
+                    row.update(status="diagnosis_required", recovery_owner=p["recovery_owner"], cause=p["reason"])
                     continue
                 if p.get("status") == "evidence_restored":
                     row.update(
@@ -143,6 +159,8 @@ def project_mailbox(events, *, run_id, cursor=None, stage="", obligation_id="", 
                 )
                 if p.get("consumer"):
                     row["owner"] = p["consumer"].get("actor") or row["owner"]
+                if kind == "question":
+                    row["recovery_owner"] = ""
                 if p.get("action") == "claim":
                     row["claimed_at"] = e.ts
                 if p.get("action") == "answer":

@@ -36,6 +36,53 @@ def diagnosis_request_for_receipt(receipt: ZfEvent, requests: list[ZfEvent]) -> 
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _resident_diagnosis_for_reply(events: list[ZfEvent], action: dict, route: str) -> ZfEvent | None:
+    """Resolve a recommendation to its earlier same-Run kernel delivery and effect receipt."""
+    run = action.get('workflow_run_id')
+    sources = action.get('source_event_ids') or []
+    if not run or len(sources) != 1 or action.get('checkpoint_id') != 'recommendation:' + sources[0]:
+        return None
+    reply = next((e for e in events if e.id == sources[0]), None)
+    if (not reply or reply.type != 'run.manager.agent.recommendation'
+            or reply.payload.get('recommended_route') != route or not reply.payload.get('request_id')):
+        return None
+    prior = events[:events.index(reply)]
+    request_id = reply.payload['request_id']
+    pending = [e for e in prior if e.type == 'run.manager.action.effect.pending'
+               and e.origin == 'kernel' and e.actor == 'run-manager' and e.payload.get('request_id') == request_id
+               and e.payload.get('workflow_run_id') == run and e.payload.get('request_kind') == 'recovery_diagnosis'
+               and reply.type in (e.payload.get('continuation_expected_events') or [])]
+    if len(pending) != 1:
+        return None
+    receipt = pending[0]
+    body = receipt.payload
+    if not body.get('checkpoint_id') or body.get('recovery_case_id') != action.get('recovery_case_id'):
+        return None
+    for e in reversed(prior[:prior.index(receipt)]):
+        if (e.type != 'run.manager.resident.prompted' or e.origin != 'kernel' or e.actor != 'run-manager'
+                or e.payload.get('request_id') != request_id or e.payload.get('instance_id') != reply.actor
+                or e.payload.get('source_action_checkpoint_id') != body['checkpoint_id']):
+            continue
+        diagnosis = e.payload.get('diagnosis_context') or {}
+        if (diagnosis.get('request_kind') == 'recovery_diagnosis' and diagnosis.get('workflow_run_id') == run
+                and diagnosis.get('source_event_ids') == body.get('source_event_ids')):
+            return receipt
+    return None
+
+
+def resident_reflection_followup(events: list[ZfEvent], action: dict) -> dict:
+    """Carry the same unfinished diagnosis to the reflection the resident actually requested."""
+    pending = _resident_diagnosis_for_reply(events, action, 'reflect')
+    if not pending or pending.payload.get('failure_class') != 'autoresearch_diagnosis_incomplete':
+        return {}
+    receipt = pending.payload
+    return next((followup for followup in pending_autoresearch_followups(events)
+                 if followup['workflow_run_id'] == receipt['workflow_run_id']
+                 and followup['recovery_case_id'] == receipt['recovery_case_id']
+                 and followup['checkpoint_id'] == receipt['checkpoint_id']
+                 and set(receipt.get('source_event_ids') or []).issubset(followup['source_event_ids'])), {})
+
+
 def _unresolved_reader(events: list[ZfEvent], index: int, request: ZfEvent, result: ZfEvent) -> ZfEvent | None:
     """A runner exit needs another owner only for its still-open, evidenced Reader fault."""
     from zf.autoresearch.repair_preparation import build_repair_preparation
@@ -52,6 +99,10 @@ def _unresolved_reader(events: list[ZfEvent], index: int, request: ZfEvent, resu
     if not run or not sources or terminal_after_event(events, request):
         return None
     prior = events[:index]
+    if request.origin == 'kernel' and request.actor == 'run-manager':
+        pending = _resident_diagnosis_for_reply(prior, original, 'autoresearch')
+        if pending:
+            sources.update(pending.payload.get('source_event_ids') or [])
     failure = _diagnosed_child(prior, sources, run)
     if not failure:
         return None
@@ -161,9 +212,8 @@ def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
         diagnosis = event.payload.get('diagnosis')
         diagnosis = diagnosis if isinstance(diagnosis, dict) else {}
         original = request.payload
-        failure = None
+        failure = _unresolved_reader(events, indexes[request.id], request, event)
         if event.type == 'autoresearch.loop.completed':
-            failure = _unresolved_reader(events, indexes[request.id], request, event)
             if not failure:
                 continue
             if not diagnosis:

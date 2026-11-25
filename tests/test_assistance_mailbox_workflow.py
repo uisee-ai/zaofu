@@ -155,7 +155,7 @@ def project(tmp_path, monkeypatch, capsys):
             "requirement.md",
         )
 
-    def fresh(transport):
+    def fresh(transport, *, mock_pointer_receipt=True):
         log = EventLog(r.state_dir / "events.jsonl")
         result = SimpleNamespace(
             state_dir=r.state_dir,
@@ -166,7 +166,16 @@ def project(tmp_path, monkeypatch, capsys):
         result._add_layer2_pending = lambda _: None
         result._record_skill_provenance = lambda **kw: None
         result._dispatch_context = lambda **kw: {}
-        result._send_transport_task = transport
+
+        def send_pointer(role, briefing, prompt, context):
+            delivered = transport(role, briefing, prompt, context)
+            if mock_pointer_receipt:
+                from zf.runtime.transport import DispatchContext, MailboxPointerWrite
+
+                return DispatchContext(mailbox_notice=True, mailbox_pointer_write=MailboxPointerWrite(role))
+            return delivered
+
+        result._send_transport_task = send_pointer
         result._fire_orchestrator_turn = lambda role, events: (
             Orchestrator._fire_orchestrator_turn(result, role, events)
         )
@@ -585,8 +594,16 @@ def test_tmux_notice_checks_actual_screen_before_enter(
 
     r, workers, _, _, send, fresh = project
     q = send(workers[0])
-    tmux = TmuxSession("mailbox-test", dry_run=True)
+    import subprocess
+
+    tmux = TmuxSession("mailbox-test")
     adapter = TmuxTransport(tmux)
+    monkeypatch.setattr(adapter, "_agent_process_liveness", lambda role: (True, ""))
+    def record_external_command(args, **kwargs):
+        tmux.command_log.append(" ".join(args))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(tmux, "_run", record_external_command)
     marker = "Read the bounded worker guidance briefing"
 
     def written():
@@ -611,10 +628,12 @@ def test_tmux_notice_checks_actual_screen_before_enter(
     def send_to_adapter(role, briefing, prompt, context):
         contexts.append(context)
         assert marker in prompt and not any(ord(c) < 32 for c in prompt)
-        adapter.send_task(role, briefing, prompt, context=context)
+        from zf.runtime.runtime_authority_bridge import RuntimeAuthorityMixin
+        bridge = SimpleNamespace(transport=adapter, _rollback_inflight_dispatch=lambda context: None)
+        return RuntimeAuthorityMixin._deliver_transport_task(bridge, role, context, briefing, prompt)
 
     def reactor():
-        rt = fresh(send_to_adapter)
+        rt = fresh(send_to_adapter, mock_pointer_receipt=False)
         rt._current_run_id = lambda: "run-1"
         rt._trace_id_for_task = lambda _: "run-1"
 
@@ -639,3 +658,298 @@ def test_tmux_notice_checks_actual_screen_before_enter(
     assert contexts[0].mailbox_notice and contexts[0].run_id == "run-1"
     assert written() is (after_write or status == "confirmed")
     assert any(cmd.endswith(" Enter") for cmd in tmux.command_log) is (status == "confirmed")
+
+
+def test_stream_json_queued_wake_remains_unknown_and_pullable_after_restart(project, monkeypatch):
+    from threading import Event
+
+    from zf.core.state.role_sessions import RoleSessionRegistry
+    from zf.runtime.runtime_authority_bridge import RuntimeAuthorityMixin
+    from zf.runtime.transport import CompositeTransport, DispatchContext
+    from zf.runtime.transport_stream_json import StreamJsonTransport
+
+    r, workers, oa, call, send, fresh = project
+    owner = oa[0]
+    question = send(workers[0])
+    registry = RoleSessionRegistry(r.state_dir / "role_sessions.yaml", r.state_dir.parent)
+    stream = StreamJsonTransport(r.state_dir, registry, background_dispatch=True)
+    bridge = SimpleNamespace(
+        transport=CompositeTransport({owner: stream}), _rollback_inflight_dispatch=lambda _: None
+    )
+    entered, release = Event(), Event()
+    provider_calls = []
+    transport_calls = []
+
+    def occupied_provider(role, briefing, prompt, *, context):
+        provider_calls.append(prompt)
+        entered.set()
+        release.wait(10)
+
+    monkeypatch.setattr(stream, "_send_task_sync", occupied_provider)
+
+    def deliver(role, briefing, prompt, context):
+        transport_calls.append(prompt)
+        return RuntimeAuthorityMixin._deliver_transport_task(bridge, role, context, briefing, prompt)
+
+    def fresh_watcher():
+        rt = fresh(deliver, mock_pointer_receipt=False)
+        rt._dispatch_context = lambda **kwargs: DispatchContext(
+            mailbox_notice=True, run_id="run-1", instance_id=owner
+        )
+        return rt
+
+    stream.send_task(owner, r.state_dir / "earlier.md", "earlier turn")
+    assert entered.wait(3)
+    thread = stream._dispatch_threads[owner]
+    try:
+        dispatch_pending_assistance(fresh_watcher())
+        notices = [
+            event.payload for event in r.event_log.read_all()
+            if event.type == NOTICE and event.payload["request_id"] == question["request_id"]
+        ]
+        assert [notice["status"] for notice in notices] == ["reserved", "attempted", "unknown"]
+        assert notices[-1]["reason"] == "transport_pointer_write_unverified"
+        assert len(stream._dispatch_queues[owner]) == 1
+    finally:
+        stream.shutdown(exclude_roles={owner})
+        release.set()
+        thread.join(3)
+    assert not thread.is_alive()
+    assert provider_calls == ["earlier turn"]
+    dispatch_pending_assistance(fresh_watcher())
+    dispatch_pending_assistance(fresh_watcher())
+    assert len(transport_calls) == 1
+    inbox = call(oa, "inbox", "--run", "run-1")
+    assert [row["request_id"] for row in inbox["items"]] == [question["request_id"]]
+    _answer(call, oa, question)
+    answer = call(workers[0], "read-answer", "--message", question["message_key"])
+    assert answer["status"] == "answered"
+    assert answer["new_writer_authorized"] is False
+    assert TaskStore(r.state_dir / "kanban.json").get("TASK-1").status == "in_progress"
+
+
+def test_mailbox_adapter_partial_write_type_error_is_never_retried_as_legacy(project):
+    from zf.runtime.runtime_authority_bridge import RuntimeAuthorityMixin
+    from zf.runtime.transport import DispatchContext
+
+    r, workers, _, _, send, fresh = project
+    question = send(workers[0])
+    writes = []
+
+    def partial_write(role, briefing, prompt, **kwargs):
+        writes.append(prompt)
+        raise TypeError("context invalid after writing pointer")
+
+    bridge = SimpleNamespace(
+        transport=SimpleNamespace(send_task=partial_write), _rollback_inflight_dispatch=lambda _: None
+    )
+
+    def deliver(role, briefing, prompt, context):
+        return RuntimeAuthorityMixin._deliver_transport_task(bridge, role, context, briefing, prompt)
+
+    rt = fresh(deliver, mock_pointer_receipt=False)
+    rt._dispatch_context = lambda **kwargs: DispatchContext(mailbox_notice=True, run_id="run-1")
+    dispatch_pending_assistance(rt)
+    dispatch_pending_assistance(rt)
+    assert len(writes) == 1
+    assert notification_states(r.event_log.read_all())[question["request_id"]] == "unknown"
+
+
+def test_tmux_dry_run_does_not_attest_a_pointer_write(tmp_path, monkeypatch):
+    from zf.runtime.tmux import TmuxSession
+    from zf.runtime.transport import DispatchContext, TmuxTransport
+
+    session = TmuxSession("isolated-mailbox", dry_run=True)
+    transport = TmuxTransport(session)
+    monkeypatch.setattr(session, "capture_pane", lambda role, *, lines: "ready")
+    context = DispatchContext(backend="codex", mailbox_notice=True)
+    assert transport.send_task("orchestrator", tmp_path / "pointer", "read the pointer", context=context) is None
+    assert any(cmd.endswith(" Enter") for cmd in session.command_log)
+
+
+def test_reconciliation_reads_ledger_once_for_multiple_questions(project, monkeypatch):
+    from zf.runtime.assistance_mailbox import recover_interrupted_notice
+    from zf.runtime.durable_mailbox_projection import project_mailbox
+
+    runtime, workers, _, _, send, _ = project
+    requests = [send(worker) for worker in workers]
+    original_read = runtime.event_log.read_all
+    scans = []
+
+    def counted_read():
+        scans.append(1)
+        return original_read()
+
+    monkeypatch.setattr(runtime.event_log, "read_all", counted_read)
+    assert reconcile_assistance(state_dir=runtime.state_dir, writer=runtime.event_writer, config=runtime.config) == 2
+    assert len(scans) == 1
+    for _ in range(12):
+        runtime.event_writer.emit("worker.stuck", actor="other", correlation_id="run-1")
+    events = original_read()
+    triggers = [e for e in events if e.type == "orchestrator.rework.triage.requested"]
+    from zf.runtime.assistance_mailbox import _notice_events
+    _notice_events(runtime, triggers[0])  # Build the locators once.
+    decoded = []
+    original_decode = runtime.event_log.decode_line
+
+    def decode(line):
+        event = original_decode(line)
+        decoded.append(event.type)
+        return event
+
+    monkeypatch.setattr(runtime.event_log, "decode_line", decode)
+    for trigger in triggers:
+        assert reserve_notice(runtime, trigger)
+        recover_interrupted_notice(runtime, trigger)
+    assert len(scans) == 1
+    assert "worker.stuck" not in decoded
+    rows = project_mailbox(events, run_id="run-1")["items"]
+    assert {r["message_key"] for r in rows} == {req["message_key"] for req in requests}
+    intake = next(e for e in events if e.type == "worker.assistance.requested")
+    row = next(r for r in rows if r["sender_operation_id"] == intake.payload["operation_id"])
+    assert (row["response_started_at"], row["response_timeout_seconds"]) == (intake.ts, intake.payload["timeout_seconds"])
+
+
+def test_stream_advisor_claim_is_bound_to_current_delivery_session_and_exact_close(
+    project,
+):
+    from zf.runtime.stream_turn_lifecycle import run_stream_turn
+
+    rt, workers, oa, call, send, fresh = project
+    token = provision_role_artifact_read_credential(
+        rt.state_dir,
+        oa[0],
+        role_name="orchestrator",
+        provider="claude-code",
+        rotate=True,
+    )
+    oa = (oa[0], "", token)
+    question = send(workers[0])
+    dispatch_pending_assistance(fresh(lambda *args: None))
+    scope = ["--advisory", question["request_id"], "--message", question["message_key"]]
+    fields = {
+        "run_id": "run-1",
+        "task_id": "TASK-1",
+        "operation_id": "advisor",
+        "attempt_id": "aa",
+        "dispatch_id": "da",
+        "lease_id": "la",
+        "instance_id": oa[0],
+        "task_pipeline_stage": "advisory",
+    }
+
+    def read_and_claim():
+        delivery = call(oa, "pull", *scope, "--request-id", "read")["delivery_id"]
+        call(oa, "ack", "--advisory", question["request_id"], "--delivery", delivery)
+        claim = call(oa, "claim", *scope, "--request-id", "take", "--delivery", delivery)
+        evidence = next(e for e in rt.event_log.read_all() if e.id == claim["event_id"])
+        assert evidence.payload["provider_turn"]["session_id"] == "current-session"
+        assert (
+            evidence.payload["consumer"]["provider_turn_id"] == evidence.payload["provider_turn"]["turn_id"]
+        )
+        return [
+            SimpleNamespace(
+                subtype="success",
+                is_error=False,
+                num_turns=1,
+                session_id="current-session",
+            )
+        ], "ok"
+
+    run_stream_turn(
+        rt.state_dir,
+        SimpleNamespace(to_payload=lambda: fields),
+        "current-session",
+        read_and_claim,
+    )
+    dispatch_pending_assistance(fresh(lambda *args: None))
+    (closed,) = [e for e in rt.event_log.read_all() if e.type == "worker.assistance.closed"]
+    assert closed.payload["status"] == "waiting" and closed.payload["request_id"] == question["request_id"]
+
+
+@pytest.mark.parametrize("backend", ["claude-code", "codex"])
+def test_cli_peer_question_reaches_existing_diagnosis_owner_after_consumer_exit(project, backend):
+    from zf.runtime.durable_mailbox import reconcile_mailbox
+    from zf.runtime.run_manager import build_run_manager_projection
+    from zf.runtime.stream_turn_lifecycle import run_stream_turn
+
+    rt, (sender, worker), _, call, _, _ = project
+    if backend == "claude-code":
+        token = provision_role_artifact_read_credential(
+            rt.state_dir, worker[0], role_name="impl", provider=backend
+        )
+        worker = (worker[0], worker[1], token)
+    message = call(
+        sender,
+        "send",
+        "--kind",
+        "question",
+        "--request-id",
+        "peer",
+        "--recipient",
+        '{"mode":"execution","operation_id":"op-2"}',
+        "--text",
+        "Which input is applicable?",
+    )
+    scope = ["--message", message["message_key"]]
+    claim_id = None
+
+    def receive():
+        nonlocal claim_id
+        delivery = call(worker, "pull", *scope, "--request-id", "get")["delivery_id"]
+        call(worker, "ack", "--delivery", delivery)
+        claim = call(worker, "claim", *scope, "--request-id", "take", "--delivery", delivery)
+        claim_id = claim["event_id"]
+        return [SimpleNamespace(subtype="success", is_error=False, num_turns=1, session_id="session-2")], "ok"
+
+    attempt = TaskAttemptStore(rt.state_dir / "task_attempts.json").get(worker[1])
+    context = SimpleNamespace(to_payload=lambda: {**attempt, "task_pipeline_stage": "impl"})
+    if backend == "claude-code":
+        run_stream_turn(rt.state_dir, context, "session-2", receive)
+    else:
+        # These are the two native hook shapes emitted by hook-recv. Its writer
+        # inherits the Run from the actual dispatch through causation.
+        from zf.cli.hook_context_events import HookEventWriter
+
+        cwd = str(rt.state_dir / "worktrees" / "worker-2")
+        dispatch = rt.event_writer.append(
+            ZfEvent(
+                type="task.pipeline.stage.dispatched",
+                actor="orchestrator",
+                origin="kernel",
+                task_id=attempt["task_id"],
+                correlation_id=attempt["run_id"],
+                payload={
+                    **attempt,
+                    "workflow_run_id": attempt["run_id"],
+                    "role_instance": worker[0],
+                    "workdir": cwd,
+                },
+            )
+        )
+        hooks = HookEventWriter(rt.event_log)
+
+        def native(kind, directory):
+            return hooks.append(
+                ZfEvent(
+                    type="codex.hook." + kind,
+                    actor=worker[0],
+                    origin="kernel" if kind == "user_prompt_submit" else "",
+                    causation_id=dispatch.id,
+                    payload={"cwd": directory, "session_id": "session-2", "turn_id": "turn-2"},
+                )
+            )
+
+        native("user_prompt_submit", cwd)
+        receive()
+        native("stop", cwd + "-other")
+        assert reconcile_mailbox(rt) == 0
+        native("stop", cwd)
+    assert reconcile_mailbox(rt) == 1
+    assert reconcile_mailbox(rt) == 0
+    report = build_run_manager_projection(rt.state_dir, config=rt.config, events=rt.event_log.read_all())
+    (action,) = [a for a in report["pending_actions"] if claim_id in a.get("source_event_ids", [])]
+    assert (action["action"], action["owner_route"]) == (
+        "diagnose-attention",
+        "run_manager",
+    )

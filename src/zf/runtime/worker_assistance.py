@@ -169,6 +169,7 @@ def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) 
             continue
         p = request.payload
         status, reason = "", ""
+        extra = {}
         from zf.runtime.orchestrator_agent_role import configured_orchestrator_role_from_config
         from zf.runtime.run_manager_resident import build_resident_run_manager_role
         owner = (configured_orchestrator_role_from_config(config) if p["owner"] == "orchestrator"
@@ -177,11 +178,14 @@ def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) 
             if owner is None or (owner.instance_id or owner.name) != p["owner_instance"]:
                 raise ValueError("assistance owner unavailable")
             if p.get("durable_mailbox"):
-                from zf.runtime.assistance_mailbox import runtime_view, unanswered_state
+                from zf.runtime.assistance_mailbox import ensure_question, runtime_view, unanswered_state
+                from zf.runtime.pause_lifecycle import is_run_dispatch_paused
 
-                status, reason = unanswered_state(runtime_view(state_dir, writer, config), request, events)
-                if reason == "dispatch_paused":
+                if is_run_dispatch_paused(events, p["workflow_run_id"]):
                     continue
+                mail = ensure_question(runtime_view(state_dir, writer, config), request, events)
+                extra["message_key"] = mail["message_key"]
+                status, reason = unanswered_state(request, events, mail["message_key"])
             else:
                 result = read_assistance(state_dir=state_dir, writer=writer, request_id=p["request_id"])
                 if result["status"] != "pending":
@@ -213,14 +217,6 @@ def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) 
             e.type == "orchestrator.rework.triage.requested" and e.origin in {"", "kernel"} and e.payload.get("request_id") == p["request_id"]
             for e in events
         ):
-            extra = {}
-            if p.get("durable_mailbox"):
-                from zf.runtime.assistance_mailbox import accepted_question
-
-                mail = accepted_question(writer.event_log.read_all(), p["request_id"])
-                if not mail:
-                    continue
-                extra["message_key"] = mail.payload["message_key"]
             writer.append(ZfEvent(type="orchestrator.rework.triage.requested", origin="kernel", actor="run-manager",
                 task_id=p["task_id"], correlation_id=p["workflow_run_id"],
                 causation_id=request.id, payload={**p, **extra, "failure_event_ids": [request.id]}))

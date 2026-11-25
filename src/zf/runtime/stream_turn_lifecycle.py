@@ -63,7 +63,7 @@ def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], An
     return messages, status
 
 
-def open_stream_turn(events, actor: str) -> ZfEvent | None:
+def open_stream_turn(events, actor: str, *, require_unique: bool = False) -> ZfEvent | None:
     """An unclosed durable invocation prevents another automatic continuation."""
     opened = {}
     for event in events:
@@ -74,7 +74,9 @@ def open_stream_turn(events, actor: str) -> ZfEvent | None:
             opened[key] = event
         elif event.type == "provider.turn.closed":
             opened.pop(key, None)
-    return next(reversed(opened.values()), None) if opened else None
+    if require_unique and len(opened) != 1:
+        return None
+    return next(reversed(opened.values()), None)
 
 
 def current_stream_turn_matches(events, event, attempt) -> bool:

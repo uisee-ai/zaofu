@@ -180,6 +180,15 @@ write a Plan Artifact Package id/ref, choose which Package is current, or emit
 Package lifecycle events; the Kernel derives the Goal Claim Set and admits the
 immutable Package after validating these explicit refs.
 
+Three places govern port binding. The flow's `artifact_package.required_ports`
+defines the Package minimum (or the flow defaults apply). The Task Map root's
+`required_plan_ports` explicitly declares shared selections and the four
+complete matrices. A task-only selection can instead be declared on that
+task's `evidence_contract.required_plan_ports`. Publishing a Plan port body
+or inheriting a flow requirement does not declare it selectable. When a
+selection is rejected, compare those declarations with both stage lists and
+the named producer refs before rerunning the supplied validator.
+
 The declaration is an executable downstream input contract:
 
 - use canonical logical names and keep the list non-empty when it is present;
@@ -794,6 +803,38 @@ delta. These are scheduler semantics, not permission to weaken evidence:
   `write_free: true`, `allowed_paths: []`, and exact `candidate_target` plus
   `immutable_baseline`. Its mandatory criteria use `candidate_verify`. A failed
   audit must not silently become an Impl rework of the same read-only task.
+
+#### Scoped input and verify-only example
+
+This Task Map excerpt shows the nesting consumed by the scheduler and source
+reader. Bind the target and baseline to an actual verified revision and use
+a command that already exists on that target. Check every selected port has
+a readable body, including the task partition selected here. Adapt this
+excerpt within the full Plan, source index and matrices.
+
+```json
+{
+  "required_plan_ports": ["execution_spec", "acceptance_matrix", "test_matrix", "real_e2e_matrix"],
+  "tasks": [{
+    "task_id": "AUDIT-CLI",
+    "title": "Verify the pinned command-line contract",
+    "allowed_paths": [],
+    "verification_read_paths": ["tests/test_cli.py"],
+    "evidence_contract": {
+      "execution_mode": "runtime_only", "runtime_only": true, "write_free": true,
+      "candidate_target": "git:<verified-full-commit>", "immutable_baseline": "git:<verified-full-commit>",
+      "plan_input_selection": {"schema_version": "task-plan-input-selection.v1",
+        "implementation": ["execution_spec"], "task-verify": ["execution_spec"]}
+    },
+    "acceptance_criteria": [{"id": "AC-CLI", "statement": "The pinned CLI contract passes",
+      "mandatory": true, "verification_owner": "candidate_verify", "verification_tier": "runtime",
+      "verification_command_ids": ["check-cli"]}],
+    "validation": {"commands": [{"id": "check-cli", "command": "pytest -q tests/test_cli.py",
+      "owner": "candidate_verify", "tier": "runtime", "acceptance_ids": ["AC-CLI"],
+      "deterministic": true, "reusable": true, "timeout_seconds": 60}]}
+  }]
+}
+```
 
 For each `verify_only` task, read `initial_readonly_verify` in the Plan execution
 review. Its mandatory criteria and selected commands execute on the task target,

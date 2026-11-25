@@ -107,7 +107,7 @@ def run(args) -> int:
                   f"recipient {member.get('recipient') or '-'} | as-of {member.get('source_seq') or '-'}")
             if mail := member.get("mailbox"):
                 print(f"    mailbox pending {mail['pending']} | claimed unanswered {mail['unanswered']} | sent unanswered {mail['sent_unanswered']} | unknown {mail['unknown']}")
-                for key in ("oldest_at", "owner", "deadline", "last_claimed_at", "last_answered_at", "recovery_owner"):
+                for key in ("oldest_at", "owner", "deadline", "response_started_at", "response_timeout_seconds", "last_claimed_at", "last_answered_at", "recovery_owner"):
                     if mail.get(key):
                         print(f"    mailbox {key} {mail[key]}")
             if member.get("question"):
