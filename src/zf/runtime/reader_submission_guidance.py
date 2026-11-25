@@ -45,6 +45,13 @@ def verifier_failure_schema_guidance(
         )
     else:
         example = "```json\n" + body + "\n```"
+    candidate_host_check = (
+        "- Candidate execution obstruction: first match the blocked command_id against this attempt's "
+        "candidate-host-execution and inspect its signed original receipt and assigned media. "
+        "A missing dependency in the Reader shell describes that shell. Determine whether it prevents "
+        "the required evaluation in the contracted environment, including any separately required fresh probe.\n"
+        if owner == "candidate_verify" else ""
+    )
     return (
         "- Required reads: complete=false with next_cursor is remaining work, not an execution failure. "
         "Continue the next bounded batch with that cursor. A corrected pagination option error is no longer a blocker; "
@@ -54,7 +61,7 @@ def verifier_failure_schema_guidance(
         "- Invalid cursor: follow the CLI recovery hint and the evaluator skill; use the exact "
         "returned cursor or the authorized --resume path while earlier material remains usable. "
         "Do not invent a cursor or submit a terminal failure for an already corrected copy error.\n"
-        "- Runner unavailable before evaluation: execution_status=failed, verdict=abstained, "
+        + candidate_host_check + "- Runner unavailable before evaluation: execution_status=failed, verdict=abstained, "
         "failure_class=verifier_execution_failure, concrete summary and actual failure evidence_refs. "
         "Incomplete product reads do not prevent reporting this execution failure. "
         "Reference the actual tool-call ID or returned output/chunk ID with the command, "

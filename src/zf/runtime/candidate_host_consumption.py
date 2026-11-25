@@ -204,8 +204,8 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
     return item, sources
 
 
-def available_host_command_ids(state_dir: Path, request: dict) -> set[str]:
-    """Identify offered host observations for the draft; receipt selection remains explicit."""
+def available_host_receipts(state_dir: Path, request: dict) -> list[dict]:
+    """Return offered execution observations bound to this exact consumer."""
     try:
         binding = hydrate_sidecar_ref(state_dir, request['candidate_host_evidence_ref']).payload
         consumer = binding['consumer']
@@ -214,10 +214,17 @@ def available_host_command_ids(state_dir: Path, request: dict) -> set[str]:
                 or any(not request.get(key) or consumer.get(key) != request[key]
                        for key in (*BOUND_FIELDS, 'operation_id', 'role_instance'))
                 or consumer.get('attempt_id') != request.get('attempt_id')):
-            return set()
-        return {row['command_id'] for row in binding['receipts'] if row['status'] == 'available'}
+            return []
+        rows = [row for row in binding['receipts'] if row['status'] == 'available']
+        if any(not isinstance(row['command_id'], str) or not row['command_id'] for row in rows):
+            return []
+        return rows
     except (OSError, ValueError, TypeError, KeyError):
-        return set()  # Read/admission gates retain responsibility for unavailable evidence.
+        return []  # Read/admission gates retain responsibility for unavailable evidence.
+
+
+def available_host_command_ids(state_dir: Path, request: dict) -> set[str]:
+    return {row["command_id"] for row in available_host_receipts(state_dir, request)}
 
 
 def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | None,
