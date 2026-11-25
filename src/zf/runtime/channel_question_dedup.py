@@ -12,6 +12,7 @@ from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_question_graph import (
     normalize_question_payload,
     validate_question_graph,
+    validate_question_merge_graph,
 )
 
 
@@ -324,6 +325,7 @@ def apply_question_dedup_reply(
     normalized_updates: list[dict[str, Any]] = []
     proposed_ledger = {key: dict(value) for key, value in ledger.items()}
     updated_ids: set[str] = set()
+    update_graph_error = ""
     for index, raw_update in enumerate(updates):
         if not isinstance(raw_update, dict):
             return _reject(
@@ -388,7 +390,12 @@ def apply_question_dedup_reply(
             **current,
             **normalized,
         }
-    graph_error = validate_question_graph(proposed_ledger.values())
+        # Replay validates updates one at a time; a valid final graph alone can
+        # hide a rejected intermediate update followed by an unsafe merge.
+        update_graph_error = update_graph_error or validate_question_graph(proposed_ledger.values())
+    graph_error = update_graph_error or validate_question_graph(proposed_ledger.values()) or validate_question_merge_graph(
+        proposed_ledger.values(), merge_map=merge_map,
+    )
     if graph_error:
         return _reject(
             writer=writer,
@@ -422,10 +429,12 @@ def apply_question_dedup_reply(
         if isinstance(item, dict)
     }
     surviving_ids = sorted(open_ids - set(merge_map))
+    required_fact_count = 0
     for question_id in surviving_ids:
         proposed = proposed_ledger[question_id]
         if str(proposed.get("kind") or "owner_decision") != "fact":
             continue
+        required_fact_count += 1
         target_member_id = str(
             proposed.get("target_member_id") or ""
         ).strip()
@@ -460,6 +469,7 @@ def apply_question_dedup_reply(
         merge_map=merge_map,
         member_ids=member_ids,
         request_id=request_id,
+        required_fact_count=required_fact_count,
     )
     if cross_review_error:
         return _reject(
@@ -594,10 +604,13 @@ def _normalize_cross_reviews(
     merge_map: dict[str, str],
     member_ids: set[str],
     request_id: str,
+    required_fact_count: int = 0,
 ) -> tuple[list[dict[str, Any]], str]:
     if not isinstance(raw_requests, list):
         return [], "cross_review_requests_must_be_a_list"
-    if len(raw_requests) > 8:
+    # Every surviving fact must be reviewed. The optional-plan cap cannot
+    # make that invariant impossible; dispatch still owns concurrency limits.
+    if len(raw_requests) > max(8, required_fact_count):
         return [], "cross_review_request_limit_exceeded"
     normalized: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
