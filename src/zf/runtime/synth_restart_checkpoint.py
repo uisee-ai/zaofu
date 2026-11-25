@@ -67,6 +67,28 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
             or (stale_reason and not timeout_block)):
         raise ValueError("failed synth carrier is no longer current")
     operation = reduce_workflow_operations(events).get(d.get("operation_id"), {})
+    # A completed checkpoint consumes the transport retry even if the first
+    # terminal fanout was reopened before its WRC failure was reconciled.
+    prior_checkpoint = any(
+        previous.origin == "kernel" and previous.actor == "zf-cli"
+        and previous.payload.get("operation_id") == d.get("operation_id")
+        and previous.payload.get("request_hash") == d.get("request_hash")
+        and previous.payload.get("recovery_kind") == "operator_synth_checkpoint"
+        and previous.payload.get("recovered_failure_event_id") == previous.causation_id
+        and (cause := by_id.get(previous.causation_id)) is not None
+        and cause.type == "fanout.synth.completed" and cause.origin == "kernel"
+        and cause.payload.get("failure_class") == "worker_noop_or_terminal_missing"
+        for previous in dispatches
+    )
+    # A crash after marking this exact retry may still need its dispatch.
+    counted_elsewhere = operation.get("retry_count") and not any(
+        event.type == "workflow.operation.retry_started" and event.origin == "kernel"
+        and event.causation_id == failure.id
+        and event.payload.get("operation_id") == d.get("operation_id")
+        and event.payload.get("request_hash") == d.get("request_hash") for event in events
+    )
+    if not timeout and (prior_checkpoint or counted_elsewhere):
+        raise ValueError("synth transport checkpoint retry already used")
     pending_replay = operation.get("status") == "requested" and any(
         event.type == "workflow.operation.redrive_admitted"
         and event.origin == "kernel"

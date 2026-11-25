@@ -83,8 +83,11 @@ def test_failed_synth_resume_rejects_unsafe_checkpoint(tmp_path, fault):
     assert len(log.read_all()) == original
 
 
-def test_partial_reopen_replays_without_duplicate_aggregate(tmp_path, monkeypatch):
-    _state, log, runtime, role, _dispatch, _before, failure = failed_synth(tmp_path)
+@pytest.mark.parametrize("already_closed", [True, False])
+def test_partial_reopen_replays_without_duplicate_aggregate(tmp_path, monkeypatch, already_closed):
+    _state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    if already_closed:
+        _close_failed_operation(runtime, dispatch, failure)
     append = runtime.event_writer.append
     def interrupted(event):
         if event.type == "fanout.synth.dispatched": raise OSError("operator process stopped")
@@ -207,3 +210,58 @@ def test_transport_resume_rejects_an_unrelated_operation_closeout(tmp_path, over
     with pytest.raises(ValueError, match="blocked, terminal"):
         reopen_synth_restart_checkpoint(runtime, role, failure.id)
     assert len(log.read_all()) == before
+
+
+@pytest.mark.parametrize("first_closed", [True, False])
+def test_exhausted_synth_checkpoint_accounts_second_failure_once(tmp_path, first_closed):
+    from zf.runtime.call_result_runtime import workflow_operation_service
+    from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
+
+    _, log, runtime, role, dispatch, before, first = failed_synth(tmp_path)
+    op_id = dispatch.payload["operation_id"]
+    if first_closed:
+        assert reconcile_exhausted_reader_operations(runtime, log.read_all())
+        assert not reconcile_exhausted_reader_operations(runtime, log.read_all())
+    reopen_synth_restart_checkpoint(runtime, role, first.id)
+    if first_closed:
+        # A delayed replay of the old failure must not terminate the live retry.
+        assert workflow_operation_service(runtime).fail(
+            operation_id=op_id, request_hash=before["request_hash"],
+            workflow_run_id=before["workflow_run_id"], reason=first.payload["reason"],
+            causation_id=first.id) is None
+    log.append(ZfEvent(type="provider.turn.closed", actor=role.instance_id,
+                       payload={"backend": "codex", "turn_id": "second-stop"}))
+    assert runtime._recover_lost_fanout_synth_dispatches(log.read_all())
+    second = next(e for e in reversed(log.read_all()) if e.type == "fanout.synth.completed")
+    assert second.id != first.id
+    # The fanout finalizer and the WRC terminal reconciliation run on different ticks.
+    assert reduce_workflow_operations(log.read_all())[op_id]["status"] == "running"
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, second.id)
+    assert reconcile_exhausted_reader_operations(runtime, log.read_all())
+    assert not reconcile_exhausted_reader_operations(runtime, log.read_all())
+    rows = log.read_all()
+    closeouts = [e for e in rows if e.type == "workflow.operation.failed"
+                 and e.payload.get("operation_id") == op_id]
+    assert [e.causation_id for e in closeouts] == ([first.id, second.id] if first_closed else [second.id])
+    view = reduce_workflow_operations(rows)[op_id]
+    assert view["status"] == "failed" and view["last_event_id"] == closeouts[-1].id
+    assert view["request_hash"] == before["request_hash"] and not view["call_result_admitted_event_id"]
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, second.id)
+    assert len(log.read_all()) == len(rows)
+
+
+def test_running_retry_for_different_cause_cannot_open_synth(tmp_path):
+    from zf.runtime.call_result_runtime import workflow_operation_service
+
+    _, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path)
+    _close_failed_operation(runtime, dispatch, failure)
+    workflow_operation_service(runtime).mark_retry_started(
+        operation_id=dispatch.payload["operation_id"], request_hash=before["request_hash"],
+        workflow_run_id=before["workflow_run_id"], retry_attempt=1,
+        reason="transport recovery", causation_id=dispatch.id)
+    previous = log.read_all()
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, failure.id)
+    assert log.read_all() == previous
