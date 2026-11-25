@@ -8,7 +8,27 @@ from typing import Any, Mapping
 import yaml
 
 from zf.core.config.loader import load_config
+from zf.core.config.schema import ZfConfig
 from zf.core.state.atomic_io import atomic_write_text
+
+
+def bind_verification_checkpoint(
+    documents: list[dict], teams: Mapping[str, Any], registered: ZfConfig,
+) -> None:
+    """Project an existing shadow delegation into a candidate subject to owner approval."""
+    if not {"task_verify", "candidate_verify"} & teams.keys():
+        return
+    from zf.core.config.stage_teams import verification_delegation_policy
+
+    policy = verification_delegation_policy(registered)
+    if policy.checkpoint_policies.get("pre_impl") != "shadow":
+        return
+    configs = [doc["spec"] for doc in documents if doc.get("kind") == "ZfConfig"]
+    if len(configs) != 1:
+        raise ValueError("verification checkpoint changes require exactly one ZfConfig")
+    oa = configs[0].setdefault("workflow", {}).setdefault("orchestration", {})
+    target = oa.setdefault("flow_policies", {}).setdefault("prd", {})
+    target.setdefault("checkpoint_policies", {})["pre_impl"] = "blocking"
 
 
 def materialize_controller_candidate(
@@ -45,6 +65,7 @@ def materialize_controller_candidate(
         from zf.core.config.stage_teams import normalize_stage_teams
         spec["stageTeams"] = normalize_stage_teams(parameters["stage_teams"])
         spec.pop("stage_teams", None)
+        bind_verification_checkpoint(documents, spec["stageTeams"], load_config(base_path))
         if "lanes" not in parameters:
             if "task_pipeline" in parameters:
                 raise ValueError("task_pipeline requires explicit lanes")

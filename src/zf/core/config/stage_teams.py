@@ -6,6 +6,8 @@ import re
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from zf.core.config.schema import WorkflowOrchestrationFlowPolicyConfig, ZfConfig
+
 
 def _text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip() or any(ord(c) < 32 for c in value):
@@ -209,6 +211,16 @@ def authorized_judges(config: Any, registered: str = "") -> list[str]:
                    and (role.instance_id or role.name) != config.workflow.orchestration.oa_profile})
 
 
+def verification_delegation_policy(config: ZfConfig) -> WorkflowOrchestrationFlowPolicyConfig:
+    """Require the project's existing PRD OA delegation before binding verification."""
+    oa = config.workflow.orchestration
+    policy = oa.flow_policies.get("prd")
+    if (not oa.oa_profile or not policy or policy.mode != "semantic_control"
+            or "pre_impl" not in policy.checkpoints or "delegate" not in (policy.autonomous_actions or [])):
+        raise ValueError("OA verification requires a registered blocking pre_impl OA delegation")
+    return policy
+
+
 def validate_effective_teams(config: Any, metadata: dict, project_root: Path) -> None:
     """Check the actual effective consumer after hand-written overrides and namespacing."""
     teams = normalize_stage_teams(metadata["stage_teams"])
@@ -274,12 +286,8 @@ def validate_effective_teams(config: Any, metadata: dict, project_root: Path) ->
                     or len(primary) != int(key == "judge") or team["author"] in primary):
                 raise ValueError(f"stage_teams.{key} specialist contracts differ from the effective stage")
     if {"task_verify", "candidate_verify"} & teams.keys():
-        oa = config.workflow.orchestration
-        policy = oa.flow_policies.get("prd")
-        if (not oa.oa_profile or not policy or policy.mode != "semantic_control"
-                or "pre_impl" not in policy.checkpoints
-                or policy.checkpoint_policies.get("pre_impl", "blocking") != "blocking"
-                or "delegate" not in (policy.autonomous_actions or [])):
+        policy = verification_delegation_policy(config)
+        if policy.checkpoint_policies.get("pre_impl", "blocking") != "blocking":
             raise ValueError("OA verification requires a registered blocking pre_impl OA delegation")
 
 

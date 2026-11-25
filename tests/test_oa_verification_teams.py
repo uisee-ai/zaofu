@@ -435,3 +435,60 @@ def test_missing_specialist_slice_requests_one_oa_correction_for_the_bound_task(
         specialist_inputs(runtime, assignment, **args)
     assert waiting.value.reason == "waiting_for_specialist_evidence"
     assert len(runtime.event_log.query(type="workflow.invoke.requested")) == 1
+
+
+@pytest.mark.parametrize("local_controller", [True, False], ids=["existing-project", "registered"])
+def test_verification_delegation_promotes_only_reviewed_candidate(assembly, local_controller):
+    from tests.test_workflow_registered_controller import _candidate
+    from zf.core.config.loader import load_config
+    from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+
+    base, _, _, synthesis, _ = assembly
+    _, _, installed = _candidate(assembly)
+    base.write_bytes(installed.read_bytes())
+    original = base.read_bytes()
+    cfg = load_config(base)
+    current = cfg.workflow.orchestration.flow_policies["prd"]
+    assert current.checkpoint_policies["pre_impl"] == "shadow"
+    parameters = {} if local_controller else dict(synthesis["short_flow_spec"]["parameters"])
+    parameters["stage_teams"] = {
+        "task_verify": {"reason": "Bind independent task readers", "mode": "oa_run_plan"},
+        "candidate_verify": {"reason": "Two separate integration risks", "width": 2},
+    }
+    candidate = materialize_controller_candidate(
+        base_path=base, request_id="verify-pilot", short_spec={"flow_family": "PrdFlow", "parameters": parameters},
+        requirement={"source_ref": "prd.md", "target_root": "."},
+    )
+    proposed = load_config(candidate)
+    chosen = proposed.workflow.orchestration.flow_policies["prd"]
+    assert base.read_bytes() == original
+    assert chosen == replace(current, checkpoint_policies={**current.checkpoint_policies, "pre_impl": "blocking"})
+    actual = proposed.workflow.flow_metadata["task_pipeline"]
+    assert actual["pools"] == cfg.workflow.flow_metadata["task_pipeline"]["pools"]
+    assert actual["verify_assignment_mode"] == "oa_run_plan" and actual["candidate"]["verify_width"] == 2
+
+
+@pytest.mark.parametrize("missing", ["checkpoint", "delegation"])
+def test_local_verification_proposal_cannot_create_missing_authority(assembly, missing):
+    import yaml
+    from tests.test_workflow_registered_controller import _candidate
+    from zf.core.config.loader import load_config
+    from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+
+    base = assembly[0]
+    _, _, installed = _candidate(assembly)
+    docs = list(yaml.safe_load_all(installed.read_text()))
+    policy = next(d["spec"] for d in docs if d["kind"] == "ZfConfig")["workflow"]["orchestration"]["flow_policies"]["prd"]
+    if missing == "checkpoint":
+        policy["checkpoints"].remove("pre_impl")
+        policy["checkpoint_policies"].pop("pre_impl")
+    else:
+        policy["autonomous_actions"].remove("delegate")
+    base.write_text(yaml.safe_dump_all(docs, sort_keys=False))
+    original = base.read_bytes()
+    load_config(base)
+    with pytest.raises(ValueError, match="registered blocking pre_impl OA delegation"):
+        materialize_controller_candidate(base_path=base, request_id="unapproved", short_spec={
+            "flow_family": "PrdFlow", "parameters": {"stage_teams": {
+                "task_verify": {"reason": "Bind independent task readers", "mode": "oa_run_plan"}}}})
+    assert base.read_bytes() == original

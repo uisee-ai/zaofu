@@ -135,6 +135,7 @@ class FanoutEvidenceQueriesMixin:
         run_id: str | None = None,
         operation_id: str | None = None,
         dispatch_id: str | None = None,
+        mailbox_notice: bool = False,
     ) -> DispatchContext:
         workflow_run_id = str(run_id or "").strip()
         task = None
@@ -169,6 +170,7 @@ class FanoutEvidenceQueriesMixin:
             backend=role.backend,
             briefing_path=briefing_path,
             dispatch_id=active_dispatch_id,
+            mailbox_notice=mailbox_notice,
             operation_id=operation_id,
         )
 

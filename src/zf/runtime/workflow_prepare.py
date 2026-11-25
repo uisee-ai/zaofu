@@ -213,6 +213,19 @@ def prepare_request_revision(
     if previous.get("request_revision") == request.get("revision"):
         operation = previous["_operation"]
         status = operation["status"]
+        if status == "settled" and not request.get("proposal_ref"):
+            from zf.runtime.workflow_preparation_view import preparation_view, proposal_failure
+
+            failure = proposal_failure(writer.event_log.read_all(), request, operation)
+            if failure:
+                view = preparation_view(request, operation, failure=failure)
+                retry = view["can_retry"] and payload.get("retry_failed") is True
+                return {
+                    **common, **view, "ok": retry,
+                    "status": "proposal_retry_pending" if retry else view["status"],
+                    "synthesis_operation_id": operation["operation_id"],
+                    "synthesis_request_hash": operation["request_hash"],
+                }
         if status in {"failed", "blocked"} and payload.get("retry_failed") is True:
             context["retry_of_operation_id"] = operation["operation_id"]
             context.pop("reusable_synthesis_result_ref", None)

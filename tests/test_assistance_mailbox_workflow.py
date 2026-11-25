@@ -560,3 +560,82 @@ def test_disabling_then_reenabling_pilot_preserves_each_existing_assistance_rece
         )
         == 3
     )
+
+
+@pytest.mark.parametrize("backend", ["codex", "claude-code"])
+@pytest.mark.parametrize(
+    ("screen", "after_write", "status"),
+    [
+        ("ready", True, "confirmed"),
+        ("modal", False, "not_sent"),
+        ("unreadable", False, "not_sent"),
+        ("modal", True, "unknown"),
+        ("unreadable", True, "unknown"),
+        ("blank", True, "unknown"),
+    ],
+)
+def test_tmux_notice_checks_actual_screen_before_enter(
+    project, monkeypatch, backend, screen, after_write, status
+):
+    from dataclasses import replace
+
+    from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
+    from zf.runtime.tmux import TmuxSession
+    from zf.runtime.transport import TmuxTransport
+
+    r, workers, _, _, send, fresh = project
+    q = send(workers[0])
+    tmux = TmuxSession("mailbox-test", dry_run=True)
+    adapter = TmuxTransport(tmux)
+    marker = "Read the bounded worker guidance briefing"
+
+    def written():
+        return any(
+            " paste-buffer " in cmd or (" send-keys " in cmd and marker in cmd)
+            for cmd in tmux.command_log
+        )
+
+    def capture(role, *, lines):
+        if not after_write or written():
+            if screen == "unreadable":
+                raise OSError("screen unavailable")
+            if screen == "blank":
+                return ""
+            if screen == "modal":
+                return "Do you trust the files in this folder?"
+        return "Ready for a briefing"
+
+    monkeypatch.setattr(tmux, "capture_pane", capture)
+    contexts = []
+
+    def send_to_adapter(role, briefing, prompt, context):
+        contexts.append(context)
+        assert marker in prompt and not any(ord(c) < 32 for c in prompt)
+        adapter.send_task(role, briefing, prompt, context=context)
+
+    def reactor():
+        rt = fresh(send_to_adapter)
+        rt._current_run_id = lambda: "run-1"
+        rt._trace_id_for_task = lambda _: "run-1"
+
+        def bound_context(**options):
+            role = replace(options["role"], backend=backend)
+            return FanoutEvidenceQueriesMixin._dispatch_context(rt, **{**options, "role": role})
+
+        rt._dispatch_context = bound_context
+        return rt
+
+    dispatch_pending_assistance(reactor())
+    dispatch_pending_assistance(reactor())
+    notices = [
+        e.payload for e in r.event_log.read_all()
+        if e.type == "workflow.mailbox.notification" and e.payload["request_id"] == q["request_id"]
+    ]
+    assert [e["status"] for e in notices] == ["reserved", "attempted", status]
+    if status == "unknown":
+        issue = "trust_prompt" if screen == "modal" else "screen_unreadable"
+        assert notices[-1]["reason"] == f"submit_withheld:{issue}"
+    assert len(contexts) == 1
+    assert contexts[0].mailbox_notice and contexts[0].run_id == "run-1"
+    assert written() is (after_write or status == "confirmed")
+    assert any(cmd.endswith(" Enter") for cmd in tmux.command_log) is (status == "confirmed")

@@ -33,7 +33,7 @@ from zf.web.projections.request_util import _request_json
 from zf.web.projections.workflow_yaml import project_workflow_yaml
 from zf.web.projections.workspace import _resolve_api_project
 from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
-from zf.runtime.workflow_preparation_view import preparation_view
+from zf.runtime.workflow_preparation_view import preparation_view, proposal_failure
 
 
 def workflow_request_strings(value: object) -> list[str]:
@@ -459,8 +459,10 @@ def build_workflow_request_router(
             "queue_position": int(admission.get("queue_position") or 0),
             "run_admission": admission,
         }
-        preparation = preparation_view(effective_result, operation,
-                                       git_blockers=preparation_git_diagnostics(context.project_root))
+        preparation = preparation_view(
+            effective_result, operation, failure=proposal_failure(events, effective_result, operation),
+            git_blockers=preparation_git_diagnostics(context.project_root),
+        )
         effective_result["status"] = preparation["status"]
         body = redact_obj({
             "ok": True,
@@ -532,8 +534,9 @@ def build_workflow_request_router(
                 )
                 projected = {**value, "status": _request_status(value, admission, operation),
                              "run_id": str(admission.get("run_id") or value.get("run_id") or "")}
-                preparation = preparation_view(projected, operation,
-                                               git_blockers=git_blockers)
+                preparation = preparation_view(
+                    projected, operation, failure=proposal_failure(events, projected, operation), git_blockers=git_blockers,
+                )
                 items.append({
                     **value,
                     "task_id": project_request_task_id(context.state_dir, value),

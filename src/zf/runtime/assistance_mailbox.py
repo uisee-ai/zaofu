@@ -321,7 +321,12 @@ def send_notice(runtime, request, send):
                 )
             else:
                 # An exception from the adapter may follow a partial terminal write.
-                _record_notice(runtime, request, "unknown")
+                reason = (
+                    f"submit_withheld:{error.interactive_prompt_marker}"
+                    if getattr(error, "failure_class", "") == "provider_notice_submit_withheld"
+                    else "transport_receipt_absent"
+                )
+                _record_notice(runtime, request, "unknown", reason=reason)
             raise
         _record_notice(runtime, request, "confirmed")
 

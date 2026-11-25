@@ -9,7 +9,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:  # pragma: no cover
     from zf.runtime.tmux_layout import TmuxLayout
@@ -366,7 +366,8 @@ class TmuxSession:
 
     def send_keys(self, window: str, text: str, *, enter: bool = True,
                   submit_key: str = "Enter",
-                  submit_delay_s: float = 0.5) -> None:
+                  submit_delay_s: float = 0.5,
+                  before_submit: Callable[[], None] | None = None) -> None:
         """Send text to the tmux pane, optionally followed by a submit key.
 
         ``enter=True`` submits via a SEPARATE ``tmux send-keys`` call
@@ -394,6 +395,8 @@ class TmuxSession:
             if submit_delay_s > 0:
                 import time as _time
                 _time.sleep(submit_delay_s)
+            if before_submit is not None:
+                before_submit()
             self._run(["tmux", "send-keys", "-t", target, submit_key])
 
     def clear_input(self, window: str) -> None:
@@ -401,7 +404,8 @@ class TmuxSession:
         target = self._target(window)
         self._run(["tmux", "send-keys", "-t", target, "C-u"])
 
-    def send_paste(self, window: str, text: str) -> None:
+    def send_paste(self, window: str, text: str, *,
+                   before_submit: Callable[[], None] | None = None) -> None:
         """Deliver one bracketed paste and one submit, without retrying input."""
         from uuid import uuid4
 
@@ -414,6 +418,8 @@ class TmuxSession:
             self._run(["tmux", "paste-buffer", "-p", "-r", "-b", buffer, "-t", target])
             if not self.dry_run:
                 time.sleep(0.5)
+            if before_submit is not None:
+                before_submit()
             self._run(["tmux", "send-keys", "-t", target, "Enter"])
         finally:
             self._run(["tmux", "delete-buffer", "-b", buffer], check=False)

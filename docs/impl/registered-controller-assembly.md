@@ -109,9 +109,11 @@ Preview 同时暴露实际编译角色的 `config.<document>.roles.<name>.model`
 它自动排除配置中的 state_dir，拒绝陈旧摘要、越界、符号链接、凭据和已有暂存内容，
 使用独立 index 且只提交批准路径。同一基线重复执行不产生第二次提交，不启动 Run。
 
-`zf workflow prepare --request ID --retry-failed` 为失败准备创建新的 operation；新尝试
-引用旧尝试，只有相同 Request revision / Requirement digest 的 failed/blocked 绑定可被
-替换。旧失败保留在事件账本，已经准入的语义结果在当前 catalog 和能力检查后重新绑定；
+`zf workflow prepare --request ID --retry-failed` 对已经 settled、已有准入结果且仍有本地装配次数的 operation，
+在消费者锁内核对当前 revision、目录和请求内容，复用同一准入回执重新装配 Proposal。
+CLI 和 Web 显示本次装配失败的原因和次数，历史回执缺失必要字段时保留失败状态并关闭该本地重试。
+对于已终止的 failed/blocked 准备操作，显式重试创建新的 operation 并引用原尝试；
+只有相同 Request revision / Requirement digest 的绑定可被替换。旧失败保留在事件账本，已经准入的语义结果在当前 catalog 和能力检查后重新绑定；
 不伪造需求修订。重复点击复用当前尝试。配置审批与启动审批不因恢复而省略。
 
 Web 列表、详情和 CLI 共用 preparation 投影：`preparation_blocked`、

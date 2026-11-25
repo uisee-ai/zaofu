@@ -21,7 +21,7 @@ def read_preparation_events(state_dir: Path, config, event_log: EventLog):
         try:
             metric_facts.refresh_events(state_dir, config)
             rows = metric_facts.events(state_dir, full=True, config=config,
-                types=tuple(sorted(OPERATION_EVENT_TYPES | {"workflow.call.result.admitted"})))
+                types=tuple(sorted(OPERATION_EVENT_TYPES | {"workflow.call.result.admitted", "workflow.synthesis.proposal.failed"})))
             events = [event for _, event in rows]
         except (sqlite3.Error, OSError, ValueError):
             events = event_log.read_all()

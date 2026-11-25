@@ -187,6 +187,27 @@ class TmuxReadinessMixin:
             return ""
         return provider_interactive_prompt_marker(str(screen))
 
+    def _assert_mailbox_notice_screen(self, role_name: str, *, input_started: bool) -> None:
+        # Only a captured, nonempty live pane can admit the next input boundary.
+        try:
+            screen = self.tmux.capture_pane(role_name, lines=0)
+        except Exception:
+            screen = ""
+        marker = (
+            provider_interactive_prompt_marker(screen)
+            if screen and screen.strip() else "screen_unreadable"
+        )
+        if marker:
+            diagnostics = self._record_readiness_failure(
+                role_name,
+                failure_class=(
+                    "provider_notice_submit_withheld" if input_started else "provider_interactive_blocked"
+                ),
+                extra={"interactive_prompt_marker": marker, "input_not_sent": not input_started},
+            )
+            raise build_tmux_readiness_error(role_name, diagnostics)
+        self._readiness_failures.pop(role_name, None)
+
     def _assert_dispatch_prompt_ready(self, role_name: str) -> None:
         """Recheck reused providers before paste/Enter can answer a modal."""
         blocker = self._interactive_prompt_blocker(role_name)

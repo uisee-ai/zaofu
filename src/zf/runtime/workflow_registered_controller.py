@@ -232,7 +232,8 @@ def assemble_controller(
     require_git_baseline(root)
     from zf.runtime.workflow_controller_skills import SOURCE_NAME, controller_skill_source
     base_config = load_config(base_path)
-    package = controller_skill_source(root=root, base=base_config, template=load_config(path))
+    template = load_config(path)
+    package = controller_skill_source(root=root, base=base_config, template=template)
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
     if "plan_critic_enabled" in parameters:
@@ -257,11 +258,8 @@ def assemble_controller(
     if len(config_docs) != 1:
         raise ValueError("registered controller requires exactly one ZfConfig")
     spec = config_docs[0]["spec"]
-    if {"task_verify", "candidate_verify"} & (flow["spec"].get("stageTeams") or {}).keys():
-        policy = spec["workflow"]["orchestration"]["flow_policies"]["prd"]
-        if "pre_impl" not in policy["checkpoints"]:
-            raise ValueError("OA verification requires a registered pre_impl OA checkpoint")
-        policy["checkpoint_policies"]["pre_impl"] = "blocking"
+    from zf.runtime.workflow_controller_candidate import bind_verification_checkpoint
+    bind_verification_checkpoint(documents, flow["spec"].get("stageTeams") or {}, template)
     from zf.runtime.workflow_approval_requirements import validate_approval_requirements
     approval = validate_approval_requirements(parameters, requirement)
     if approval.get("plan") == "required":

@@ -11,8 +11,10 @@ from zf.core.events.writer import EventWriter
 from zf.core.state.locks import locked_path
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
+    canonicalize_operation_request,
     reduce_workflow_operations,
 )
+from zf.runtime.workflow_preparation_view import preparation_view, proposal_failure
 from zf.runtime.workflow_requests import load_workflow_request
 
 
@@ -29,6 +31,7 @@ def consume_workflow_synthesis_operations(
     agent: Any | None = None,
     limit: int = 1,
     request_id: str = "",
+    replay_operation_id: str = "",
     read_operation_events: Callable[[], Iterable[ZfEvent]] | None = None,
 ) -> int:
     """Consume durable synthesis operations with a process-safe lease."""
@@ -51,9 +54,8 @@ def consume_workflow_synthesis_operations(
             raise WorkflowSynthesisConsumerBusy(str(exc)) from exc
         # Web may locate these canonical events through a disposable index.
         # Read under the consumer lease; admission and writes remain canonical.
-        operations = reduce_workflow_operations(
-            read_operation_events() if read_operation_events else writer.event_log.read_all()
-        )
+        events = list(read_operation_events()) if read_operation_events else writer.event_log.read_all()
+        operations = reduce_workflow_operations(events)
         candidates = [
             operation
             for operation in operations.values()
@@ -64,6 +66,11 @@ def consume_workflow_synthesis_operations(
         candidates.sort(
             key=lambda item: str(item.get("last_event_at") or "")
         )
+        if replay_operation_id:
+            candidates = [
+                op for op in candidates if op["operation_id"] == replay_operation_id
+                and op["status"] == "settled" and op.get("admitted_call_result_ref")
+            ]
         if request_id:
             candidates = [op for op in candidates if (
                 synthesis._hydrate_operation_request(state_dir, op).get("request_id") == request_id)]
@@ -97,6 +104,8 @@ def consume_workflow_synthesis_operations(
                 request_projection.get("revision") or 0
             )
             if current_revision != operation_revision:
+                if replay_operation_id:
+                    continue
                 service.supersede(
                     operation_id=str(operation.get("operation_id") or ""),
                     request_hash=str(operation.get("request_hash") or ""),
@@ -127,9 +136,13 @@ def consume_workflow_synthesis_operations(
             if (
                 operation.get("status") == "settled"
                 and request_projection.get("synthesis_digest")
-                and str(request_projection.get("status") or "")
-                == "clarifying"
+                and str(request_projection.get("status") or "") == "clarifying"
             ):
+                continue
+            failure = proposal_failure(events, request_projection, operation)
+            if replay_operation_id and not failure:
+                continue
+            if failure and not preparation_view(request_projection, operation, failure=failure)["can_retry"]:
                 continue
             actor = str(request_body.get("actor") or "workflow-synthesis")
             backend = str(request_body.get("backend") or "")
@@ -139,20 +152,48 @@ def consume_workflow_synthesis_operations(
                 else {}
             )
             try:
-                outcome = synthesis.run_workflow_synthesis(
-                    state_dir=state_dir,
-                    project_root=project_root,
-                    config=config,
-                    writer=writer,
-                    request_id=request_id,
-                    actor=actor,
-                    backend=backend,
-                    agent=agent,
-                    operation_context=operation_context,
-                    causation_id=str(operation.get("last_event_id") or ""),
-                    resume_running=operation.get("status") == "running",
-                )
+                if replay_operation_id:
+                    pinned = synthesis._prepare_synthesis_operation(
+                        state_dir=state_dir,
+                        project_root=project_root,
+                        config=config,
+                        request_id=request_id,
+                        actor=actor,
+                        backend=backend,
+                        operation_context=operation_context,
+                    )
+                    if (
+                        pinned["operation_id"] != replay_operation_id
+                        or canonicalize_operation_request(pinned["operation_request"]) != request_body
+                    ):
+                        raise ValueError(
+                            "settled synthesis inputs changed; a new controlled preparation is required"
+                        )
+                    outcome = synthesis._replay_settled_synthesis(
+                        state_dir=state_dir,
+                        writer=writer,
+                        request=request_projection,
+                        operation_id=replay_operation_id,
+                        request_hash=operation["request_hash"],
+                        actor=actor,
+                    )
+                else:
+                    outcome = synthesis.run_workflow_synthesis(
+                        state_dir=state_dir,
+                        project_root=project_root,
+                        config=config,
+                        writer=writer,
+                        request_id=request_id,
+                        actor=actor,
+                        backend=backend,
+                        agent=agent,
+                        operation_context=operation_context,
+                        causation_id=str(operation.get("last_event_id") or ""),
+                        resume_running=operation.get("status") == "running",
+                    )
             except synthesis.WorkflowSynthesisError:
+                if replay_operation_id:
+                    raise
                 consumed += 1
                 continue
             if outcome.request_projection.get("status") == "ready":
@@ -213,9 +254,11 @@ def _record_failure(
         1
         for event in writer.event_log.read_all()
         if event.type == event_type
-        and str((event.payload or {}).get("operation_id") or "")
-        == operation_id
-        and str((event.payload or {}).get("phase") or "") == phase
+        and event.actor == "workflow-synthesis-consumer" and event.origin in {"kernel", ""}
+        and event.payload.get("request_id") == request_id
+        and event.payload.get("operation_id") == operation_id
+        and event.payload.get("request_hash") == request_hash
+        and event.payload.get("phase") == phase
     )
     attempt = previous_attempts + 1
     from zf.runtime.workflow_git_readiness import git_failure
@@ -228,6 +271,7 @@ def _record_failure(
     writer.append(ZfEvent(
         type=event_type,
         actor="workflow-synthesis-consumer",
+        origin="kernel",
         causation_id=str(operation.get("last_event_id") or "") or None,
         correlation_id=request_id or workflow_run_id or None,
         payload={

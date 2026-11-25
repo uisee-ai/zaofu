@@ -87,6 +87,8 @@ class DispatchContext:
     continuation_id: str | None = None
     # In-process binding for operator guidance addressed to an existing operation.
     worker_reply_request_hash: str | None = None
+    # Kernel-selected delivery policy, local to the transport call.
+    mailbox_notice: bool = False
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -470,6 +472,8 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        if context and context.mailbox_notice:
+            return self._send_admitted_task(role_name, briefing_path, prompt, context=context)
         backend = context.backend if context else self.pane_current_command(role_name).strip()
         if backend == "codex":
             from zf.runtime.provider_interaction import (
@@ -489,14 +493,20 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     def _send_admitted_task(self, role_name: str, briefing_path: Path, prompt: str,
                             *, context: DispatchContext | None = None) -> None:
         backend = context.backend if context else self.pane_current_command(role_name).strip()
+        submit_options = {}
+        if context and context.mailbox_notice:
+            self._assert_mailbox_notice_screen(role_name, input_started=False)
+            submit_options["before_submit"] = lambda: self._assert_mailbox_notice_screen(
+                role_name, input_started=True
+            )
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
         paste = getattr(self.tmux, "send_paste", None)
         if backend == "codex" and callable(paste):
-            paste(role_name, prompt)
+            paste(role_name, prompt, **submit_options)
             return
-        self.tmux.send_keys(role_name, prompt)
+        self.tmux.send_keys(role_name, prompt, **submit_options)
 
     def compact_context(self, role_name: str, command: str) -> bool:
         if not command:
