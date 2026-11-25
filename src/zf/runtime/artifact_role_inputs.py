@@ -45,6 +45,10 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
     entry = (f"- `{view['profile'] or 'unknown'}` / `{view['scope']}`; independent. "
             '`artifact recover`, `artifact costs`.')
 
+    if view["profile"] == "candidate-verify":
+        from zf.runtime.candidate_host_navigation import render_host_navigation
+        entry += render_host_navigation(state_dir, manifest, payload, role_name=role_name)
+
     if role_name == "planner" and manifest.get("plan_artifact_package_digest"):
         ids = {row.get("source_id") for row in manifest.get("sources", [])
                if isinstance(row, Mapping) and "$" in (row.get("allowed_paths") or ["$"])}

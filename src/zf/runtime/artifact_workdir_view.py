@@ -210,6 +210,10 @@ class AttemptFiles:
                         "path": host,
                         "total": len(rows),
                         "available": sum(r["status"] == "available" for r in rows),
+                        "available_receipt_locators": [
+                            {key: r[key] for key in ("command_id", "receipt_id") if key in r}
+                            for r in rows if r["status"] == "available"
+                        ],
                         "gaps": [
                             {
                                 **{
