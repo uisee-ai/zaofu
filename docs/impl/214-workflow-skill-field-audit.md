@@ -2,6 +2,8 @@
 
 2026-11-24 在独立评估工作树回读六个 8×8 批次和五份 Loshu FMS 构建记录。主对照选 11 月 21 日的 8×8 与引用 Loshu FMS handoff PRD 的 `ls-v1`，其余分别作为历史对照。各次运行保留自己的角色、尝试与版本边界。完整明细可在 **Observability → Runs → 项目 Skill 决策表 → 8×8 与 Loshu FMS 构建复盘** 下载。[逐批次、角色与 Skill 的 CSV](../../web/src/data/workflow-skill-observations.csv)
 
+三个入口的必读、按需和阶段触发规则见[Kanban Agent、Channel Group 与 Workflow 加载清单](214-kanban-channel-workflow-skills.md)。
+
 ## 加载决策
 
 | 决策 | 现场依据与实施范围 |
