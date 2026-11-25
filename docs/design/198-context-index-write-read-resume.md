@@ -781,3 +781,7 @@ request hash、Run 与 attempt 的内核受控 redrive 才为该次有界传输�
 手动重开或回收 reader 时，恢复简报也提供同一 attempt 的安全续读入口；Codex 的
 `--resume` 只在 earlier pages 仍可用时使用，其他 Provider 或缺失 attempt 时不生成
 该命令。已经发送的旧简报不会被追写或自动替换。
+
+### Thin Judge 的当前来源
+
+当流程声明了一批 Candidate Reader，Goal 必须沿本轮候选的正式通过事件、Discovery 请求及其完成事件追溯每个已声明角色的最终准入结果。同一提交上的旧批次、已被重派替代的票和旧规划产物保留为按需查询的历史输入。当前任务地图与产物包、闭环事实、验收报告、Discovery 明确引用的裁决及正式绑定的历史争议仍按各自证据合同提供。Reader 或 Discovery 的必要结果不齐、版本不符或当前任务责任相互冲突时，内核记录闭环证据无效并等待解决。既有独立 Verify 合同继续走原有选材路径。

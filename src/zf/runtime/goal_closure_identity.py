@@ -73,6 +73,12 @@ def build_closure_identity(
         workflow_run_id=workflow_run_id,
         task_map_generation=generation,
     )
+    from zf.runtime.goal_judge_admissions import current_judge_admissions
+    from zf.runtime.goal_closure_refs import _resolve_candidate_ref
+
+    batch = current_judge_admissions(events, source_event, run=workflow_run_id,
+        candidate_ref=_resolve_candidate_ref(events, workflow_run_id=workflow_run_id,
+            target_commit=candidate_head, payload=payload), target=candidate_head, generation=generation)
     product_acceptance_identity = _current_product_acceptance_identity(
         events,
         state_dir=state_dir,
@@ -80,6 +86,7 @@ def build_closure_identity(
         task_map_generation=generation,
         candidate_head_commit=candidate_head,
         package_identity=package_identity,
+        report_admissions=set(batch["discovery"] or batch["readers"]) if batch else None,
     )
     from zf.runtime.plan_requirement_amendment import current_owner_amendment
     amendment = current_owner_amendment(state_dir, workflow_run_id, events=events)
@@ -144,6 +151,7 @@ def build_closure_identity(
     identity = _digest(identity_fields)
     return {
         **identity_fields,
+        **({"judge_batch_admissions": batch} if batch else {}),
         **({"candidate_lifecycle_input": {
             "ref": lifecycles["lifecycle_ref"], "sha256": lifecycles["lifecycle_digest"],
             "task_count": len(lifecycles["summary"]["task_ids"]),
@@ -328,6 +336,7 @@ def _current_product_acceptance_identity(
     task_map_generation: str,
     candidate_head_commit: str,
     package_identity: Mapping[str, str],
+    report_admissions: set[str] | None = None,
 ) -> dict[str, Any]:
     """Select the latest admitted full Candidate or product-discovery report."""
 
@@ -343,6 +352,8 @@ def _current_product_acceptance_identity(
             continue
         body = event.payload if isinstance(event.payload, Mapping) else {}
         if str(body.get("workflow_run_id") or "") != workflow_run_id:
+            continue
+        if report_admissions is not None and event.id not in report_admissions:
             continue
         schema = body.get("control_result_schema")
         if schema != "verification-result.v1" and not (
