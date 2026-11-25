@@ -26,3 +26,5 @@ CLI 沿用 run-contract 检查与角色 respawn 互斥锁。只有当前运行�
 
 入口和回归：`src/zf/cli/restart.py`、`tests/test_synth_restart_checkpoint.py`。
 运行中 reader 的重启保护见 [reader-respawn-continuation.md](reader-respawn-continuation.md)。
+
+若独立 Critic 的传输续接已耗尽，之后获准的固定输入 Planner 诊断会核对同一 fanout 的提供方回合关闭、非语义派发丢失、终止事件和 WRC 失败结算。内核通过原 WRC 请求与触发事件还原 Planner 代际，继续核验冻结的 Candidate、任务图、OA 范围和本次受控恢复回执。新 Planner 接收本次提交的 Owner 反馈，原 Critic 的失败和重试计数继续保留。

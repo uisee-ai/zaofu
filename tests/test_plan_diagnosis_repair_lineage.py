@@ -205,3 +205,37 @@ def test_controlled_publication_includes_terminal_audit_then_releases(tmp_path, 
     assert seen == ["runtime.action.attempt.started",
                     "runtime.action.attempt.completed" if succeeded else "runtime.action.attempt.failed"]
     assert not awaiting_diagnosis_repair_receipt(trigger, svc.state_dir)
+
+
+@pytest.mark.parametrize("fault", ["", "foreign_parent", "missing_closeout", "other_turn",
+                                   "semantic_loss", "foreign_attempt", "mismatched_digest"])
+def test_transport_failed_synth_requires_exact_closed_operation(tmp_path, fault):
+    from tests.test_synth_restart_checkpoint import failed_synth
+    from zf.runtime.plan_diagnosis_repair_lineage import _closed_synth_transport
+    from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
+
+    state, log, runtime, _, _, _, failure = failed_synth(tmp_path)
+    assert reconcile_exhausted_reader_operations(runtime, log.read_all())
+    events = log.read_all()
+    fanout = next(e for e in events if e.type == "fanout.started"
+                  and e.payload["fanout_id"] == failure.payload["fanout_id"])
+    parent = next(e for e in events if e.id == fanout.causation_id)
+    repair = ZfEvent(type=parent.type)
+    events.append(repair)
+    loss = next(e for e in events if e.id == failure.causation_id)
+    if fault == "foreign_parent":
+        parent = repair
+    elif fault == "missing_closeout":
+        events = [e for e in events if e.type != "workflow.operation.failed"]
+    elif fault == "other_turn":
+        loss.payload["lost_signal_event_id"] = "other"
+    elif fault == "semantic_loss":
+        loss.payload["semantic_attempt_consumed"] = True
+    elif fault == "foreign_attempt":
+        loss.payload["run_id"] = "other"
+    elif fault == "mismatched_digest":
+        dispatch = next(e for e in reversed(events) if e.type == "fanout.synth.dispatched")
+        dispatch.payload["request_hash"] = "0" * 64
+    by_id = {e.id: e for e in events}
+    positions = {e.id: i for i, e in enumerate(events)}
+    assert _closed_synth_transport(state, events, by_id, positions, parent, fanout, failure, repair) == (not fault)

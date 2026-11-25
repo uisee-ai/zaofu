@@ -42,6 +42,56 @@ def _bound_start(start, cause, request):
             and all(args.get(k) == request.get(k) for k in ("approval_ref", "escalation_event_id", "repaired_failure_event_id")))
 
 
+def _closed_synth_transport(state, events, by_id, positions, parent, fanout, synth, repair):
+    """Prove a provider-loss terminal belongs to this exact Planner generation."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.synth_restart_checkpoint import _same_transport_closeout
+    from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
+
+    loss = by_id.get(synth.causation_id)
+    p = synth.payload
+    if (p.get("status") != "failed" or p.get("failure_class") != "worker_noop_or_terminal_missing"
+            or p.get("reason") != "provider_turn_closed_without_synth_result_recovery_exhausted"
+            or p.get("report") or loss is None or loss.type != "fanout.child.dispatch_lost"
+            or loss.actor != "zf-cli" or loss.origin != "kernel" or loss.correlation_id != fanout.correlation_id
+            or loss.payload.get("child_id") != "synth" or loss.payload.get("semantic_attempt_consumed") is not False
+            or loss.payload.get("reason") != "provider_turn_closed_without_synth_result"
+            or loss.payload.get("lost_signal_type") != "provider.turn.closed"
+            or loss.payload.get("lost_signal_event_id") != loss.causation_id
+            or any(not p.get(k) or loss.payload.get(k) != p[k]
+                   for k in ("fanout_id", "stage_id", "run_id", "role_instance"))):
+        return False
+    signal = by_id.get(loss.causation_id)
+    if (signal is None or signal.type != "provider.turn.closed" or signal.actor != p["role_instance"]
+            or not positions[fanout.id] < positions[signal.id] < positions[loss.id] < positions[synth.id]):
+        return False
+    history = events[:positions[repair.id]]
+    dispatch = next((e for e in reversed(history) if e.type == "fanout.synth.dispatched"
+                     and e.payload.get("fanout_id") == p["fanout_id"]), None)
+    if (dispatch is None or dispatch.origin != "kernel" or dispatch.actor != "zf-cli"
+            or not positions[fanout.id] < positions[dispatch.id] < positions[signal.id]
+            or any(dispatch.payload.get(k) != p[k] for k in ("stage_id", "run_id", "role_instance"))):
+        return False
+    op = reduce_workflow_operations(history, workflow_run_id=fanout.correlation_id).get(dispatch.payload.get("operation_id"), {})
+    if (op.get("status") != "failed" or op.get("operation_type") != "fanout_synth" or op.get("call_result_admitted_event_id")
+            or op.get("active_attempt_id") != p["run_id"]
+            or not _same_transport_closeout(by_id.get(op.get("last_event_id")), synth, dispatch)):
+        return False
+    requests = [e for e in history if e.type == "workflow.operation.requested"
+                and e.payload.get("operation_id") == op["operation_id"]]
+    if len(requests) != 1:
+        return False
+    issued = requests[0]
+    if (issued.origin != "kernel" or issued.actor != "zf-cli" or issued.causation_id != parent.id
+            or not positions[fanout.id] < positions[issued.id] < positions[dispatch.id]):
+        return False
+    signed = hydrate_sidecar_ref(state, op["request_ref"]).payload
+    request = signed["request"]
+    return (operation_request_hash(signed) == op["request_hash"] == dispatch.payload.get("request_hash")
+            and all(request.get(k) == p[k] for k in ("fanout_id", "stage_id", "role_instance"))
+            and request.get("active_attempt_id") == p["run_id"] and signed.get("task_id") == (fanout.task_id or ""))
+
+
 def awaiting_diagnosis_repair_receipt(trigger, state_dir):
     """Defer only while the publisher still holds the OS lock for this request."""
     from zf.core.state.locks import locked_path, lock_path_for
@@ -122,7 +172,9 @@ def diagnosis_repair_failure(state, events, payload, context, handoff_source_id,
                  and fanout.payload.get("stage_id") == failure.payload.get("stage_id")
                  and (fanout.payload.get("aggregate") or {}).get("failure_event") == failure.type
                  and parent.type == current.type and synth and synth.type == "fanout.synth.completed"
-                 and synth.origin == "kernel" and synth.actor == "zf-cli" and synth.causation_id == parent.id
+                 and synth.origin == "kernel" and synth.actor == "zf-cli"
+                 and (synth.causation_id == parent.id or _closed_synth_transport(
+                     state, events, by_id, positions, parent, fanout, synth, current))
                  and synth.payload.get("status") == "failed"
                  and synth.payload.get("fanout_id") == fanout.payload.get("fanout_id")
                  and positions[parent.id] < positions[fanout.id] < positions[synth.id] < positions[failure.id]
