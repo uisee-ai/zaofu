@@ -54,6 +54,7 @@ class RoleLifecycleRuntimeMixin:
     def _clear_role_skill_treatment(self, instance_id: str) -> None:
         """Forget session-local treatment only after its work is quiescent."""
         getattr(self, "_active_skill_treatment_tasks", {}).pop(instance_id, None)
+        getattr(self, "_skill_materialization_events", {}).pop(instance_id, None)
         cache = getattr(self, "_activation_skill_provenance", {})
         for key in [key for key in cache if key[0] == instance_id]:
             cache.pop(key, None)
@@ -113,6 +114,9 @@ class RoleLifecycleRuntimeMixin:
             freeze_skill_dispatch_treatment,
         )
 
+        if not hasattr(self, "_skill_materialization_events"):
+            self._skill_materialization_events = {}
+        self._skill_materialization_events.pop(role.instance_id, None)
         task_family = ""
         if task_id:
             from zf.core.task.store import TaskStore
@@ -179,7 +183,7 @@ class RoleLifecycleRuntimeMixin:
                     active_tasks = {}
                     self._active_skill_treatment_tasks = active_tasks
                 active_tasks[role.instance_id] = str(task_id)
-            self.event_writer.append(ZfEvent(
+            occurrence = self.event_writer.append(ZfEvent(
                 type="skills.materialized",
                 actor="zf-cli",
                 task_id=task_id,
@@ -197,6 +201,8 @@ class RoleLifecycleRuntimeMixin:
                     },
                 },
             ))
+            if occurrence.type == "skills.materialized" and task_id:
+                self._skill_materialization_events[role.instance_id] = (str(task_id), occurrence.id)
         return entries
 
     def _role_is_on_demand(self, role: RoleConfig) -> bool:

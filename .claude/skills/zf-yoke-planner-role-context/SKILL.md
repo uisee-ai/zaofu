@@ -119,8 +119,8 @@ authoritative when it differs from an older Skill example.
   Closure Check against the final serialized `plan_ports`, not an earlier draft.
 - **计划态不冒充执行态**:mandatory AC 的截图、trace、receipt 或其他运行证据在
   implementation 前尚不存在，不是 plan blocker。Planner 要证明的是 producer、
-  allowed paths、真实命令和 runner 方法可满足；其中 browser/E2E 场景按依赖技能
-  `zf-browser-e2e-contract` 声明 Docker Playwright。只有 runner 本身不可用/被禁止且
+  allowed paths、真实命令和 runner 方法可满足。CLI、服务、库或设备按项目合同声明验收入口；
+  浏览器项目沿用其指定 runner，选用 Docker Playwright 时读取 `zf-browser-e2e-contract`。只有 runner 本身不可用/被禁止且
   无 sanctioned equivalent 时才标 environment blocked，不得把“未来证据未生成”
   循环回 plan rework。
 - Do not implement, do not verify, do not pre-approve your own plan.

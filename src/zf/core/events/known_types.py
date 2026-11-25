@@ -329,6 +329,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "run.completed", "run.archived", "run.abandoned",
     # Runtime skill projection
     "skills.materialized",
+    "skill.evaluation.review.recorded",
     # Agent-skills artifact manifest projection
     "artifact.manifest.published", "artifact.manifest.rejected",
     "artifact.manifest.blocked",

@@ -373,7 +373,7 @@ _KNOWN_ROLE_KEYS = frozenset({
     "orphan_escalate_seconds", "drain_hold_seconds",
     "spawn_ready_timeout_seconds", "budget_usd", "autoscale", "constraints",
     "execution", "stages", "triggers", "publishes", "guardrails", "plugins", "skills",
-    "agent", "provider_session", "lifecycle",
+    "agent", "provider_session", "lifecycle", "skill_loading",
 })
 _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
     "effort", "agent", "max_parallel_agents", "native_delegation", "sandbox",
@@ -2384,6 +2384,7 @@ def _build_role(data: dict) -> RoleConfig:
         guardrails=[str(g) for g in data.get("guardrails", []) or []],
         plugins=plugins,
         skills=skills,
+        skill_loading=data.get("skill_loading", {}),
         agent=agent,
     )
 

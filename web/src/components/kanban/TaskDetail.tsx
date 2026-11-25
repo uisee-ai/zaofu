@@ -8,6 +8,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { DetailTab, ProjectionKind } from "../../app/sharedTypes";
 import { EventTable, ExecutionRoutePanel, KeyValuePanel, PreBlock, TablePage, asRecord, asRecordArray, asStringArray, csvList, formatAge, numberValue, recordValue, stringify, textValue } from "../../app/shared";
 import { HandoffBindingDetails } from "./HandoffBindingDetails";
+import { TaskSkillEvaluations } from "./TaskSkillEvaluations";
 import { TaskInputPanel } from "./TaskInputPanel";
 import { previewProfileForRef } from "../agent-session/previewRegistry";
 
@@ -438,6 +439,7 @@ function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailMode
   return (
     <div className="task-evidence-view" data-testid="task-evidence-view">
       <TaskInputPanel key={`${projectId}:${detail?.task?.id}:${attemptId}`} attemptId={attemptId} projectId={projectId} />
+      {detail?.task?.id && <TaskSkillEvaluations key={`${projectId}:${detail.task.id}`} taskId={detail.task.id} projectId={projectId} />}
       <ArtifactLedgerPanel detail={detail} />
       <section className="subsection">
         <h3>Git</h3>

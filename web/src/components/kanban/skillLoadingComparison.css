@@ -1,0 +1,14 @@
+.skill-loading-comparison {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.skill-loading-comparison h4, .skill-loading-comparison p { margin: 0; }
+.skill-loading-comparison caption { text-align: left; color: var(--text-secondary); }
+.skill-loading-comparison li { margin: 8px 0; }
+.skill-loading-comparison code { overflow-wrap: anywhere; }

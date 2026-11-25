@@ -711,8 +711,11 @@ def reconcile_task_pipeline_runtime(
 
 
 def _effective_pipeline_role(
+    runtime: Any,
     role: RoleConfig,
     *,
+    workflow_run_id: str,
+    task_map_generation: str,
     policy: Mapping[str, Any],
     stage: str,
     task: Any,
@@ -738,7 +741,18 @@ def _effective_pipeline_role(
             if str(item)
         ],
     ]))
-    return replace(role, skills=skills)
+    registry = RoleSessionRegistry(
+        Path(runtime.state_dir) / "role_sessions.yaml", project_root=str(runtime.project_root)
+    )
+    binding = registry.task_stage_binding(
+        workflow_run_id=workflow_run_id, task_id=str(task.id), stage=stage,
+        rework_affinity_id=f"{task_map_generation}:{stage}",
+    )
+    # Pre-policy bindings used the Skill frontmatter. A retry keeps the original treatment.
+    loading = binding.get("skill_loading", {}) if binding else role.skill_loading
+    if set(loading).difference(skills):
+        raise TaskPipelineWaiting("waiting_for_compatible_role", "role lacks a frozen Task-stage Skill")
+    return replace(role, skills=skills, skill_loading=loading)
 
 
 def _role_config_digest(runtime: Any, role: RoleConfig, task: Any) -> str:
@@ -756,6 +770,7 @@ def _role_config_digest(runtime: Any, role: RoleConfig, task: Any) -> str:
         "permission_mode": role.permission_mode,
         "allowed_tools": list(role.allowed_tools),
         "skills": list(role.skills),
+        **({"skill_loading": role.skill_loading} if role.skill_loading else {}),
         "constraints": asdict(role.constraints),
         "execution_profile_id": execution.profile_id,
         "execution_profile_digest": execution.profile_digest,
@@ -903,6 +918,7 @@ def _activate_task_stage_binding(
         rework_affinity_id=affinity,
         role_instance=role.instance_id,
         role_config_digest=role_config_digest,
+        skill_loading=role.skill_loading,
         workspace_generation=workspace_generation,
         placement_epoch=placement_epoch,
         backend=role.backend,

@@ -1,0 +1,4648 @@
+{
+  "schema_version": "skill-policy-round.v1",
+  "calibration": {
+    "kind": "deterministic_output_grader",
+    "criteria": [
+      "submitted",
+      "verdict_correct",
+      "correct",
+      "false_release",
+      "false_block"
+    ],
+    "cases": [
+      {
+        "id": "complete-pass",
+        "ref": [
+          "release",
+          "accept",
+          "R9"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "R9"
+        },
+        "expected": [
+          true,
+          true,
+          true,
+          false,
+          false
+        ]
+      },
+      {
+        "id": "correct-withhold",
+        "ref": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "expected": [
+          true,
+          true,
+          true,
+          false,
+          false
+        ]
+      },
+      {
+        "id": "critical-release",
+        "ref": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "R3"
+        },
+        "expected": [
+          true,
+          false,
+          false,
+          true,
+          false
+        ]
+      },
+      {
+        "id": "wrong-block",
+        "ref": [
+          "release",
+          "accept",
+          "R9"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "expected": [
+          true,
+          false,
+          false,
+          false,
+          true
+        ]
+      },
+      {
+        "id": "extra-field",
+        "ref": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none",
+          "why": "RED not recorded"
+        },
+        "expected": [
+          false,
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "id": "wrong-receipt",
+        "ref": [
+          "release",
+          "accept",
+          "R9"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "R8"
+        },
+        "expected": [
+          true,
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "id": "absent-return",
+        "ref": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": null,
+        "expected": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "id": "prose-in-receipt",
+        "ref": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none — missing RED"
+        },
+        "expected": [
+          false,
+          true,
+          false,
+          false,
+          false
+        ]
+      }
+    ],
+    "passed": 8
+  },
+  "planner": {
+    "schema_version": "planner-manifest-comparison.v1",
+    "client": "codex-cli 0.171.0",
+    "model": "gpt-6-luna",
+    "effort": "high",
+    "image": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "common_prompt_digest": "b613e80ce1b52519c3488c8d6b707354e0677b52748763e8c23338ca3b8ffb07",
+    "suite_digest": "3941fc19fe29f94bf8127cd2b075d0ad0b45886cec2dd7836eb980592a1cbd26",
+    "skills_digest": "18cb8c1f6616ea8118dc09deb4f37da6c6901617b24ee505443649844e90d69c",
+    "harness_digest": "29e8f2c2db15e4094fa3d13dd0ec1a289c778d4d1ef8adb758f07eb298bf0c9b",
+    "timeout": 150,
+    "policy": {
+      "repeats": 2,
+      "minimum_input_saving_percent": 5,
+      "max_missing_reads": 0,
+      "max_handoff_errors": 0,
+      "max_false_ready": 0
+    },
+    "splits": {
+      "selection": {
+        "expected_pairs": 2,
+        "matched_pairs": 2,
+        "arms": {
+          "full": {
+            "handoff_correct": 2,
+            "false_ready": 0,
+            "missing_reads": 0,
+            "observed_reads": 4,
+            "required_reads": 4,
+            "median_seconds": 30.435000000000002,
+            "input_tokens": 207250,
+            "cached_input_tokens": 143360,
+            "output_tokens": 2153
+          },
+          "index": {
+            "handoff_correct": 2,
+            "false_ready": 0,
+            "missing_reads": 0,
+            "observed_reads": 4,
+            "required_reads": 4,
+            "median_seconds": 46.73650000000001,
+            "input_tokens": 259840,
+            "cached_input_tokens": 189184,
+            "output_tokens": 3036
+          }
+        },
+        "input_saving_percent": -25.38,
+        "qualified": false
+      },
+      "test": {
+        "expected_pairs": 6,
+        "matched_pairs": 6,
+        "arms": {
+          "full": {
+            "handoff_correct": 6,
+            "false_ready": 0,
+            "missing_reads": 0,
+            "observed_reads": 16,
+            "required_reads": 16,
+            "median_seconds": 48.909,
+            "input_tokens": 1222201,
+            "cached_input_tokens": 992768,
+            "output_tokens": 6563
+          },
+          "index": {
+            "handoff_correct": 6,
+            "false_ready": 0,
+            "missing_reads": 0,
+            "observed_reads": 16,
+            "required_reads": 16,
+            "median_seconds": 65.8595,
+            "input_tokens": 978694,
+            "cached_input_tokens": 765568,
+            "output_tokens": 12986
+          }
+        },
+        "input_saving_percent": 19.92,
+        "qualified": true
+      }
+    },
+    "decision": "retain_full",
+    "observations": [
+      {
+        "case": "browser-handoff",
+        "split": "test",
+        "repeat": 1,
+        "arm": "full",
+        "answer": {
+          "decision": "blocked",
+          "task": "receipt-replay",
+          "acceptance": "AC-B9",
+          "verify": "probe-screen-11",
+          "dependency": null
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "59ebff777d9c265cde34a8aefaca499aaa8030b9b2ac74583d7f4ad2c2b74cd2",
+        "workspace_digest": "128a48c75815c869773d6420a5b4044d75010d6b68e2ed19fae9088f3dab0a9f",
+        "prompt_digest": "2ab872aec430d264a64c7796f20962d6cc7bd2aadd47cc19a9e941cb478e8d29",
+        "trace_digest": "b94c2101eb88d8e090bcd48206e72964d56211faed24eb9f6cfb02992cfab4da",
+        "section_bytes": 47621,
+        "usage": {
+          "input_tokens": 209692,
+          "cached_input_tokens": 165376,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1552,
+          "reasoning_output_tokens": 1183
+        },
+        "seconds": 54.743,
+        "tool_calls": 4
+      },
+      {
+        "case": "browser-handoff",
+        "split": "test",
+        "repeat": 1,
+        "arm": "index",
+        "answer": {
+          "decision": "blocked",
+          "task": "receipt-replay",
+          "acceptance": "AC-B9",
+          "verify": "probe-screen-11",
+          "dependency": null
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "59ebff777d9c265cde34a8aefaca499aaa8030b9b2ac74583d7f4ad2c2b74cd2",
+        "workspace_digest": "128a48c75815c869773d6420a5b4044d75010d6b68e2ed19fae9088f3dab0a9f",
+        "prompt_digest": "529f0cdb11ff4f248e26c59094a8ee88f1de63282b2028c45c24e11d1690d422",
+        "trace_digest": "55ce96be18f257bcd15cc7f1dc94eda98b7675746ded4e7549f0661b13b5d89a",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 90554,
+          "cached_input_tokens": 60288,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1167,
+          "reasoning_output_tokens": 843
+        },
+        "seconds": 39.052,
+        "tool_calls": 3
+      },
+      {
+        "case": "browser-handoff",
+        "split": "test",
+        "repeat": 2,
+        "arm": "full",
+        "answer": {
+          "decision": "blocked",
+          "task": "receipt-replay",
+          "acceptance": "AC-B9",
+          "verify": "probe-screen-11",
+          "dependency": null
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "59ebff777d9c265cde34a8aefaca499aaa8030b9b2ac74583d7f4ad2c2b74cd2",
+        "workspace_digest": "128a48c75815c869773d6420a5b4044d75010d6b68e2ed19fae9088f3dab0a9f",
+        "prompt_digest": "2ab872aec430d264a64c7796f20962d6cc7bd2aadd47cc19a9e941cb478e8d29",
+        "trace_digest": "82c29102aa578d6d64f35b61b74d8d5cb7113677b0650dfc2a6675a2fb3e8ec6",
+        "section_bytes": 47621,
+        "usage": {
+          "input_tokens": 237388,
+          "cached_input_tokens": 196480,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1278,
+          "reasoning_output_tokens": 888
+        },
+        "seconds": 45.132,
+        "tool_calls": 5
+      },
+      {
+        "case": "browser-handoff",
+        "split": "test",
+        "repeat": 2,
+        "arm": "index",
+        "answer": {
+          "decision": "blocked",
+          "task": "receipt-replay",
+          "acceptance": "AC-B9",
+          "verify": "probe-screen-11",
+          "dependency": null
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/fd99412a6923.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "59ebff777d9c265cde34a8aefaca499aaa8030b9b2ac74583d7f4ad2c2b74cd2",
+        "workspace_digest": "128a48c75815c869773d6420a5b4044d75010d6b68e2ed19fae9088f3dab0a9f",
+        "prompt_digest": "529f0cdb11ff4f248e26c59094a8ee88f1de63282b2028c45c24e11d1690d422",
+        "trace_digest": "8af83abf617e0372d4277836c4d14bd2a2284b6f101448480bc552c07fac2cb5",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 192105,
+          "cached_input_tokens": 138240,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2428,
+          "reasoning_output_tokens": 1966
+        },
+        "seconds": 78.102,
+        "tool_calls": 7
+      },
+      {
+        "case": "cli-encoding",
+        "split": "test",
+        "repeat": 1,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "cli-utf8",
+          "acceptance": "AC-C5",
+          "verify": "probe-cli-34",
+          "dependency": "task-52"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "c8e8d77cd01cddaf0b8d902080ecec42c104817f6e91455a1c08fd27212e437d",
+        "workspace_digest": "c1772352e1a11088c52af26fbccd93f54211a4b9059ab726bb86c66d26c9b197",
+        "prompt_digest": "3382bf316073bab402a381a8916f60dd3bc7899fbb1c29c4cc2b96abdaabcf02",
+        "trace_digest": "3e47220cae3f16270a6300d223ef67c51e0a26f705049931eabd9b75b80fd0f2",
+        "section_bytes": 47601,
+        "usage": {
+          "input_tokens": 100136,
+          "cached_input_tokens": 71680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 948,
+          "reasoning_output_tokens": 709
+        },
+        "seconds": 29.449,
+        "tool_calls": 2
+      },
+      {
+        "case": "cli-encoding",
+        "split": "test",
+        "repeat": 1,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "cli-utf8",
+          "acceptance": "AC-C5",
+          "verify": "probe-cli-34",
+          "dependency": "task-52"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "c8e8d77cd01cddaf0b8d902080ecec42c104817f6e91455a1c08fd27212e437d",
+        "workspace_digest": "c1772352e1a11088c52af26fbccd93f54211a4b9059ab726bb86c66d26c9b197",
+        "prompt_digest": "2e3690598469a94e9cdc843b954baac876e89cf060183486dbdea6a161ddf0b1",
+        "trace_digest": "0230cb19e2b7d8ff44271ec40c114f39d1dd35db252dd83b83bfad1ab37b710d",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 147685,
+          "cached_input_tokens": 104064,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3256,
+          "reasoning_output_tokens": 2536
+        },
+        "seconds": 72.206,
+        "tool_calls": 10
+      },
+      {
+        "case": "cli-encoding",
+        "split": "test",
+        "repeat": 2,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "cli-utf8",
+          "acceptance": "AC-C5",
+          "verify": "probe-cli-34",
+          "dependency": "task-52"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "c8e8d77cd01cddaf0b8d902080ecec42c104817f6e91455a1c08fd27212e437d",
+        "workspace_digest": "c1772352e1a11088c52af26fbccd93f54211a4b9059ab726bb86c66d26c9b197",
+        "prompt_digest": "3382bf316073bab402a381a8916f60dd3bc7899fbb1c29c4cc2b96abdaabcf02",
+        "trace_digest": "f02ab033d116c132ac8ea8e71e6cf69712b852042c5beac9f9c05121486c72e8",
+        "section_bytes": 47601,
+        "usage": {
+          "input_tokens": 99974,
+          "cached_input_tokens": 73856,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 610,
+          "reasoning_output_tokens": 398
+        },
+        "seconds": 21.891,
+        "tool_calls": 2
+      },
+      {
+        "case": "cli-encoding",
+        "split": "test",
+        "repeat": 2,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "cli-utf8",
+          "acceptance": "AC-C5",
+          "verify": "probe-cli-34",
+          "dependency": "task-52"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "c8e8d77cd01cddaf0b8d902080ecec42c104817f6e91455a1c08fd27212e437d",
+        "workspace_digest": "c1772352e1a11088c52af26fbccd93f54211a4b9059ab726bb86c66d26c9b197",
+        "prompt_digest": "2e3690598469a94e9cdc843b954baac876e89cf060183486dbdea6a161ddf0b1",
+        "trace_digest": "a222b606c0669cb4812f9d22c929f555688cfbac075b86bbf29c785c0562271f",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 241837,
+          "cached_input_tokens": 206592,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2664,
+          "reasoning_output_tokens": 2042
+        },
+        "seconds": 72.514,
+        "tool_calls": 11
+      },
+      {
+        "case": "inventory-export",
+        "split": "test",
+        "repeat": 1,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "csv-roundtrip",
+          "acceptance": "AC-E3",
+          "verify": "probe-csv-16",
+          "dependency": "task-24"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "1f79a791a1bcdc762615f8d1c1b195ba40f583113d88e6cd0600c57e2339c097",
+        "workspace_digest": "ce8099e49da71eeb82cbd1d38d5504069636665a7d7425bdb8f9c69162192c06",
+        "prompt_digest": "37268a1514f1367b0aa538b8aae40c1339a6daff09dea6dc3a769ac6037ec7a3",
+        "trace_digest": "2611d902accc82b3e0fa17f04ff26073c2c058b1aeda58d5cb78a2d6bcdb2485",
+        "section_bytes": 47622,
+        "usage": {
+          "input_tokens": 335020,
+          "cached_input_tokens": 277632,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1240,
+          "reasoning_output_tokens": 772
+        },
+        "seconds": 55.751,
+        "tool_calls": 6
+      },
+      {
+        "case": "inventory-export",
+        "split": "test",
+        "repeat": 1,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "csv-roundtrip",
+          "acceptance": "AC-E3",
+          "verify": "probe-csv-16",
+          "dependency": "task-24"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "1f79a791a1bcdc762615f8d1c1b195ba40f583113d88e6cd0600c57e2339c097",
+        "workspace_digest": "ce8099e49da71eeb82cbd1d38d5504069636665a7d7425bdb8f9c69162192c06",
+        "prompt_digest": "bdcea175169ee9f6ab1b3b3eb7017233bcf6958c633bbc18ec1dbc0f078dbd00",
+        "trace_digest": "e66801f23b99d8b2e670afe8d0257679f426f939290f75ab5c0f059e419d98ee",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 137696,
+          "cached_input_tokens": 115840,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2169,
+          "reasoning_output_tokens": 1665
+        },
+        "seconds": 59.513,
+        "tool_calls": 7
+      },
+      {
+        "case": "inventory-export",
+        "split": "test",
+        "repeat": 2,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "csv-roundtrip",
+          "acceptance": "AC-E3",
+          "verify": "probe-csv-16",
+          "dependency": "task-24"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "1f79a791a1bcdc762615f8d1c1b195ba40f583113d88e6cd0600c57e2339c097",
+        "workspace_digest": "ce8099e49da71eeb82cbd1d38d5504069636665a7d7425bdb8f9c69162192c06",
+        "prompt_digest": "37268a1514f1367b0aa538b8aae40c1339a6daff09dea6dc3a769ac6037ec7a3",
+        "trace_digest": "d226b086243b8062d1cebd1e190df8d78ffb6c79e3d465bf1741f1cf3196c90f",
+        "section_bytes": 47622,
+        "usage": {
+          "input_tokens": 239991,
+          "cached_input_tokens": 207744,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 935,
+          "reasoning_output_tokens": 558
+        },
+        "seconds": 52.686,
+        "tool_calls": 5
+      },
+      {
+        "case": "inventory-export",
+        "split": "test",
+        "repeat": 2,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "csv-roundtrip",
+          "acceptance": "AC-E3",
+          "verify": "probe-csv-16",
+          "dependency": "task-24"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/artifacts/37d2c5713538.json",
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "1f79a791a1bcdc762615f8d1c1b195ba40f583113d88e6cd0600c57e2339c097",
+        "workspace_digest": "ce8099e49da71eeb82cbd1d38d5504069636665a7d7425bdb8f9c69162192c06",
+        "prompt_digest": "bdcea175169ee9f6ab1b3b3eb7017233bcf6958c633bbc18ec1dbc0f078dbd00",
+        "trace_digest": "c8ffbc1d95503ea2d1a3ab4a68c85775f69500d96d2b84ea54f0abe709801dfa",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 168817,
+          "cached_input_tokens": 140544,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1302,
+          "reasoning_output_tokens": 714
+        },
+        "seconds": 48.423,
+        "tool_calls": 9
+      },
+      {
+        "case": "service-restart",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "restart-readiness",
+          "acceptance": "AC-R7",
+          "verify": "probe-ready-21",
+          "dependency": "task-17"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "f3c0fb886c0ece2c07148be9a5d365812795286c1155ed3ac4352bec0315c9a2",
+        "workspace_digest": "991b6a56c1ebd681345041c296a0fe2581a9daf7d2fd521ba114bf0bd74dbbc9",
+        "prompt_digest": "f32b1aed8fc52a9e914c485c6da61cb957662b5d673ef4a8270f02f6ea6be533",
+        "trace_digest": "29f9040e08cf7e3b2107567e2e3efbb22425d3f2da1854acb7a5880baaba5b73",
+        "section_bytes": 47604,
+        "usage": {
+          "input_tokens": 99888,
+          "cached_input_tokens": 71680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 873,
+          "reasoning_output_tokens": 669
+        },
+        "seconds": 27.517,
+        "tool_calls": 2
+      },
+      {
+        "case": "service-restart",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "restart-readiness",
+          "acceptance": "AC-R7",
+          "verify": "probe-ready-21",
+          "dependency": "task-17"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "f3c0fb886c0ece2c07148be9a5d365812795286c1155ed3ac4352bec0315c9a2",
+        "workspace_digest": "991b6a56c1ebd681345041c296a0fe2581a9daf7d2fd521ba114bf0bd74dbbc9",
+        "prompt_digest": "9c1d53be4905f2712bfad99e5b8d29dc1b3ab337767db0b2380422b1c1127d26",
+        "trace_digest": "a05b16a717a20b2a99ec28fcd99ecc54806bcd4cc24d47933fa974e952c26c74",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 115216,
+          "cached_input_tokens": 91008,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1488,
+          "reasoning_output_tokens": 1089
+        },
+        "seconds": 44.206,
+        "tool_calls": 4
+      },
+      {
+        "case": "service-restart",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "full",
+        "answer": {
+          "decision": "ready",
+          "task": "restart-readiness",
+          "acceptance": "AC-R7",
+          "verify": "probe-ready-21",
+          "dependency": "task-17"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "f3c0fb886c0ece2c07148be9a5d365812795286c1155ed3ac4352bec0315c9a2",
+        "workspace_digest": "991b6a56c1ebd681345041c296a0fe2581a9daf7d2fd521ba114bf0bd74dbbc9",
+        "prompt_digest": "f32b1aed8fc52a9e914c485c6da61cb957662b5d673ef4a8270f02f6ea6be533",
+        "trace_digest": "55739684032a8ec8e64fc8c640ad242c750d9e216cf0dea679711e738e49c5a2",
+        "section_bytes": 47604,
+        "usage": {
+          "input_tokens": 107362,
+          "cached_input_tokens": 71680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1280,
+          "reasoning_output_tokens": 952
+        },
+        "seconds": 33.353,
+        "tool_calls": 4
+      },
+      {
+        "case": "service-restart",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "index",
+        "answer": {
+          "decision": "ready",
+          "task": "restart-readiness",
+          "acceptance": "AC-R7",
+          "verify": "probe-ready-21",
+          "dependency": "task-17"
+        },
+        "complete": true,
+        "handoff_correct": true,
+        "false_ready": false,
+        "required": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "observed": [
+          "inputs/contract.json",
+          "inputs/scan.json"
+        ],
+        "missing_reads": [],
+        "manifest_digest": "f3c0fb886c0ece2c07148be9a5d365812795286c1155ed3ac4352bec0315c9a2",
+        "workspace_digest": "991b6a56c1ebd681345041c296a0fe2581a9daf7d2fd521ba114bf0bd74dbbc9",
+        "prompt_digest": "9c1d53be4905f2712bfad99e5b8d29dc1b3ab337767db0b2380422b1c1127d26",
+        "trace_digest": "8eb62a9fe25df392d1cae9d02da8032076ffa8b424da0d32957a26896f41d81a",
+        "section_bytes": 190,
+        "usage": {
+          "input_tokens": 144624,
+          "cached_input_tokens": 98176,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1548,
+          "reasoning_output_tokens": 1138
+        },
+        "seconds": 49.267,
+        "tool_calls": 5
+      }
+    ]
+  },
+  "interaction": {
+    "schema_version": "verify-interaction.v1",
+    "methods": [
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment"
+    ],
+    "model": "gpt-6-luna",
+    "effort": "high",
+    "image": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "client": "codex-cli 0.171.0",
+    "suite_digest": "4b48f5100162f066195da71321d5ef36ae111b268228c3483936b860551fefbd",
+    "timeout": 150,
+    "inventory_digests": {
+      "neither": "b51aa784d9ca264a7de04e51e4926f1eb92294e02b68292ff9a27a0254c53bc7",
+      "a": "2e3257738522ca566c54a4b02062b896fe3f24f919d9067c82f5866c3487945f",
+      "b": "80e83981e0cebefc4b316526d52b9b6ba9c5ca4fc3f5c0ab9feaf601cf8c4754",
+      "both": "23f0db498c9c050cb03587604ff6768087ffb5e71f2d15a408133316ba1fda5f"
+    },
+    "rule": "held-out complete quartet, confirmed positive reads in each applicable arm, zero contamination; manual decision",
+    "splits": {
+      "selection": {
+        "expected_pairs": 2,
+        "matched_pairs": 2,
+        "arms": {
+          "neither": {
+            "correct": 2,
+            "false_release": 0,
+            "verdict_correct": 2,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "mean_seconds": 25.28,
+            "input_tokens": 107595,
+            "cached_input_tokens": 79488,
+            "output_tokens": 1078
+          },
+          "a": {
+            "correct": 2,
+            "false_release": 0,
+            "verdict_correct": 2,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "mean_seconds": 25.36,
+            "input_tokens": 87219,
+            "cached_input_tokens": 65280,
+            "output_tokens": 1516
+          },
+          "b": {
+            "correct": 2,
+            "false_release": 0,
+            "verdict_correct": 2,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 2
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 2
+            },
+            "mean_seconds": 24.4,
+            "input_tokens": 64909,
+            "cached_input_tokens": 36864,
+            "output_tokens": 868
+          },
+          "both": {
+            "correct": 2,
+            "false_release": 0,
+            "verdict_correct": 2,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 2
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 2
+            },
+            "mean_seconds": 30.1,
+            "input_tokens": 124125,
+            "cached_input_tokens": 90624,
+            "output_tokens": 1398
+          }
+        },
+        "activation_confirmed": false,
+        "absent_arms_clean": true,
+        "interaction_pp": null
+      },
+      "test": {
+        "expected_pairs": 8,
+        "matched_pairs": 8,
+        "arms": {
+          "neither": {
+            "correct": 8,
+            "false_release": 0,
+            "verdict_correct": 8,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "mean_seconds": 21.98,
+            "input_tokens": 314432,
+            "cached_input_tokens": 196096,
+            "output_tokens": 3666
+          },
+          "a": {
+            "correct": 8,
+            "false_release": 0,
+            "verdict_correct": 8,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 0
+            },
+            "mean_seconds": 25.82,
+            "input_tokens": 379715,
+            "cached_input_tokens": 288256,
+            "output_tokens": 4075
+          },
+          "b": {
+            "correct": 7,
+            "false_release": 0,
+            "verdict_correct": 8,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 7
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 5
+            },
+            "mean_seconds": 23.35,
+            "input_tokens": 384205,
+            "cached_input_tokens": 241920,
+            "output_tokens": 4237
+          },
+          "both": {
+            "correct": 7,
+            "false_release": 0,
+            "verdict_correct": 7,
+            "reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 8
+            },
+            "positive_reads": {
+              "zf-workflow-adaptation-boundary": 0,
+              "zf-project-adapter-matrix-enrichment": 6
+            },
+            "mean_seconds": 21.65,
+            "input_tokens": 344709,
+            "cached_input_tokens": 234496,
+            "output_tokens": 3549
+          }
+        },
+        "activation_confirmed": false,
+        "absent_arms_clean": true,
+        "interaction_pp": null
+      }
+    },
+    "observations": [
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 1,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 42.5,
+        "read": false,
+        "usage": {
+          "input_tokens": 53428,
+          "cached_input_tokens": 42368,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 405,
+          "reasoning_output_tokens": 223
+        },
+        "timed_out": false,
+        "trace_digest": "d955f8d28851c62cc22a5af7e36462675f557a0d44c48f70d1807afa00376d6d",
+        "prompt_digest": "21743a28550003ce354ea658b5cc891869185508e0d236a2372e7d38858136ea",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 1,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 29.811,
+        "read": false,
+        "usage": {
+          "input_tokens": 55946,
+          "cached_input_tokens": 39936,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 621,
+          "reasoning_output_tokens": 378
+        },
+        "timed_out": false,
+        "trace_digest": "579a43c1141983b7bcdd2d3ca8a565c5f0da6a71266efa0bbb4e8c0e743f54b7",
+        "prompt_digest": "e1b6f4402a9f3caa8795d918b900288a3f27f0c1d7722893f197f0b68a3d3a15",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 1,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 25.76,
+        "read": true,
+        "usage": {
+          "input_tokens": 60072,
+          "cached_input_tokens": 38656,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 590,
+          "reasoning_output_tokens": 378
+        },
+        "timed_out": false,
+        "trace_digest": "8b21a7885b933137e8e16302b8a97badfee4b8efb2595c7e29463e77513a68f6",
+        "prompt_digest": "f957768ab06e0a60d1a8a2c1d513a29781e511f46ed2563ac163bf429d5ce786",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 1,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 26.007,
+        "read": false,
+        "usage": {
+          "input_tokens": 52132,
+          "cached_input_tokens": 30848,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 621,
+          "reasoning_output_tokens": 472
+        },
+        "timed_out": false,
+        "trace_digest": "9d11c57907b91a86208268b259fe98fa234688d831683f98185abf37391265e0",
+        "prompt_digest": "87993d74e2d230d509b718eaa679321be9e3d24301d5b061cf483be69208d173",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 2,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 26.805,
+        "read": false,
+        "usage": {
+          "input_tokens": 52845,
+          "cached_input_tokens": 40064,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 687,
+          "reasoning_output_tokens": 511
+        },
+        "timed_out": false,
+        "trace_digest": "e3030c369dcda670b5acb8fc2b68c49589fd9f9abdabba17a52bd166e7f36687",
+        "prompt_digest": "21743a28550003ce354ea658b5cc891869185508e0d236a2372e7d38858136ea",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 2,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 27.007,
+        "read": true,
+        "usage": {
+          "input_tokens": 63011,
+          "cached_input_tokens": 40192,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 581,
+          "reasoning_output_tokens": 375
+        },
+        "timed_out": false,
+        "trace_digest": "7bb118a474381955426158a6e2669789a84ce92ae8edb19d06c55b130073e035",
+        "prompt_digest": "e1b6f4402a9f3caa8795d918b900288a3f27f0c1d7722893f197f0b68a3d3a15",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 2,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 21.144,
+        "read": true,
+        "usage": {
+          "input_tokens": 35197,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 319,
+          "reasoning_output_tokens": 197
+        },
+        "timed_out": false,
+        "trace_digest": "c423ff03621cfb74282edb5343becee1ba63cc90f95e721f1cca6da9b9847a3a",
+        "prompt_digest": "f957768ab06e0a60d1a8a2c1d513a29781e511f46ed2563ac163bf429d5ce786",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "build-repro",
+        "split": "test",
+        "repeat": 2,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "seconds": 20.944,
+        "read": false,
+        "usage": {
+          "input_tokens": 52587,
+          "cached_input_tokens": 36352,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 541,
+          "reasoning_output_tokens": 344
+        },
+        "timed_out": false,
+        "trace_digest": "20a4b1cc89407f4b1d1c7261640a7b60154064663f2c5c6a6e25177e66a31b32",
+        "prompt_digest": "87993d74e2d230d509b718eaa679321be9e3d24301d5b061cf483be69208d173",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 1,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 29.555,
+        "read": false,
+        "usage": {
+          "input_tokens": 50836,
+          "cached_input_tokens": 39040,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 643,
+          "reasoning_output_tokens": 462
+        },
+        "timed_out": false,
+        "trace_digest": "cef1862944c4458cff714c4c4816f81908e0691ec96fe25a11cd35ca8ae08767",
+        "prompt_digest": "8da0a2c9f5dcad3120695843d86f565fe13485913343539c0350723b0f167b8d",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 1,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 24.943,
+        "read": true,
+        "usage": {
+          "input_tokens": 56729,
+          "cached_input_tokens": 35840,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 750,
+          "reasoning_output_tokens": 545
+        },
+        "timed_out": false,
+        "trace_digest": "4272c8f15918d68cf88c4cb401bafe6800a293cf7bd31f4e463badefc56d28ec",
+        "prompt_digest": "b2856723d46f5a11e15cef4f4f418fbed0435ef84cd292fb4af5831d6dc72d2f",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 1,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 22.99,
+        "read": true,
+        "usage": {
+          "input_tokens": 35185,
+          "cached_input_tokens": 23936,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 327,
+          "reasoning_output_tokens": 166
+        },
+        "timed_out": false,
+        "trace_digest": "be54d3a6e7efff61d78b4d50181309e8ee80e0704c55cb0a6a050bae19ba33f9",
+        "prompt_digest": "daf6f70c8cdd25bcd451bb3d1aa972fcddd78af90c6b9decaf7a7941e3d09d04",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 1,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 19.039,
+        "read": false,
+        "usage": {
+          "input_tokens": 34553,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 425,
+          "reasoning_output_tokens": 277
+        },
+        "timed_out": false,
+        "trace_digest": "0f584e888f1487ae060d880e6c7b5781374fc9cc942622ff8b13a8ef8564ead7",
+        "prompt_digest": "fc09add763e7a25a83f93341fcb19162caf14a14e183324847e22e0a836b2164",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 2,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 24.036,
+        "read": false,
+        "usage": {
+          "input_tokens": 50871,
+          "cached_input_tokens": 42368,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 694,
+          "reasoning_output_tokens": 493
+        },
+        "timed_out": false,
+        "trace_digest": "85288f259b61d0dab4e92561197b8b54ee15cd1bd1d5adb1adff939b5af44a54",
+        "prompt_digest": "8da0a2c9f5dcad3120695843d86f565fe13485913343539c0350723b0f167b8d",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 2,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "H57"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 20.13,
+        "read": true,
+        "usage": {
+          "input_tokens": 53295,
+          "cached_input_tokens": 40448,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 531,
+          "reasoning_output_tokens": 338
+        },
+        "timed_out": false,
+        "trace_digest": "335c6529c02fa5bfa1541286e11d3a23054b0adf2e6ddc5db946ff6cd6178c8e",
+        "prompt_digest": "b2856723d46f5a11e15cef4f4f418fbed0435ef84cd292fb4af5831d6dc72d2f",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": false,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 2,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 22.128,
+        "read": true,
+        "usage": {
+          "input_tokens": 35225,
+          "cached_input_tokens": 23936,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 580,
+          "reasoning_output_tokens": 421
+        },
+        "timed_out": false,
+        "trace_digest": "3a9d3f442a9307d7ac17418e4882693549c708df59f4323457b3ad0d80de395a",
+        "prompt_digest": "daf6f70c8cdd25bcd451bb3d1aa972fcddd78af90c6b9decaf7a7941e3d09d04",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "split": "test",
+        "repeat": 2,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 19.277,
+        "read": false,
+        "usage": {
+          "input_tokens": 34628,
+          "cached_input_tokens": 21632,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 579,
+          "reasoning_output_tokens": 462
+        },
+        "timed_out": false,
+        "trace_digest": "881ddf6004590025f91d3f250ad1d31465a8301ea4bb37fea9da1c0f2a3bbb42",
+        "prompt_digest": "fc09add763e7a25a83f93341fcb19162caf14a14e183324847e22e0a836b2164",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 30.573,
+        "read": false,
+        "usage": {
+          "input_tokens": 56015,
+          "cached_input_tokens": 40192,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1031,
+          "reasoning_output_tokens": 849
+        },
+        "timed_out": false,
+        "trace_digest": "2d66fc051ebf096b11ff0a681f9c43249a154b617e5ef4c6e64e54d80559ee45",
+        "prompt_digest": "ef6ae838f69560f536e57e504a1ad1156760e001ee4c3fb02490fda61fa29b08",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 22.047,
+        "read": true,
+        "usage": {
+          "input_tokens": 34873,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 462,
+          "reasoning_output_tokens": 320
+        },
+        "timed_out": false,
+        "trace_digest": "6b0e49fd02d70482ab38d2d2790d64b773ccbd6b74506bdc1adaabfffefd69d1",
+        "prompt_digest": "f1462f97c4f1cf2789c4d06ca57f162806cfaf9a1f82f956f5bc37b7c2177846",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 35.244,
+        "read": true,
+        "usage": {
+          "input_tokens": 92646,
+          "cached_input_tokens": 72192,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 998,
+          "reasoning_output_tokens": 704
+        },
+        "timed_out": false,
+        "trace_digest": "7e129dd92b2990472aae375aedee094abd4a2e6fe02e77f4cd2b18aaa4757952",
+        "prompt_digest": "67228573a33b8ff6fc7bd5a85c47dd0bcb3148ceded8dfc30fe53997cc2828fb",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 3
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 1,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 23.644,
+        "read": false,
+        "usage": {
+          "input_tokens": 52050,
+          "cached_input_tokens": 39680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 579,
+          "reasoning_output_tokens": 384
+        },
+        "timed_out": false,
+        "trace_digest": "6e93b71a674084e5bf7731662fea14531055fd5cdb9ce8be9828a502b53b258c",
+        "prompt_digest": "df8f80cf8ee0e6a9b04634b6f9e8d75003efa8e3f808120d21d86df31f97f6aa",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "a",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 20.146,
+        "read": false,
+        "usage": {
+          "input_tokens": 31204,
+          "cached_input_tokens": 25088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 485,
+          "reasoning_output_tokens": 338
+        },
+        "timed_out": false,
+        "trace_digest": "318fc67208dd7a1acc3e0f65e18b639856d0ff49ba48813310a2cb0d364de615",
+        "prompt_digest": "ef6ae838f69560f536e57e504a1ad1156760e001ee4c3fb02490fda61fa29b08",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "b",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 26.758,
+        "read": true,
+        "usage": {
+          "input_tokens": 30036,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 406,
+          "reasoning_output_tokens": 270
+        },
+        "timed_out": false,
+        "trace_digest": "81eee467820b680aa58f9e75b96c5ad1f62c3d7511db51af82a889fd55377185",
+        "prompt_digest": "f1462f97c4f1cf2789c4d06ca57f162806cfaf9a1f82f956f5bc37b7c2177846",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "both",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 24.95,
+        "read": true,
+        "usage": {
+          "input_tokens": 31479,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 400,
+          "reasoning_output_tokens": 248
+        },
+        "timed_out": false,
+        "trace_digest": "5917e35f16b9675e02fa09189f9b847c2375925bbf8495fb85ed306981c02752",
+        "prompt_digest": "67228573a33b8ff6fc7bd5a85c47dd0bcb3148ceded8dfc30fe53997cc2828fb",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "median-protocol-v2",
+        "split": "selection",
+        "repeat": 2,
+        "arm": "neither",
+        "route": "optional",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "seconds": 26.91,
+        "read": false,
+        "usage": {
+          "input_tokens": 55545,
+          "cached_input_tokens": 39808,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 499,
+          "reasoning_output_tokens": 264
+        },
+        "timed_out": false,
+        "trace_digest": "6289adf7288523b6a80798878fc665298963403b13cefe302b3f6c3b3eecec59",
+        "prompt_digest": "df8f80cf8ee0e6a9b04634b6f9e8d75003efa8e3f808120d21d86df31f97f6aa",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 1,
+        "arm": "a",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 20.442,
+        "read": false,
+        "usage": {
+          "input_tokens": 29175,
+          "cached_input_tokens": 25088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 266,
+          "reasoning_output_tokens": 157
+        },
+        "timed_out": false,
+        "trace_digest": "11aff0ed13e29733b77a72076adac185bf7896445490c45319c6196f1bb07a75",
+        "prompt_digest": "a53ad2db09f43ada40315c2614073bdf622845205a74a96c69fb0a8ce8ede1fa",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 1,
+        "arm": "b",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 18.094,
+        "read": true,
+        "usage": {
+          "input_tokens": 30996,
+          "cached_input_tokens": 9216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 230,
+          "reasoning_output_tokens": 107
+        },
+        "timed_out": false,
+        "trace_digest": "16db2a0644ef2913b39e77fc57a9482d1cc95d020dc5cc7e59358b10168a4763",
+        "prompt_digest": "1ac18f54075211f93a1973c5b3cf50c1d8e3564e4c2fcc18f308637a5c0f5bc4",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 1,
+        "arm": "both",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 15.135,
+        "read": true,
+        "usage": {
+          "input_tokens": 31361,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 219,
+          "reasoning_output_tokens": 92
+        },
+        "timed_out": false,
+        "trace_digest": "12ec7fd6d3b0d0fd23900a5849f82ab1ab14ded86b34a6b7dd8105b0b4371d85",
+        "prompt_digest": "551309de2c56375439d100252c9d4543cf1e6b449e52ee95083d0cd2f072e97d",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 1,
+        "arm": "neither",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 15.781,
+        "read": false,
+        "usage": {
+          "input_tokens": 28796,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 324,
+          "reasoning_output_tokens": 216
+        },
+        "timed_out": false,
+        "trace_digest": "4e5aa1ed272ea2a812ecc95de88aba552d47ce2aae7f9459f470195dfa428c6d",
+        "prompt_digest": "c8b0049c269326e041d377db468d25d8d70f447943b555c74899a0320c411caf",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 2,
+        "arm": "a",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 13.818,
+        "read": false,
+        "usage": {
+          "input_tokens": 29155,
+          "cached_input_tokens": 25088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 196,
+          "reasoning_output_tokens": 89
+        },
+        "timed_out": false,
+        "trace_digest": "111c1a45d8ff6ae74e003d13aafb9608ff70795212a0c1dc6f88aef5b6a09334",
+        "prompt_digest": "a53ad2db09f43ada40315c2614073bdf622845205a74a96c69fb0a8ce8ede1fa",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 2,
+        "arm": "b",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 15.742,
+        "read": true,
+        "usage": {
+          "input_tokens": 31003,
+          "cached_input_tokens": 12544,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 290,
+          "reasoning_output_tokens": 165
+        },
+        "timed_out": false,
+        "trace_digest": "8d7e1fa9b2c6cd265883f74c8acf80c021a09301cd6a021b349c0c18977e938c",
+        "prompt_digest": "1ac18f54075211f93a1973c5b3cf50c1d8e3564e4c2fcc18f308637a5c0f5bc4",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 2,
+        "arm": "both",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 17.89,
+        "read": true,
+        "usage": {
+          "input_tokens": 31420,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 288,
+          "reasoning_output_tokens": 166
+        },
+        "timed_out": false,
+        "trace_digest": "60959de7e249f7a75b24e6be10b4f88fac68aca54423f09ad3c638c07dab1c60",
+        "prompt_digest": "551309de2c56375439d100252c9d4543cf1e6b449e52ee95083d0cd2f072e97d",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "outside-build",
+        "split": "test",
+        "repeat": 2,
+        "arm": "neither",
+        "route": "forbidden",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "seconds": 27.157,
+        "read": false,
+        "usage": {
+          "input_tokens": 28806,
+          "cached_input_tokens": 21504,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 221,
+          "reasoning_output_tokens": 116
+        },
+        "timed_out": false,
+        "trace_digest": "1580a0341f67e18b7703ed0b0b37d706f46b1663a21c847a824f10ea76a17f00",
+        "prompt_digest": "c8b0049c269326e041d377db468d25d8d70f447943b555c74899a0320c411caf",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 1,
+        "arm": "a",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 23.939,
+        "read": false,
+        "usage": {
+          "input_tokens": 57172,
+          "cached_input_tokens": 43264,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 696,
+          "reasoning_output_tokens": 500
+        },
+        "timed_out": false,
+        "trace_digest": "c74e607b4778d96de360d56c32ec7873d9c90727ae5b4450f4018fd4957efab1",
+        "prompt_digest": "54171a5d3258e3e9c90acfbedfeed92cbdec6d55fe20bd582bd6e2121b53af65",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 1,
+        "arm": "b",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 23.388,
+        "read": true,
+        "usage": {
+          "input_tokens": 34839,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 554,
+          "reasoning_output_tokens": 379
+        },
+        "timed_out": false,
+        "trace_digest": "5d3bd949f729cfe5bbcc2a9413b80a76d6ce6ad701764e2c3e243b60d5b67723",
+        "prompt_digest": "245ae1ca2e637409904f590cbc63a2defa4b113680bd662b7c14b877e4d390a1",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 1,
+        "arm": "both",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 21.578,
+        "read": true,
+        "usage": {
+          "input_tokens": 62124,
+          "cached_input_tokens": 39680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 440,
+          "reasoning_output_tokens": 210
+        },
+        "timed_out": false,
+        "trace_digest": "4ffcd0d9e554e97d9805bdb230338fde7f0f257b3a45907cc50ad358703f5c1b",
+        "prompt_digest": "6e2da8c7df9252adebaa542e486428f26afc12faeea081c08cf3651e6fe02c99",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 1,
+        "arm": "neither",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 24.35,
+        "read": false,
+        "usage": {
+          "input_tokens": 52201,
+          "cached_input_tokens": 27264,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 544,
+          "reasoning_output_tokens": 345
+        },
+        "timed_out": false,
+        "trace_digest": "626436170c38469b1a4442e42bd44e8b913d697482fad3e782e88d25ae5d74be",
+        "prompt_digest": "20dc19792fe138106cdebff2a3b0404a8865f3a174ed15f5550293b178d18cd8",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 2,
+        "arm": "a",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 25.446,
+        "read": false,
+        "usage": {
+          "input_tokens": 56233,
+          "cached_input_tokens": 30976,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 488,
+          "reasoning_output_tokens": 259
+        },
+        "timed_out": false,
+        "trace_digest": "23913f2421695da92510a4c98dd0bb806bfc912a1fca9b28644ba247ea16c6ad",
+        "prompt_digest": "54171a5d3258e3e9c90acfbedfeed92cbdec6d55fe20bd582bd6e2121b53af65",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 2,
+        "arm": "b",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 27.71,
+        "read": true,
+        "usage": {
+          "input_tokens": 58386,
+          "cached_input_tokens": 45312,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 680,
+          "reasoning_output_tokens": 513
+        },
+        "timed_out": false,
+        "trace_digest": "4b1ec039907510fb9d81f5099875052db3ef451a6c695d909cb7fbececbd2c33",
+        "prompt_digest": "245ae1ca2e637409904f590cbc63a2defa4b113680bd662b7c14b877e4d390a1",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 2,
+        "arm": "both",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "outside",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 26.55,
+        "read": true,
+        "usage": {
+          "input_tokens": 54125,
+          "cached_input_tokens": 39168,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 786,
+          "reasoning_output_tokens": 566
+        },
+        "timed_out": false,
+        "trace_digest": "7e9533a138a42d105506d6c81ab45ccc4d5b5efb179e3a6d5c68d5ac19bf4f79",
+        "prompt_digest": "6e2da8c7df9252adebaa542e486428f26afc12faeea081c08cf3651e6fe02c99",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": true
+        },
+        "submitted": true,
+        "verdict_correct": false,
+        "correct": false,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 2
+      },
+      {
+        "case": "plan-missing-edge",
+        "split": "test",
+        "repeat": 2,
+        "arm": "neither",
+        "route": "required",
+        "complete": true,
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "seconds": 23.305,
+        "read": false,
+        "usage": {
+          "input_tokens": 30729,
+          "cached_input_tokens": 21632,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 411,
+          "reasoning_output_tokens": 265
+        },
+        "timed_out": false,
+        "trace_digest": "e68314f4a63041260063eddecf809fa3071e4d9f9b566b44d662106be0f3618c",
+        "prompt_digest": "20dc19792fe138106cdebff2a3b0404a8865f3a174ed15f5550293b178d18cd8",
+        "reads": {
+          "zf-workflow-adaptation-boundary": false,
+          "zf-project-adapter-matrix-enrichment": false
+        },
+        "submitted": true,
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "false_block": false,
+        "tool_calls": 1
+      }
+    ]
+  },
+  "verify": {
+    "schema_version": "skill-loading-comparison.v1",
+    "scope": "Task Verify",
+    "skill": "zf-project-adapter-matrix-enrichment",
+    "skill_digest": "ff2dbde7ee6e386615a7e42154e75f3c7c6741504413859b082b1c2d58f13d54",
+    "model": "gpt-6-luna",
+    "effort": "high",
+    "client": "codex-cli 0.171.0",
+    "suite_digest": "1fd98354e53dee62cbd7841d012b1f0d2c283cf38f15015fa4e3dca317d59a7b",
+    "image": "sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2",
+    "common_fingerprint": "780d3f2257d86b6e78bfe11185ddd5e714cdc67dba17becfa09ddef4fc7d313f",
+    "treatment_fingerprints": {
+      "raw": "69b66ab4173f5c66c9d62dcbe0356db9f9327c8ad13dc12ab5427e44e1dc5883",
+      "current": "5e0ad7552e477e17683f816ae5009c6e185c8eddd636507722f9afaccba5489b",
+      "candidate": "f64cf961a3be65392ad71de8c38447dd63106512a42784aac8ad90c94a025f96"
+    },
+    "manifest_digests": {
+      "raw": "f627463e05b2f2a944335dc7192d06f0607ff4f0ab4656d474645b0cac26b92c",
+      "current": "3f0ce40dbc83241ee8326822544ae2b9ad2a3559af19863bf6bcb1fe3afdc925",
+      "candidate": "9542780ac594e134c2b33d3bd1ab402897da2940f27ef17e437640cef9a95bdb"
+    },
+    "policy": {
+      "replicates": 2,
+      "max_quality_regressions": 0,
+      "max_critical_false_releases": 0,
+      "max_missed_required_reads": 0,
+      "max_unrelated_reads": 0,
+      "minimum_input_token_saving_percent": 5
+    },
+    "decision": "retain_required",
+    "reasons": [
+      "test:missed_required_reads",
+      "test:cost_goal"
+    ],
+    "splits": {
+      "selection": {
+        "expected_pairs": 2,
+        "matched_pairs": 2,
+        "arms": {
+          "raw": {
+            "complete": 2,
+            "timeouts": 0,
+            "correct": 2,
+            "verdict_correct": 2,
+            "first_valid_submissions": 2,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 2,
+            "observed_reads": 0,
+            "missed_required_reads": 0,
+            "unrelated_reads": 0,
+            "mean_input_tokens": 32504,
+            "median_seconds": 21.07,
+            "input_tokens": 65008,
+            "cached_input_tokens": 43520,
+            "output_tokens": 921
+          },
+          "current": {
+            "complete": 2,
+            "timeouts": 0,
+            "correct": 2,
+            "verdict_correct": 2,
+            "first_valid_submissions": 2,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 2,
+            "observed_reads": 2,
+            "missed_required_reads": 0,
+            "unrelated_reads": 0,
+            "mean_input_tokens": 63673,
+            "median_seconds": 29.5,
+            "input_tokens": 127346,
+            "cached_input_tokens": 98304,
+            "output_tokens": 1230
+          },
+          "candidate": {
+            "complete": 2,
+            "timeouts": 0,
+            "correct": 2,
+            "verdict_correct": 2,
+            "first_valid_submissions": 2,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 2,
+            "observed_reads": 0,
+            "missed_required_reads": 0,
+            "unrelated_reads": 0,
+            "mean_input_tokens": 59113,
+            "median_seconds": 29.32,
+            "input_tokens": 118226,
+            "cached_input_tokens": 66432,
+            "output_tokens": 1277
+          }
+        },
+        "quality_regressions": 0,
+        "lifts": {
+          "pairing_key": "case_id+replicate",
+          "status": "available",
+          "comparisons": {
+            "current_vs_raw": {
+              "matched_pair_count": 2,
+              "pair_keys": [
+                "median-protocol-v2::1",
+                "median-protocol-v2::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            },
+            "candidate_vs_current": {
+              "matched_pair_count": 2,
+              "pair_keys": [
+                "median-protocol-v2::1",
+                "median-protocol-v2::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            },
+            "candidate_vs_raw": {
+              "matched_pair_count": 2,
+              "pair_keys": [
+                "median-protocol-v2::1",
+                "median-protocol-v2::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            }
+          }
+        },
+        "input_token_saving_percent": 7.16
+      },
+      "test": {
+        "expected_pairs": 8,
+        "matched_pairs": 8,
+        "arms": {
+          "raw": {
+            "complete": 8,
+            "timeouts": 0,
+            "correct": 8,
+            "verdict_correct": 8,
+            "first_valid_submissions": 8,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 4,
+            "observed_reads": 0,
+            "missed_required_reads": 2,
+            "unrelated_reads": 0,
+            "mean_input_tokens": 42894,
+            "median_seconds": 22.51,
+            "input_tokens": 343154,
+            "cached_input_tokens": 230272,
+            "output_tokens": 3866
+          },
+          "current": {
+            "complete": 8,
+            "timeouts": 0,
+            "correct": 8,
+            "verdict_correct": 8,
+            "first_valid_submissions": 8,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 4,
+            "observed_reads": 8,
+            "missed_required_reads": 0,
+            "unrelated_reads": 2,
+            "mean_input_tokens": 49064,
+            "median_seconds": 20.78,
+            "input_tokens": 392508,
+            "cached_input_tokens": 277760,
+            "output_tokens": 4453
+          },
+          "candidate": {
+            "complete": 8,
+            "timeouts": 0,
+            "correct": 8,
+            "verdict_correct": 8,
+            "first_valid_submissions": 8,
+            "false_releases": 0,
+            "false_blocks": 0,
+            "correct_blocks": 4,
+            "observed_reads": 0,
+            "missed_required_reads": 2,
+            "unrelated_reads": 0,
+            "mean_input_tokens": 49591,
+            "median_seconds": 23.36,
+            "input_tokens": 396725,
+            "cached_input_tokens": 301440,
+            "output_tokens": 4155
+          }
+        },
+        "quality_regressions": 0,
+        "lifts": {
+          "pairing_key": "case_id+replicate",
+          "status": "available",
+          "comparisons": {
+            "current_vs_raw": {
+              "matched_pair_count": 8,
+              "pair_keys": [
+                "build-repro::1",
+                "build-repro::2",
+                "handoff-wrong-scope::1",
+                "handoff-wrong-scope::2",
+                "outside-build::1",
+                "outside-build::2",
+                "plan-missing-edge::1",
+                "plan-missing-edge::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            },
+            "candidate_vs_current": {
+              "matched_pair_count": 8,
+              "pair_keys": [
+                "build-repro::1",
+                "build-repro::2",
+                "handoff-wrong-scope::1",
+                "handoff-wrong-scope::2",
+                "outside-build::1",
+                "outside-build::2",
+                "plan-missing-edge::1",
+                "plan-missing-edge::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            },
+            "candidate_vs_raw": {
+              "matched_pair_count": 8,
+              "pair_keys": [
+                "build-repro::1",
+                "build-repro::2",
+                "handoff-wrong-scope::1",
+                "handoff-wrong-scope::2",
+                "outside-build::1",
+                "outside-build::2",
+                "plan-missing-edge::1",
+                "plan-missing-edge::2"
+              ],
+              "deltas": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "median_delta": 0.0
+            }
+          }
+        },
+        "input_token_saving_percent": -1.07
+      }
+    },
+    "observations": [
+      {
+        "case": "build-repro",
+        "repeat": 1,
+        "arm": "candidate",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 53024,
+          "cached_input_tokens": 42240,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 430,
+          "reasoning_output_tokens": 253
+        },
+        "seconds": 19.242,
+        "trace_digest": "f81188f089dae244a17297dd49ee0ce5650cb402f48233c9d77994e24113771e",
+        "prompt_digest": "1385b10df4f0730a90e9450f2250b632bff0415d34bc975369f919029416c922"
+      },
+      {
+        "case": "build-repro",
+        "repeat": 1,
+        "arm": "current",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 63480,
+          "cached_input_tokens": 40320,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 516,
+          "reasoning_output_tokens": 303
+        },
+        "seconds": 22.655,
+        "trace_digest": "6ab8e52f984586f5af7dba71ee06a5359af546afbd13a2211f9b60cd131f1319",
+        "prompt_digest": "f957768ab06e0a60d1a8a2c1d513a29781e511f46ed2563ac163bf429d5ce786"
+      },
+      {
+        "case": "build-repro",
+        "repeat": 1,
+        "arm": "raw",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 57139,
+          "cached_input_tokens": 40832,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 453,
+          "reasoning_output_tokens": 306
+        },
+        "seconds": 18.789,
+        "trace_digest": "9288b43edae3439066c1dbabba44b194f8134e315fe85e9fdb253de95e44251a",
+        "prompt_digest": "21743a28550003ce354ea658b5cc891869185508e0d236a2372e7d38858136ea"
+      },
+      {
+        "case": "build-repro",
+        "repeat": 2,
+        "arm": "candidate",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 51391,
+          "cached_input_tokens": 41344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 590,
+          "reasoning_output_tokens": 368
+        },
+        "seconds": 25.106,
+        "trace_digest": "9eb559dfc42d966d294eb866f6524bf7876cc3b7dae24deb1112a739b7a2aae1",
+        "prompt_digest": "1385b10df4f0730a90e9450f2250b632bff0415d34bc975369f919029416c922"
+      },
+      {
+        "case": "build-repro",
+        "repeat": 2,
+        "arm": "current",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 56593,
+          "cached_input_tokens": 42240,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 870,
+          "reasoning_output_tokens": 656
+        },
+        "seconds": 32.274,
+        "trace_digest": "db3f6040ff2c52c9fc8d56ae5c5cc974938897f4ef2a1f877414e431371998a9",
+        "prompt_digest": "f957768ab06e0a60d1a8a2c1d513a29781e511f46ed2563ac163bf429d5ce786"
+      },
+      {
+        "case": "build-repro",
+        "repeat": 2,
+        "arm": "raw",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "release",
+          "accept",
+          "H16"
+        ],
+        "answer": {
+          "verdict": "release",
+          "action": "accept",
+          "receipt": "H16"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 52613,
+          "cached_input_tokens": 30976,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 578,
+          "reasoning_output_tokens": 398
+        },
+        "seconds": 24.958,
+        "trace_digest": "9ed0355ccc0a61c6dec259997443c779c9c5b7cf5366aebb9cdfa13e3981845a",
+        "prompt_digest": "21743a28550003ce354ea658b5cc891869185508e0d236a2372e7d38858136ea"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 1,
+        "arm": "candidate",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 54947,
+          "cached_input_tokens": 43136,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 477,
+          "reasoning_output_tokens": 286
+        },
+        "seconds": 21.605,
+        "trace_digest": "e8146575a562d710be75002216b751eadfa2ccbf82c9c7836245245c9142daed",
+        "prompt_digest": "89b1e211c3a853b3cbef8469159335bf5e7f773f2bb6943563e396f09a308198"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 1,
+        "arm": "current",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 57005,
+          "cached_input_tokens": 44160,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 874,
+          "reasoning_output_tokens": 686
+        },
+        "seconds": 36.132,
+        "trace_digest": "29e168c4cd4b45e6c0c56c345aabf47931b2a9fe8d078ab186a0d25077296c53",
+        "prompt_digest": "daf6f70c8cdd25bcd451bb3d1aa972fcddd78af90c6b9decaf7a7941e3d09d04"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 1,
+        "arm": "raw",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 34766,
+          "cached_input_tokens": 25088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 399,
+          "reasoning_output_tokens": 300
+        },
+        "seconds": 18.59,
+        "trace_digest": "126762d467a88cf4c2556f46f5ec63febc7f3f7b8069db10918445818b947852",
+        "prompt_digest": "8da0a2c9f5dcad3120695843d86f565fe13485913343539c0350723b0f167b8d"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 2,
+        "arm": "candidate",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 54219,
+          "cached_input_tokens": 39424,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 781,
+          "reasoning_output_tokens": 632
+        },
+        "seconds": 26.697,
+        "trace_digest": "30434606ba18cb52820dca16e778d8570485aa834266704e28da406e421895e2",
+        "prompt_digest": "89b1e211c3a853b3cbef8469159335bf5e7f773f2bb6943563e396f09a308198"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 2,
+        "arm": "current",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 55783,
+          "cached_input_tokens": 40192,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 542,
+          "reasoning_output_tokens": 326
+        },
+        "seconds": 19.083,
+        "trace_digest": "1106ea095fce9059a683542f82ce08a13399f0138317529c5a2b2f19a9a2fae4",
+        "prompt_digest": "daf6f70c8cdd25bcd451bb3d1aa972fcddd78af90c6b9decaf7a7941e3d09d04"
+      },
+      {
+        "case": "handoff-wrong-scope",
+        "repeat": 2,
+        "arm": "raw",
+        "split": "test",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 32118,
+          "cached_input_tokens": 9216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 655,
+          "reasoning_output_tokens": 506
+        },
+        "seconds": 22.949,
+        "trace_digest": "d035abd49da0a5b31377e0e75f28973d0816ff9d3fd3e8e2a91bd9a119628751",
+        "prompt_digest": "8da0a2c9f5dcad3120695843d86f565fe13485913343539c0350723b0f167b8d"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 1,
+        "arm": "candidate",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 31505,
+          "cached_input_tokens": 9216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 567,
+          "reasoning_output_tokens": 415
+        },
+        "seconds": 23.094,
+        "trace_digest": "d137b361600a6decd7e7b0946e4a52f3ce5c466967f031c9623a1dffe1431a39",
+        "prompt_digest": "d520b60f95751baebb9305561a04f3744defbdf4d9a7d77d19fc9382e0fa95ca"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 1,
+        "arm": "current",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 35288,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 587,
+          "reasoning_output_tokens": 420
+        },
+        "seconds": 31.482,
+        "trace_digest": "e23a518f2e2b1d7867315f089f399a0387e90f2d5c44fde0df6d7508ce1c7dee",
+        "prompt_digest": "67228573a33b8ff6fc7bd5a85c47dd0bcb3148ceded8dfc30fe53997cc2828fb"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 1,
+        "arm": "raw",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 34761,
+          "cached_input_tokens": 21760,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 350,
+          "reasoning_output_tokens": 222
+        },
+        "seconds": 18.186,
+        "trace_digest": "e9081af67249e1c618b0aeefde67c06b52e7fe8afe1b14e08e2776744f8e0f48",
+        "prompt_digest": "ef6ae838f69560f536e57e504a1ad1156760e001ee4c3fb02490fda61fa29b08"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 2,
+        "arm": "candidate",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 86721,
+          "cached_input_tokens": 57216,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 710,
+          "reasoning_output_tokens": 450
+        },
+        "seconds": 35.538,
+        "trace_digest": "bdcf656273a1d6c963a53f3637e1fa07947b64abfa415d3d86cb8e981562036a",
+        "prompt_digest": "d520b60f95751baebb9305561a04f3744defbdf4d9a7d77d19fc9382e0fa95ca"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 2,
+        "arm": "current",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 92058,
+          "cached_input_tokens": 72960,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 643,
+          "reasoning_output_tokens": 378
+        },
+        "seconds": 27.512,
+        "trace_digest": "89d34f65fedf8fc5a11c60e30d2e2625a5e79fcb145bc993a8898f00cdc158d5",
+        "prompt_digest": "67228573a33b8ff6fc7bd5a85c47dd0bcb3148ceded8dfc30fe53997cc2828fb"
+      },
+      {
+        "case": "median-protocol-v2",
+        "repeat": 2,
+        "arm": "raw",
+        "split": "selection",
+        "route": "optional",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "request_evidence",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "request_evidence",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 30247,
+          "cached_input_tokens": 21760,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 571,
+          "reasoning_output_tokens": 417
+        },
+        "seconds": 23.953,
+        "trace_digest": "2e3bc9913aac0f2c27918e702a5c961f748032284f1f77dbfea6873c3dfac233",
+        "prompt_digest": "ef6ae838f69560f536e57e504a1ad1156760e001ee4c3fb02490fda61fa29b08"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 1,
+        "arm": "candidate",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 30401,
+          "cached_input_tokens": 21888,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 207,
+          "reasoning_output_tokens": 96
+        },
+        "seconds": 19.932,
+        "trace_digest": "1b6beb3ac888d74340c7a0cfbfe1d14a2d0b8a003d96aefd398845bd106c4fb1",
+        "prompt_digest": "4422438bd9a8634a018ecbd03127e49275b8f18a71dd1745dd061946fe773c08"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 1,
+        "arm": "current",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 31377,
+          "cached_input_tokens": 21888,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 237,
+          "reasoning_output_tokens": 140
+        },
+        "seconds": 17.184,
+        "trace_digest": "b9dc6783e991cd53f7947eed6aec1eb2bf5dec064e538650bdc98ebc5d25e7e5",
+        "prompt_digest": "551309de2c56375439d100252c9d4543cf1e6b449e52ee95083d0cd2f072e97d"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 1,
+        "arm": "raw",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 29225,
+          "cached_input_tokens": 18432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 283,
+          "reasoning_output_tokens": 203
+        },
+        "seconds": 22.08,
+        "trace_digest": "1ce49b2defb4f17b1a5545bbc4931303b6804e867ad4775a32597ccf2b169edb",
+        "prompt_digest": "a53ad2db09f43ada40315c2614073bdf622845205a74a96c69fb0a8ce8ede1fa"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 2,
+        "arm": "candidate",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 30417,
+          "cached_input_tokens": 22528,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 227,
+          "reasoning_output_tokens": 122
+        },
+        "seconds": 17.376,
+        "trace_digest": "12127e72bc874edf434308818bc8d3a0ebe2af4179fa26076070193c62cba290",
+        "prompt_digest": "4422438bd9a8634a018ecbd03127e49275b8f18a71dd1745dd061946fe773c08"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 2,
+        "arm": "current",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 31403,
+          "cached_input_tokens": 21888,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 267,
+          "reasoning_output_tokens": 142
+        },
+        "seconds": 17.824,
+        "trace_digest": "8233379fa3a03637daf84b2c863f49d004df5455621eda976f65497f7c8f937b",
+        "prompt_digest": "551309de2c56375439d100252c9d4543cf1e6b449e52ee95083d0cd2f072e97d"
+      },
+      {
+        "case": "outside-build",
+        "repeat": 2,
+        "arm": "raw",
+        "split": "test",
+        "route": "forbidden",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "outside",
+          "no_verification",
+          "none"
+        ],
+        "answer": {
+          "verdict": "outside",
+          "action": "no_verification",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 28311,
+          "cached_input_tokens": 24192,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 247,
+          "reasoning_output_tokens": 142
+        },
+        "seconds": 12.914,
+        "trace_digest": "45df98dca74e58e7c461184638e5f6e8f702bfb87d08100a9e29d882706eb009",
+        "prompt_digest": "a53ad2db09f43ada40315c2614073bdf622845205a74a96c69fb0a8ce8ede1fa"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 1,
+        "arm": "candidate",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 68955,
+          "cached_input_tokens": 57728,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 694,
+          "reasoning_output_tokens": 376
+        },
+        "seconds": 31.919,
+        "trace_digest": "39280181018ed012beb2f44bc1651f45f205b38d8c56705487e28d4ffd6537b6",
+        "prompt_digest": "3154457952d766bd096222c1e57b9dee8eea1abbb58d6e0bf9b990311df715ce"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 1,
+        "arm": "current",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 35308,
+          "cached_input_tokens": 21888,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 537,
+          "reasoning_output_tokens": 418
+        },
+        "seconds": 19.768,
+        "trace_digest": "612667eedc667ee4e8e7aa216414dbecdaa20d5ba0a53e334a40f1481c6d22d7",
+        "prompt_digest": "6e2da8c7df9252adebaa542e486428f26afc12faeea081c08cf3651e6fe02c99"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 1,
+        "arm": "raw",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 52651,
+          "cached_input_tokens": 39040,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 705,
+          "reasoning_output_tokens": 525
+        },
+        "seconds": 27.859,
+        "trace_digest": "292c249a6bf9d8f7c9a02464a35203e5fa9c55953ada3cd0436c08d358c7993e",
+        "prompt_digest": "54171a5d3258e3e9c90acfbedfeed92cbdec6d55fe20bd582bd6e2121b53af65"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 2,
+        "arm": "candidate",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 53371,
+          "cached_input_tokens": 33152,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 749,
+          "reasoning_output_tokens": 566
+        },
+        "seconds": 27.992,
+        "trace_digest": "2485dcd5f359b06d20a88d34c64506237f8962c43e5c2516ba437fac1df81183",
+        "prompt_digest": "3154457952d766bd096222c1e57b9dee8eea1abbb58d6e0bf9b990311df715ce"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 2,
+        "arm": "current",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": true,
+        "usage": {
+          "input_tokens": 61559,
+          "cached_input_tokens": 45184,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 610,
+          "reasoning_output_tokens": 399
+        },
+        "seconds": 21.797,
+        "trace_digest": "7b4da6042cd99030e1bdef64a830cd2ad25e147a97c553460c16a525364c31a0",
+        "prompt_digest": "6e2da8c7df9252adebaa542e486428f26afc12faeea081c08cf3651e6fe02c99"
+      },
+      {
+        "case": "plan-missing-edge",
+        "repeat": 2,
+        "arm": "raw",
+        "split": "test",
+        "route": "required",
+        "complete": true,
+        "submitted": true,
+        "reference": [
+          "withhold",
+          "return_to_planner",
+          "none"
+        ],
+        "answer": {
+          "verdict": "withhold",
+          "action": "return_to_planner",
+          "receipt": "none"
+        },
+        "verdict_correct": true,
+        "correct": true,
+        "false_release": false,
+        "read": false,
+        "usage": {
+          "input_tokens": 56331,
+          "cached_input_tokens": 42496,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 546,
+          "reasoning_output_tokens": 294
+        },
+        "seconds": 24.437,
+        "trace_digest": "02449bf258212030768acd26966b95a0e05e706ba467d275900695ddfd0bb63a",
+        "prompt_digest": "54171a5d3258e3e9c90acfbedfeed92cbdec6d55fe20bd582bd6e2121b53af65"
+      }
+    ]
+  },
+  "compatibility": {
+    "tool": "skillevaluator, version 1.0.1",
+    "rows": [
+      {
+        "role": "planner",
+        "name": "zf-project-adapter-matrix-enrichment",
+        "digest": "ff2dbde7ee6e386615a7e42154e75f3c7c6741504413859b082b1c2d58f13d54",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-yoke-planner-role-context",
+        "digest": "7441c77e58186ec9e4a0a5a52ad7ba466c4f48cba99f66ce80ed9ac072dbbc5a",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-workflow-adaptation-boundary",
+        "digest": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-prd-plan-synth",
+        "digest": "4835422ab482d9c8a2df9f0966f883157e145b1b2aeb4c5a2c129753c4f0ea94",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-browser-e2e-contract",
+        "digest": "3264a16deb068716283e521e25f990df023af1a9ec9c286583bddf82c8d326a1",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-project-adapter-matrix-enrichment"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-plan-execution-readiness",
+        "digest": "3abc0f9ced9f8e2d53083ccbf8da31ec0c8bf9824ee6471d83c90bbcc841e810",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-prd-plan-synth",
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "vertical-slicing",
+        "digest": "d77c38757b16c37e9ea96a8ece518b7537207a3422ff8c78c89908f2448b1311",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-plan-execution-readiness",
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "grill",
+        "digest": "55ffcce4226b88ba772f3bf7f0a831870b77fc1e4b890d49f5e48108052f6d6f",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-plan-task-map-contract",
+        "digest": "fdeea143d4fd40ef768d67cdc29b1e806ee7b80a2bc3f0f58c87cd260973fc5d",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "degraded",
+        "verified_version": "0.166.0",
+        "rules": [
+          "CX-SHELL-READ",
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-gap-task-synth",
+        "digest": "1cbe994ed0c8923af44938d787988d5c17179c298e7e818c42ed0b1f10954372",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-requirement-reconciliation",
+        "digest": "7c1bfcaeca92eb8ef946801cd537be00a309e94a1d2b46fb64c22c0df798857f",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-plan-execution-readiness"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-document-reading",
+        "digest": "24626944944a4cf9e6e430a6d069a20277c2c541d2ac5a4b91381dffb4a98ebf",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-requirement-reconciliation"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-project-adapter-matrix-enrichment",
+        "digest": "ff2dbde7ee6e386615a7e42154e75f3c7c6741504413859b082b1c2d58f13d54",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-yoke-planner-role-context",
+        "digest": "7441c77e58186ec9e4a0a5a52ad7ba466c4f48cba99f66ce80ed9ac072dbbc5a",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-workflow-adaptation-boundary",
+        "digest": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-prd-plan-synth",
+        "digest": "4835422ab482d9c8a2df9f0966f883157e145b1b2aeb4c5a2c129753c4f0ea94",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "planner",
+        "name": "zf-browser-e2e-contract",
+        "digest": "3264a16deb068716283e521e25f990df023af1a9ec9c286583bddf82c8d326a1",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-project-adapter-matrix-enrichment"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-plan-execution-readiness",
+        "digest": "3abc0f9ced9f8e2d53083ccbf8da31ec0c8bf9824ee6471d83c90bbcc841e810",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-prd-plan-synth",
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "vertical-slicing",
+        "digest": "d77c38757b16c37e9ea96a8ece518b7537207a3422ff8c78c89908f2448b1311",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-plan-execution-readiness",
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "grill",
+        "digest": "55ffcce4226b88ba772f3bf7f0a831870b77fc1e4b890d49f5e48108052f6d6f",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-plan-task-map-contract",
+        "digest": "fdeea143d4fd40ef768d67cdc29b1e806ee7b80a2bc3f0f58c87cd260973fc5d",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-gap-task-synth",
+        "digest": "1cbe994ed0c8923af44938d787988d5c17179c298e7e818c42ed0b1f10954372",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-planner-role-context"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-requirement-reconciliation",
+        "digest": "7c1bfcaeca92eb8ef946801cd537be00a309e94a1d2b46fb64c22c0df798857f",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-plan-execution-readiness"
+        ]
+      },
+      {
+        "role": "planner",
+        "name": "zf-document-reading",
+        "digest": "24626944944a4cf9e6e430a6d069a20277c2c541d2ac5a4b91381dffb4a98ebf",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-requirement-reconciliation"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "tdd-evidence",
+        "digest": "3ffb6ddeeed3f9e24156872b41682a9c76b6c1ccffbf881404e268b35efdcee8",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "verify-review",
+        "digest": "bcc7596541f07ee4f29004b13ffe9440d91ee780c599feeae80e0778468de325",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-browser-e2e-contract",
+        "digest": "3264a16deb068716283e521e25f990df023af1a9ec9c286583bddf82c8d326a1",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-project-adapter-matrix-enrichment"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-harness-evidence-collection",
+        "digest": "916e298ff63793a1f01206d801e87021d4d46c8caea6aa94df1e6cda35d7439f",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-harness-verification-checklist",
+        "digest": "7d637c926c7ddf257c612c061a95a7c1bc1b80802206afd704c0c4ff2c4471ec",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-mechanical-claim-verifier",
+        "digest": "351b4284621e9d61189c4ddbef8ec44fa6e503bbd72ecf8cbb5b8a6235947dc9",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-workflow-adaptation-boundary",
+        "digest": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "verify",
+        "name": "zf-yoke-test-evaluator-role-context",
+        "digest": "13e5718b39f72bb3a268f377c0a8182b834cf90d22e769e5a1912905a977b579",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "verify",
+        "name": "zf-project-adapter-matrix-enrichment",
+        "digest": "ff2dbde7ee6e386615a7e42154e75f3c7c6741504413859b082b1c2d58f13d54",
+        "client": "codex-cli 0.171.0",
+        "backend": "codex",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "0.166.0",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "verify",
+        "name": "tdd-evidence",
+        "digest": "3ffb6ddeeed3f9e24156872b41682a9c76b6c1ccffbf881404e268b35efdcee8",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "verify-review",
+        "digest": "bcc7596541f07ee4f29004b13ffe9440d91ee780c599feeae80e0778468de325",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-browser-e2e-contract",
+        "digest": "3264a16deb068716283e521e25f990df023af1a9ec9c286583bddf82c8d326a1",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-project-adapter-matrix-enrichment"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-harness-evidence-collection",
+        "digest": "916e298ff63793a1f01206d801e87021d4d46c8caea6aa94df1e6cda35d7439f",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-harness-verification-checklist",
+        "digest": "7d637c926c7ddf257c612c061a95a7c1bc1b80802206afd704c0c4ff2c4471ec",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-mechanical-claim-verifier",
+        "digest": "351b4284621e9d61189c4ddbef8ec44fa6e503bbd72ecf8cbb5b8a6235947dc9",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": [
+          "zf-yoke-test-evaluator-role-context"
+        ]
+      },
+      {
+        "role": "verify",
+        "name": "zf-workflow-adaptation-boundary",
+        "digest": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "verify",
+        "name": "zf-yoke-test-evaluator-role-context",
+        "digest": "13e5718b39f72bb3a268f377c0a8182b834cf90d22e769e5a1912905a977b579",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      },
+      {
+        "role": "verify",
+        "name": "zf-project-adapter-matrix-enrichment",
+        "digest": "ff2dbde7ee6e386615a7e42154e75f3c7c6741504413859b082b1c2d58f13d54",
+        "client": "2.1.233 (Claude Code)",
+        "backend": "claude-code",
+        "materialization": "resolved",
+        "static_status": "loads",
+        "verified_version": "2.1.316",
+        "rules": [
+          "VERSION-UNVERIFIED"
+        ],
+        "runtime_read": "unmeasured",
+        "required_by": []
+      }
+    ]
+  }
+}

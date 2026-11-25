@@ -1,0 +1,13 @@
+{
+  "version":"task-verify.v2",
+  "skill":"zf-project-adapter-matrix-enrichment",
+  "support":["tdd-evidence","verify-review","zf-browser-e2e-contract","zf-harness-evidence-collection","zf-harness-verification-checklist","zf-mechanical-claim-verifier","zf-workflow-adaptation-boundary","zf-yoke-test-evaluator-role-context"],
+  "policy":{"replicates":2,"max_quality_regressions":0,"max_critical_false_releases":0,"max_missed_required_reads":0,"max_unrelated_reads":0,"minimum_input_token_saving_percent":5},
+  "cases":[
+    {"id":"median-protocol-v2","split":"selection","route":"optional","prompt":"The median contract requires correct odd/even results and a recorded failing assertion before implementation. The matrix is complete. R7 proves the final six checks passed. An initial failing assertion is absent. Classify the verification using only the three protocol fields. For unavailable proof use the literal receipt none.","expected":["withhold","request_evidence","none"]},
+    {"id":"build-repro","split":"test","route":"optional","prompt":"A package can be released once an independent clean checkout builds the zip and the unpacked CLI prints READY. The frozen matrix is complete. H16 on the named target records both the zip and the unpacked executable output READY, exit 0. All obligations are covered.","expected":["release","accept","H16"]},
+    {"id":"handoff-wrong-scope","split":"test","route":"optional","prompt":"The current task requires an installed CLI and a browser entry to display the version. The admitted matrix is complete and binds both surfaces. The author says both work. Independent receipt H57 verifies only the CLI. No current browser result exists. Use none for absent evidence.","expected":["withhold","request_evidence","none"]},
+    {"id":"plan-missing-edge","split":"test","route":"required","prompt":"Read-only verification of a package with two migration steps. The admitted task map binds step two to command P2 after P1. The frozen portable acceptance and test matrices omit P2 and bind both to P1. Only P1 has run. Decide the handoff and use none for the missing binding.","expected":["withhold","return_to_planner","none"]},
+    {"id":"outside-build","split":"test","route":"forbidden","prompt":"A user asks only which timezone the sprint board uses. There is no task verification request or business obligation. Return the outside classification using the three-field protocol.","expected":["outside","no_verification","none"]}
+  ]
+}

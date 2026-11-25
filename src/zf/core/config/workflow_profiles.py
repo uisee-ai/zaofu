@@ -268,6 +268,7 @@ _ROLE_DEFAULT_ALIASES = {
     "providerSession": "provider_session",
     "providerSessionByStage": "provider_session_by_stage",
     "lifecycleByStage": "lifecycle_by_stage",
+    "skillLoadingByStage": "skill_loading_by_stage",
     "permissionMode": "permission_mode",
     "stuckThresholdSeconds": "stuck_threshold_seconds",
     "spawnReadyTimeoutSeconds": "spawn_ready_timeout_seconds",
@@ -307,6 +308,7 @@ _LANE_ROLE_DEFAULT_FIELDS = (
     "lifecycle",
     "provider_session_by_stage",
     "lifecycle_by_stage",
+    "skill_loading_by_stage",
 )
 
 

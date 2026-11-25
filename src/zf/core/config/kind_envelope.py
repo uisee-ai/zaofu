@@ -73,6 +73,7 @@ def _norm_template(value: Any) -> Any:
             "spawnReadyTimeoutSeconds": "spawn_ready_timeout_seconds",
             "permissionMode": "permission_mode",
             "skillsByStage": "skills_by_stage",
+            "skillLoadingByStage": "skill_loading_by_stage",
             "roleKindByStage": "role_kind_by_stage",
             "backendByStage": "backend_by_stage",
             "lifecycleByStage": "lifecycle_by_stage",

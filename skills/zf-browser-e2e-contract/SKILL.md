@@ -1,15 +1,16 @@
 ---
 name: zf-browser-e2e-contract
-description: "ZaoFu browser/E2E (Docker Playwright) command-shape and clean-checkout environment checklist for writer, review, verify, and operator roles. Use when creating or reviewing task_map verification, worker briefings, Playwright/browser smoke commands, or Docker mcp/playwright runs. Taxonomy and the structured report contract live in the verify-review skill — this skill defers to it."
+description: "Prepare or review a contracted Docker/Playwright browser check in a clean checkout. Use when the project selects this runner or requests the ZaoFu Docker browser convention."
 ---
 
 # ZaoFu Browser E2E Contract
 
 ## Overview
 
-Use this skill when a ZaoFu task includes browser, Playwright, or E2E
-verification. This skill is deliberately narrow: it owns **Docker/Playwright
-command shape and the clean-checkout environment checklist** only. Hard
+Use this method for the project's authorized Docker/Playwright browser gate.
+For CLI, library, service or hardware E2E, follow the contracted entry point
+and evidence obligation. A browser project using another runner keeps that runner.
+This skill covers Docker/Playwright command shape and clean-checkout setup. Hard
 correctness still belongs in `task_map` validation, workflow runtime, and
 deterministic gates.
 
@@ -39,8 +40,9 @@ Division of labor (avoid dual-source drift):
   boundary with the fallback image, host network, writable mount, or install
   sequence.
 - Respect `zf.yaml` and `project.state_dir`; do not hard-code `.zf`.
-- Use Docker with `mcp/playwright:latest` for browser E2E unless the operator
-  explicitly asks for host browsers and no exact run-scoped command is pinned.
+- When the project uses the ZaoFu Docker browser convention, resolve the image
+  and runner from its contract or repository instructions. Use the fallback
+  below only where that convention permits it.
 - Start local API/UI services on `0.0.0.0` when a container must reach them.
 - Declare the exact owner-facing service URL and origin in the Task/real-E2E
   matrix. A pass on `http://localhost` does not prove behavior on
@@ -61,17 +63,19 @@ Division of labor (avoid dual-source drift):
 
 ## Command Pattern
 
-When no exact Task/PRD/owner command is supplied, use this fallback shape for
-browser gates:
+For an authorized Docker/Playwright fallback, set `playwright_bin` and
+`playwright_config` to the project's executable and config paths relative to
+the mounted checkout. The example assumes the browser is provisioned. If setup is required and
+authorized, run the project setup first and bound any browser install with
+`timeout`.
 
 ```bash
 docker run --rm --network host \
   --user "$(id -u):$(id -g)" \
   --entrypoint bash \
   -v "$PWD:/work" -w /work \
-  -e PLAYWRIGHT_BROWSERS_PATH=0 \
   mcp/playwright:latest \
-  -lc 'set -euo pipefail; timeout 180s ./packages/web-tui/node_modules/.bin/playwright install chromium; ./packages/web-tui/node_modules/.bin/playwright test --config packages/web-tui/playwright.config.ts'
+  -lc 'set -euo pipefail; "$1" test --config "$2"' bash "$playwright_bin" "$playwright_config"
 ```
 
 Adapt paths to the current `task_map`; keep the runner flags intact. When an
@@ -119,10 +123,10 @@ exact command is supplied, preserve it instead of adapting this fallback.
     is a valid tier and neither has an alias, so an unknown token is **silently
     dropped** by `canonical_verification_tiers`, leaving the browser gate with
     no tier. Emit `e2e`.
-- Reject or repair host-only commands such as bare `npx playwright test` for
-  browser E2E.
-- Reject or repair Docker Playwright commands that miss
-  `--user "$(id -u):$(id -g)"`.
+- When the contract requires the container, a bare host invocation cannot
+  satisfy that gate.
+- For the host-writable mount convention, verify the declared container UID/GID
+  can write the evidence directory. Preserve any project-pinned user or mount.
 - Reject or repair unbounded browser install commands.
 - When a mixed verification list includes static npm gates and a Docker browser
   gate, show the Docker command pattern for the browser gate only; do not create
@@ -145,8 +149,8 @@ calling a product regression:
   run the gate against the wrong tree. (The kernel emits
   `fanout.child.workdir_mismatch` when it cannot pin the tree at dispatch; a
   reader that finds a drifted HEAD is the same class of blocker.)
-- Run package setup implied by the verification command, for example
-  `npm ci --prefix packages/web-tui` or `npm ci --prefix ui-tui`.
+- Use the package manager, lockfile and working directory declared by the target
+  project when the contract authorizes setup.
 - Treat `tsc: not found`, missing `node_modules`, workspace file package
   resolution, registry failures, and network failures as setup/environment
   issues until setup has been attempted.
@@ -227,10 +231,9 @@ copy that sample and fill it in.
 Enforcement strength is per-project via `verification.event_schema.mode`
 (canonical values `disabled` / `warning` / `blocking`, validated in
 `src/zf/core/config/loader.py`; the effective rules come from
-`workflow.dag.event_schemas`). This repo's `zf.yaml` sets `mode: warning`, so a
-malformed report is logged rather than rejected; bizsim-class runs set
-`mode: blocking`, where a report that misses the coverage matrix / non-empty
-fields is a hard schema reject. The **report contract itself is owned by
+`workflow.dag.event_schemas`). Read the effective mode for this run. In `warning` mode
+malformed reports produce diagnostics; in `blocking` mode missing required coverage or evidence
+fields reject the report. The **report contract itself is owned by
 `verify-review`** — treat the fields above as a pointer, and read that skill for
 the authoritative field list and rationale.
 

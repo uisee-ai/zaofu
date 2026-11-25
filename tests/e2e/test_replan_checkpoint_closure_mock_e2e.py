@@ -143,6 +143,12 @@ def _dispatches(runtime):
 
 def test_actual_impl_and_verify_dispatch_select_existing_execution_spec(tmp_path):
     runtime = _runtime(tmp_path)
+    skill = tmp_path / "skills" / "review-method"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: review-method\ndescription: Inspect receipts.\n---\n")
+    for role in runtime.config.roles:
+        if role.name == "verify":
+            role.skills = ["review-method"]
     body = _map()
     body["tasks"][0]["acceptance_criteria"].pop()
     body["tasks"][0]["validation"]["commands"].pop()
@@ -171,6 +177,17 @@ def test_actual_impl_and_verify_dispatch_select_existing_execution_spec(tmp_path
         assert all(not r.get("allow_truncated") for r in reads)
     _submit(runtime, verify, _check_result(runtime, verify))
     assert runtime.task_store.get("TASK-1").status == "done"
+
+    from zf.runtime.skill_evaluation_projection import SkillEvaluationObserver, query_cards
+
+    observer = SkillEvaluationObserver(runtime.state_dir, runtime.project_root, runtime.config)
+    observer.poll()
+    card, = query_cards(runtime.state_dir, attempt_id=verify.payload["attempt_id"])
+    assert card["task_outcome"] == "passed"
+    assert card["briefing_digest"] == verify.payload["briefing_digest"]
+    assert card["materialization_binding"] == "dispatch_event_ref"
+    assert card["materialization_event_id"] == verify.payload["skill_materialization_event_id"]
+    assert card["skill_pack_digest"]
 
 
 def _submit(runtime, dispatch, result):

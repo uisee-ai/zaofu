@@ -1549,11 +1549,16 @@ def run(args: argparse.Namespace) -> int:
 
             mark_runtime_ready(state_dir, config=config)
             notify_host_watchdog(watcher_guard, ready=True)
+            from zf.runtime.skill_evaluation_projection import SkillEvaluationObserver
+
+            evaluation = SkillEvaluationObserver(state_dir, project_root, config)
+            evaluation.start()
             try:
                 watcher.run(poll_interval=1.0, tick_interval=5.0)
             except KeyboardInterrupt:
                 print("\nStopping watcher...")
             finally:
+                evaluation.stop()
                 # Phase 2/3: stop tailer threads so we don't leak pollers.
                 claude_tailer.stop()
                 codex_tailer.stop()

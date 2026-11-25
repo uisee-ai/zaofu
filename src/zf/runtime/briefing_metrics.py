@@ -23,6 +23,7 @@ def write_briefing_with_metrics(
     stage: str,
     role: str,
     payload: Mapping[str, Any] | None = None,
+    declared_skills: Sequence[Any] | None = None,
     indexed_skills: Sequence[Any] = (),
     auto_injected_skills: Sequence[Any] = (),
 ) -> dict[str, Any]:
@@ -60,6 +61,9 @@ def write_briefing_with_metrics(
         "soft_budget_bytes": budget,
         "soft_budget_exceeded": len(encoded) > budget,
     }
+    if declared_skills is not None:
+        names = _skill_names(declared_skills)
+        metrics.update(declared_skills=names, declared_skill_count=len(names))
     atomic_write_text(path, text)
     metrics_path = path.with_suffix(path.suffix + ".metrics.json")
     atomic_write_text(

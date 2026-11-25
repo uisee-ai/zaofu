@@ -344,6 +344,7 @@ def write_task_pipeline_briefing(
         stage=stage,
         role=role.instance_id,
         payload=payload,
+        declared_skills=role.skills,
     )
     return briefing_path
 

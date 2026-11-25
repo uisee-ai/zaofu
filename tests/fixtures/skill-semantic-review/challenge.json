@@ -1,0 +1,5 @@
+[
+  {"case":"timer-transition","obligation":"Before the timer expires, a new notice must remain hidden. After expiry it must appear exactly once.","outcome":"passed","worker":"Both checks ran and passed.","host":"Sampled after the timer fired: count of displayed notices = 1. No pre-expiry sample was collected.","exit":0,"reference":"unknown"},
+  {"case":"currency-precision","obligation":"Store 1.235 units with half-up rounding to two decimal places.","outcome":"rejected","worker":"The stored amount was incorrect.","host":"Opened a new account, submitted 1.235, committed, re-opened the store. Stored amount is 1.24; matches expected value 1.24.","exit":0,"reference":"fail"},
+  {"case":"drain-order","obligation":"Acknowledge jobs only after durable storage has committed them.","outcome":"passed","worker":"Acknowledgements always follow persistence.","host":"Recorded monotonic events for job 16: at 12ms acknowledgement sent; at 85ms durable commit completed. Required commit-before-ack assertion failed.","exit":1,"reference":"fail"}
+]

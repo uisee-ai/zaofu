@@ -148,6 +148,8 @@ def run_one(run_dir: Path, prompt: str, args: argparse.Namespace) -> dict:
             "-s", "danger-full-access", "-c", 'approval_policy="never"',
             "-c", 'web_search="disabled"', "-m", args.model, "--json", "-",
         ])
+    if effort := getattr(args, "reasoning_effort", ""):
+        command[-1:-1] = ["-c", f'model_reasoning_effort="{effort}"']
     before = snapshot(project)
     started = time.monotonic()
     timed_out = False
