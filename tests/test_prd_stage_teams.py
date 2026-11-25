@@ -259,9 +259,8 @@ def test_project_symlink_is_not_a_new_read_scope(assembly, tmp_path_factory):
     (base.parent / "outside").symlink_to(tmp_path_factory.mktemp("external"))
     plan = select(assembly, ["tech-scan"])
     plan["members"][0]["input_refs"] = ["outside/source.md"]
-    from zf.runtime.workflow_proposal import WorkflowProposalError
-    with pytest.raises(WorkflowProposalError, match="resolves outside the project"):
-        _candidate(assembly)
+    with pytest.raises(WorkflowSynthesisError, match="resolves outside the project"):
+        _admit(assembly)
 
 
 @pytest.mark.parametrize("binding", ["valid", "missing_projection", "missing", "changed", "changed_path", "other_run"])
@@ -353,3 +352,86 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     assert [r for r, *_ in transport.sent].count("planner") == 2
     assert [r for r, *_ in transport.sent].count("tech-scan") == (1 if reuse else 2)
     assert not log.query(type="task.fanout.rejected")
+
+
+def _real_scan_inputs(assembly, technical_ref):
+    base = assembly[0].parent
+    (base / "app").mkdir()
+    (base / "app" / "package.json").write_text("{}")
+    (base / "package.json").write_text("{}")
+    (base / "docs/prd").mkdir(parents=True)
+    (base / "docs/prd/TODO.md").write_text("# Inputs\nRead local data.\n# Duplicate\nA\n# Duplicate\nB\n")
+    (base / "docs/prd/baseline-provenance.json").write_text("{}")
+    (base / "tests").mkdir()
+    (base / "tests/browser.cjs").write_text("module.exports = {};")
+    plan = select(assembly, ["product-scan", "tech-scan"])
+    product, tech = plan["members"]
+    product.update(obligation_id="plan-product", input_refs=["docs/prd/TODO.md", "tests/browser.cjs"])
+    tech.update(obligation_id="plan-task-entry",
+                input_refs=["docs/prd/TODO.md", "docs/prd/baseline-provenance.json", technical_ref, "package.json"])
+
+
+@pytest.mark.parametrize(("source", "reason"), [
+    ("app/", "regular file"),
+    ("app", "regular file"),
+    ("docs/prd/TODO.md#missing", "missing or ambiguous section"),
+    ("docs/prd/TODO.md#duplicate", "missing or ambiguous section"),
+])
+def test_synthesis_rejects_invalid_physical_plan_slice_before_admission(assembly, source, reason):
+    _real_scan_inputs(assembly, source)
+    with pytest.raises(WorkflowSynthesisError, match=reason) as error:
+        _admit(assembly)
+    assert all(part in str(error.value) for part in ("plan-task-entry", "tech-scan", source))
+    events = assembly[4].event_log
+    assert reason in events.query(type="workflow.synthesis.failed")[-1].payload["reason"]
+    assert not events.query(type="workflow.synthesis.admitted")
+    assert not events.query(type="workflow.request.proposed")
+
+
+def test_proposal_and_pending_approval_recheck_physical_sources_only(assembly, tmp_path_factory, monkeypatch):
+    from zf.runtime.workflow_config_apply import WorkflowConfigApplyError, WorkflowConfigApplyService
+    from zf.runtime.workflow_proposal import WorkflowProposalError, build_workflow_proposal
+    from zf.runtime.workflow_requests import load_workflow_request
+
+    _real_scan_inputs(assembly, "app/package.json")
+    base, state, _, result, writer = assembly
+    params = result["short_flow_spec"]["parameters"]
+    # WRC resolves the admitted requirement; no project file named 'requirement' is needed.
+    (base.parent / "requirement").mkdir()
+    params["stage_teams"]["plan"]["members"][0]["input_refs"] += ["requirement", "docs/prd/TODO.md#inputs"]
+    outcome, request, candidate = _candidate(assembly)
+    # The config transported from elsewhere and the caller cwd have no copy of the project inputs.
+    external = tmp_path_factory.mktemp("candidate")
+    candidate_copy = external / "zf.yaml"
+    candidate_copy.write_bytes(candidate.read_bytes())
+    monkeypatch.chdir(external)
+    args = dict(request=request, base_config_path=base, candidate_config_path=candidate_copy,
+                synthesis_result_ref=outcome.result_ref, flow_kind="prd", preflight={"status": "GO"}, writer=writer)
+    source = base.parent / "app/package.json"
+    source.unlink()
+    source.mkdir()
+    with pytest.raises(WorkflowProposalError, match="regular file"):
+        build_workflow_proposal(state, **args)
+    assert not writer.event_log.query(type="workflow.request.proposed")
+
+    source.rmdir()
+    source.write_text("{}")
+    proposal, ref = build_workflow_proposal(state, **args)
+    assert proposal["approval_status"] == "approvable", proposal["blockers"]
+    request = load_workflow_request(state, request["request_id"])
+    assert request["status"] == "proposed"
+    source.unlink()
+    with pytest.raises(WorkflowProposalError, match="existing regular file"):
+        build_workflow_proposal(state, **{**args, "request": request})
+    source.write_text("{}")
+    (base.parent / "docs/prd/TODO.md").write_text("# Revised\n")
+    with pytest.raises(WorkflowProposalError, match="missing or ambiguous section"):
+        build_workflow_proposal(state, **{**args, "request": request})
+    before = base.read_bytes()
+    with pytest.raises(WorkflowConfigApplyError, match="missing or ambiguous section"):
+        WorkflowConfigApplyService(state_dir=state, project_root=base.parent).apply({
+            "proposal_ref": ref, "proposal_digest": proposal["proposal_digest"],
+            "validation_result_ref": proposal["validation_result_ref"], "approval_ref": "owner-exact-proposal",
+        }, actor="owner")
+    assert before == base.read_bytes()
+    assert not writer.event_log.query(type="workflow.config.change.applied")

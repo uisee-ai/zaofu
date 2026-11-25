@@ -158,6 +158,7 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
   `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。输入引用限定
   在已有授权范围，每项交付给 author；可直接规划时给空 members。OA 亲自汇总时以本次 author 身份签署。
   对可能需要追加调查的在途扫描，可在 Proposal 的 `reserve_roles` 中预留独立 Reader，并纳入 `requested_roles`。只有已有成员提供新证据且通过 `request-fanout` 的增员准入后，才使用相应席位。
+  引用项目实物时选择已授权的具体文件或索引文件。目录不能作为成员输入，也不会递归展开。
   指定章节时使用项目相对路径加唯一的 Markdown 标题锚点，例如 `docs/design.md#authentication`。
   默认成员必需。可选 Plan 专家声明 `required:false` 和 `coverage_owner`（本次 author），仍有正式回执。
   如果要改由 Planner 接手，在后继 Proposal 保留原成员和义务，添加 `disposition`，其 status 为

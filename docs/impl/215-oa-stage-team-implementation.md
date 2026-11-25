@@ -20,6 +20,8 @@
 
 Task Verify 的专项 pattern 在项目配置中声明为一个可调用的 `fanout_reader`。使用专属 Reader、通用的 `workflow.child.completed/failed`、`wait_for_all` 和 `workflow.invoke.requested` 触发器。这样角色能提交专项证据，正式阶段签署权仍属于对应的 Verifier 或 Judge。对于更正方案，`reuse_operation_id` 必须来自该次 OA 检查点提供的有效意见。规格第 8 节的真实样本、指标和放行判据见[配对验证手册](spec215-qualification.md)。
 
+OA 合成和 Proposal 预览按项目根逐项检查 Plan 成员选择的现有文件。目录需要改为已授权的具体文件或索引；Markdown 标题用与 WRC 相同的规则匹配，缺失或重名会指出成员、义务和输入。提案快照保留当时已见的文件引用，申请新配置或提交时重验，原文件删除后也会阻断。Web 详情页及已准备好的状态摘要显示冻结快照。重新计算提交预览和正式提交会返回当次的检查结果。已准入来源标签、正式作者的报告和重试的冻结快照仍由各自的调度入口绑定。
+
 显式选择的 Plan 成员须从自己本次操作的输入索引读取已分配的证据，再通过受控入口签署。项目的观察模式仍需满足这份显式成员合同。章节引用使用 `path.md#unique-anchor`；章节缺失或歧义、文件变更、权限不符时，记录对应义务、输入和纠正原因。正式作者逐份读取本次扫描中获准的专家报告。[输入与签署回归](../../tests/test_plan_team_inputs.py)
 
 Plan 成员声明的 `requirement` 绑定到该 Run 准入的需求版本。生产入口会传入快照的绝对路径；读取前核对内核的 `workflow.invoke.accepted`、请求 ID、修订、规范快照路径及 SHA-256。校验通过后，调度器将快照作为此 attempt 的必读输入。真实入口和拒绝用例见[规划输入测试](../../tests/test_plan_team_inputs.py)。

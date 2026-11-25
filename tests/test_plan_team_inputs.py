@@ -19,6 +19,8 @@ def _team(assembly, tmp_path, refs):
     for member in plan["members"]:
         member.update(input_refs=[refs[member["role"]]], selection_reason="Review a separate risk.",
                       completion_condition="Return a finding with its source.")
+    # The checked proposal and the later dispatch deliberately live in separate fixtures.
+    (assembly[0].parent / "prd.md").write_text("# Authentication\n# Test Accounts\n# Auth\n")
     config = load_config(_candidate(assembly)[2])
     root = tmp_path / "run"
     root.mkdir()
@@ -296,3 +298,25 @@ def test_plan_author_reads_only_its_admitted_workflow_requirement(assembly, tmp_
     (name, row), = sources
     assert row["artifact_sha256"] == digest
     assert json.loads(view.read(name)[0]) == spec
+
+
+def test_preflight_preserves_bound_labels_and_checks_permissions_before_sections(tmp_path):
+    from zf.runtime.plan_team_inputs import validate_plan_project_sources
+    from tests.test_prd_stage_teams import member
+
+    role = member("tech-scan")
+    role["input_refs"] = ["requirement", "label#auth", "future-report"]
+    plan = {"members": [role]}
+    (tmp_path / "label").mkdir()  # The descriptor takes precedence over a same-named project directory.
+    file = tmp_path / "local.md"
+    file.write_text("# Auth\nAllowed.\n")
+    state = tmp_path / "configured-state"
+    requirement = {"artifact_refs": [{"source_id": "label", "path": "local.md"}]}
+    validate_plan_project_sources(plan, tmp_path, state, requirement)
+    alias = tmp_path / "alias"
+    alias.hardlink_to(file)
+    requirement["artifact_refs"].append({"ref": "alias", "access_scope": {"roles": ["someone-else"]}})
+    file.write_bytes(b"\xff")
+    with pytest.raises(ValueError, match="not authorized for this member"):
+        validate_plan_project_sources(plan, tmp_path, state, requirement)
+    assert not state.exists()

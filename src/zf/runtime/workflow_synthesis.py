@@ -318,11 +318,8 @@ def run_workflow_synthesis(
             operation_id=operation_id,
         )
         admitted = _admit_result(
-            raw_result,
-            request=request,
-            catalog=catalog,
-            state_dir=state_dir,
-            operation_id=operation_id,
+            raw_result, request=request, catalog=catalog, state_dir=state_dir,
+            project_root=project_root, operation_id=operation_id,
         )
         result_ref = write_immutable_json_sidecar(
             state_dir,
@@ -723,6 +720,7 @@ def _admit_result(
     request: Mapping[str, Any],
     catalog: Mapping[str, Any],
     state_dir: Path,
+    project_root: Path,
     operation_id: str,
 ) -> dict[str, Any]:
     unknown = sorted(set(result) - _RESULT_KEYS)
@@ -833,8 +831,10 @@ def _admit_result(
     try:
         admit_capabilities(parameters, flow_family, catalog, requested_roles, requested_skills, requested_profiles)
         from zf.runtime.workflow_approval_requirements import validate_approval_requirements
-        validate_approval_requirements(parameters, hydrate_workflow_requirement(state_dir, dict(request)),
-                                       required=bool(parameters.get("controller_id")))
+        requirement = hydrate_workflow_requirement(state_dir, dict(request))
+        validate_approval_requirements(parameters, requirement, required=bool(parameters.get("controller_id")))
+        from zf.runtime.plan_team_inputs import validate_plan_project_sources
+        validate_plan_project_sources((parameters.get("stage_teams") or {}).get("plan", {}), project_root, state_dir, requirement)
     except ValueError as exc:
         raise WorkflowSynthesisError(str(exc)) from exc
     completion = result.get("completion_profile") or {}

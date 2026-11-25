@@ -1,6 +1,7 @@
 """Bind the approved Plan member's sources to its own 212 attempt and workdir."""
 import hashlib
 import re
+from collections.abc import Collection
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -77,6 +78,109 @@ def _admitted_requirement(runtime, trigger: dict, run: str, obligation: str, ref
     return binding
 
 
+def _project_file(path: Path, root: Path, state: Path, obligation: str, ref: str) -> Path:
+    if not path.is_relative_to(root) or path.is_relative_to(state) or path.is_relative_to(root / ".git"):
+        raise _unavailable(obligation, ref, "is missing or outside the approved project scope")
+    if not path.is_file():
+        raise _unavailable(obligation, ref, "must name an existing regular file; select a scoped file or index")
+    return path
+
+
+def _authorize_sources(descriptors, matches, path, root, state, role, obligation, ref):
+    # Match aliases to the same filesystem object, including existing
+    # hardlinks. Changing the spelling of a restricted ref cannot widen it.
+    for source in descriptors:
+        named = source.get("ref") or source.get("path")
+        if source in matches or not isinstance(named, str) or not named:
+            continue
+        location = Path(named)
+        if named.startswith(".zf/") or (named.startswith("artifacts/") and (state / named).exists()):
+            location = state / named.removeprefix(".zf/")
+        else:
+            location = root / location
+        location = location.resolve()
+        if ((location.is_relative_to(root) or location.is_relative_to(state))
+                and location.is_file() and location.samefile(path)):
+            matches.append(source)
+    for source in matches:
+        if (not artifact_access_allowed(source.get("access_scope"), actor=role,
+                                        role=role, purpose="workflow-read")
+                or (source.get("allowed_paths") and "$" not in source["allowed_paths"])):
+            raise _unavailable(obligation, ref, "is not authorized for this member")
+
+
+def _markdown_section(body: bytes, fragment: str, obligation: str, ref: str) -> str:
+    try:
+        content = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _unavailable(obligation, ref, "does not have UTF-8 Markdown sections") from exc
+    headings, complete = _headings(content, entry_limit=None)
+    anchor = unquote(fragment).strip()
+    matches = [h for h in headings if h["title"] == anchor or
+               re.sub(r"[^\w\s-]", "", h["title"].casefold()).replace(" ", "-") == anchor.casefold()]
+    if not complete or not anchor or len(matches) != 1:
+        raise _unavailable(obligation, ref, "has a missing or ambiguous section")
+    start, stop = matches[0]["page_start"], matches[0]["section_end"]
+    return content[start:stop]
+
+
+def validate_plan_project_sources(
+    plan: dict, root: Path, state: Path, requirement: dict, *, frozen_file_refs: Collection[str] = (),
+) -> list[str]:
+    """Inspect existing project files without materializing attempts or resolving future results."""
+    if not plan.get("members"):
+        return []
+    observed = set()
+    root, state = root.resolve(), state.resolve()
+    descriptors = [s for s in requirement.get("artifact_refs", []) if isinstance(s, dict)]
+    for member in plan["members"]:
+        role = member["coverage_owner"] if member.get("disposition") else member["role"]
+        for ref in member["input_refs"]:
+            try:
+                if _check_project_ref(ref, role, member["obligation_id"], root, state, descriptors,
+                                      previously_file=ref in frozen_file_refs):
+                    observed.add(ref)
+            except (ValueError, OSError, RuntimeError) as exc:
+                raise ValueError(f"stage_teams.plan {role} input_refs: {exc}") from exc
+    return sorted(observed)
+
+
+def _check_project_ref(ref: str, role: str, obligation: str, root: Path, state: Path,
+                       descriptors: list[dict], *, previously_file: bool) -> bool:
+    name, sep, fragment = ref.partition("#")
+    if name == "requirement":
+        return False  # Only the later Run admission can resolve this label.
+    labels = [s for s in descriptors if name in (s.get("source_id"), s.get("artifact_id"))]
+    if labels:
+        bindings = {(s.get("ref") or s.get("path"), s.get("sha256")) for s in labels}
+        if len(bindings) != 1:
+            raise _unavailable(obligation, ref, "identifies several distinct authorized inputs")
+        name = labels[0].get("ref") or labels[0].get("path")
+        if not isinstance(name, str) or not name:
+            return False
+    if Path(name).is_absolute() or ".." in Path(name).parts:
+        raise _unavailable(obligation, ref, "is not a bound project input")
+    matches = [s for s in descriptors if (s.get("ref") or s.get("path")) == name]
+    scoped = name.removeprefix(".zf/")
+    if matches and scoped.startswith("artifacts/"):
+        candidate = (state / scoped).resolve()
+        if candidate.is_relative_to(state) and candidate.is_file():
+            return False  # WRC must resolve the admitted state artifact and bind its own permission checks.
+    path = (root / name).resolve()
+    if not path.is_relative_to(root):
+        raise _unavailable(obligation, ref, "resolves outside the project")
+    if path.is_relative_to(state) or path.is_relative_to(root / ".git"):
+        raise _unavailable(obligation, ref, "is outside the approved project scope")
+    if not previously_file and not matches and not name.endswith("/"):
+        if not path.exists() and not (root / name).is_symlink():
+            return False  # A future source has no project object to inspect yet.
+    _project_file(path, root, state, obligation, ref)
+    _authorize_sources(descriptors, matches, path, root, state, role, obligation, ref)
+    if sep:
+        _markdown_section(path.read_bytes(), fragment, obligation, ref)
+    return True
+
+
 def _slice(runtime, charter: dict, ref: str, trigger: dict, run: str) -> dict:
     original, sep, fragment = ref.partition("#")
     obligation = charter["obligation_id"]
@@ -115,30 +219,8 @@ def _slice(runtime, charter: dict, ref: str, trigger: dict, run: str) -> dict:
           and candidate.is_file()):
         path = candidate
     else:
-        path = (root / original).resolve()
-        if (not path.is_relative_to(root) or path.is_relative_to(state) or path.is_relative_to(root / ".git")
-                or not path.is_file()):
-            raise _unavailable(obligation, ref, "is missing or outside the approved project scope")
-    # Match aliases to the same filesystem object, including existing
-    # hardlinks. Changing the spelling of a restricted ref cannot widen it.
-    for source in descriptors:
-        named = source.get("ref") or source.get("path")
-        if source in matches or not isinstance(named, str) or not named:
-            continue
-        location = Path(named)
-        if named.startswith(".zf/") or (named.startswith("artifacts/") and (state / named).exists()):
-            location = state / named.removeprefix(".zf/")
-        else:
-            location = root / location
-        location = location.resolve()
-        if ((location.is_relative_to(root) or location.is_relative_to(state))
-                and location.is_file() and location.samefile(path)):
-            matches.append(source)
-    for source in matches:
-        if (not artifact_access_allowed(source.get("access_scope"), actor=charter["role"],
-                                        role=charter["role"], purpose="workflow-read")
-                or (source.get("allowed_paths") and "$" not in source["allowed_paths"])):
-            raise _unavailable(obligation, ref, "is not authorized for this member")
+        path = _project_file((root / original).resolve(), root, state, obligation, ref)
+    _authorize_sources(descriptors, matches, path, root, state, charter["role"], obligation, ref)
     key = _input_id(ref)
     digests = {s["sha256"] for s in matches if s.get("sha256")}
     if bound_requirement:
@@ -152,19 +234,9 @@ def _slice(runtime, charter: dict, ref: str, trigger: dict, run: str) -> dict:
     digest = hashlib.sha256(body).hexdigest()
     if digests and digests != {digest}:
         raise _unavailable(obligation, ref, "has changed since its source was bound")
-    try:
-        content = body.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise _unavailable(obligation, ref, "does not have UTF-8 Markdown sections") from exc
-    headings, complete = _headings(content, entry_limit=None)
-    anchor = unquote(fragment).strip()
-    matches = [h for h in headings if h["title"] == anchor or
-               re.sub(r"[^\w\s-]", "", h["title"].casefold()).replace(" ", "-") == anchor.casefold()]
-    if not complete or not anchor or len(matches) != 1:
-        raise _unavailable(obligation, ref, "has a missing or ambiguous section")
-    start, stop = matches[0]["page_start"], matches[0]["section_end"]
+    text = _markdown_section(body, fragment, obligation, ref)
     section = write_immutable_json_sidecar(state, {"source": ref, "document_sha256": digest,
-        "text": content[start:stop]}, root="plan-team/sections", kind="plan_section", schema_version="plan-section.v1",
+        "text": text}, root="plan-team/sections", kind="plan_section", schema_version="plan-section.v1",
         created_by="kernel")
     return {**section, "artifact_id": ref, "source_id": key, "allowed_paths": ["$.text"]}
 

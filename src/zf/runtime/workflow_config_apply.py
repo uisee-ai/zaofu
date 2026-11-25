@@ -322,6 +322,12 @@ class WorkflowConfigApplyService:
                 "base_config_stale",
                 "project zf.yaml no longer matches the approved proposal base",
             )
+        if current_digest == base_digest:
+            from zf.runtime.workflow_proposal import recheck_proposal_plan_sources
+            try:
+                recheck_proposal_plan_sources(self.state_dir, proposal, self.project_root)
+            except WorkflowProposalError as exc:
+                raise WorkflowConfigApplyError("candidate_config_invalid", str(exc)) from exc
         self._write_idempotency_record(idempotency_key, {
             "status": "checkpoint_pending", "proposal_digest": expected_proposal_digest,
             "target_config_digest": target_digest,
