@@ -705,18 +705,11 @@ class PlanSynthRuntimeMixin:
                 from zf.runtime.fanout_artifact_refs import (
                     plan_artifact_workdir_write_scopes,
                 )
-                from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
+                from zf.runtime.diagnosis_critic_handoff import prepare_critic_handoff
 
-                call_payload = build_plan_synth_call_payload(
-                    state_dir=self.state_dir,
-                    project_root=self.project_root, event_log=self.event_log,
-                    manifest=manifest,
-                    reports=reports,
-                    run_id=run_id,
-                    role_instance=role.instance_id,
-                )
-                from zf.runtime.plan_critic_reassessment import validate_reassessment_inputs
-                validate_reassessment_inputs(self.state_dir, manifest, call_payload)
+                call_payload = prepare_critic_handoff(self, manifest, reports, run_id=run_id, role=role.instance_id)
+                if call_payload is None:
+                    return
                 call_payload["plan_synth_verdict_only"] = bool(
                     call_payload.get("diagnosis_review") or pure_aggregator_policy_plan(self.config, role).get("applies")
                 )

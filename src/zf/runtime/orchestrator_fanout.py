@@ -7140,6 +7140,7 @@ class FanoutCoordinationMixin(
             **artifact_payload,
         }
         if final_status == "failed":
+            from zf.runtime.diagnosis_critic_handoff import is_handoff_failure
             from zf.runtime.fanout_report_failure import project_synth_failure_payload
 
             artifact_payload = project_synth_failure_payload(
@@ -7147,6 +7148,7 @@ class FanoutCoordinationMixin(
                 payload,
                 report_result.report,
                 report_result.diagnostics,
+                verified_diagnosis_handoff=(event.causation_id == manifest.get("trigger_event_id") and is_handoff_failure(event)),
             )
         if final_status == "completed":
             contract_failure = self._success_payload_contract_failure(

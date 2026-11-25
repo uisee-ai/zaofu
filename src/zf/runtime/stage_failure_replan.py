@@ -524,6 +524,11 @@ def plan_reader_stage_replan(
     from zf.runtime.failure_kind import FAILURE_KIND_INFRA
     from zf.runtime.plan_reader_preregistration import plan_failure_kind
 
+    if authorized_generation:
+        from zf.runtime.diagnosis_critic_handoff import is_handoff_failure
+
+        if is_handoff_failure(failure_event):
+            return None, "diagnosis_critic_handoff_only"
     if not authorized_generation and plan_failure_kind(events, failure_event) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
     rejected_id = str(

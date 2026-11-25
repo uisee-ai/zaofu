@@ -301,6 +301,12 @@ OA 决定、每个原 finding 的 Reader 工件摘要、原样保留的 `operato
 每项 finding 由 Planner 提交独立判断、理由和对应原证据，证据不足可以记为 `unknown`。
 成功预检返回 `execution_ready=false`，形成供独立 Critic 阅读的子结果。
 
+对于已准入的单份冻结诊断，如果独立 Critic 在构造交接输入时发生机械异常，Kernel 核对原
+Planner 的签发、结算、结果工件、冻结身份，并确认该 fanout 尚未签发 Critic。阶段失败标记为
+`failure_scope=diagnosis_critic_handoff`，保留 Planner admission、结果引用与原请求摘要。
+Run Manager 的待办以该次失败为来源，要求修复交接后恢复独立评审。该故障的语义返工消耗为零，
+通用阶段重试不会重新派发 Planner。
+
 测试脚本按可见 PRD 保存选项识别终点，并保留选择证据；Other 后等待新回复以处理重新生成
 的问题。只对预先授权的单项 OWNER-GIT-01 答复，未知决定留证停止。当前 Run 的 human.escalate
 等明确终止事件使等待及时失败，普通 prd.plan.failed 可继续既有返工；历史/其他 Run 不混入。

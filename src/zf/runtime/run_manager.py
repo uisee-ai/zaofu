@@ -10234,6 +10234,16 @@ def _semantic_event_diagnostic_action(
                 "resolve_unknown_effect_before_retry",
             ],
         }
+    from zf.runtime.diagnosis_critic_handoff import is_handoff_failure
+
+    diagnosis_handoff = is_handoff_failure(event)
+    if diagnosis_handoff:
+        blocker_recovery = {
+            "suggested_action_kind": "diagnose_critic_handoff", "action_policy": "needs_diagnosis",
+            "intervention_class": "diagnose", "expected_downstream_events": ["fanout.synth.dispatched"],
+            "recommended_actions": ["inspect_planner_admission_and_frozen_sources",
+                                    "repair_review_input_binding", "resume_only_the_independent_critic"],
+        }
     suggested_action_kind = str(
         blocker_recovery.get("suggested_action_kind")
         or spec.suggested_action_kind
@@ -10315,6 +10325,10 @@ def _semantic_event_diagnostic_action(
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             action[key] = value
+    if diagnosis_handoff:
+        action.update({key: payload[key] for key in ("failure_scope", "planner_admitted_event_id",
+                                                     "planner_result_ref", "planner_request_hash")})
+        action["failure_class"] = payload["failure_class"]
     if direct_controlled_action:
         for key in (
             "workflow_run_id", "run_id", "goal_id", "claim_id",
