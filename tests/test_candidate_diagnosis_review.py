@@ -9,6 +9,8 @@ from zf.core.events.model import ZfEvent
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.call_result_runtime import mark_call_operation_started, prepare_call_operation
+from zf.runtime.fanout_artifact_refs import prepare_fanout_synth_reports
+from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
 from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
 from zf.runtime.plan_review_claims import POLICY
 from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
@@ -20,7 +22,7 @@ from zf.runtime.result_submit import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _case(tmp_path, *, handoff_log=None):
+def _case(tmp_path, *, handoff_log=None, result_occurrence=None):
     runtime, trigger, frozen = _diagnosis(tmp_path)
     run = trigger["trace_id"]
     feedback = ["Owner confirmed the existing domain for this candidate"]
@@ -75,7 +77,13 @@ def _case(tmp_path, *, handoff_log=None):
             },
         )
     )
-    child = {"child_id": "planner", "result_event_id": planner.id, "report": source}
+    child = {
+        "child_id": "planner",
+        "role_instance": "planner",
+        "result_event_id": planner.id if result_occurrence is None else result_occurrence,
+        "report_path": str(runtime.state_dir / planner_ref["ref"]),
+        "report": source,
+    }
     manifest = {
         "fanout_id": source["fanout_id"],
         "trace_id": run,
@@ -86,12 +94,21 @@ def _case(tmp_path, *, handoff_log=None):
         "trigger_payload": trigger,
         "aggregate_config": {"success_event": "task_map.ready", "failure_event": "prd.plan.failed"},
     }
+    projected = FanoutEvidenceQueriesMixin._fanout_reports(runtime, manifest)
+    prepared_reports = prepare_fanout_synth_reports(
+        reports=projected,
+        manifest=manifest,
+        state_dir=runtime.state_dir,
+        project_root=runtime.project_root,
+        config=runtime.config,
+        roles=runtime.config.roles,
+    )
     call = build_plan_synth_call_payload(
         state_dir=runtime.state_dir,
         event_log=handoff_log(runtime.event_log) if handoff_log else runtime.event_log,
         project_root=runtime.project_root,
         manifest=manifest,
-        reports=[child],
+        reports=prepared_reports,
         run_id="critic-attempt",
         role_instance="plan-critic",
     )
@@ -335,3 +352,12 @@ def test_standalone_diagnosis_uses_project_signing_policy(tmp_path, monkeypatch)
     monkeypatch.delenv(key_var, raising=False)
     with pytest.raises(EventSigningConfigError):
         frozen_diagnosis_events(tmp_path / "state", tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("occurrence", "reason"),
+    [("", "lacks its admitted child result_event_id"), ("evt-other-reader-result", "Missing current Planner admission")],
+)
+def test_critic_handoff_requires_the_current_child_occurrence(tmp_path, occurrence, reason):
+    with pytest.raises(ValueError, match=reason):
+        _case(tmp_path, result_occurrence=occurrence)

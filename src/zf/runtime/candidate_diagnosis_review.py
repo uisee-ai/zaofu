@@ -29,6 +29,8 @@ def diagnosis_review_scope(state: Path, manifest: Mapping, reports: list, refs: 
     if not bound_candidate_diagnosis(trigger) or len(children) != 1 or len(reports) != 1:
         raise ValueError("A diagnosis review requires one Planner and its bound OA diagnosis")
     (child,) = children
+    if not child.get("result_event_id"):
+        raise ValueError("The projected Planner report lacks its admitted child result_event_id")
     sources = {r["source_id"]: r for r in refs}
     child_ref = sources[child["source_id"]]
     body = hydrate_sidecar_ref(state, child_ref).payload
@@ -43,7 +45,6 @@ def diagnosis_review_scope(state: Path, manifest: Mapping, reports: list, refs: 
         not findings
         or len(set(findings)) != len(findings)
         or not index.get("failure_event_id")
-        or not child.get("result_event_id")
         or body.get("candidate_kind") != "diagnosis_review"
         or context.get("source_commit") != trigger["source_commit"]
         or index.get("candidate_event_id") != trigger["candidate_event_id"]

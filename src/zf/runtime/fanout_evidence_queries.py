@@ -727,6 +727,7 @@ class FanoutEvidenceQueriesMixin:
                 "role_instance": str(child.get("role_instance") or ""),
                 "status": str(child.get("status") or ""),
                 "report_path": str(child.get("report_path") or ""),
+                "result_event_id": str(child.get("result_event_id") or ""),
                 "report": child.get("report") if isinstance(child.get("report"), dict) else {},
                 "report_diagnostics": (
                     child.get("report_diagnostics")
