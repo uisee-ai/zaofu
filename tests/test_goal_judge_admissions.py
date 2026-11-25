@@ -105,3 +105,32 @@ def test_old_independent_verify_contract_retains_its_admitted_results(tmp_path):
     assert "judge_batch_admissions" not in closed.payload
     assert old["ref"] in closed.payload["input_result_refs"]
     assert old["sha256"] in {r["artifact_sha256"] for r in closed.payload["required_reads"]}
+
+
+@pytest.mark.parametrize("cite_history", [False, True])
+def test_judge_submission_requires_current_support_for_closed_claims(tmp_path, cite_history):
+    from zf.core.events import ZfEvent
+    from tests.test_call_result_admission import _append_admitted_upstream, _goal_closure_payload, _runtime
+
+    service, operations = _runtime(tmp_path)
+    old = _append_admitted_upstream(tmp_path, operations, task_id="replaced-reader")
+    active = _append_admitted_upstream(tmp_path, operations, task_id="current-reader")
+    admitted = operations.event_log.read_all()[-1]
+    claims = write_immutable_json_sidecar(tmp_path, {"claims": [{"goal_claim_id": "GOAL-AC-1"}]},
+        root="claims", kind="claim-set", schema_version="goal-claim-set.v1", created_by="test")
+    payload = _goal_closure_payload(claim_descriptor=claims, upstream_ref=old if cite_history else active)
+    result = payload["goal_closure_result"]
+    operations.event_log.append(ZfEvent(type="flow.goal.closed", origin="kernel", correlation_id="run-1", payload={
+        **result, "candidate_head_commit": result["target_commit"], "input_result_refs": [active],
+        "judge_batch_admissions": {"readers": [admitted.id], "discovery": [], "supporting": []},
+    }))
+    op = operations.ensure_operation(workflow_run_id="run-1", operation_id="judge", operation_type="agent",
+                                     request={"goal": "GOAL-1"})
+    verdict = service.report_legacy_result(
+        ZfEvent(type="judge.child.completed", actor="judge-prd", correlation_id="run-1", payload=payload),
+        mode="blocking", operation={"workflow_run_id": "run-1", "operation_id": "judge",
+                                    "request_hash": op.request_hash})
+    assert verdict.admitted is (not cite_history)
+    if cite_history:
+        fields = {i["field"] for i in verdict.issues if i["code"] == "result_not_admitted"}
+        assert fields == {"control_result.input_result_refs", "goal_coverage[0].supporting_result_refs"}
