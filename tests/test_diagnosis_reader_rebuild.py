@@ -104,3 +104,61 @@ def test_missing_gate_evidence_keeps_diagnosis_available_without_retry_template(
         "workflow_run_id": bound["workflow_run_id"], "source_event_ids": [bound["source_event_id"]]})
     assert card["binding_preflight"] == "passed" and card["human_gate_status"] == "unknown"
     assert "recommendation" not in card
+
+
+def test_task_attempt_diagnosis_reaches_only_its_abstaining_reader(tmp_path):
+    from tests.test_reader_settled_failure_rebuild import failed_reader
+    from tests.test_run_manager_reader_rebuild import consume
+
+    state, log, transport, runtime, _, failed, op = failed_reader(
+        tmp_path, pending_sibling=True, failure_class="verifier_execution_failure")
+    events = log.read_all()
+    attempt = next(e for e in events if e.type == "task.attempt.failed" and e.payload["operation_id"] == op["operation_id"])
+    assert attempt.payload["attempt_id"] != op["active_attempt_id"]
+    assert not any(e.type == "test.failed" for e in events)
+    action = {"request_kind": "recovery_diagnosis", "request_id": "diagnose-attempt",
+              "workflow_run_id": op["workflow_run_id"], "source_event_ids": [attempt.id]}
+    _execute_resident_agent_reprompt(state_dir=state, writer=runtime.event_writer, config=runtime.config,
+        project_root=runtime.project_root, action=action, causation_id=attempt.id)
+    card = json.loads((state / "diagnostics/run-manager/diagnose-attempt/context.json").read_text())["reader_rebuild"]
+    assert card["binding_preflight"] == "passed" and card["proposal_only"] and card["human_gate_status"] == "clear"
+    proposal = card["recommendation"]
+    assert proposal["action_payload"]["source_event_id"] == failed.id
+    assert proposal["action_payload"]["active_attempt_id"] == op["active_attempt_id"]
+    assert not any(e.type == "repair.action.requested" for e in log.read_all())
+    runtime.event_writer.emit("run.manager.agent.recommendation", actor="run-manager",
+        payload={**proposal, "summary": "The frozen evidence is available; re-evaluate only this Reader."})
+    consume(runtime)
+    intents = [e for e in log.read_all() if e.type == "repair.action.requested"]
+    assert len(intents) == 1
+    assert intents[0].payload["fanout_child_id"] == "verify-1"
+    sent = len(transport.sent)
+    runtime.run_once(events=intents)
+    runtime.run_once(events=intents)
+    assert len(transport.sent) == sent + 1
+    latest = next(e for e in reversed(log.read_all()) if e.type == "fanout.child.dispatched")
+    assert latest.payload["child_id"] == "verify-1"
+    assert latest.payload["payload"]["retry_of_operation_id"] == op["operation_id"]
+    assert not any(e.type == "test.passed" for e in log.read_all())
+
+
+def test_task_attempt_diagnosis_requires_the_same_settled_admitted_abstention(tmp_path):
+    from tests.test_reader_settled_failure_rebuild import failed_reader
+
+    state, log, _, _, _, child, op = failed_reader(tmp_path, pending_sibling=True)
+    history = log.read_all()
+    attempt = next(e for e in history if e.type == "task.attempt.failed" and e.payload["operation_id"] == op["operation_id"])
+    card = {"request_kind": "recovery_diagnosis", "workflow_run_id": op["workflow_run_id"],
+            "source_event_ids": [attempt.id]}
+    source = next(e for e in history if e.id == child.causation_id)
+    settlement = next(e for e in history if e.id == source.causation_id)
+    admission = next(e for e in history if e.id == source.payload["semantic_submit_admission_event_id"])
+    for original, changes, extra in [
+        (attempt, {}, {"origin": "worker"}), (attempt, {}, {"causation_id": "another-settlement"}),
+        (attempt, {"source_event_id": child.id}, {}), (attempt, {"dispatch_id": "other"}, {}),
+        (attempt, {"operation_id": "other"}, {}), (settlement, {"workflow_run_id": "other"}, {}),
+        (source, {"output_profile_id": "ordinary-verify"}, {}), (admission, {"semantic_verdict": "rejected"}, {}),
+        (child, {"control_result_ref": {"ref": "foreign"}}, {}), (child, {"semantic_verdict": "rejected"}, {}),
+    ]:
+        mutated = [replace(e, payload={**e.payload, **changes}, **extra) if e.id == original.id else e for e in history]
+        assert not diagnosis_reader_rebuild(state, mutated, card), (original.type, changes, extra)
