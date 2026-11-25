@@ -295,6 +295,12 @@ Capsule 和执行策略的身份摘要中按历史缺省表示省略，避免升
 生产完成；subject_verdict 保留 abstained/blocked，独立 Critic 决定返工或提出 Owner 问题。
 真实执行失败仍按 reader_execution_failure 处理。
 
+当 OA 签发的 `candidate_diagnosis_only` 选择零个 Writer、现有答复足以完成诊断时，
+Planner 在同一提交入口交付 `candidate_kind=diagnosis_review`。内核核对请求身份、冻结目标、
+OA 决定、每个原 finding 的 Reader 工件摘要、原样保留的 `operator_feedback` 及诊断正文和索引。
+每项 finding 由 Planner 提交独立判断、理由和对应原证据，证据不足可以记为 `unknown`。
+成功预检返回 `execution_ready=false`，形成供独立 Critic 阅读的子结果。
+
 测试脚本按可见 PRD 保存选项识别终点，并保留选择证据；Other 后等待新回复以处理重新生成
 的问题。只对预先授权的单项 OWNER-GIT-01 答复，未知决定留证停止。当前 Run 的 human.escalate
 等明确终止事件使等待及时失败，普通 prd.plan.failed 可继续既有返工；历史/其他 Run 不混入。

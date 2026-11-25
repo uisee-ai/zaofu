@@ -68,9 +68,12 @@ def evaluate_plan_candidate_preflight(
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
     from zf.runtime.plan_candidate_owner_review import (
-        bound_candidate_diagnosis, diagnosis_only_writer_error, owner_review_preflight,
+        bound_candidate_diagnosis, diagnosis_only_writer_error, diagnosis_review_preflight, owner_review_preflight,
     )
 
+    diagnosis = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
+    if diagnosis is not None:
+        return diagnosis
     draft_review = owner_review_preflight(
         candidates, state_dir=state_dir, project_root=project_root,
     )

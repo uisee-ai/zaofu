@@ -422,7 +422,14 @@ def _render_plan_candidate_policy(
     if isinstance(manifest, Mapping) and bound_candidate_diagnosis(manifest.get("trigger_payload")):
         policy_rows.append("- candidate_diagnosis_only authorizes independent diagnosis and zero Writers. "
                            "Retain findings and source refs. Only a genuine blocking Owner decision warrants an "
-                           "owner_review draft for independent Critic review; see the PRD Plan skill's draft contract.")
+                           "owner_review draft for independent Critic review. With no remaining Owner question submit "
+                           "candidate_kind=diagnosis_review, execution_status=completed, result_semantics=artifact_production, "
+                           "recommendation=abstain, summary, owner_decision_items=[], plan_artifact_ref + plan_artifact_sha256, "
+                           "source_index_ref + source_index_sha256, exact signed operator_feedback, and one finding_results "
+                           "row per signed candidate_obligations finding_id: outcome (supported/refuted/unknown), explanation, "
+                           "evidence_refs=[control_result_ref.ref]. Clear executable task_map_ref, backlog_ref and plan_ports "
+                           "from the draft; use this operation's result validate and result submit commands below.")
+        return policy_rows
 
     ports = required_plan_ports(flow_kind=str(metadata.get("flow_kind") or ""), metadata=metadata)
     authored_ports = list(dict.fromkeys([
