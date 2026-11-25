@@ -3092,6 +3092,7 @@ def run_goal_completion_gate_event(
     )
     verification_event_id = ""
     verification_admitted_ref: dict[str, Any] = {}
+    verification_batch_event_id = ""
     candidate_event_id = ""
     candidate_identity: dict[str, Any] = {}
     verification_reason = ""
@@ -3105,6 +3106,7 @@ def run_goal_completion_gate_event(
         verified_target = verification.verified_target_commit
         verification_event_id = verification.verification_event_id
         verification_admitted_ref = verification.verification_admitted_ref
+        verification_batch_event_id = verification.verification_batch_event_id
         candidate_event_id = verification.candidate_event_id
         candidate_identity = verification.candidate_payload
         verification_reason = verification.invalid_reason
@@ -3198,6 +3200,7 @@ def run_goal_completion_gate_event(
         "target_commit": claim_target,
         "verified_target_commit": verified_target,
         "verification_event_id": verification_event_id,
+        **({"verification_batch_event_id": verification_batch_event_id} if verification_batch_event_id else {}),
         "verification_admitted_call_result_ref": verification_admitted_ref,
         "candidate_event_id": candidate_event_id,
         "candidate_ref": str(

@@ -21,6 +21,8 @@ class GoalVerificationBinding:
     verification_admitted_ref: dict[str, Any] = field(default_factory=dict)
     candidate_event_id: str = ""
     candidate_payload: dict[str, Any] = field(default_factory=dict)
+    verification_batch_event_id: str = ""
+    verification_member_event_ids: tuple[str, ...] = ()
 
 
 def bind_canonical_goal_verification(
@@ -33,7 +35,7 @@ def bind_canonical_goal_verification(
     target_commit = str(claim_payload.get("target_commit") or "").strip()
     candidate_ref = str(claim_payload.get("candidate_ref") or "").strip()
     generation = str(claim_payload.get("task_map_generation") or "").strip()
-    candidate_event = _current_candidate(
+    candidate_event = current_goal_candidate(
         events,
         candidate_ref=candidate_ref,
         target_commit=target_commit,
@@ -43,6 +45,12 @@ def bind_canonical_goal_verification(
             status="missing",
             invalid_reason="candidate_identity_missing",
         )
+
+    from zf.runtime.goal_candidate_batch import bind_goal_candidate_batch
+
+    batch = bind_goal_candidate_batch(events, candidate_event, claim_payload)
+    if batch is not None:
+        return batch
 
     mismatch: tuple[ZfEvent, str, dict[str, Any]] | None = None
     for event in reversed(events):
@@ -99,7 +107,7 @@ def bind_canonical_goal_verification(
     )
 
 
-def _current_candidate(
+def current_goal_candidate(
     events: Sequence[ZfEvent],
     *,
     candidate_ref: str,

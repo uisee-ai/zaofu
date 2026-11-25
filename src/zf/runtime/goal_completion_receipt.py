@@ -157,6 +157,9 @@ def build_goal_completion_receipt(
         ),
         "delivery": _event_ref(event_by_id.get(delivery_event_id)),
     }
+    batch_id = payload.get("verification_batch_event_id")
+    if batch_id and not artifact_completion:
+        event_refs["candidate_verification_batch"] = _event_ref(event_by_id[batch_id])
     last_seq, last_event = scoped_with_seq[-1]
     completion_event_sha256 = stable_json_sha256(asdict(completion))
     stable_body = {
@@ -412,7 +415,28 @@ def _completion_diagnostics(
     ) != _artifact_ref(payload.get("verification_admitted_call_result_ref")):
         diagnostics.append("mismatch:verification_admitted_call_result_ref")
 
+    from zf.runtime.goal_candidate_batch import bind_goal_candidate_batch
+
     candidate_event_id = str(payload.get("candidate_event_id") or "")
+    from zf.runtime.goal_verification import current_goal_candidate
+
+    before_completion = scoped_events[:scoped_events.index(completion)]
+    candidate = current_goal_candidate(
+        before_completion, candidate_ref=str(payload.get("candidate_ref") or ""),
+        target_commit=str(payload.get("target_commit") or ""),
+    )
+    if candidate:
+        batch = bind_goal_candidate_batch(before_completion, candidate, claim_payload)
+        batch_id = payload.get("verification_batch_event_id")
+        if batch is None:
+            if batch_id:
+                diagnostics.append("mismatch:verification_batch_event_id")
+        elif (batch.status != "exact" or batch.candidate_event_id != candidate_event_id
+              or verification_event_id not in batch.verification_member_event_ids
+              or (batch_id and batch.verification_batch_event_id != batch_id)):
+            diagnostics.append("mismatch:verification_batch_event_id")
+    elif payload.get("verification_batch_event_id"):
+        diagnostics.append("mismatch:verification_batch_event_id")
     _require_event(
         diagnostics,
         event_by_id,
