@@ -15,10 +15,10 @@ from zf.runtime.reader_respawn_continuation import reader_respawn_in_progress
 from zf.runtime.session_mutex import SessionLock
 
 
-def _running_recovered_synth(tmp_path, *, kind="synth"):
+def _running_recovered_synth(tmp_path, *, kind="synth", semantic_plan_submit=False):
     state, log, runtime, fanout = _task_map_synth_orchestrator(
         tmp_path,
-        complete_child=kind == "synth",
+        complete_child=kind == "synth", semantic_plan_submit=semantic_plan_submit,
     )
     name = "task-map-synth" if kind == "synth" else "source-reader"
     role = next(r for r in runtime.config.roles if r.name == name)

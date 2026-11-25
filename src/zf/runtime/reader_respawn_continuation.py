@@ -173,15 +173,23 @@ def reader_continuation_guidance(
     return text
 
 
-def reader_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
+def fanout_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
     """Prepare authenticated continuation before delivering a recovery prompt."""
     from zf.runtime.cli_command import zf_cli_cmd
+    from zf.runtime.plan_synth_handoff import current_synth_recovery_guidance
 
-    attempt_id = renew_reader_recovery_capability(runtime, role, child)
-    return reader_continuation_guidance(
-        attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
-        runtime=runtime, actor=role.instance_id, operation_id=child.get("operation_id", ""),
-    )
+    cli = zf_cli_cmd()
+    guidance = ""
+    if role.role_kind == "reader":
+        attempt_id = renew_reader_recovery_capability(runtime, role, child)
+        guidance = reader_continuation_guidance(
+            attempt_id=attempt_id, backend=role.backend, cli=cli,
+            runtime=runtime, actor=role.instance_id, operation_id=child.get("operation_id", ""),
+        )
+    if child.get("child_id") == "synth":
+        _, result_guidance = current_synth_recovery_guidance(runtime, child, role, cli)
+        guidance += result_guidance
+    return guidance
 
 
 def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> str:

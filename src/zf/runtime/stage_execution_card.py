@@ -270,20 +270,21 @@ def prepare_result_file_command(
                 sort_keys=True,
             ) + "\n",
         )
-    cli = " ".join(
-        shlex.quote(part)
-        for part in shlex.split(cli_command) or ["zf"]
-    )
-    command = " ".join([
+    return render_result_scratch_command(state_root, operation_id, cli_command), scratch
+
+
+def render_result_scratch_command(state_dir: Path, operation_id: str, cli_command: str) -> str:
+    """Render submission for the signed scratch without creating or editing a draft."""
+    cli = " ".join(shlex.quote(part) for part in shlex.split(cli_command) or ["zf"])
+    return " ".join([
         cli,
         "result submit",
         "--operation",
         shlex.quote(operation_id),
         "--state-dir",
-        shlex.quote(str(state_root)),
+        shlex.quote(str(state_dir.resolve())),
         "--scratch",
     ])
-    return command, scratch
 
 
 def render_result_validate_command(submit_command: str) -> str:

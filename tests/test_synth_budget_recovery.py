@@ -17,9 +17,9 @@ from zf.runtime.workflow_resume_apply import apply_workflow_resume
 from zf.runtime.workflow_budget_guard import _operation_limits
 
 
-def _blocked_synth(tmp_path, monkeypatch, *, refusal=False, dimension="usage_samples"):
+def _blocked_synth(tmp_path, monkeypatch, *, refusal=False, dimension="usage_samples", semantic_plan_submit=False):
     state, log, runtime, fanout = _task_map_synth_orchestrator(
-        tmp_path, complete_child=False
+        tmp_path, complete_child=False, semantic_plan_submit=semantic_plan_submit
     )
     runtime.config.workflow.execution_profiles["direct-v1"] = ExecutionProfileConfig(
         limits=ExecutionProfileLimitsConfig(max_usage_samples=60, cost_budget_usd=8, token_budget=1000)

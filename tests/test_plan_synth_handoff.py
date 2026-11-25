@@ -45,6 +45,29 @@ def test_plan_synth_guidance_distinguishes_execution_and_report_status() -> None
     assert any("Plan Synth status fields are intentionally distinct" in line for line in guidance)
 
 
+def test_resumed_synth_guidance_requires_current_signed_binding(tmp_path: Path) -> None:
+    from tests.test_reader_fanout_runtime import _task_map_synth_orchestrator
+    from zf.runtime.plan_synth_handoff import synth_result_recovery_guidance
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    state, log, _, _ = _task_map_synth_orchestrator(tmp_path, semantic_plan_submit=True)
+    dispatch = next(e for e in log.read_all() if e.type == "fanout.synth.dispatched")
+    operation = load_workflow_operation(log, dispatch.payload["operation_id"])
+    kwargs = dict(attempt_id=dispatch.payload["attempt_id"], actor=dispatch.payload["role_instance"],
+                  request_hash=dispatch.payload["request_hash"], cli="zf")
+    request = hydrate_sidecar_ref(state, operation["request_ref"]).payload["request"]
+    scratch = state / request["result_scratch_ref"]
+    scratch.unlink()
+    assert "result validate" in synth_result_recovery_guidance(state, operation, **kwargs)
+    assert not scratch.exists()
+    for change in ({"attempt_id": "stale"}, {"actor": "another-role"}):
+        assert not synth_result_recovery_guidance(state, operation, **(kwargs | change))
+    for change in ({"operation_type": "fanout_reader_child"}, {"status": "succeeded"}):
+        assert not synth_result_recovery_guidance(state, operation | change, **kwargs)
+    with pytest.raises(ValueError, match="request binding differs"):
+        synth_result_recovery_guidance(state, operation, **(kwargs | {"request_hash": "obsolete"}))
+
+
 def test_plan_synth_completion_command_round_trips_shell_sensitive_json(
     tmp_path,
 ) -> None:

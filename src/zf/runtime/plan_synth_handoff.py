@@ -126,6 +126,63 @@ def render_plan_synth_completion_command(
     return command
 
 
+def current_synth_recovery_guidance(runtime: Any, dispatch: Mapping[str, Any], role: Any, cli: str) -> tuple[dict[str, Any] | None, str]:
+    """Resolve a recovered transport dispatch to the same live synth operation."""
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    if not dispatch.get("operation_id"):
+        return None, ""
+    operation = load_workflow_operation(runtime.event_log, dispatch["operation_id"])
+    if (not operation or operation.get("request_hash") != dispatch.get("request_hash")
+            or operation.get("status") not in {"requested", "reserved", "running"}):
+        raise ValueError("synth recovery has no matching active operation")
+    return operation, synth_result_recovery_guidance(
+        runtime.state_dir, operation, attempt_id=dispatch.get("attempt_id") or dispatch.get("run_id") or "",
+        actor=role.instance_id, request_hash=dispatch["request_hash"], cli=cli,
+    )
+
+
+def synth_result_recovery_guidance(
+    state_dir: Path, operation: Mapping[str, Any] | None, *,
+    attempt_id: str, actor: str, request_hash: str, cli: str,
+) -> str:
+    """Describe the original signed plan-synth preflight without touching its draft."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.stage_execution_card import render_result_scratch_command, render_result_validate_command
+    from zf.runtime.workflow_operation import operation_request_hash
+
+    if not operation or operation.get("operation_type") != "fanout_synth":
+        return ""
+    if (not attempt_id or operation.get("status") not in {"requested", "reserved", "running"}
+            or operation.get("active_attempt_id") != attempt_id or operation.get("role_instance") != actor):
+        return ""
+    body = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload
+    if (not request_hash or operation_request_hash(body) != request_hash or request_hash != operation["request_hash"]
+            or any(body.get(key) != operation.get(key) for key in
+                   ("operation_id", "operation_type", "role_instance", "workflow_run_id", "active_attempt_id"))):
+        raise ValueError("synth recovery result request binding differs")
+    request = body["request"]
+    if (request.get("output_profile_id") != PLAN_SYNTH_PROFILE_ID
+            or request.get("semantic_result_submit_mode") != "blocking"):
+        return ""
+    state = state_dir.resolve()
+    scratch = (state / str(request.get("result_scratch_ref") or "")).resolve()
+    if state not in scratch.parents:
+        raise ValueError("synth recovery scratch is not bound inside the state directory")
+    submit = render_result_scratch_command(state, operation["operation_id"], cli)
+    validate = render_result_validate_command(submit)
+    return (
+        f"\nResume attempt `{attempt_id}` using its signed result scratch `{scratch}`. "
+        "Inspect the existing draft and preserve your independent verdict. An earlier turn's "
+        "validation receipt is historical. If you have an authored draft, check it now. "
+        "Before reporting a validation blocker or submitting "
+        f"the authored draft, run `{validate}` in this turn. Use the current output to repair "
+        "any reproduced mechanical diagnostics, then rerun that preflight. When the current "
+        f"preflight succeeds and your evaluation is complete, run `{submit}` and use its receipt. "
+        "If the result has already been admitted, retain the existing receipt and stop."
+    )
+
+
 def render_plan_synth_validation_section(
     submit_command: str, *, scratch_path: Path | None = None,
 ) -> list[str]:

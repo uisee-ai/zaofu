@@ -11,6 +11,7 @@ from zf.runtime.call_result_runtime import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.plan_synth_handoff import synth_result_recovery_guidance
 from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.workflow_operation import (
     operation_request_hash,
@@ -137,6 +138,10 @@ def recover_budget_amended_synth(
     prompt += reader_continuation_guidance(
         attempt_id=prepared.attempt_id, backend=role.backend, cli=cli,
         runtime=runtime, actor=role.instance_id, operation_id=operation_id,
+    )
+    prompt += synth_result_recovery_guidance(
+        runtime.state_dir, operation, attempt_id=prepared.attempt_id, actor=role.instance_id,
+        request_hash=prepared.request_hash, cli=cli,
     )
     if (manifest.get("aggregate") or {}).get("status") == "cancelled":
         runtime.event_writer.append(

@@ -4362,6 +4362,7 @@ def _task_map_synth_orchestrator(
     tmp_path: Path,
     *,
     complete_child: bool = True,
+    semantic_plan_submit: bool = False,
 ):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -4397,6 +4398,10 @@ def _task_map_synth_orchestrator(
         ]),
     )
     orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
+    if semantic_plan_submit:
+        config.workflow.flow_metadata = {"result_protocol": {
+            "semantic_submit_profiles": {"plan-synth": "blocking"},
+        }}
     trigger = orch.event_writer.append(ZfEvent(
         type="product.design.ready",
         actor="zf-cli",

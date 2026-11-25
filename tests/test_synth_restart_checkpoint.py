@@ -10,8 +10,9 @@ from zf.runtime.synth_restart_checkpoint import reopen_synth_restart_checkpoint
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def failed_synth(tmp_path):
-    state, log, runtime, role, dispatch, before = _running_recovered_synth(tmp_path)
+def failed_synth(tmp_path, *, semantic_plan_submit=False):
+    state, log, runtime, role, dispatch, before = _running_recovered_synth(
+        tmp_path, semantic_plan_submit=semantic_plan_submit)
     runtime.event_writer.append(ZfEvent(type="run.admission.admitted", actor="zf-cli",
                                        payload={"workflow_run_id": "trace-product"}))
     log.append(ZfEvent(type="provider.turn.closed", actor=role.instance_id,
@@ -161,7 +162,13 @@ def test_requested_synth_reopen_rejects_unbound_redrive(tmp_path, fault):
 
 @pytest.mark.parametrize('backend', ['codex', 'claude-code'])
 def test_operator_synth_resume_briefing_uses_safe_provider_read_guidance(tmp_path, monkeypatch, backend):
-    state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    state, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path, semantic_plan_submit=True)
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    request = hydrate_sidecar_ref(state, before["request_ref"]).payload["request"]
+    scratch = state / request["result_scratch_ref"]
+    draft = '{"recommendation":"needs_rework","summary":"Independent review in progress"}'
+    scratch.write_text(draft)
     role.backend = backend
     alive = [True]
     monkeypatch.setattr(runtime.transport, 'terminate', lambda _: alive.__setitem__(0, False), raising=False)
@@ -174,6 +181,12 @@ def test_operator_synth_resume_briefing_uses_safe_provider_read_guidance(tmp_pat
     assert _restart_role(role.name, runtime.config, runtime.transport, log, state, tmp_path,
                          False, resume_failed_synth=failure.id) == 0
     prompt = runtime.transport.sent[-1][2]
+    assert f"attempt `{before['active_attempt_id']}`" in prompt and str(scratch) in prompt
+    binding = f"--operation {before['operation_id']} --state-dir {state.resolve()} --scratch"
+    assert f"run `/current/zf result validate {binding}` in this turn" in prompt
+    assert f"run `/current/zf result submit {binding}`" in prompt
+    assert "preserve your independent verdict" in prompt
+    assert scratch.read_text() == draft
     assert 'cannot still use' in prompt
     if backend == 'codex':
         assert f'/current/zf artifact read --attempt {dispatch.payload["attempt_id"]} --required --resume' in prompt

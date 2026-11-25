@@ -9,6 +9,7 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.plan_synth_handoff import current_synth_recovery_guidance
 from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
@@ -341,14 +342,10 @@ class PlanSynthRuntimeMixin:
         if role is None or not briefing_path.is_file():
             return False
         operation_id = str(payload.get("operation_id") or "")
-        operation = None
-        if operation_id:
-            from zf.runtime.workflow_operation import load_workflow_operation
-
-            operation = load_workflow_operation(self.event_log, operation_id)
-            if (not operation or operation.get("request_hash") != payload.get("request_hash")
-                    or operation.get("status") not in {"requested", "reserved", "running"}):
-                return False
+        try:
+            operation, result_guidance = current_synth_recovery_guidance(self, payload, role, zf_cli_cmd())
+        except (KeyError, ValueError, OSError):
+            return False
         self._set_worker_state(
             role_instance,
             "idle",
@@ -378,6 +375,7 @@ class PlanSynthRuntimeMixin:
             backend=role.backend, cli=zf_cli_cmd(),
             runtime=self, actor=role.instance_id, operation_id=operation_id,
         )
+        prompt += result_guidance
         dispatch_context = self._dispatch_context(
             role=role,
             briefing_path=briefing_path,

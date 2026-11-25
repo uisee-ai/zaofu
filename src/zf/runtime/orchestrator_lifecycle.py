@@ -1966,10 +1966,10 @@ class LifecycleManagerMixin(
                 "instead of older executable paths in the original briefing. "
                 "The original request identity and required reads remain unchanged."
             )
-            if role.role_kind == "reader":
-                from zf.runtime.reader_respawn_continuation import reader_recovery_guidance
+            if role.role_kind == "reader" or kind == "fanout_synth":
+                from zf.runtime.reader_respawn_continuation import fanout_recovery_guidance
 
-                prompt += reader_recovery_guidance(self, role, fanout_child)
+                prompt += fanout_recovery_guidance(self, role, fanout_child)
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
