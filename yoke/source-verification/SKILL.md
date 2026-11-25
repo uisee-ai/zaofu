@@ -1,6 +1,6 @@
 ---
 name: source-verification
-description: "写码/扫描前的来源验证纪律:栈版本从依赖清单读、外部 API 查权威来源、目标仓现有能力先 grep、宣称附出处、查不到标 UNVERIFIED。dev/scan 角色使用;与 done-contract 的 evidence_refs 语法、grill 的冲突上报机械配对。"
+description: "Use when a build or scan relies on a version-specific API, a protocol detail, or a claim about an existing capability. Consult the method to select and cite evidence when sources are missing or disagree."
 ---
 
 # Source Verification

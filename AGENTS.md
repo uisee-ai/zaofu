@@ -114,6 +114,19 @@ code and tests.
   starting. The metric is fewer unnecessary diff lines and fewer late
   clarification loops.
 
+### Skill language
+
+- For a new Skill, write the frontmatter `description` in English by default.
+  Describe the task that should trigger it. Use English for instructions shared
+  across languages and the audience's language for project-specific guidance.
+- Write deliverables in the language requested by the user or project. Preserve
+  source quotations, protocol literals, commands and identifiers verbatim.
+  If a translation is useful, keep one Skill ID and link the translation from
+  `references/` so readers can load it on demand.
+- When changing an existing Skill's language, evaluate its description and
+  body separately. For multilingual use, compare matched Chinese and English
+  tasks, including an unrelated request for on-demand Skills.
+
 ## Code Style
 
 - Python 3.11+, `src/` layout, type hints, `pytest`, `pathlib`,
