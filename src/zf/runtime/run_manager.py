@@ -790,16 +790,19 @@ def _run_manager_tick_unlocked(
                         events = _read_events(state_dir, event_log=event_log)
                 from zf.runtime.run_manager_reflection import reflection_pending
 
-                diagnosis_satisfied = diagnosis_satisfied or reflection_pending(
-                    _read_events(state_dir, event_log=event_log),
-                    _run_manager_reflect_request_id(action, events),
-                )
-                if not diagnosis_satisfied and action.get('failure_class') == 'autoresearch_diagnosis_incomplete':
-                    _emit_blocked_action(writer, action, causation_id=started.id,
-                        reason='Autoresearch follow-up requires an available Run Manager decision owner', human=True)
-                    actions_blocked += 1
-                    events = _read_events(state_dir, event_log=event_log)
-                    continue
+                if not diagnosis_satisfied:
+                    reflection_events = _read_events(state_dir, event_log=event_log)
+                    reflection_id = _run_manager_reflect_request_id(action, events)
+                    diagnosis_satisfied = reflection_pending(reflection_events, reflection_id)
+                    if not diagnosis_satisfied and action.get('failure_class') == 'autoresearch_diagnosis_incomplete':
+                        from zf.runtime.autoresearch_failure_handoff import followup_escalation
+
+                        escalation, reason, cause = followup_escalation(
+                            action, reflection_events, request_id=reflection_id, cause=started.id)
+                        _emit_blocked_action(writer, escalation, causation_id=cause, reason=reason, human=True)
+                        actions_blocked += 1
+                        events = _read_events(state_dir, event_log=event_log)
+                        continue
                 if not diagnosis_satisfied and _emit_autoresearch_request(
                     state_dir=state_dir,
                     writer=writer,

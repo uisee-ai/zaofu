@@ -92,6 +92,45 @@ def _unresolved_reader(events: list[ZfEvent], index: int, request: ZfEvent, resu
     return failure
 
 
+def followup_escalation(action: dict, events: list[ZfEvent], *, request_id: str,
+                        cause: str) -> tuple[dict, str, str]:
+    """Preserve the bound RM reflection without promoting its advice into an action."""
+    from zf.runtime.run_manager_reflection import COMPLETED, REQUESTED
+
+    run = action.get('workflow_run_id') or action.get('run_id')
+    checkpoint = action.get('checkpoint_id')
+    sources = action.get('source_event_ids') or []
+    request = None
+    for event in events:
+        if event.type not in {REQUESTED, COMPLETED} or event.origin != 'kernel' or event.actor != 'run-manager':
+            continue
+        p = event.payload
+        if (not run or not checkpoint or not sources or p.get('workflow_run_id') != run
+                or p.get('checkpoint_id') != checkpoint or p.get('request_id') != request_id
+                or event.correlation_id != request_id or p.get('operation_id') != 'wop-' + request_id
+                or p.get('source_event_ids') != sources or p.get('apply_policy') != 'proposal_only'):
+            continue
+        if event.type == REQUESTED:
+            request = event
+        elif request is not None:
+            status = p.get('status')
+            if status in {'failed', 'timeout', 'cancelled', 'superseded'}:
+                reason = f'Run Manager reflection {status}. Autoresearch follow-up requires an owner decision.'
+            elif p.get('recommended_route') == 'wait':
+                reason = ('Run Manager reflection recommended waiting. Autoresearch follow-up '
+                          'requires a resumption event or an authorized next action.')
+            else:
+                reason = ('Run Manager reflection returned a recommendation. Autoresearch follow-up '
+                          'requires an authorized next action.')
+            evidence = list(dict.fromkeys([*sources, request.id, event.id]))
+            return {**action, 'source_event_ids': evidence}, reason, event.id
+    if request is not None:
+        return ({**action, 'source_event_ids': [*sources, request.id]},
+                'Run Manager reflection was requested but has no matching outcome. Autoresearch follow-up requires an owner decision.',
+                request.id)
+    return action, 'Autoresearch follow-up requires an available Run Manager decision owner', cause
+
+
 def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
     from zf.runtime.run_manager import _autoresearch_request_id
 
