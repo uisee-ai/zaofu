@@ -174,7 +174,11 @@ def test_refactor_review_profiled_briefing_uses_flat_semantic_result(
     assert "evidence_refs" in semantic_template
 
 
-def test_refactor_plan_briefing_includes_required_artifact_fields(tmp_path: Path):
+@pytest.mark.parametrize("cli_command", ["zf", "python -m zf.cli.main"])
+def test_refactor_plan_briefing_includes_required_artifact_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_command: str,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", cli_command)
     config = ZfConfig(
         project=ProjectConfig(name="test"),
         roles=[RoleConfig(name="refactor-plan-author", backend="mock", role_kind="reader")],
@@ -232,5 +236,7 @@ def test_refactor_plan_briefing_includes_required_artifact_fields(tmp_path: Path
     assert "ASM-001" in briefing
     assert "do not emit success unless" in briefing
     assert "report.recommendation` as `approve`" in briefing
-    assert "zf emit workflow.child.completed" in briefing
+    completion = next(line for line in briefing.splitlines() if " emit workflow.child.completed " in line)
+    prefix = shlex.split(cli_command) + ["emit", "workflow.child.completed"]
+    assert shlex.split(completion)[:len(prefix)] == prefix
     assert "Aggregate success event: `zaofu.refactor.plan.ready`" in briefing
