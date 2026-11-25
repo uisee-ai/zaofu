@@ -1,17 +1,15 @@
 from dataclasses import replace
-from types import SimpleNamespace
 
 import pytest
 
 from tests.test_plan_candidate_diagnosis_inputs import _diagnosis
 from zf.core.events import ZfEvent
-from zf.runtime import plan_candidate_diagnosis_inputs
 from zf.runtime.plan_synth_handoff import build_plan_handoff_input_refs
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_replan_generation import escalation_generation_id
 
 
-def _case(tmp_path, monkeypatch, *, cap=False):
+def _case(tmp_path, *, cap=False):
     runtime, payload, bound = _diagnosis(tmp_path)
     history = runtime.event_log.read_all()
     run, anchor = payload["trace_id"], payload["pdd_id"]
@@ -63,11 +61,10 @@ def _case(tmp_path, monkeypatch, *, cap=False):
         latest = controlled(second, last_failure, escalation)
         assert latest.payload["repaired_failure_event_id"] == first_failure.id != latest.payload["rework_of"]
     current = carrier(latest)
-    monkeypatch.setattr(plan_candidate_diagnosis_inputs, "EventLog", lambda _: SimpleNamespace(read_all=lambda: history))
 
     def read(source=None, **changes):
         refs = build_plan_handoff_input_refs(state_dir=runtime.state_dir, project_root=runtime.project_root,
-            source_event_id=source or current.id, payload={**payload, **latest.payload, **changes})
+            source_event_id=source or current.id, payload={**payload, **latest.payload, **changes}, read_events=lambda: history)
         sources = {r["source_id"]: r for r in refs}
         context = hydrate_sidecar_ref(runtime.state_dir, sources["plan-rework-context"]).payload
         return context, sources
@@ -76,8 +73,8 @@ def _case(tmp_path, monkeypatch, *, cap=False):
 
 
 @pytest.mark.parametrize("cap", [False, True])
-def test_controlled_planner_repair_preserves_original_reader_evidence_and_empty_writer_scope(tmp_path, monkeypatch, cap):
-    _, read, _, original, latest, bound = _case(tmp_path, monkeypatch, cap=cap)
+def test_controlled_planner_repair_preserves_original_reader_evidence_and_empty_writer_scope(tmp_path, cap):
+    _, read, _, original, latest, bound = _case(tmp_path, cap=cap)
     context, sources = read()
     assert context["rework_of"] == latest.payload["rework_of"]
     assert not context.get("task_ids") and not context.get("input_task_ids")
@@ -92,8 +89,8 @@ def test_controlled_planner_repair_preserves_original_reader_evidence_and_empty_
 @pytest.mark.parametrize("fault", ["scope", "replaced_source", "missing_receipt", "forged_request", "approval",
                                    "mixed_failure", "other_run", "wrong_fanout", "superseded_freeze", "old_package",
                                    "attempt_jump", "wrong_escalation", "worker_escalation", "forged_generation", "stripped_repair", "previous_candidate"])
-def test_repair_denies_unproven_or_superseded_lineage(tmp_path, monkeypatch, fault):
-    history, read, failure, original, latest, _ = _case(tmp_path, monkeypatch, cap=True)
+def test_repair_denies_unproven_or_superseded_lineage(tmp_path, fault):
+    history, read, failure, original, latest, _ = _case(tmp_path, cap=True)
     idx = lambda kind: next(i for i, e in enumerate(history) if e.type == kind)
     position = idx("runtime.action.attempt.completed")
     if fault == "missing_receipt":
@@ -163,12 +160,12 @@ def test_idle_reader_replays_after_control_effect_receipt(tmp_path):
     assert len([e for e in log.read_all() if e.type == "fanout.started" and e.causation_id == trigger.id]) == 1
     assert [s[0] for s in transport.sent] == ["review-a", "review-b"]
 
-def test_abandoned_publication_returns_to_normal_preregistration_failure(tmp_path, monkeypatch):
+def test_abandoned_publication_returns_to_normal_preregistration_failure(tmp_path):
     from zf.core.state.locks import locked_path
     from zf.runtime.plan_diagnosis_repair_lineage import awaiting_diagnosis_repair_receipt
     from zf.runtime.stage_replan_generation import generation_publication_lock
 
-    history, read, _, _, trigger, _ = _case(tmp_path, monkeypatch)
+    history, read, _, _, trigger, _ = _case(tmp_path)
     with pytest.raises(RuntimeError, match="crash"), locked_path(generation_publication_lock(tmp_path, trigger.causation_id)):
         assert awaiting_diagnosis_repair_receipt(trigger, tmp_path)
         raise RuntimeError("crash")
