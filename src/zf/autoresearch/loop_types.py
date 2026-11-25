@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from zf.autoresearch.diagnosis_resource_policy import DiagnosticResourcePolicy
+
 
 @dataclass(frozen=True)
 class LoopConfig:
@@ -17,7 +19,7 @@ class LoopConfig:
     worktree: Path = Path("/tmp/zaofu-autoresearch")
     parent_state_dir: Path | None = None
     max_iterations: int = 10
-    budget_usd: float = 200.0
+    budget_usd: float | None = 200.0
     token_budget: int | None = None
     role_provider_settings: dict[str, dict[str, str]] = field(default_factory=dict)
     output_dir: Path | None = None
@@ -41,6 +43,7 @@ class LoopConfig:
     review_gate: str = "off"                 # off | auto | always
     # Standalone loops keep legacy task creation; resident callers disable it.
     backlog_on_failure: bool = True
+    diagnostic_resources: DiagnosticResourcePolicy | None = None
 
 
 def default_metric_sources() -> dict[str, str]:

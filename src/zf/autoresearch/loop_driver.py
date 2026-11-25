@@ -88,7 +88,7 @@ def should_stop_loop(
       4. converged        — 2 consecutive passed + improved
       5. otherwise        — keep running
     """
-    if state.cost_usd_so_far >= cfg.budget_usd:
+    if cfg.budget_usd is not None and state.cost_usd_so_far >= cfg.budget_usd:
         return LoopTerminationDecision(
             should_stop=True,
             final_status="budget_exhausted",

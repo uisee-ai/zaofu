@@ -40,6 +40,7 @@ from zf.autoresearch.loop import (
     invoke_reflection_llm,
     run_loop,
 )
+from zf.autoresearch.diagnosis_resource_policy import ExplicitLoopSetting, loop_resource_settings
 from zf.autoresearch.loop_iteration import parent_role_provider_settings
 from zf.autoresearch.loop_reflect import reflection_provider_options
 from zf.autoresearch.orchestrator import (
@@ -352,7 +353,7 @@ def register(subparsers) -> None:
         help="Parent runtime state dir (default: project.state_dir from zf.yaml)",
     )
     loop.add_argument("--max-iterations", type=int, default=10)
-    loop.add_argument("--budget-usd", type=float, default=200.0)
+    loop.add_argument("--budget-usd", type=float, default=200.0, action=ExplicitLoopSetting)
     loop.add_argument(
         "--output-dir", type=Path, default=None,
         help=(
@@ -376,7 +377,7 @@ def register(subparsers) -> None:
     )
     loop.add_argument("--fix-wait-timeout", type=int, default=1800)
     loop.add_argument(
-        "--config", dest="config_template", type=Path,
+        "--config", dest="config_template", type=Path, action=ExplicitLoopSetting,
         default=Path(
             "examples/prod/controller/prd-task-pipeline-v4-canary.yaml"
         ),
@@ -923,17 +924,14 @@ def _run_loop(args) -> int:
     reflect_backend, reflect_options = reflection_provider_options(
         args.reflect_backend, parent.runtime.run_manager if parent else None,
     )
+    resources, budget = loop_resource_settings(args, parent_state_dir, parent)
     cfg = LoopConfig(
         scenarios=list(args.scenarios),
         worktree=args.worktree,
         parent_state_dir=parent_state_dir,
         max_iterations=args.max_iterations,
-        budget_usd=min(
-            [args.budget_usd] + [cap for cap in (
-                (parent_limits.cost_budget_usd, context.config.global_budget_usd)
-                if parent_limits is not None else ()
-            ) if cap is not None and cap > 0]
-        ),
+        budget_usd=budget,
+        diagnostic_resources=resources,
         token_budget=parent_limits.token_budget if parent_limits is not None else None,
         role_provider_settings=parent_role_provider_settings(parent),
         output_dir=output_dir,
