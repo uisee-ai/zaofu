@@ -65,6 +65,46 @@ def integration_acceptance_id(check_id: str) -> str:
     return "candidate-integration-" + canonical_json_sha256(check_id)[:16]
 
 
+_JSON_PATH = re.compile(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*")
+_PLAN_READS_EXAMPLE = 'Example for a task_map port: {"task_map":["$.tasks[0]"]}.'
+
+
+def _diagnostic_name(value: Any, fallback: str) -> str:
+    # Only display identifier-like names. A malformed key may contain document text.
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value) else fallback
+
+
+def _plan_read_issues(row: dict, field: str) -> list[tuple[str, str]]:
+    reads = row.get("plan_reads", {})
+    role = _diagnostic_name(row["role_instance"], "see role_instance")
+    if not isinstance(reads, dict):
+        return [(field, f"Reader {role} requires an object mapping Plan port names to arrays of JSONPath "
+                        f"strings. {_PLAN_READS_EXAMPLE}")]
+    problems: dict[str, list[str]] = {}
+    for index, (port, paths) in enumerate(reads.items()):
+        label = _diagnostic_name(port, f"port at index {index}")
+        if not _identifier(port):
+            problems.setdefault("expected nonempty trimmed port names", []).append(label)
+        if not isinstance(paths, list):
+            received = "string" if isinstance(paths, str) else type(paths).__name__
+            reason = f"expected a JSON array of distinct JSONPath strings per port, received {received}"
+            problems.setdefault(reason, []).append(label)
+            continue
+        seen = set()
+        for pos, path in enumerate(paths):
+            location = f"{label}[{pos}]"
+            if not isinstance(path, str) or not _JSON_PATH.fullmatch(path):
+                reason = "expected a JSONPath rooted at $ with .field or [index] steps"
+            elif path in seen:
+                reason = "duplicate JSONPath within the port"
+            else:
+                seen.add(path)
+                continue
+            problems.setdefault(reason, []).append(location)
+    return [(field, f"Reader {role}: {reason} at {', '.join(names)}. {_PLAN_READS_EXAMPLE}")
+            for reason, names in problems.items()]
+
+
 def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
     checks = integration_checks(spec)
     if "candidate_reader_assignments" not in spec:
@@ -77,6 +117,7 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
     roles: set[str] = set()
     journeys: set[str] = set()
     allocated = set()
+    read_issues: list[tuple[str, str]] = []
     for index, row in enumerate(rows):
         path = f"candidate_reader_assignments[{index}]"
         _row_fields(row, path, required={"role_instance", "acceptance", "journey_ids"},
@@ -109,14 +150,11 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
                 or len(set(ids)) != len(ids)):
             raise ValueError("Candidate Reader journey_ids must be a list of distinct IDs")
         journeys.update(ids)
-        reads = row.get("plan_reads", {})
-        if not isinstance(reads, dict):
-            raise ValueError("Candidate Reader plan_reads must map Plan port names to JSON paths")
-        for port, paths in reads.items():
-            if (not _identifier(port) or not isinstance(paths, list) or
-                    not all(isinstance(p, str) and re.fullmatch(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*", p)
-                            for p in paths) or len(set(paths)) != len(paths)):
-                raise ValueError("Candidate Reader plan_reads contains invalid paths")
+        read_issues.extend(_plan_read_issues(row, f"{path}.plan_reads"))
+    if read_issues:
+        from zf.runtime.product_acceptance import ReaderPlanReadsError
+
+        raise ReaderPlanReadsError(read_issues)
     if set(checks) != allocated:
         raise ValueError("Candidate integration checks lack an assigned Reader")
     if not isinstance(spec.get("user_journeys"), list) or any(

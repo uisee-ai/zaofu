@@ -14,6 +14,7 @@ from zf.runtime.kanban_proposals import (
     PROPOSAL_RESOLVED_EVENT,
     proposal_execution_gate,
 )
+from zf.runtime.operator_intent import OPERATOR_INTENT_SCHEMA_VERSION
 
 
 class ProposalExecutionActionsMixin:
@@ -25,6 +26,13 @@ class ProposalExecutionActionsMixin:
         payload: dict,
         requested: ZfEvent,
     ) -> dict:
+        if (action == "stage-retrigger" and requested.type == "operator.intent.created"
+                and requested.payload.get("schema_version") == OPERATOR_INTENT_SCHEMA_VERSION):
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=_task_id_from_payload(payload), status_code=409, status="approval_required",
+                reason="stage-retrigger requires an authorized action request",
+            )
         proposal_event_id = str(
             payload.get("proposal_event_id") or ""
         ).strip()

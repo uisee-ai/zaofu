@@ -181,7 +181,7 @@ Run Manager 的诊断包可按失败来源定位一个 Reader，展示受控重�
 
 ## 冻结候选的分工验收
 
-Planner 可在批准的 `product_acceptance_spec` 中声明 `candidate_reader_assignments`。每项列配置中的 `role_instance`、以原 `task_id` 和 `acceptance_id` 标识的 `acceptance` 数组，以及 `journey_ids`。多个角色可以独立承担同一高风险条款。可选的 `plan_reads` 把已授权 Plan port 的必读选择缩小到明确的 JSON 路径。给跨模块、端到端和媒体断言分配明确的旅程。冻结计划未声明分工时沿用完整 Candidate 读者合同。
+Planner 可在批准的 `product_acceptance_spec` 中声明 `candidate_reader_assignments`。每项列配置中的 `role_instance`、以原 `task_id` 和 `acceptance_id` 标识的 `acceptance` 数组，以及 `journey_ids`。多个角色可以独立承担同一高风险条款。可选的 `plan_reads` 把已授权 Plan port 的必读选择缩小到明确的 JSON 路径。每个 port 的值必须是互异的 JSONPath 字符串数组，例如 `{"task_map":["$.tasks[0]"]}`。路径支持根 `$`、字段 `.name`、数组下标 `[0]`。规划者可用 `zf result validate --summary` 查看 Reader 的角色、分工下标、出错的 port 和局部示例；超出摘要容量时，去掉 `--summary` 可查看全部诊断。给跨模块、端到端和媒体断言分配明确的旅程。冻结计划未声明分工时沿用完整 Candidate 读者合同。
 
 运行时从同一候选和批准计划派生各路合同与命令，保持原来的 role/attempt 绑定。分工 Reader 提交本路证据和观察。只有当前组所有必需读者都完成且成功，才可推进到 `product_completeness`。该角色读取各路已准入的引用，核查覆盖、独立性、未决发现与全局旅程，提交一份完整报告供后继阶段消费。恢复的同一会话用 `artifact read --required --resume` 补原生交付证据尚未覆盖的页面。
 

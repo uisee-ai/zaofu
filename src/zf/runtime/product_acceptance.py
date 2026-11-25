@@ -34,6 +34,14 @@ class ProductAcceptanceError(ValueError):
     """A Product Acceptance artifact cannot be admitted mechanically."""
 
 
+class ReaderPlanReadsError(ProductAcceptanceError):
+    """Field-specific plan_reads diagnostics suitable for the bounded CLI summary."""
+
+    def __init__(self, issues: list[tuple[str, str]]):
+        self.issues = issues
+        super().__init__("; ".join(f"{field}: {message}" for field, message in issues))
+
+
 def bind_product_acceptance_spec_identity(
     spec: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
     plan_revision: str, task_map_generation: str,
@@ -151,6 +159,8 @@ def validate_product_acceptance_spec(
 
         try:
             validate_reader_assignments(spec)
+        except ReaderPlanReadsError:
+            raise
         except ValueError as exc:
             raise ProductAcceptanceError(str(exc)) from exc
 

@@ -250,3 +250,26 @@ def test_reader_role_errors_name_only_the_failing_row(change, expected):
         validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
     assert "candidate_reader_assignments[1]" in str(failure.value)
     assert expected in str(failure.value)
+
+
+def test_plan_reads_rejects_all_invalid_selections_without_echoing_document_values():
+    rows = _assignments()
+    rows[0]["plan_reads"] = {
+        "task_map": "private selector text",
+        "test_matrix": ["$.tasks[*]", {"private": "document"}, "$.a", "$.a"],
+        " invalid body ": {},
+    }
+    rows[1]["plan_reads"] = []
+    with pytest.raises(ValueError) as rejected:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    message = str(rejected.value)
+    for word in ("candidate_reader_assignments[0].plan_reads", "reader-a", "task_map",
+                 "test_matrix[0]", "test_matrix[1]", "duplicate JSONPath", "test_matrix[3]",
+                 "port at index 2", "candidate_reader_assignments[1].plan_reads", "reader-b",
+                 '{"task_map":["$.tasks[0]"]}'):
+        assert word in message
+    for private in ("private selector text", "invalid body", "document", "$.tasks[*]"):
+        assert private not in message
+    rows[0]["plan_reads"] = {"task_map": ["$", "$.tasks[0]", "$.a-b_c"], "test_matrix": []}
+    rows[1]["plan_reads"] = {}
+    validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})

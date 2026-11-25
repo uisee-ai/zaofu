@@ -369,6 +369,7 @@ def _product_acceptance_spec_errors(
 
     from zf.runtime.product_acceptance import (
         PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
+        ReaderPlanReadsError,
         validate_product_acceptance_spec,
     )
 
@@ -424,6 +425,12 @@ def _product_acceptance_spec_errors(
             from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
 
             validate_plan_assignment_coverage(normalized, task_map)
+    except ReaderPlanReadsError as exc:
+        return [
+            {"code": "product_acceptance_spec_invalid",
+             "field": f"plan_ports.product_acceptance_spec.{field}", "message": message}
+            for field, message in exc.issues
+        ]
     except ValueError as exc:
         rows: list[dict[str, str]] = []
         _error(
