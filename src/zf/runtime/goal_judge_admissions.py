@@ -2,6 +2,7 @@
 from zf.core.events import ZfEvent
 from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.runtime.candidate_reader_report import reader_fanout_trigger
+from zf.runtime.candidate_result_binding import same_task_map_generation
 from zf.runtime.goal_candidate_batch import bind_goal_candidate_batch
 from zf.runtime.goal_verification import current_goal_candidate
 
@@ -13,18 +14,25 @@ class JudgeAdmissionError(ValueError):
 def current_judge_admissions(events: list[ZfEvent], source: ZfEvent, *, run: str,
                              candidate_ref: str, target: str, generation: str) -> dict | None:
     scoped = [e for e in events if (e.payload.get("workflow_run_id") or e.correlation_id) == run]
-    candidate = current_goal_candidate(scoped, candidate_ref=candidate_ref, target_commit=target)
-    if not candidate:
-        if any(e.type == "verify.child.completed" and e.origin == "kernel"
-               and e.payload.get("output_profile_id") == "candidate-verify" for e in scoped):
-            raise JudgeAdmissionError("no current Candidate for the declared Reader results")
-        return None
     by_id = {e.id: e for e in scoped}
+    candidate = current_goal_candidate(scoped, candidate_ref=candidate_ref, target_commit=target)
     batch = bind_goal_candidate_batch(scoped, candidate, {
         "candidate_ref": candidate_ref, "target_commit": target, "task_map_generation": generation,
-    })
+    }) if candidate else None
     if batch is None:
-        return None  # Older flows have independent verification results without a declared batch.
+        # A missing declaration cannot turn signed batch Reader votes into legacy independent Verify.
+        for e in scoped:
+            if e.type != "workflow.call.result.admitted" or e.origin != "kernel":
+                continue
+            vote = by_id.get(e.payload.get("source_event_id"))
+            if (vote and vote.type in {"verify.child.completed", "verify.child.failed"}
+                    and vote.payload.get("output_profile_id") == "candidate-verify"
+                    and vote.payload.get("semantic_submit_admission_event_id") == e.id
+                    and vote.payload.get("target_commit") == target
+                    and (vote.payload.get("candidate_ref") or vote.payload.get("target_ref")) == candidate_ref
+                    and same_task_map_generation(vote.payload.get("task_map_generation") or "", generation)):
+                raise JudgeAdmissionError("signed Candidate Reader votes lack their declared batch")
+        return None
     if batch.status != "exact" or source.origin != "kernel" or source.id not in by_id:
         raise JudgeAdmissionError("current Candidate Reader batch is incomplete or ambiguous")
     readers = [

@@ -67,8 +67,11 @@ def closure(tmp_path, fault=""):
         p["envelope_ref"] = by_source[p["source_event_id"]].payload["admitted_call_result_ref"] = ref
         if (fault == "missing-reader" and e.id == "admission-current-1") or (fault == "missing-discovery" and e is disc):
             (tmp_path / ref["ref"]).unlink()
-    if fault == "legacy":
+    if fault in {"legacy", "missing-declaration"}:
         events = [e for e in events if e.type != "fanout.started"]
+    if fault == "legacy":
+        for e in events:
+            e.payload.pop("output_profile_id", None)
     for e in events:
         bridge.event_writer.append(e)
     result = bridge._emit_current_goal_closure(event_type="flow.goal.closed", source_event=source,
@@ -76,13 +79,15 @@ def closure(tmp_path, fault=""):
     return result, bridge.event_log.read_all(), old_admit.payload["envelope_ref"]
 
 
-@pytest.mark.parametrize("fault", ["missing-reader", "missing-discovery", "old-publication"])
+@pytest.mark.parametrize("fault", ["missing-reader", "missing-discovery", "old-publication", "missing-declaration"])
 def test_missing_current_evidence_prevents_closure(tmp_path, fault):
     closed, ledger, _ = closure(tmp_path, fault)
     assert closed is None
     assert ledger[-1].type == "goal.closure.identity.invalid"
     reason = ledger[-1].payload["reason"]
-    if fault == "old-publication":
+    if fault == "missing-declaration":
+        assert "lack their declared batch" in reason
+    elif fault == "old-publication":
         assert "does not follow the current Candidate publication" in reason
     else:
         assert ("admission-current-1" if fault == "missing-reader" else "disc-adm") in reason
