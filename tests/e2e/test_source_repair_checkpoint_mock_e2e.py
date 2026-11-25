@@ -26,8 +26,8 @@ from zf.runtime.repair_candidate_publish import publish_repair_candidate
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 
 
-@pytest.mark.parametrize("preauthorized", [False, True])
-def test_repair_candidate_validates_applies_and_reopens_exact_checkpoint(tmp_path, monkeypatch, preauthorized):
+@pytest.mark.parametrize("preauthorized,signed", [(False, False), (True, False), (True, True)])
+def test_repair_candidate_validates_applies_and_reopens_exact_checkpoint(tmp_path, monkeypatch, preauthorized, signed):
     root = tmp_path / 'harness'
     (root / 'src/zf').mkdir(parents=True)
     (root / 'tests').mkdir()
@@ -68,9 +68,18 @@ def test_repair_candidate_validates_applies_and_reopens_exact_checkpoint(tmp_pat
         raw = {"project": {"name": "restart-policy", "state_dir": str(state)}, "runtime": {"run_manager": {
             "source_repair": asdict(policy),
             "recovery_authorization": asdict(config.runtime.run_manager.recovery_authorization)}}}
+        if signed:
+            monkeypatch.setenv("ZF_TEST_CHECKPOINT_HMAC", os.urandom(32).hex())
+            raw["security"] = {"event_signing": {"enabled": True, "secret_env": "ZF_TEST_CHECKPOINT_HMAC"}}
         config_path = tmp_path / "zf.yaml"
         config_path.write_text(yaml.safe_dump(raw))
         config = load_config(config_path)
+        if signed:
+            from zf.core.events.factory import event_log_from_project
+            from zf.core.events.writer import EventWriter
+
+            log = event_log_from_project(state, config=config)
+            writer = EventWriter(log, default_origin="kernel")
         policy = config.runtime.run_manager.source_repair
         runtime = SimpleNamespace(state_dir=state, project_root=tmp_path, config=config, event_log=log, event_writer=writer)
         assert admit_workflow_invoke(runtime, ZfEvent(type="workflow.invoke.requested", payload=run)).status == "admitted"
@@ -118,6 +127,9 @@ def test_repair_candidate_validates_applies_and_reopens_exact_checkpoint(tmp_pat
         assert len(launches) == 1
         merge_id = launches[0]["authorized_merge_event"]
         argv = ["--project-root", str(tmp_path), "--state-dir", str(state), "--authorized-merge-event", merge_id]
+        assert launches[0]["require_signed_ledger"] is signed
+        if signed:
+            argv.append("--require-signed-ledger")
         commands = []
         def supervise(command):
             commands.append(command)
@@ -148,3 +160,4 @@ def test_repair_candidate_validates_applies_and_reopens_exact_checkpoint(tmp_pat
         assert len(commands) == 2
         assert any(e.type == "human.escalate" and e.payload.get("reason") == "run_recovery_authorization_changed"
                    for e in log.read_all())
+        assert not any(e.type == "event.malformed" for e in log.read_all())

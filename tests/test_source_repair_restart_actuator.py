@@ -80,3 +80,39 @@ def test_managed_restart_stays_with_host_supervisor(tmp_path, monkeypatch):
     monkeypatch.setattr(module.os, 'execvp', lambda *args: pytest.fail('must not create a second controller owner'))
     assert module.main(['--project-root', str(tmp_path), '--state-dir', str(tmp_path)]) == 0
     assert calls[-1] == ['systemctl', '--user', 'kill', '--kill-whom=main', '--signal=SIGKILL', 'zf-qualified.service']
+
+
+@pytest.mark.parametrize("change", ["disabled", "missing_key", "fallback"])
+def test_signed_restart_cannot_downgrade_when_signer_disappears(tmp_path, monkeypatch, change):
+    import os
+    import yaml
+    from zf.core.config.loader import load_config
+    from zf.core.events.factory import event_log_from_project
+    from zf.core.events.writer import EventWriter
+
+    key_name = "ZF_CHECKPOINT_TEST_KEY"
+    monkeypatch.setenv(key_name, os.urandom(32).hex())
+    policy = {"enabled": True, "secret_env": key_name, "allow_unsigned_fallback": change == "fallback"}
+    path = tmp_path / "zf.yaml"
+    data = {"project": {"name": "test", "state_dir": "ledger"}, "security": {"event_signing": policy}}
+    path.write_text(yaml.safe_dump(data))
+    state = tmp_path / "ledger"
+    log = event_log_from_project(state, config=load_config(path))
+    writer = EventWriter(log, default_origin="kernel")
+    merge = writer.emit("run.manager.repair.merge.merging", actor="run-manager",
+                        payload={"workflow_run_id": "run", "continuation_checkpoint_id": "checkpoint"})
+    writer.emit("runtime.restart.requested", actor="run-manager", causation_id=merge.id,
+                payload={"actuator_pid": os.getpid()})
+    before = log.path.read_bytes()
+    if change == "disabled":
+        policy["enabled"] = False
+        path.write_text(yaml.safe_dump(data))
+    else:
+        monkeypatch.delenv(key_name)
+    monkeypatch.setattr("zf.runtime.source_repair_restart_actuator.time.sleep", lambda _: None)
+    monkeypatch.setattr("zf.runtime.source_repair_restart_actuator._recorded_watcher_pid",
+                        lambda _: pytest.fail("signer changed before restart"))
+    assert main(["--project-root", str(tmp_path), "--state-dir", str(state), "--authorized-merge-event", merge.id,
+                 "--require-signed-ledger"]) == 1
+    assert log.path.read_bytes() == before
+    assert not any(event.type == "event.malformed" for event in log.read_all())

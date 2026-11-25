@@ -1,4 +1,9 @@
 """A same-freeze Candidate retains seven admitted Reader results across one native recovery."""
+from dataclasses import replace
+from datetime import datetime
+
+import pytest
+
 from tests.test_candidate_host_consumption import evidence
 from tests.test_reader_fanout_runtime import _RecordingTransport
 from tests.test_run_manager_resident import _resident_config
@@ -45,7 +50,11 @@ def _submit(runtime, child, *, host_receipt, abstain=False):
     return result.admitted_event_id
 
 
-def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, monkeypatch):
+@pytest.mark.parametrize("mode", ["single", "previous_duplicate", "two_failures"])
+def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, monkeypatch, mode):
+    from zf.runtime import candidate_reader_duplicate as duplicate
+    from zf.runtime.resident_request_obligations import resident_request_obligations
+
     seed, frozen, _, _, _, host_receipt = evidence
     state, roles = seed.state_dir, [f"verify-lane-{i}" for i in range(8)]
     stage = WorkflowStageConfig(id="issue-lanes-verify", trigger="candidate.ready", topology="fanout_reader",
@@ -71,10 +80,11 @@ def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, mon
     trigger = next(e for e in log.read_all() if e.type == "candidate.ready")
     choose = navigation.host_navigation_entries
     failed_role = roles[-1]
+    failed_roles = roles[-2:] if mode == "two_failures" else [failed_role]
     with monkeypatch.context() as previous:
         def previous_navigation(*args, role_name):
             entries = choose(*args, role_name=role_name)
-            return [{**r, "media_sources": []} for r in entries] if role_name == failed_role else entries
+            return [{**r, "media_sources": []} for r in entries] if role_name in failed_roles else entries
 
         previous.setattr(navigation, "host_navigation_entries", previous_navigation)
         runtime.run_once(events=[trigger])
@@ -83,12 +93,12 @@ def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, mon
     common_contract, = {e.payload["payload"]["contract_snapshot_digest"] for e in initial.values()}
     assert {e.payload["payload"]["target_commit"] for e in initial.values()} == {frozen["candidate_head"]}
     admitted = {role: _submit(runtime, initial[role], host_receipt=host_receipt.id,
-                              abstain=role == failed_role) for role in roles}
+                              abstain=role in failed_roles) for role in roles}
     # The fanout reconciler advances one settled child per kernel tick.
     for _ in roles:
         runtime.run_once(events=[])
     before = reduce_workflow_operations(log.read_all())
-    healthy = {role: initial[role].payload["operation_id"] for role in roles[:-1]}
+    healthy = {role: initial[role].payload["operation_id"] for role in roles if role not in failed_roles}
     assert all(before[op]["status"] == "settled" and before[op]["semantic_verdict"] == "passed"
                for op in healthy.values())
     old_failure = initial[failed_role].payload["operation_id"]
@@ -110,13 +120,43 @@ def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, mon
     tick()
     diagnosis, = [e for e in log.read_all() if e.type == "run.manager.resident.prompted" and e.payload.get("reprompt")]
     context = hydrate_sidecar_ref(state, diagnosis.payload["diagnosis_context"]["recovery_context_ref"]).payload
-    card = context["reader_rebuild"]
+    if mode == "two_failures" and "reader_rebuild" not in context:
+        # The aggregate remains a separate diagnosis. The resident can still choose one of its children.
+        from zf.runtime.diagnosis_reader_rebuild import diagnosis_reader_rebuild
+        faults = [e for e in log.read_all() if e.type == "fanout.child.failed"]
+        assert len(faults) == 2
+        card = diagnosis_reader_rebuild(state, log.read_all(), {"request_kind":"recovery_diagnosis",
+            "workflow_run_id":run, "source_event_ids":[faults[0].id]})
+    else:
+        card = context["reader_rebuild"]
     assert card["method_change"]["status"] == "improved"
-    assert card["recommendation"]["action_payload"]["fanout_child_id"] == failed_role
+    assert card["recommendation"]["action_payload"]["fanout_child_id"] in failed_roles
     writer.emit("run.manager.agent.recommendation", actor="run-manager",
                 payload={**card["recommendation"], "request_id": diagnosis.payload["request_id"]})
-    tick()
-    intent, = [e for e in log.read_all() if e.type == "repair.action.requested"]
+    with monkeypatch.context() as release:
+        if mode == "previous_duplicate":
+            # A request already delivered by the previous release is part of the ledger.
+            release.setattr(duplicate, "covering_reader_recovery", lambda *args: {})
+        tick()
+    events = log.read_all()
+    intent, = [e for e in events if e.type == "repair.action.requested"]
+    prompts = [e for e in events if e.type == "run.manager.resident.prompted" and e.payload.get("reprompt")]
+    agg, = [e for e in events if e.type == "test.failed"]
+    action = {"action":"diagnose-attention", "source_event_ids":[agg.id], "workflow_run_id":run}
+    if mode == "two_failures":
+        assert set(agg.payload["failed_children"]) == set(failed_roles)
+        assert not duplicate.covering_reader_recovery(state, events, action)
+        assert len(prompts) == 2 and prompts[0].payload["request_id"] != prompts[1].payload["request_id"]
+        return
+    assert len(prompts) == (2 if mode == "previous_duplicate" else 1)
+    assert duplicate.covering_reader_recovery(state, events, action)["superseding_repair_event_id"] == intent.id
+    # A missing admission or an unrelated finding prevents coalescing even with a single failed child.
+    unknown = [e for e in events if e.id != admitted[roles[0]]]
+    assert not duplicate.covering_reader_recovery(state, unknown, action)
+    finding = {"child_id":roles[0], "category":"unresolved"}
+    mixed = [replace(e, payload={**e.payload, "findings":[*e.payload["findings"], finding]})
+             if e == agg else e for e in events]
+    assert not duplicate.covering_reader_recovery(state, mixed, action)
     # Restart the kernel on the persisted project, then replay the exact repair twice.
     recovered = Orchestrator(state, cfg, transport, project_root=seed.project_root)
     for _ in range(2):
@@ -142,3 +182,30 @@ def test_seven_admitted_candidate_readers_survive_replay_of_eighth(evidence, mon
         assert after[op_id] == before[op_id]
         assert [e.id for e in events if e.type == "workflow.call.result.admitted"
                 and e.payload.get("operation_id") == op_id] == [admitted[role]]
+    if mode == "previous_duplicate":
+        # The provider's stale response and the earlier successful batch are both visible on the next tick.
+        stale_id = prompts[1].payload["request_id"]
+        late = writer.emit("run.manager.agent.recommendation", actor="run-manager",
+                           payload={"request_id": stale_id, "recommended_route": "human"})
+    tick()
+    events = log.read_all()
+    assert not resident_request_obligations(events, now=datetime.fromisoformat(events[-1].ts), timeout_seconds=600)
+    if mode == "previous_duplicate":
+        from zf.runtime.recovery_case import build_recovery_case_projection
+
+        closed, = [e for e in events if duplicate.duplicate_diagnosis_closed(e, stale_id)]
+        assert closed.payload["superseding_repair_event_id"] == intent.id
+        assert by_event_type(events, closed.causation_id) == "fanout.aggregate.completed"
+        assert by_event_type(events, closed.payload["replacement_completion_event_id"]) == "fanout.child.completed"
+        case, = [c for c in build_recovery_case_projection(events)["cases"]
+                 if c["recovery_case_id"] == closed.payload["recovery_case_id"]]
+        assert case["status"] == "superseded"
+        tick()
+        assert any(e.type == "run.manager.agent.recommendation.consumed" and e.causation_id == late.id
+                   and e.payload.get("reason") == "recommendation_request_superseded_by_reader_recovery"
+                   for e in log.read_all())
+        assert sum(duplicate.duplicate_diagnosis_closed(e, stale_id) for e in log.read_all()) == 1
+
+
+def by_event_type(events, event_id):
+    return next(e.type for e in events if e.id == event_id)

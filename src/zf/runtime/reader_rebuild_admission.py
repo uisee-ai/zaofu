@@ -2,12 +2,26 @@
 from pathlib import Path
 from typing import Any
 
+from zf.core.config.schema import ZfConfig
 from zf.core.events import ZfEvent
 from zf.runtime.fanout_identity import fanout_current_status
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.run_admission import build_run_admission_projection
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
+
+
+def reader_request_error(state_dir: Path, events: list[ZfEvent], request: ZfEvent, config: ZfConfig | None) -> str:
+    """Validate the controlled actor and the exact failed Reader at execution."""
+    from zf.runtime.recovery_authorization import current_run_grant
+
+    grant, error = current_run_grant(config, events, str(request.payload.get("workflow_run_id") or ""))
+    if error:
+        return error
+    if grant and (request.origin != "kernel" or request.actor not in {"run-manager", "operator", "operator:cli", "web"}):
+        return "reader_recovery_requires_controlled_owner_or_run_manager"
+    return reader_rebuild_error(state_dir, events, request.payload,
+                                config=config if request.actor == "run-manager" else None)
 
 
 def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[str, Any], *, config=None) -> str:

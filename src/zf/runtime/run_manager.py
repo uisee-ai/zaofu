@@ -1412,6 +1412,9 @@ def build_run_manager_projection(
             _action_with_attempt_context(action, attempt_contexts)
             for action in pending_actions
         ]
+    from zf.runtime.candidate_reader_duplicate import covering_reader_recovery
+
+    pending_actions = [action for action in pending_actions if not covering_reader_recovery(state_dir, events, action)]
     pending_actions = _prioritize_pending_actions(pending_actions)
     pending_actions = bind_action_dependencies(
         pending_actions, TaskStore(state_dir / "kanban.json").list_all(),
@@ -7340,7 +7343,8 @@ def _execute_repair_closeout_apply(
         actuator_pid = _spawn_source_repair_restart_actuator(
             state_dir=state_dir,
             project_root=project_root,
-            **({"authorized_merge_event": merging.id} if grant else {}),
+            **({"authorized_merge_event": merging.id,
+                "require_signed_ledger": writer.event_log.signer is not None} if grant else {}),
         )
     except Exception as exc:
         reason = f"control_plane_restart_actuator_failed: {exc}"
@@ -7427,6 +7431,7 @@ def _spawn_source_repair_restart_actuator(
     state_dir: Path,
     project_root: Path,
     authorized_merge_event: str = "",
+    require_signed_ledger: bool = False,
 ) -> int:
     import sys
     from zf.runtime import source_repair_restart_actuator
@@ -7446,6 +7451,7 @@ def _spawn_source_repair_restart_actuator(
                 "--state-dir",
                 str(Path(state_dir).resolve()),
                 *(["--authorized-merge-event", authorized_merge_event] if authorized_merge_event else []),
+                *(["--require-signed-ledger"] if require_signed_ledger else []),
             ],
             cwd=str(Path(project_root).resolve()),
             stdout=log_handle,
@@ -8129,6 +8135,17 @@ def _settle_pending_action_effects(
         if payload.get("action") == "task-requeue":
             from zf.runtime.task_requeue_effect import observe_task_requeue_effect
             observed = observe_task_requeue_effect(events, payload)
+        duplicate = {}
+        if (pending.origin == "kernel" and payload.get("action") == "resident-agent-reprompt"
+                and payload.get("request_kind") == "recovery_diagnosis"):
+            from zf.runtime.candidate_reader_duplicate import DISPOSITION, covering_reader_recovery
+
+            covered = covering_reader_recovery(writer.event_log.path.parent, events, payload)
+            recovered = covered.pop("observed", None)
+            if recovered and (observed is None or events.index(recovered) < events.index(observed)):
+                observed = recovered
+                expected.add(observed.type)
+                duplicate = {**covered, "disposition": DISPOSITION}
         if correctable_timeout and (
             observed is None or observed.type not in expected
             or (late_triage and not triage_completion_matches(observed, payload))
@@ -8160,7 +8177,9 @@ def _settle_pending_action_effects(
                 "observed_event_id": observed.id if observed else "",
                 "observed_event_type": observed.type if observed else "",
                 "status": "passed" if passed else "failed",
+                **duplicate,
                 "reason": (
+                    "duplicate diagnosis superseded by admitted Reader recovery" if duplicate else
                     "recovery effect observed" if passed else
                     "recovery effect timed out" if observed is None else
                     "recovery failed to make progress"

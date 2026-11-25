@@ -1,11 +1,14 @@
 """Admission-bound owner limits for unattended recovery in an opted-in Run."""
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events import ZfEvent
+from zf.core.events.writer import EventWriter
 
 from zf.runtime.task_host_manifest import digest
+from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 
 
 def run_grant_fields(config: ZfConfig | None) -> dict:
@@ -132,6 +135,25 @@ def reserve_reader_rebuild(config, state: Path, writer, request: ZfEvent) -> tup
         return start, ""
 
 
+def dispatch_with_reader_reservation(
+    *, config: ZfConfig | None, state: Path, writer: EventWriter, request: ZfEvent,
+    rerun: Callable[[str, str], WorkflowRuntimeDecision], fanout_id: str, child_id: str,
+) -> tuple[WorkflowRuntimeDecision | None, str]:
+    """Retain an unknown provider send as a charged attempt until an outcome is observed."""
+    reservation = None
+    if config is not None and request.actor == "run-manager" and request.payload.get("recovery_action") == "child-rebuild":
+        reservation, error = reserve_reader_rebuild(config, state, writer, request)
+        if error:
+            return None, error
+    decision = rerun(fanout_id, child_id)
+    if reservation:
+        event_type = ("runtime.action.attempt.completed" if decision.action == "rerun_fanout_child"
+                      else "runtime.action.attempt.failed")
+        writer.emit(event_type, actor="run-manager", causation_id=reservation.id, correlation_id=request.correlation_id,
+                    payload={**reservation.payload, "decision_action": decision.action, "reason": decision.reason})
+    return decision, ""
+
+
 def checkpoint_grant_error(config: ZfConfig | None, events: list[ZfEvent], action: dict) -> str:
     continuation = action.get("continuation") or {}
     run_id = continuation.get("workflow_run_id") or continuation.get("run_id") or ""
@@ -173,10 +195,11 @@ def checkpoint_grant_error(config: ZfConfig | None, events: list[ZfEvent], actio
     return "checkpoint_restart_run_allowance_exhausted" if used >= grant["max_checkpoint_restarts_per_run"] else ""
 
 
-def authorize_restart_effect(project: Path, state: Path, merge_id: str, pid: int) -> bool:
+def authorize_restart_effect(project: Path, state: Path, merge_id: str, pid: int, *,
+                             require_signed_ledger: bool = False) -> bool:
     """Recheck live config and an issued restart receipt before touching the watcher."""
     from zf.core.config.loader import ConfigError, load_config
-    from zf.core.events.factory import event_log_from_project
+    from zf.core.events.factory import EventSigningConfigError, event_log_from_project
     from zf.core.events.writer import EventWriter
     from zf.core.state.locks import locked_path
     from zf.runtime.pause_lifecycle import is_dispatch_paused
@@ -192,7 +215,15 @@ def authorize_restart_effect(project: Path, state: Path, merge_id: str, pid: int
             return False  # An invalid identity must not open or write a different Run ledger.
         if (project / config.project.state_dir).resolve() != state:
             return False
-        log = event_log_from_project(state, config=config)
+        try:
+            log = event_log_from_project(state, config=config)
+        except EventSigningConfigError:
+            log = None
+        if log is None or (require_signed_ledger and log.signer is None):
+            import logging
+
+            logging.getLogger(__name__).error("Source repair restart withheld: Run event signer unavailable")
+            return False  # There is no authenticated writer for the original Run.
         events = log.read_all()
         merge = next((e for e in events if e.id == merge_id and e.origin == "kernel"
             and e.actor == "run-manager" and e.type == "run.manager.repair.merge.merging"), None)

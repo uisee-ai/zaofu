@@ -58,7 +58,7 @@ def test_config_requires_explicit_bounded_authority(tmp_path, field, value):
         load_config(path)
 
 
-@pytest.mark.parametrize("change", ["", "budget", "owner_gate", "revoked"])
+@pytest.mark.parametrize("change", ["", "budget", "owner_gate", "revoked", "missing_identity", "other_run"])
 def test_native_effect_rechecks_run_and_host_allowances(case, monkeypatch, change):
     service, _ = prepare(case)
     policy = service.config.runtime.host_verification
@@ -75,6 +75,20 @@ def test_native_effect_rechecks_run_and_host_allowances(case, monkeypatch, chang
         policy.max_executions_per_run += 1
     elif change == "revoked":
         config.runtime.run_manager.recovery_authorization = None
+    elif change in {"missing_identity", "other_run"}:
+        from zf.runtime import host_verification
+
+        original_preview = host_verification.preview
+
+        def changed_preview(*args, **kwargs):
+            manifest = original_preview(*args, **kwargs).copy()
+            if change == "missing_identity":
+                manifest.pop("identity")
+            else:
+                manifest["identity"] = {**manifest["identity"], "workflow_run_id": "another-run"}
+            return manifest
+
+        monkeypatch.setattr(host_verification, "preview", changed_preview)
     elif change == "owner_gate":
         service.writer.emit("human.escalate", payload={"workflow_run_id": "run-1", "blocking_scope": "run",
                             "checkpoint_id": "owner-review", "reason": "owner approval pending"})
@@ -91,8 +105,10 @@ def test_native_effect_rechecks_run_and_host_allowances(case, monkeypatch, chang
     events = service.writer.event_log.read_all()
     if change:
         assert not calls
-        assert any(e.type == "human.escalate" and (change == "owner_gate" or
-                   e.payload.get("reason") == "run_recovery_authorization_changed") for e in events)
+        reason = ("host_probe_run_identity_mismatch" if change in {"missing_identity", "other_run"}
+                  else "run_recovery_authorization_changed")
+        assert any(e.type == "human.escalate" and (change == "owner_gate" or (
+            e.correlation_id == "run-1" and e.payload.get("reason") == reason)) for e in events)
     else:
         assert len(calls) == 2
         assert sum(bool(e.payload.get("recollection_of_start_id")) for e in events

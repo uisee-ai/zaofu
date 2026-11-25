@@ -1128,5 +1128,9 @@ zf doctor dispatch-baseline --path "$project/zf.yaml" --run-id "$run_id" --relea
 摘要不符时返回 `unproven` 和非零退出码。技能清单证明该方法已随简报交付。模型执行质量、
 独立复核、Judge 和交付分别沿用各自的产物和门禁。
 
+Worker 需能在自己的沙箱内导入 CLI 依赖，并从发布目录解析 Git 提交。工作树的 Git 元数据若位于沙箱外，可将同一提交部署为沙箱可读的独立 checkout。诊断会保留实际认证读取的事件 ID，并单独报告版本不可见。
+
+若子项失败和聚合失败指向同一冻结中唯一的技术弃权，且其余各路均已独立通过，Run Manager 可复用已派发的单路恢复。旧的同义诊断在原票据仍有效、替代 Reader 已通过且整批成功后收束。多个失败、新发现或来源不明的诊断各自保留。
+
 单路恢复诊断、超时对账和运行前 Owner 授权见
 [恢复实施记录](199-worker-recovery-implementation.md)和[恢复执行与授权](autonomous-recovery-closeout.md)。

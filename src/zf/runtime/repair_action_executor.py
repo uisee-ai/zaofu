@@ -335,16 +335,9 @@ class RepairActionExecutor:
             event.payload.get("recovery_action") == "child-rebuild"
             and "workflow_run_id" in event.payload
         ):
-            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
-            from zf.runtime.recovery_authorization import current_run_grant
+            from zf.runtime.reader_rebuild_admission import reader_request_error
 
-            events = self.event_log.read_all()
-            grant, error = current_run_grant(self.config, events, str(event.payload.get("workflow_run_id") or ""))
-            if grant and (event.origin != "kernel" or event.actor not in {"run-manager", "operator", "operator:cli", "web"}):
-                error = "reader_recovery_requires_controlled_owner_or_run_manager"
-            if not error:
-                error = reader_rebuild_error(self.task_store.path.parent, events, event.payload,
-                                             config=self.config if event.actor == "run-manager" else None)
+            error = reader_request_error(self.task_store.path.parent, self.event_log.read_all(), event, self.config)
             if error:
                 self._reject(event, action_id=action_id, kind="rerun_fanout_child",
                              task_id=task_id, reason=error,
@@ -380,22 +373,15 @@ class RepairActionExecutor:
                 reason="rerun_fanout_child_unavailable",
             )
             return
-        reservation = None
-        if self.config is not None and event.actor == "run-manager" and event.payload.get("recovery_action") == "child-rebuild":
-            from zf.runtime.recovery_authorization import reserve_reader_rebuild
+        from zf.runtime.recovery_authorization import dispatch_with_reader_reservation
 
-            reservation, error = reserve_reader_rebuild(self.config, self.task_store.path.parent, self.event_writer, event)
-            if error:
-                self._reject(event, action_id=action_id, kind="rerun_fanout_child", task_id=task_id, reason=error)
-                return
-        decision = self.rerun_fanout_child(fanout_id, child_id)
-        if reservation:
-            self.event_writer.emit(
-                "runtime.action.attempt.completed" if decision.action == "rerun_fanout_child"
-                else "runtime.action.attempt.failed",
-                actor="run-manager", causation_id=reservation.id, correlation_id=event.correlation_id,
-                payload={**reservation.payload, "decision_action":decision.action, "reason":decision.reason},
-            )
+        decision, error = dispatch_with_reader_reservation(
+            config=self.config, state=self.task_store.path.parent, writer=self.event_writer, request=event,
+            rerun=self.rerun_fanout_child, fanout_id=fanout_id, child_id=child_id,
+        )
+        if decision is None:
+            self._reject(event, action_id=action_id, kind="rerun_fanout_child", task_id=task_id, reason=error)
+            return
         if decision.action == "rerun_fanout_child":
             self._terminal(
                 event,

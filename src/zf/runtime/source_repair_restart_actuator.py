@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--delay-seconds", type=float, default=1.0)
     parser.add_argument("--authorized-merge-event")
+    parser.add_argument("--require-signed-ledger", action="store_true")
     args = parser.parse_args(argv)
 
     project_root = Path(args.project_root).resolve()
@@ -28,7 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     time.sleep(max(float(args.delay_seconds), 0.1))
     if args.authorized_merge_event:
         from zf.runtime.recovery_authorization import authorize_restart_effect
-        if not authorize_restart_effect(project_root, state_dir, args.authorized_merge_event, os.getpid()):
+        if not authorize_restart_effect(project_root, state_dir, args.authorized_merge_event, os.getpid(),
+                                       require_signed_ledger=args.require_signed_ledger):
             return 1
     watcher_pid = _recorded_watcher_pid(state_dir)
     unit = os.environ.get("ZF_HOST_SUPERVISOR_UNIT", "")

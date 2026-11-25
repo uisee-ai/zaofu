@@ -266,20 +266,30 @@ def first_dispatch_baseline(
         )
         _required(observed is not None, "worker CLI receipt pending or unavailable for this dispatch")
         worker = _body(state, observed.payload.get("worker_load_ref"), "worker-load.v1")
+        report["worker_event"] = observed.id
+        report["worker_revision"] = worker.get("source_revision") or ""
+        _required(
+            report["worker_revision"], "worker cannot resolve its Git revision in the dispatched environment"
+        )
+        _required(
+            report["worker_revision"] == revision, "worker CLI revision differs from the inspected release"
+        )
+        _required(
+            _loaded_consumers(worker, worker=True),
+            "worker CLI loaded consumers differ from the inspected release",
+        )
         _required(
             worker.get("scope") == "authenticated_worker_cli"
-            and worker.get("source_revision") == revision
             and isinstance(worker.get("identity"), dict)
-            and _loaded_consumers(worker, worker=True)
             and all(worker["identity"].get(k) == v for k, v in identity.items()),
-            "worker CLI release or identity mismatch",
+            "authenticated worker identity differs from the first WRC",
         )
         manifest = request["request"].get("source_manifest_digest")
         _required(
             manifest and worker["identity"].get("manifest_digest") == manifest,
             "worker source manifest mismatch",
         )
-        report.update(status="verified", worker_event=observed.id)
+        report["status"] = "verified"
     except (KeyError, TypeError, OSError, ValueError) as exc:
         report["reason"] = str(exc)
     return report

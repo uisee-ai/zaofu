@@ -201,3 +201,14 @@ def test_startup_catchup_can_deliver_before_loop_started(tmp_path):
     result = check([session, issued, material, sent, boot, worker])
     assert result["status"] == "verified", result
     assert result["boot_event"] == "session"
+
+
+def test_authentic_sandbox_read_without_release_identity_reports_specific_gap(tmp_path):
+    check, rows, _, side, worker = projection(tmp_path)
+    event = rows[-1]
+    rows[-1] = replace(
+        event, payload={**event.payload, "worker_load_ref": side({**worker, "source_revision": ""})}
+    )
+    result = check(rows)
+    assert result["worker_event"] == event.id
+    assert result["status"] == "unproven" and "resolve its Git revision" in result["reason"]
