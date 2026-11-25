@@ -395,12 +395,9 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
-        if "retry_cancelled_critic_event_id" in payload:
-            from zf.runtime.cancelled_critic_recovery import apply_cancelled_critic_retry
-            return apply_cancelled_critic_retry(self, requested, action, requested_action, payload)
-        if "retry_critic_handoff_event_id" in payload:
-            from zf.runtime.critic_handoff_retry import apply_handoff_retry
-            return apply_handoff_retry(self, requested, action, requested_action, payload)
+        if {"retry_cancelled_critic_event_id", "retry_critic_handoff_event_id"}.intersection(payload):
+            from zf.runtime.critic_handoff_retry import apply_critic_recovery
+            return apply_critic_recovery(self, requested, action, requested_action, payload)
         from zf.runtime.candidate_media_review import KEY
         if KEY in payload and (self.actor != 'operator' or not payload.get('repaired_failure_event_id')
                                or payload.get('review_only') or payload.get('orchestrator_decision_event_id')):

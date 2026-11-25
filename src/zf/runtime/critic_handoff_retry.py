@@ -21,7 +21,11 @@ FIELDS = {
 }
 
 
-def apply_handoff_retry(service, requested, action, requested_action, payload):
+def apply_critic_recovery(service, requested, action, requested_action, payload):
+    if "retry_cancelled_critic_event_id" in payload:
+        from zf.runtime.cancelled_critic_recovery import apply_cancelled_critic_retry
+
+        return apply_cancelled_critic_retry(service, requested, action, requested_action, payload)
     with locked_path(service.state_dir / "locks" / "reader-stage-recovery"):
         try:
             if service.actor not in {"operator", "web"}:
