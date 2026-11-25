@@ -8,7 +8,22 @@ from zf.core.events.model import ZfEvent
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def resolve_reply_operation(runtime: Any, instance_id: str, payload: dict) -> dict:
+_OPERATION_BINDINGS = {
+    "attempt_id": "active_attempt_id",
+    "request_hash": "request_hash",
+    "dispatch_id": "dispatch_id",
+    "lease_id": "lease_id",
+    "workflow_run_id": "workflow_run_id",
+    "run_id": "workflow_run_id",
+}
+
+
+def reply_operation_fields(payload: dict) -> dict:
+    """Select explicit operation bindings for a worker.reply.requested event."""
+    return {key: payload[key] for key in ("operation_id", *_OPERATION_BINDINGS) if key in payload}
+
+
+def resolve_reply_operation(runtime: Any, instance_id: str, payload: dict, *, exact: bool = False) -> dict:
     """Unbound resident messages remain valid; explicit targets never fall back."""
     operation_id = str(payload.get("operation_id") or "").strip()
     if not operation_id:
@@ -22,26 +37,41 @@ def resolve_reply_operation(runtime: Any, instance_id: str, payload: dict) -> di
         raise ValueError("reply target result is already admitted")
     if operation.get("role_instance") != instance_id:
         raise ValueError("reply target worker changed")
-    for supplied, current in (
-        ("task_id", "task_id"), ("attempt_id", "active_attempt_id"), ("request_hash", "request_hash"),
-        ("dispatch_id", "dispatch_id"), ("lease_id", "lease_id"),
-        ("workflow_run_id", "workflow_run_id"), ("run_id", "workflow_run_id"),
-    ):
+    for supplied, current in (("task_id", "task_id"), *_OPERATION_BINDINGS.items()):
         value = str(payload.get(supplied) or "").strip()
-        if value and value != str(operation.get(current) or ""):
+        if (value or (exact and supplied in payload)) and value != str(operation.get(current) or ""):
             raise ValueError(f"reply target {supplied} changed")
     return operation
 
 
-def admit_worker_reply(runtime: Any, request: ZfEvent, instance_id: str, payload: dict) -> bool:
+def _web_reply_target(payload: dict, original: dict) -> dict:
+    # Pending Web replies from before explicit bindings carried them only in the request copy.
+    fields = reply_operation_fields(original)
+    for key in ("instance_id", "task_id"):
+        if key in original:
+            fields[key] = original[key]
+    for key, value in fields.items():
+        if key in payload and str(payload[key] or "").strip() != str(value or "").strip():
+            raise ValueError(f"conflicting reply target {key}")
+    target = {**fields, **payload}
+    if not str(target.get("operation_id") or "").strip() and any(
+        str(target.get(key) or "").strip() for key in _OPERATION_BINDINGS
+    ):
+        raise ValueError("operation_id is required for an operation-specific reply")
+    return target
+
+
+def admit_worker_reply(runtime: Any, request: ZfEvent, instance_id: str, payload: dict) -> dict | None:
     try:
-        resolve_reply_operation(runtime, instance_id, payload)
+        original = payload.get("request")
+        if isinstance(original, dict):
+            payload = _web_reply_target(payload, original)
+        return resolve_reply_operation(runtime, instance_id, payload)
     except ValueError as exc:
         runtime._emit_worker_action_failed(
             request, "worker.reply.failed", instance_id=instance_id, reason=str(exc),
         )
-        return False
-    return True
+        return None
 
 
 def notification_authority(runtime, request_id, instance_id, payload, events):

@@ -53,23 +53,14 @@ def normalize_workflow_read_result(
         if _empty(report_value) and not _empty(payload_value):
             report[field] = payload_value
 
-    status = str(report.get("status") or payload.get("status") or "").lower()
-    recommendation = str(
-        report.get("recommendation")
-        or report.get("verdict")
-        or payload.get("recommendation")
-        or ""
-    ).lower()
+    report = project_workflow_read_vote(report)
+    subject_verdict = report["subject_verdict"]
     result_semantics = str(
         report.get("result_semantics")
         or payload.get("result_semantics")
         or ""
     ).strip().lower()
     execution_hint = str(report.get("execution_status") or "").lower()
-    subject_verdict = _subject_verdict(
-        recommendation=recommendation,
-        status=status,
-    )
     artifact_output_present = _artifact_production_output_present(report, payload)
     explicit_execution_failure = _explicit_reader_execution_failure(report, payload)
 
@@ -118,32 +109,23 @@ def normalize_workflow_read_result(
     report["verdict"] = verdict
     report["failure_class"] = failure_class
     report["status"] = "passed" if verdict == "passed" else "failed"
-    report["subject_verdict"] = subject_verdict
     if result_semantics:
         report["result_semantics"] = result_semantics
-    report.setdefault("recommendation", {
-        "passed": "approve", "rejected": "reject", "blocked": "block",
-        "abstained": "abstain", "needs_rework": "needs_rework",
-    }[subject_verdict])
     report.setdefault(
         "summary",
         str(payload.get("summary") or payload.get("reason") or ""),
     )
     report.setdefault("findings", [])
 
+    from zf.runtime.fanout import REPORT_RECOMMENDATIONS
+
     issues: list[dict[str, str]] = []
-    if report["recommendation"] not in {
-        "approve", "reject", "rejected", "needs_rework",
-        "abstain", "abstained", "block", "blocked",
-    }:
+    if not isinstance(report["recommendation"], str) or report["recommendation"] not in REPORT_RECOMMENDATIONS:
         issues.append({
             "field": "control_result.recommendation",
             "code": "schema_invalid",
-            "message": (
-                "recommendation must be approve, reject, needs_rework, "
-                "abstain, or block; "
-                f"got {report['recommendation']!r}"
-            ),
+            "message": f"recommendation must be one of {sorted(REPORT_RECOMMENDATIONS)}; "
+                       f"got {report['recommendation']!r}",
         })
     if not str(report.get("summary") or "").strip():
         issues.append({
@@ -176,6 +158,57 @@ def workflow_read_finding_issues(
         {"field": field, "code": "schema_invalid", "message": message}
         for message in validation.diagnostics
     ]
+
+
+def project_workflow_read_vote(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Translate Reader outcomes to a fanout vote without changing a stored result."""
+    vote = report.get("recommendation")
+    recommendation = str(vote or report.get("verdict") or "").lower()
+    status = str(report.get("status") or "").lower()
+    subject = _subject_verdict(recommendation=recommendation, status=status)
+    # The vote alone cannot distinguish a dependency blocker from a voluntary abstention.
+    if recommendation in {"", "abstain", "abstained"} and (
+        report.get("failure_class") == "dependency_blocked"
+        or report.get("verdict") == "blocked"
+    ):
+        subject = "blocked"
+    canonical_vote = {
+        "passed": "approve", "rejected": "reject", "needs_rework": "needs_rework",
+        "abstained": "abstain", "blocked": "abstain",
+    }[subject]
+    normalized = {**report, "subject_verdict": subject}
+    normalized.setdefault("recommendation", canonical_vote)
+    return project_admitted_workflow_read_vote(normalized)
+
+
+def project_admitted_workflow_read_vote(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Map historical vote spellings, preserving every admitted semantic field."""
+    projected = dict(report)
+    vote = projected.get("recommendation")
+    if isinstance(vote, str):
+        projected["recommendation"] = {
+            "rejected": "reject", "abstained": "abstain", "blocked": "abstain", "block": "abstain",
+        }.get(vote, vote)
+    return projected
+
+
+def is_workflow_read_report_event(event: ZfEvent) -> bool:
+    """Scope Reader vote compatibility to Reader results, including inline legacy events."""
+    payload = event.payload
+    if any(isinstance(payload.get(key), dict) for key in (
+        "verification_result", "goal_closure_result", "artifact_delivery_result",
+    )):
+        return False
+    report = payload.get("report")
+    if not isinstance(report, dict):
+        return False
+    profile = payload.get("semantic_result_profile")
+    profile_id = profile.get("profile_id") if isinstance(profile, dict) else None
+    profile_id = profile_id or payload.get("output_profile_id")
+    if profile_id:
+        return profile_id == WORKFLOW_READ_PROFILE_ID
+    return (report.get("schema_version") == WORKFLOW_READ_RESULT_SCHEMA
+            or event.type in {"workflow.child.completed", "workflow.child.failed"})
 
 
 def _subject_verdict(*, recommendation: str, status: str) -> str:

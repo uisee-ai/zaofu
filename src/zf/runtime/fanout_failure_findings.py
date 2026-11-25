@@ -65,6 +65,20 @@ def fanout_failure_context(
     else:
         outcomes = {}
     recovery = fanout_failure_recovery(owner, manifest, events=events)
+    failed_children = [
+        child for child in children
+        if child.get("status") in {"blocked", "cancelled", "failed", "timed_out"}
+    ]
+    if failed_children and all(
+        child.get("control_result_schema") == "workflow-read-result.v1"
+        for child in failed_children
+    ):
+        outcomes_by_class = {(child.get("semantic_verdict"), child.get("failure_class"))
+                             for child in failed_children}
+        if outcomes_by_class == {("blocked", "dependency_blocked")}:
+            recovery.setdefault("failure_class", "dependency_blocked")
+        elif outcomes_by_class == {("abstained", "reader_abstained")}:
+            recovery.setdefault("failure_class", "reader_abstained")
     if outcomes:
         recovery["reader_outcomes"] = outcomes
     return fanout_failure_findings(owner, manifest, events=events), recovery

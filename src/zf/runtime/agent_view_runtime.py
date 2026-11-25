@@ -233,9 +233,13 @@ class AgentViewRuntimeMixin:
             return None
         from zf.runtime.worker_reply_binding import admit_worker_reply
 
-        if not admit_worker_reply(self, request, instance_id, payload):
+        operation = admit_worker_reply(self, request, instance_id, payload)
+        if operation is None:
             return None
-        task_id = str(payload.get("task_id") or self._active_task_id_for_worker(instance_id) or "")
+        if operation:
+            task_id = str(operation.get("task_id") or "")
+        else:
+            task_id = str(payload.get("task_id") or self._active_task_id_for_worker(instance_id) or "")
         from zf.runtime.worker_reply_binding import write_reply_briefing
         briefing_path, prompt = write_reply_briefing(self.state_dir, instance_id, task_id, request.id, message,
                                                       notice=bool(payload.get("notification_key")))
@@ -244,10 +248,17 @@ class AgentViewRuntimeMixin:
                 role=role,
                 briefing_path=briefing_path,
                 task_id=task_id or None,
+                run_id=operation.get("workflow_run_id"),
             )
             if payload.get("notification_key"):
                 from zf.runtime.worker_reply_binding import notification_context
                 context = notification_context(self, request, instance_id, payload, context)
+            elif operation:
+                context = replace(
+                    context, operation_id=operation["operation_id"],
+                    attempt_id=operation.get("active_attempt_id"), dispatch_id=operation.get("dispatch_id"),
+                    lease_id=operation.get("lease_id"), worker_reply_request_hash=operation["request_hash"],
+                )
             self._send_transport_task(instance_id, briefing_path, prompt, context)
             self.event_writer.append(ZfEvent(
                 type="worker.reply.sent",

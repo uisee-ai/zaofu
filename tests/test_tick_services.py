@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -513,6 +514,34 @@ def test_standard_tick_services_coalesces_healthy_run_manager_ticks(
     assert second_types.count("run.manager.tick.started") == 1
     assert third_types.count("run.manager.tick.started") == 2
     assert (state_dir / "projections" / "control_plane_health.json").exists()
+
+
+@pytest.mark.parametrize(("idle", "inspection", "age", "stale"), [
+    (900, 300, 727, False), (900, 300, 1030, False), (900, 300, 1250, True),
+    (1400, 60, 1430, False), (1400, 60, 1550, True), (50, 10, 500, False),
+])
+def test_scheduled_watchdog_observes_run_manager_refresh_window(
+    tmp_path: Path, idle: int, inspection: int, age: int, stale: bool,
+) -> None:
+    state_dir = _state(tmp_path)
+    config = ZfConfig(runtime=RuntimeConfig(run_manager=RuntimeRunManagerConfig(
+        source_repair=RuntimeRunManagerSourceRepairConfig(enabled=True),
+    )))
+    orch = _FakeOrchestrator(state_dir, config)
+    projection = state_dir / "projections" / "run_manager.json"
+    projection.parent.mkdir(exist_ok=True)
+    projection.write_text("{}")
+    timestamp = time.time() - age
+    os.utime(projection, (timestamp, timestamp))
+    intervals = TickServiceIntervals(run_manager_idle_refresh_s=idle, supervisor_inspection_s=inspection)
+
+    with patch.object(tick_services, "_consume_run_manager_source_repairs", return_value=0):
+        run_standard_tick_services(orch, state=TickServiceState(), now=10000, intervals=intervals)
+
+    events = orch.event_log.read_all()
+    assert any(e.type == "run.manager.unhealthy" and e.payload["reason"] == "projection_stale"
+               for e in events) == stale
+    assert any(e.type == "run.manager.source_repair.dispatch_requested" for e in events) == stale
 
 
 def test_standard_tick_services_keeps_quiescent_delivery_silent(

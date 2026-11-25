@@ -489,6 +489,23 @@ def test_owner_message_signs_run_manager_when_rm_alive() -> None:
     assert msg.payload["source"] == "supervisor"
 
 
+@pytest.mark.parametrize(("age", "stale_after_s", "owner"), [
+    (727, None, "run-manager"), (1200, None, "run-manager"), (1201, None, "supervisor"),
+    (727, 700, "supervisor"), (1500, 1800, "run-manager"),
+])
+def test_owner_messages_respect_run_manager_refresh_window(age, stale_after_s, owner):
+    from datetime import datetime, timezone
+    from zf.core.events.model import ZfEvent
+
+    completed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    tick = ZfEvent(type="run.manager.tick.completed", ts=completed.isoformat())
+    events = build_supervisor_control_loop_events(
+        _converge_snapshot(), events=[tick], projection_ref={},
+        now=completed.timestamp() + age, run_manager_stale_after_s=stale_after_s,
+    )
+    assert _messages_of(events)[0].payload["handled_by"] == owner
+
+
 def test_owner_message_falls_back_to_supervisor_when_rm_unhealthy() -> None:
     from zf.core.events.model import ZfEvent
     from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events

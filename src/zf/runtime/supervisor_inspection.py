@@ -310,6 +310,7 @@ def run_supervisor_inspection(
     project_root: Path | None = None,
     project_id: str = "",
     emit_attention_events: bool = False,
+    run_manager_stale_after_s: float | None = None,
 ) -> dict[str, Any]:
     snapshot = build_supervisor_snapshot(
         state_dir,
@@ -332,6 +333,7 @@ def run_supervisor_inspection(
             snapshot,
             projection=result,
             config=config,
+            run_manager_stale_after_s=run_manager_stale_after_s,
         )
     return {
         **result,
@@ -499,6 +501,7 @@ def _emit_control_loop_events(
     *,
     projection: dict[str, Any],
     config: ZfConfig | None,
+    run_manager_stale_after_s: float | None = None,
 ) -> int:
     """Append bounded supervisor decision / owner-visible message events."""
     try:
@@ -521,6 +524,7 @@ def _emit_control_loop_events(
         events=events,
         projection_ref=projection_ref,
         contract=contract,
+        run_manager_stale_after_s=run_manager_stale_after_s,
     ):
         try:
             writer.append(event)

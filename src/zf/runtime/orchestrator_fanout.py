@@ -4627,6 +4627,11 @@ class FanoutCoordinationMixin(
             self.config,
             {**child_payload, **base_payload, **payload},
         )
+        from zf.runtime.workflow_read_result import is_workflow_read_report_event
+
+        # Legacy inline Readers still need admission. The projected vote omits
+        # the distinction between an original "block" and "abstain".
+        admission_report = payload["report"] if is_workflow_read_report_event(event) else report_payload["report"]
         call_outcome = admit_runtime_call_result(
             self,
             event,
@@ -4635,6 +4640,7 @@ class FanoutCoordinationMixin(
                 **base_payload,
                 **payload,
                 **report_payload,
+                "report": admission_report,
                 "result_protocol_mode": call_mode,
             },
             mode=call_mode,

@@ -140,8 +140,21 @@ def superseding_reader_freeze(
     """A late Reader failure remains bound to the native freeze it evaluated."""
     if not workflow_run_id or not freeze_id:
         return None
+    current = _latest_native_reader_freeze(newest_first, workflow_run_id)
+    if current and (
+        current.payload["freeze_id"] != freeze_id
+        or (candidate_head_commit and current.payload.get("candidate_head_commit") != candidate_head_commit)
+    ):
+        return current
+    return None
+
+
+def _latest_native_reader_freeze(
+    newest_first: Iterable[ZfEvent], workflow_run_id: str, *, require_kernel_identity: bool = True,
+) -> ZfEvent | None:
+    origins = ("kernel",) if require_kernel_identity else ("kernel", "")
     for event in newest_first:
-        if event.type != "candidate.ready" or event.origin != "kernel" or event.actor == "zf-stall-redispatch":
+        if event.type != "candidate.ready" or event.origin not in origins or event.actor == "zf-stall-redispatch":
             continue
         body = event.payload
         if (
@@ -149,15 +162,92 @@ def superseding_reader_freeze(
             or body.get("schema_version") != "candidate-freeze-receipt.v1"
             or body.get("repaired_failure_event_id")
             or body.get("rework_of")
-            or not body.get("freeze_id")
+            or (require_kernel_identity and not body.get("freeze_id"))
         ):
             continue
-        if body["freeze_id"] != freeze_id or (
-            candidate_head_commit and body.get("candidate_head_commit") != candidate_head_commit
-        ):
-            return event
-        return None
+        return event
     return None
+
+
+def _same_completed_tasks(left: object, right: object) -> bool:
+    # Candidate Verify consumes membership independent of integration order.
+    return (isinstance(left, list) and isinstance(right, list)
+            and all(isinstance(task, str) for task in (*left, *right)) and sorted(left) == sorted(right))
+
+
+def _batch_snapshot_sources(events: list[ZfEvent], native: ZfEvent, run: str) -> list[ZfEvent]:
+    """Only kernel retries can point back to an earlier receipt in the same run."""
+    sources = {}
+    for event in events:
+        body = event.payload
+        if (event.type != "candidate.ready" or (event.origin != "kernel" and event.id != native.id)
+                or (body.get("workflow_run_id") or event.correlation_id) != run):
+            continue
+        if body.get("schema_version") != "candidate-freeze-receipt.v1":
+            parent = body.get("candidate_snapshot_event_id") or body.get("candidate_event_id")
+            if not isinstance(parent, str) or parent not in sources:
+                continue
+            if any(body[key] != (native.payload.get(key) or "") for key in (
+                "freeze_id", "candidate_head_commit", "candidate_base_commit", "candidate_ref", "task_map_ref",
+            ) if key in body):
+                continue
+            if "completed_task_ids" in body and not _same_completed_tasks(
+                body["completed_task_ids"], native.payload.get("completed_task_ids"),
+            ):
+                continue
+        sources[event.id] = event
+    return list(sources.values())
+
+
+def batch_candidate_replay_rejection(events: list[ZfEvent], payload: dict) -> str:
+    """Validate a freeze-bound batch immediately before publishing its replay."""
+    from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+    run = payload["workflow_run_id"]
+    if not payload["freeze_id"]:
+        receipt = _latest_native_reader_freeze(reversed(events), run, require_kernel_identity=False)
+        return f"freeze_id missing for native candidate receipt {receipt.id}" if receipt else ""
+    current = _latest_native_reader_freeze(reversed(events), run)
+    snapshot = payload["candidate_snapshot_event_id"]
+    if current is None:
+        # An originless receipt requires an explicit pointer, direct or through kernel retries.
+        try:
+            current = frozen_candidate_for_payload(events, run, payload={})
+        except ValueError as exc:
+            return f"candidate_snapshot_event_id: {exc}"
+        if current is None or current.origin != "" or not snapshot:
+            return "candidate_snapshot_event_id lacks its native freeze"
+
+    body = current.payload
+    if not body.get("freeze_id"):
+        return "freeze_id missing from the named candidate receipt"
+    if (payload["freeze_id"] != body["freeze_id"]
+            or payload["candidate_head_commit"] != body.get("candidate_head_commit")):
+        return f"candidate retry superseded by current candidate freeze {current.id}"
+
+    if snapshot and snapshot != current.id:
+        from zf.runtime.fanout_retrigger_guard import stall_trigger_original
+
+        try:
+            source = frozen_candidate_for_payload(
+                _batch_snapshot_sources(events, current, run), run, payload=payload, authority_events=events,
+            )
+        except ValueError as exc:
+            return f"candidate_snapshot_event_id: {exc}"
+        if source and source.actor == "zf-stall-redispatch":
+            source = stall_trigger_original(events, source)
+        if source is None or source.origin != current.origin or (
+            source.id != current.id and not (current.origin == "kernel" and body.get("freeze_receipt_digest")
+                                             and source.payload == body)
+        ):
+            return "candidate_snapshot_event_id differs from the current native receipt"
+
+    for field in ("candidate_ref", "candidate_base_commit", "task_map_ref"):
+        if payload[field] != (body.get(field) or ""):
+            return f"{field} differs from the current native freeze"
+    if not _same_completed_tasks(payload["completed_task_ids"], body.get("completed_task_ids")):
+        return "completed_task_ids differ from the current native freeze"
+    return ""
 
 
 def bind_retrigger_snapshot(events: list[ZfEvent], source: ZfEvent, payload: dict) -> None:

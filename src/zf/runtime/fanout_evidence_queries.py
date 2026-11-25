@@ -694,6 +694,21 @@ class FanoutEvidenceQueriesMixin:
             ),
             {},
         )
+        from zf.runtime.workflow_read_result import (
+            is_workflow_read_report_event, project_admitted_workflow_read_vote, project_workflow_read_vote,
+        )
+
+        if raw_report and is_workflow_read_report_event(event):
+            from zf.runtime.call_result_runtime import (
+                has_admitted_semantic_submit_provenance, hydrate_admitted_control_result,
+            )
+
+            if payload.get("semantic_submit_admission_event_id") and has_admitted_semantic_submit_provenance(self, event):
+                admitted = hydrate_admitted_control_result(self.state_dir, payload["call_result_envelope_ref"])
+                raw_report = project_admitted_workflow_read_vote(admitted)
+            else:
+                raw_report.setdefault("status", "passed" if success else "failed")
+                raw_report = project_workflow_read_vote(raw_report)
         semantic_verdict = str(control_result.get("verdict") or "").strip().lower()
         if (
             isinstance(raw_report, dict)

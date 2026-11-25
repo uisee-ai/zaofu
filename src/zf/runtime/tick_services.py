@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.run_manager_watchdog import DEFAULT_PROJECTION_STALE_SECONDS
 from zf.runtime.run_scope import event_run_id, run_aliases
 from zf.runtime.terminal_events import (
     latest_quiescent_run_terminal,
@@ -112,6 +113,15 @@ class TickServiceIntervals:
     run_manager_idle_refresh_s: float = 900.0
     # 静止审计:三向对账(未竟×在飞×合法等待)+ 死窗断点重发
     stillness_audit_s: float = 120.0
+
+    @property
+    def run_manager_stale_after_s(self) -> float:
+        # The watchdog and Supervisor run before idle refresh on inspection ticks.
+        # Allow one inspection interval for the first tick after refresh is due.
+        return max(
+            DEFAULT_PROJECTION_STALE_SECONDS,
+            self.run_manager_idle_refresh_s + self.supervisor_inspection_s,
+        )
 
 
 @dataclass(frozen=True)
@@ -450,6 +460,7 @@ def run_standard_tick_services(
     if supervisor_due:
         state.last_supervisor_inspection_at = now
         supervisor_inspection = _run_supervisor(
+            run_manager_stale_after_s=intervals.run_manager_stale_after_s,
             state_dir=state_dir,
             config=config,
             project_root=project_root,
@@ -479,6 +490,7 @@ def run_standard_tick_services(
         )
         replan_redrive = _redrive_replan_adoptions(orchestrator)
         watchdog_result = _run_run_manager_watchdog(
+            max_projection_stale_seconds=intervals.run_manager_stale_after_s,
             orchestrator=orchestrator,
             event_log=event_log,
             writer=event_writer,
@@ -1116,7 +1128,9 @@ def _materialize_failure_candidates(
         return 0
 
 
-def _run_supervisor(*, state_dir: Path, config: Any, project_root: Path) -> bool:
+def _run_supervisor(
+    *, state_dir: Path, config: Any, project_root: Path, run_manager_stale_after_s: float,
+) -> bool:
     try:
         from zf.runtime.supervisor_inspection import run_supervisor_inspection
 
@@ -1125,6 +1139,7 @@ def _run_supervisor(*, state_dir: Path, config: Any, project_root: Path) -> bool
             config=config,
             project_root=project_root,
             emit_attention_events=True,
+            run_manager_stale_after_s=run_manager_stale_after_s,
         )
         return True
     except Exception:
@@ -1289,6 +1304,7 @@ def _run_run_manager_watchdog(
     writer: Any,
     state_dir: Path,
     config: Any,
+    max_projection_stale_seconds: float,
 ):
     try:
         from zf.runtime.run_manager_watchdog import (
@@ -1301,6 +1317,7 @@ def _run_run_manager_watchdog(
             writer=writer,
             config=config,
             event_log=event_log,
+            max_projection_stale_seconds=max_projection_stale_seconds,
             resident_probe=_resident_probe(orchestrator, config),
         )
     except Exception:

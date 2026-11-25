@@ -550,10 +550,12 @@ class SemanticResultSubmitService:
             )
         except ControlResultAdapterError as exc:
             raise ResultSubmitError("profile_adapter_invalid", str(exc)) from exc
-        event.payload.update(_compatibility_projection(
-            profile.semantic_field,
-            {profile.semantic_field: adapted.payload},
-        ))
+        compatibility = _compatibility_projection(profile.semantic_field, {profile.semantic_field: adapted.payload})
+        if profile_id == "workflow-read":
+            # Admission checks the original Reader input. A producer can fail while
+            # its subject passes; re-reading its execution status as subject loses that decision.
+            compatibility.pop("report", None)
+        event.payload.update(compatibility)
         policy = self._input_policy(
             request,
             task_pipeline_delivery=task_pipeline_delivery,
