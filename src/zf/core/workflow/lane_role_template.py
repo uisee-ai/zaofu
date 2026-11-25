@@ -28,7 +28,7 @@ class LaneRoleTemplateError(ValueError):
 OVERRIDABLE_ROLE_FIELDS = (
     "backend", "model", "model_reasoning_effort", "backends",
     "transport",
-    "skills", "allowed_tools", "plugins",
+    "skills", "skill_loading", "allowed_tools", "plugins",
     "permission_mode", "budget_usd",
     "provider_session", "lifecycle",
     "context_window_tokens", "context_warning_threshold",
@@ -48,7 +48,7 @@ _KNOWN_TEMPLATE_KEYS = frozenset({
     "context_window_tokens",
     "stuck_threshold_seconds",
     "spawn_ready_timeout_seconds", "budget_usd",
-    "skills_by_stage", "allowed_tools", "plugins",
+    "skills_by_stage", "skill_loading_by_stage", "allowed_tools", "plugins",
     "role_kind_by_stage", "backend_by_stage",
     "provider_session", "provider_session_by_stage",
     "lifecycle", "lifecycle_by_stage",
@@ -74,6 +74,7 @@ class LaneRoleTemplateSpec:
     allowed_tools: tuple[str, ...] = ()
     plugins: tuple[str, ...] = ()
     skills_by_stage: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    skill_loading_by_stage: dict[str, dict[str, str]] = field(default_factory=dict)
     role_kind_by_stage: dict[str, str] = field(default_factory=dict)
     backend_by_stage: dict[str, str] = field(default_factory=dict)
     provider_session: Any | None = None
@@ -106,6 +107,9 @@ def parse_lane_role_template(raw: Any, *, context: str) -> LaneRoleTemplateSpec 
         raise LaneRoleTemplateError(
             f"{context}.lane_role_template.skills_by_stage must be a mapping"
         )
+    loading = raw.get("skill_loading_by_stage", {})
+    if not isinstance(loading, dict) or any(not isinstance(v, dict) for v in loading.values()):
+        raise LaneRoleTemplateError(f"{context}.skill_loading_by_stage requires a mapping per stage")
     kinds_raw = raw.get("role_kind_by_stage") or {}
     if not isinstance(kinds_raw, dict):
         raise LaneRoleTemplateError(
@@ -152,6 +156,7 @@ def parse_lane_role_template(raw: Any, *, context: str) -> LaneRoleTemplateSpec 
         ),
         allowed_tools=tuple(str(x) for x in raw.get("allowed_tools") or []),
         plugins=tuple(str(x) for x in raw.get("plugins") or []),
+        skill_loading_by_stage=loading,
         skills_by_stage={
             str(stage): tuple(str(s) for s in skills or [])
             for stage, skills in skills_raw.items()
@@ -285,6 +290,7 @@ def generate_lane_roles(
                 "allowed_tools": list(template.allowed_tools),
                 "plugins": list(template.plugins),
                 "skills": list(skills),
+                "skill_loading": template.skill_loading_by_stage.get(stage.stage_id, {}),
                 "stages": list(role_stages),
                 "publishes": list(publishes),
             }
@@ -500,6 +506,7 @@ def _reject_unknown_stage_overrides(
     for field_name, values in (
         ("provider_session_by_stage", template.provider_session_by_stage),
         ("lifecycle_by_stage", template.lifecycle_by_stage),
+        ("skill_loading_by_stage", template.skill_loading_by_stage),
     ):
         unknown = sorted(set(values) - known)
         if unknown:

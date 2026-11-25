@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**326** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**328** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -65,6 +65,8 @@ Attempt-level artifact queries
 | `zf attempt` | Attempt-level artifact queries |
 | `zf attempt inspect` | Inspect attempt inputs and handoff state |
 | `zf attempt missing-reads` | List missing required reads |
+| `zf attempt skill-evaluation` | Query Task Verify skill scorecards |
+| `zf attempt skill-review` | Independently review frozen Task Verify evidence |
 
 ## `zf autopilot`
 

@@ -1,0 +1,10 @@
+[
+  {"id":"complete-pass","ref":["release","accept","R9"],"answer":{"verdict":"release","action":"accept","receipt":"R9"},"expected":[true,true,true,false,false]},
+  {"id":"correct-withhold","ref":["withhold","request_evidence","none"],"answer":{"verdict":"withhold","action":"request_evidence","receipt":"none"},"expected":[true,true,true,false,false]},
+  {"id":"critical-release","ref":["withhold","request_evidence","none"],"answer":{"verdict":"release","action":"accept","receipt":"R3"},"expected":[true,false,false,true,false]},
+  {"id":"wrong-block","ref":["release","accept","R9"],"answer":{"verdict":"withhold","action":"request_evidence","receipt":"none"},"expected":[true,false,false,false,true]},
+  {"id":"extra-field","ref":["withhold","request_evidence","none"],"answer":{"verdict":"withhold","action":"request_evidence","receipt":"none","why":"RED not recorded"},"expected":[false,true,false,false,false]},
+  {"id":"wrong-receipt","ref":["release","accept","R9"],"answer":{"verdict":"release","action":"accept","receipt":"R8"},"expected":[true,true,false,false,false]},
+  {"id":"absent-return","ref":["withhold","request_evidence","none"],"answer":null,"expected":[false,false,false,false,false]},
+  {"id":"prose-in-receipt","ref":["withhold","request_evidence","none"],"answer":{"verdict":"withhold","action":"request_evidence","receipt":"none — missing RED"},"expected":[false,true,false,false,false]}
+]

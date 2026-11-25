@@ -1,0 +1,13 @@
+{
+  "version": "planner-manifest.v1",
+  "model": "gpt-6-luna",
+  "effort": "high",
+  "skills": ["zf-project-adapter-matrix-enrichment","zf-yoke-planner-role-context","zf-workflow-adaptation-boundary","zf-prd-plan-synth","zf-browser-e2e-contract","zf-plan-execution-readiness","vertical-slicing","grill","zf-plan-task-map-contract","zf-gap-task-synth","zf-requirement-reconciliation","zf-document-reading"],
+  "policy": {"repeats": 2, "minimum_input_saving_percent": 5, "max_missing_reads": 0, "max_handoff_errors": 0, "max_false_ready": 0},
+  "cases": [
+    {"id":"service-restart","split":"selection","task":"restart-readiness","acceptance":"AC-R7","verify":"probe-ready-21","dependency":"task-17"},
+    {"id":"cli-encoding","split":"test","task":"cli-utf8","acceptance":"AC-C5","verify":"probe-cli-34","dependency":"task-52"},
+    {"id":"inventory-export","split":"test","task":"csv-roundtrip","acceptance":"AC-E3","verify":"probe-csv-16","dependency":"task-24","lookup":true},
+    {"id":"browser-handoff","split":"test","task":"receipt-replay","acceptance":"AC-B9","verify":"probe-screen-11","dependency":"task-61","missing":true}
+  ]
+}

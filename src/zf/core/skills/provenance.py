@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
@@ -259,6 +259,14 @@ def read_skill_metadata(path: Path, *, expected_name: str) -> SkillMetadata:
     )
 
 
+def role_skill_metadata(path: Path, role: RoleConfig, name: str) -> SkillMetadata:
+    metadata = read_skill_metadata(path, expected_name=name)
+    mode = role.skill_loading.get(name)
+    if mode is None:
+        return metadata
+    return replace(metadata, auto_inject=mode == "required", load_on_demand=mode == "on_demand")
+
+
 def build_skill_lock_entries(
     *,
     project_root: Path,
@@ -310,7 +318,7 @@ def build_skill_lock_entries(
                 status="missing",
             ))
             continue
-        metadata = read_skill_metadata(source, expected_name=skill)
+        metadata = role_skill_metadata(source, role, skill)
         status = "invalid" if metadata.warnings else "resolved"
         collision_candidates = (
             ()

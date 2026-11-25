@@ -303,6 +303,7 @@ class RoleSessionRegistry:
         rework_affinity_id: str,
         role_instance: str,
         role_config_digest: str,
+        skill_loading: dict[str, str] | None = None,
         workspace_generation: int,
         placement_epoch: int,
         backend: str = "",
@@ -359,6 +360,7 @@ class RoleSessionRegistry:
                     "session_id": str(session_id),
                     "backend": str(backend or ""),
                     "role_config_digest": normalized["role_config_digest"],
+                    "skill_loading": dict(skill_loading or {}),
                     "workspace_generation": workspace_generation,
                     "rotation_counter": 0,
                     "status": "active",
@@ -879,6 +881,8 @@ def _task_stage_binding_key(
 
 def _copy_binding(binding: dict) -> dict:
     copy = dict(binding)
+    if "skill_loading" in binding:
+        copy["skill_loading"] = dict(binding["skill_loading"])
     copy["placement_history"] = [
         dict(item)
         for item in binding.get("placement_history", [])

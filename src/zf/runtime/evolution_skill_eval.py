@@ -191,6 +191,12 @@ def validate_skill_treatment_identity(raw: Mapping[str, Any]) -> dict[str, Any]:
         raise EvolutionContractError(
             f"skill treatment arm {arm} has inconsistent availability"
         )
+    if "loading_mode" in normalized_target:
+        if policy["evaluation_purpose"] != "natural_lift":
+            raise EvolutionContractError("explicit loading-mode comparisons require natural_lift")
+        allowed_modes = ("required", "on_demand") if available else ("absent",)
+        if normalized_target["loading_mode"] not in allowed_modes:
+            raise EvolutionContractError("invalid Skill loading mode for trial arm")
     normalized_target["name"] = name
     normalized_target["available"] = available
     if available:
@@ -238,7 +244,7 @@ def validate_skill_treatment_identity(raw: Mapping[str, Any]) -> dict[str, Any]:
 def compare_skill_treatment_identities(
     values: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Prove that arms differ only in target Skill availability/version/digest."""
+    """Check common inputs and isolate a target content change or loading policy change."""
 
     try:
         rows = [validate_skill_treatment_identity(item) for item in values]
@@ -272,13 +278,23 @@ def compare_skill_treatment_identities(
         return _treatment_comparison(
             False, "Skill treatment purpose, routing, or target name differs", rows
         )
-    if "current" in by_arm and (
-        by_arm["current"]["target_skill"]["digest"]
-        == by_arm["candidate"]["target_skill"]["digest"]
-    ):
-        return _treatment_comparison(
-            False, "candidate Skill digest does not differ from current", rows
-        )
+    if "current" in by_arm:
+        current = by_arm["current"]["target_skill"]
+        candidate = by_arm["candidate"]["target_skill"]
+        loading_modes = (current.get("loading_mode"), candidate.get("loading_mode"))
+        if (loading_modes[0] is None) != (loading_modes[1] is None):
+            return _treatment_comparison(False, "target loading mode missing from one arm", rows)
+        if loading_modes[0] != loading_modes[1] and (
+            by_arm["raw"]["target_skill"].get("loading_mode") != "absent"
+            or current["version"] != candidate["version"]
+            or current["materialized_path_digest"] != candidate["materialized_path_digest"]
+        ):
+            return _treatment_comparison(False, "loading trial must freeze target version and location", rows)
+        same_content = current["digest"] == candidate["digest"]
+        if same_content and loading_modes[0] == loading_modes[1]:
+            return _treatment_comparison(False, "candidate Skill digest does not differ from current", rows)
+        if not same_content and loading_modes[0] != loading_modes[1]:
+            return _treatment_comparison(False, "content and loading mode both changed", rows)
     return {
         "schema_version": "skill-treatment-comparison.v1",
         "comparable": True,

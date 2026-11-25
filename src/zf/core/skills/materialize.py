@@ -16,6 +16,7 @@ from zf.core.skills.provenance import (
     _normalize_dependency_name,
     _sha256,
     read_skill_metadata,
+    role_skill_metadata,
     resolve_skill,
 )
 from zf.core.state.atomic_io import atomic_write_text
@@ -157,7 +158,7 @@ def materialize_role_skills(
             ))
             continue
 
-        metadata = read_skill_metadata(source_path, expected_name=skill)
+        metadata = role_skill_metadata(source_path, role, skill)
         collision_candidates = (
             ()
             if override_path is not None

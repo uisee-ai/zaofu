@@ -31,6 +31,7 @@ def dispatch_task_pipeline_stage(
         TaskPipelineWaiting,
         _activate_task_stage_binding,
         _effective_pipeline_role,
+        _file_sha256,
         _now_iso,
         _role_config_digest,
         _verify_rework_feedback,
@@ -63,7 +64,7 @@ def dispatch_task_pipeline_stage(
             "selected Task Pipeline role is not present in runtime topology",
         )
     role = _effective_pipeline_role(
-        role,
+        runtime, role, workflow_run_id=workflow_run_id, task_map_generation=task_map_generation,
         policy=policy,
         stage=stage,
         task=task,
@@ -491,6 +492,14 @@ def dispatch_task_pipeline_stage(
         "assignee": role.instance_id,
         "role": role.name,
     }
+    if stage == "verify":
+        material = getattr(runtime, "_skill_materialization_events", {}).get(role.instance_id)
+        occurrence_payload["skill_materialization_event_id"] = (
+            material[1] if material and material[0] == task_id else None
+        )
+        occurrence_payload["briefing_digest"] = _file_sha256(briefing_path) or None
+        occurrence_payload["configured_model"] = role.model or None
+        occurrence_payload["backend"] = role.backend
     runtime.event_writer.append(ZfEvent(
         type="task.dispatched",
         actor="orchestrator",

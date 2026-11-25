@@ -228,11 +228,17 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         lambda *a, **kw: None,
     )
     runtime._set_worker_state = lambda *a, **kw: None
+    runtime._find_role_by_instance("dev-0").skills = ["tdd-evidence"]
     sent = []
 
     def send(role, briefing, prompt, context):
         assert verify_task_capsule(runtime.state_dir, task) == []
         assert "current" in task_doc_path(runtime.state_dir, task.id).read_text()
+        metrics = json.loads(briefing.with_suffix(".md.metrics.json").read_text())
+        assert metrics["declared_skills"] == ["tdd-evidence"]
+        assert metrics["declared_skill_count"] == 1
+        assert metrics["auto_injected_skills"] == []
+        assert metrics["actually_invoked_skills"] == "unobserved"
         assert briefing.read_text().startswith("Active task: TASK-1")
         assert "task_context_stale" in briefing.read_text()
         assert "## Read Order (authoritative)" in briefing.read_text()
