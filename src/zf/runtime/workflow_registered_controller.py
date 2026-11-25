@@ -271,8 +271,10 @@ def assemble_controller(
     spec.pop("profile_sources", None)
     spec["project"] = copy.deepcopy(base["project"])
     spec["session"] = copy.deepcopy(base["session"])
-    # Resident operators belong to the project, not to a selected Flow template.
-    for key in ("run_manager", "autoresearch_resident"):
+    # These project policies bind real host effects and accepted handoffs.
+    # Keep the complete scope (including disabled policies) in the reviewed proposal.
+    for key in ("run_manager", "autoresearch_resident", "durable_mailbox",
+                "host_verification", "task_publication", "host_watchdog_seconds"):
         spec.setdefault("runtime", {})[key] = copy.deepcopy(base["runtime"][key])
     sources = copy.deepcopy(base.get("skill_sources") or [])
     sources = [s for s in sources if s["name"] != SOURCE_NAME]

@@ -18,6 +18,8 @@ RECOVERY_INPUTS = frozenset({
 
 
 def is_recovery_input(event: ZfEvent) -> bool:
+    if event.type == "workflow.mailbox.question":
+        return event.origin == "kernel" and event.actor == "durable-mailbox"
     if event.type == "autoresearch.repair.dispatch_blocked":
         return event.origin == "kernel" and bool(event.payload.get("source_request_id"))
     if event.type in RECOVERY_INPUTS:

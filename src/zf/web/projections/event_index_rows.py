@@ -5,7 +5,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from zf.core.events.segments import EventRecord
-from zf.core.security.redaction import SESSION_CONTENT_EVENTS, public_event_metadata
+from zf.core.security.redaction import public_event_metadata, restricted_event_payload
 
 
 def prepare_rows(records: Iterable[EventRecord]) -> tuple[list[tuple], list[tuple], list[tuple], tuple | None]:
@@ -21,12 +21,12 @@ def prepare_rows(records: Iterable[EventRecord]) -> tuple[list[tuple], list[tupl
         public = public_event_metadata(event.type, payload)
         status = m._first_nonempty(m._payload_ref(public, "status"), m._event_status(event.type))
         summary = m._event_summary(event.type, public)
-        slim_payload = public if event.type in SESSION_CONTENT_EVENTS else m._payload_slim(payload)
+        slim_payload = public if restricted_event_payload(event.type) else m._payload_slim(payload)
         slim = json.dumps(slim_payload, ensure_ascii=False, default=str)
         events.append((record.seq, event.id, event.ts, event.type, event.actor, event.task_id,
                        event.correlation_id, event.causation_id, feature, trace, channel, status,
                        summary, m._payload_digest(payload), slim, record.raw_segment, record.raw_offset, record.raw_length))
-        refs.extend((kind, ref, record.seq) for kind, ref in m._event_refs(payload))
+        refs.extend((kind, ref, record.seq) for kind, ref in m._event_refs(public))
         if event.task_id:
             timeline.append((event.task_id, record.seq, event.id, event.ts, event.type, event.actor,
                              status, summary, trace, slim, record.raw_segment, record.raw_offset, record.raw_length))

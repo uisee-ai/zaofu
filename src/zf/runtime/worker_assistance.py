@@ -21,7 +21,7 @@ CLOSED = "worker.assistance.closed"
 ANSWER = "orchestrator.rework.triage.recorded"
 
 
-def _current(state: Path, log, identity: dict[str, Any]) -> dict[str, Any]:
+def current_assistance_operation(state: Path, log, identity: dict[str, Any]) -> dict[str, Any]:
     operation = load_workflow_operation(log, str(identity.get("operation_id") or "")) or {}
     for field in ("workflow_run_id", "task_id", "active_attempt_id", "lease_id"):
         if not identity.get(field) or identity[field] != operation.get(field):
@@ -46,13 +46,14 @@ def _current(state: Path, log, identity: dict[str, Any]) -> dict[str, Any]:
 def request_assistance(
     *, state_dir: Path, writer: EventWriter, config: Any, identity: dict[str, Any],
     actor: str, owner: str, question: str, evidence_refs: list[str], tried: list[str],
+    client_request_id: str = "",
 ) -> dict[str, Any]:
     """Persist one question with the original execution identity and inputs."""
     if owner not in {"orchestrator", "run_manager"} or not question.strip() or not evidence_refs:
         raise ValueError("owner, question and evidence_refs are required")
     if is_dispatch_paused(state_dir, events=writer.event_log.read_all()):
         raise ValueError("dispatch_paused")
-    operation = _current(state_dir, writer.event_log, identity)
+    operation = current_assistance_operation(state_dir, writer.event_log, identity)
     if actor != operation.get("role_instance"):
         raise ValueError("only the current worker may request assistance")
     if owner == "orchestrator":
@@ -65,35 +66,63 @@ def request_assistance(
         raise ValueError("assistance owner is not configured")
     digest = hashlib.sha256(json.dumps({**identity, "owner": owner, "question": question,
         "evidence_refs": evidence_refs, "tried": tried}, sort_keys=True).encode()).hexdigest()[:24]
-    request_id = f"assistance-{digest}"
+    from zf.runtime.durable_mailbox import enabled
+    pilot = owner == "orchestrator" and enabled(config)
+    request_key = (hashlib.sha256(json.dumps([identity["workflow_run_id"], identity["operation_id"],
+                    actor, client_request_id]).encode()).hexdigest()[:24] if client_request_id else digest)
+    request_id = f"assistance-{request_key}"
     with locked_path(state_dir / "locks" / request_id):
         for event in writer.event_log.read_all():
-            if event.type == REQUESTED and event.payload.get("request_id") == request_id:
-                return {"status": "requested", "request_id": request_id, "event_id": event.id}
+            if event.type == REQUESTED and event.origin in {"", "kernel"} and event.payload.get("request_id") == request_id:
+                if event.payload.get("request_content_digest", digest) != digest:
+                    raise ValueError("assistance request ID already names different content")
+                return _request_receipt(state_dir, writer, config, event)
+        if client_request_id and not pilot:
+            raise ValueError("durable coordination mailbox is disabled")
         body = {**identity, "question": question, "evidence_refs": evidence_refs,
                 "tried": tried, "owner": owner, "request_id": request_id,
                 "request_ref": operation.get("request_ref"), "request_hash": operation.get("request_hash")}
         ref = write_sidecar_json(state_dir, f"diagnostics/assistance/{request_id}.json", body,
                                  kind="worker-assistance", schema_version="worker-assistance.v1",
                                  created_by=actor, required=True)
-        event = writer.emit(REQUESTED, actor=actor, task_id=identity["task_id"],
+        event = writer.append(ZfEvent(type=REQUESTED, origin="kernel", actor=actor, task_id=identity["task_id"],
             correlation_id=identity["workflow_run_id"], payload={
                 **identity, "request_id": request_id, "owner": owner,
                 "owner_instance": role.instance_id or role.name,
                 "timeout_seconds": role.stuck_threshold_seconds,
                 "request_kind": "worker_guidance", "recovery_context_ref": ref,
                 "apply_policy": "proposal_only",
-            })
-    return {"status": "requested", "request_id": request_id, "event_id": event.id}
+                **({"durable_mailbox": True, "request_content_digest": digest} if pilot else {}),
+            }))
+    return _request_receipt(state_dir, writer, config, event)
 
 
-def read_assistance(*, state_dir: Path, writer: EventWriter, request_id: str) -> dict[str, Any]:
+def _request_receipt(state_dir, writer, config, event):
+    result = {"status": "requested", "request_id": event.payload["request_id"], "event_id": event.id}
+    if event.payload.get("durable_mailbox"):
+        from zf.runtime.assistance_mailbox import ensure_question, runtime_view
+
+        mail = ensure_question(runtime_view(state_dir, writer, config), event, writer.event_log.read_all())
+        result["message_key"] = mail["message_key"]
+    return result
+
+
+def read_assistance(*, state_dir: Path, writer: EventWriter, request_id: str, identity=None, config=None) -> dict[str, Any]:
     events = writer.event_log.read_all()
-    request = next((e for e in events if e.type == REQUESTED and e.payload.get("request_id") == request_id), None)
+    request = next((e for e in events if e.type == REQUESTED and e.origin in {"", "kernel"} and e.payload.get("request_id") == request_id), None)
     if request is None:
         raise ValueError("assistance request not found")
     payload = request.payload
-    _current(state_dir, writer.event_log, payload)
+    if payload.get("durable_mailbox"):
+        from zf.runtime.assistance_mailbox import accepted_question, question_answer, runtime_view
+
+        if identity is None:
+            raise ValueError("a current mailbox recipient credential is required")
+        mail = accepted_question(events, request_id)
+        if not mail:
+            raise ValueError("assistance intake is awaiting durable acceptance")
+        return question_answer(runtime_view(state_dir, writer, config), identity, mail.payload["message_key"])
+    current_assistance_operation(state_dir, writer.event_log, payload)
     if is_dispatch_paused(state_dir, events=events):
         raise ValueError("dispatch_paused")
     if any(e.type == CLOSED and e.payload.get("request_id") == request_id
@@ -133,10 +162,10 @@ def reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) -
 def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) -> int:
     """Durable replay/timeout processing; no model call runs under this lock."""
     events = writer.event_log.read_all()
-    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED}
+    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED and e.origin in {"", "kernel"}}
     count = 0
     for request in events:
-        if request.type != REQUESTED or request.payload.get("request_id") in closed:
+        if request.type != REQUESTED or request.origin not in {"", "kernel"} or request.payload.get("request_id") in closed:
             continue
         p = request.payload
         status, reason = "", ""
@@ -147,23 +176,32 @@ def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) 
         try:
             if owner is None or (owner.instance_id or owner.name) != p["owner_instance"]:
                 raise ValueError("assistance owner unavailable")
-            result = read_assistance(state_dir=state_dir, writer=writer, request_id=p["request_id"])
-            if result["status"] != "pending":
-                status = "answered"
+            if p.get("durable_mailbox"):
+                from zf.runtime.assistance_mailbox import runtime_view, unanswered_state
+
+                status, reason = unanswered_state(runtime_view(state_dir, writer, config), request, events)
+                if reason == "dispatch_paused":
+                    continue
+            else:
+                result = read_assistance(state_dir=state_dir, writer=writer, request_id=p["request_id"])
+                if result["status"] != "pending":
+                    status = "answered"
         except ValueError as exc:
             if str(exc) == "dispatch_paused":
                 continue
             reason = str(exc)
-            status = "waiting" if reason in {"assistance response deadline expired", "assistance owner unavailable"} else "stale"
-        if not status:
+            status = "waiting" if p.get("durable_mailbox") or reason in {
+                "assistance response deadline expired", "assistance owner unavailable"
+            } else "stale"
+        if not status and not p.get("durable_mailbox"):
             age = active_request_age_seconds(events,
                 created_at=datetime.fromisoformat(request.ts), now=datetime.now(timezone.utc))
             if p.get("timeout_seconds", 0) > 0 and age >= p["timeout_seconds"]:
                 status, reason = "waiting", "assistance owner did not deliver the current answer"
         if status:
-            writer.emit(CLOSED, actor="run-manager", task_id=p["task_id"],
+            writer.append(ZfEvent(type=CLOSED, origin="kernel", actor="run-manager", task_id=p["task_id"],
                 correlation_id=p["workflow_run_id"], causation_id=request.id,
-                payload={**p, "status": status, "reason": reason})
+                payload={**p, "status": status, "reason": reason}))
             if status == "waiting":
                 writer.emit("human.escalate", actor="run-manager", task_id=p["task_id"],
                     correlation_id=p["workflow_run_id"], causation_id=request.id,
@@ -172,19 +210,27 @@ def _reconcile_assistance(*, state_dir: Path, writer: EventWriter, config: Any) 
                              "task_id": p["task_id"], "resume_condition": "current advisor response or authorized handoff"})
             count += 1
         elif p["owner"] == "orchestrator" and not any(
-            e.type == "orchestrator.rework.triage.requested" and e.payload.get("request_id") == p["request_id"]
+            e.type == "orchestrator.rework.triage.requested" and e.origin in {"", "kernel"} and e.payload.get("request_id") == p["request_id"]
             for e in events
         ):
-            writer.emit("orchestrator.rework.triage.requested", actor="run-manager",
+            extra = {}
+            if p.get("durable_mailbox"):
+                from zf.runtime.assistance_mailbox import accepted_question
+
+                mail = accepted_question(writer.event_log.read_all(), p["request_id"])
+                if not mail:
+                    continue
+                extra["message_key"] = mail.payload["message_key"]
+            writer.append(ZfEvent(type="orchestrator.rework.triage.requested", origin="kernel", actor="run-manager",
                 task_id=p["task_id"], correlation_id=p["workflow_run_id"],
-                causation_id=request.id, payload={**p, "failure_event_ids": [request.id]})
+                causation_id=request.id, payload={**p, **extra, "failure_event_ids": [request.id]}))
             count += 1
     return count
 
 
 def pending_assistance_actions(events) -> list[dict[str, Any]]:
     """RM guidance uses the already configured resident, not an Impl slot."""
-    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED}
+    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED and e.origin in {"", "kernel"}}
     prompted = {e.payload.get("request_id") for e in events if e.type == "run.manager.resident.prompted"}
     return [{
         **e.payload, "action": "diagnose-attention", "safe_resume_action": "diagnose_attention",
@@ -203,6 +249,18 @@ def pending_assistance_actions(events) -> list[dict[str, Any]]:
 def assistance_briefing(payload: dict[str, Any], *, actor: str) -> str:
     from zf.runtime.cli_command import zf_cli_cmd
 
+    if payload.get("durable_mailbox"):
+        cli = zf_cli_cmd()
+        advisory = shlex.quote(payload["request_id"])
+        key = shlex.quote(payload["message_key"])
+        return "\n".join([
+            "Read-only worker guidance. Take the bound private question through the mailbox.",
+            f"{cli} artifact mailbox pull --advisory {advisory} --request-id pull-{key} --message {key}",
+            f"{cli} artifact mailbox ack --advisory {advisory} --delivery DELIVERY_ID",
+            f"{cli} artifact mailbox claim --advisory {advisory} --message {key} --delivery DELIVERY_ID --request-id claim-{key}",
+            f"{cli} artifact mailbox answer --advisory {advisory} --message {key} --delivery DELIVERY_ID --request-id answer-{key} --text 'GUIDANCE'",
+            "Use the actual delivery ID and evidence-based guidance. The reply is proposal_only.",
+        ])
     answer = {"request_id": payload["request_id"], "task_id": payload["task_id"],
               "recommended_action": "precise_rework", "guidance": "REPLACE_WITH_EVIDENCED_GUIDANCE",
               "apply_policy": "proposal_only"}
@@ -244,6 +302,10 @@ def claim_assistance_dispatch(runtime, request) -> bool:
     """Reserve a read-only delivery before transport; uncertain sends are not replayed."""
     if request.payload.get("request_kind") != "worker_guidance":
         return True
+    if request.payload.get("durable_mailbox"):
+        from zf.runtime.assistance_mailbox import reserve_notice
+
+        return reserve_notice(runtime, request)
     request_id = request.payload["request_id"]
     with locked_path(Path(runtime.state_dir) / "locks" / request_id):
         events = runtime.event_log.read_all()
@@ -266,11 +328,17 @@ def claim_assistance_dispatch(runtime, request) -> bool:
 def dispatch_pending_assistance(runtime) -> None:
     """A fresh reactor recovers requests whose wake event was missed."""
     from zf.runtime.orchestrator_agent_role import configured_orchestrator_role_from_config
+    events = runtime.event_log.read_all()
     role = configured_orchestrator_role_from_config(runtime.config)
     if role is None:
         return
-    events = runtime.event_log.read_all()
-    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED}
+    from zf.runtime.assistance_mailbox import notification_states, recover_interrupted_notice
+
+    notices = notification_states(events)
+    for trigger in events:
+        if trigger.type == "orchestrator.rework.triage.requested" and notices.get(trigger.payload.get("request_id")) in {"attempted", "not_sent"}:
+            recover_interrupted_notice(runtime, trigger)
+    closed = {e.payload.get("request_id") for e in events if e.type == CLOSED and e.origin in {"", "kernel"}}
     if any(e.type == REQUESTED and e.payload.get("request_id") not in closed for e in events):
         reconcile_assistance(state_dir=runtime.state_dir, writer=runtime.event_writer, config=runtime.config)
         events = runtime.event_log.read_all()

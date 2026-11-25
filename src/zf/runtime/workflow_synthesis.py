@@ -303,7 +303,7 @@ def run_workflow_synthesis(
             if isinstance(candidate_result, Mapping)
             else reusable if reusable is not None
             else _invoke_synthesis_agent(
-                state_dir=state_dir,
+                config=config, state_dir=state_dir,
                 project_root=project_root,
                 request=request,
                 requirement=requirement,
@@ -645,6 +645,7 @@ def _build_synthesis_proposal(
 
 def _invoke_synthesis_agent(
     *,
+    config: Any,
     state_dir: Path,
     project_root: Path,
     request: Mapping[str, Any],
@@ -670,7 +671,18 @@ def _invoke_synthesis_agent(
         requirement=requirement,
         catalog=catalog,
     )
+    from zf.web.headless_agent import canonical_headless_backend
+    oa_profile = config.workflow.orchestration.oa_profile
+    oa = next((role for role in config.roles if (role.instance_id or role.name) == oa_profile), None)
+    provider_options = {}
+    if (oa and canonical_headless_backend(backend) == "codex-headless"
+            and canonical_headless_backend(oa.backend) == "codex-headless"):
+        if oa.model:
+            provider_options["model"] = oa.model
+        if oa.model_reasoning_effort:
+            provider_options["thinking_level"] = oa.model_reasoning_effort
     result = agent.run_turn(
+        **provider_options,
         backend=backend,
         message=prompt,
         scope="project",

@@ -32,5 +32,6 @@
 | 213 | [里程碑交接、独立验收与定时唤醒](specs/213-zaofu-antigravity-borrowings.md) | candidate | 根据 [Antigravity 调研](specs/antigravity-orchestration-review.zh-CN.md)，定义里程碑接手、验收缺口、事件与超时竞争，以及持久作业的重试和去重。 |
 | 214 | [Workflow Skill 任务评估与按需加载优化](../spec/214-workflow-skill-evaluation-and-optimization.md) | implemented（Task Verify 与 Planner 试点） | 项目决策表、客户端兼容性、加载与交互试验已接入。[8×8 与 Loshu FMS 复盘](../impl/214-workflow-skill-field-audit.md)覆盖 39 项当前方法及长契约读取对照。 |
 | 215 | [OA 按需组队与阶段执行工作台](specs/215-oa-stage-teams-and-execution-workbench.md) | 工程已实施，真实试点待验 | OA 按需组队与独立验收、阶段工作台和按需诊断已接入。固定与按需 Plan、两组真实 8×8 的对照待验。[实施与验收](../impl/215-oa-stage-team-implementation.md)。 |
+| 216 | [Agent 持久收件箱与责任交接](specs/216-durable-agent-mailbox-and-handoff.md) | candidate | 基于 Orca mailbox 源码审查，补充 OA/Worker 稳定义务寻址、消费者隔离、交付与问题回执、未知恢复及 215 工作台接线；保留 WRC 与正式结果准入权威。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

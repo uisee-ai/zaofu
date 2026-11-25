@@ -1,6 +1,8 @@
 """Observe an owned experiment's durable wait and bound its controller process."""
 
 from pathlib import Path
+import os
+import sys
 import subprocess
 import time
 import yaml
@@ -70,8 +72,14 @@ def _child_stop(events, *, run_id: str, state: Path) -> dict:
     transitions = {"run.goal.started", "run.goal.updated", "run.goal.blocked",
                    "run.goal.completed", "run.failed", "run.cancelled"}
     event = next((e for e in reversed(events) if e.type in transitions), None)
+    from zf.autoresearch.diagnosis_disposition import controlled_cancel
+    if event is not None and controlled_cancel(events, event, run_id):
+        return {"status": "cancelled", "failure_class": "child_run_cancelled",
+                "reproduction_status": "incomplete", "reason": str(event.payload.get("reason") or "child Run cancelled"),
+                "child_workflow_run_id": run_id, "child_event_id": event.id,
+                "evidence_refs": ["event:" + event.id]}
     if event is None or event.origin != "kernel" or event.type not in {
-        "run.goal.blocked", "run.failed", "run.cancelled",
+        "run.goal.blocked", "run.failed",
     }:
         return {}
     body = event.payload
@@ -102,13 +110,22 @@ def _child_stop(events, *, run_id: str, state: Path) -> dict:
 
 
 def run_supervised(command, *, worktree: Path, timeout_s: int,
-                   popen=subprocess.Popen, monotonic=time.monotonic) -> tuple:
+                   popen=subprocess.Popen, monotonic=time.monotonic, parent_stop=None, should_stop=None) -> tuple:
     """Poll without holding canonical locks; cleanup has its own short bound."""
     deadline = monotonic() + timeout_s
-    proc = popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    boundary = [sys.executable, "-I", str(Path(__file__).with_name("diagnosis_process.py")),
+                str(os.getpid()), *command]
+    proc = popen(boundary, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     diagnosis = {}
     try:
         while True:
+            if should_stop and should_stop():
+                diagnosis = {"status": "preserved", "failure_class": "resident_shutdown",
+                             "reason": "resident shutdown requested", "reproduction_status": "incomplete"}
+                break
+            diagnosis = parent_stop() if parent_stop else {}
+            if diagnosis:
+                break
             remaining = deadline - monotonic()
             if remaining <= 0:
                 diagnosis = {"status": "incomplete", "failure_class": "diagnosis_timeout",
@@ -116,7 +133,8 @@ def run_supervised(command, *, worktree: Path, timeout_s: int,
                 break
             try:
                 out, err = proc.communicate(timeout=min(5, remaining))
-                return subprocess.CompletedProcess(command, proc.returncode, out, err), child_wait(worktree)
+                return subprocess.CompletedProcess(command, proc.returncode, out, err), (
+                    (parent_stop() if parent_stop else {}) or child_wait(worktree))
             except subprocess.TimeoutExpired:
                 diagnosis = child_wait(worktree)
                 if diagnosis:
@@ -138,4 +156,5 @@ def run_supervised(command, *, worktree: Path, timeout_s: int,
         if stream is not None:
             stream.close()
     return subprocess.CompletedProcess(command,
+        143 if diagnosis.get("status") in {"cancelled", "preserved"} else
         75 if diagnosis.get("failure_class") == "child_owner_wait" else 124, out, err), diagnosis

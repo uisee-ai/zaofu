@@ -275,13 +275,15 @@ def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
         state / "role_sessions.yaml", ctx.project_root
     ).bind_codex_session("dev-1", sid, session_path=rollout)
     served = []
+    replacement_credential = None
 
     def serve(access):
+        nonlocal replacement_credential
         served.append(access.path)
         assert access.check() == 1
         assert "source_id" in access.view.read("INPUTS.md")[0].decode()
         assert manifest["attempt_id"] in access.view.read("RESUME.md")[0].decode()
-        provision_role_artifact_read_credential(
+        replacement_credential = provision_role_artifact_read_credential(
             state, "dev-1", role_name="dev", provider="codex"
         )
         with pytest.raises(ValueError, match="lease expired"):
@@ -314,6 +316,9 @@ def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
     )
     monkeypatch.setattr(artifact_workspace, "mounted_scope", lambda *args: "/dedicated")
     assert main(argv) == 0 and len(served) == 1 and not served[0].exists()
+    assert main(argv) == 1 and "credential" in capsys.readouterr().err
+    # A new process gets the replacement credential; its missing session remains a separate denial.
+    monkeypatch.setenv("ZF_ARTIFACT_READ_TOKEN_FILE", str(replacement_credential))
     rollout.unlink()
     assert main(argv) == 1 and len(served) == 1
     assert "session" in capsys.readouterr().err

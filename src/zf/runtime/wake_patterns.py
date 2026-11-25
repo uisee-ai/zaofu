@@ -105,6 +105,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "diagnosis.requested",
     "diagnosis.completed",
     "worker.assistance.requested",
+    "workflow.mailbox.question",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.

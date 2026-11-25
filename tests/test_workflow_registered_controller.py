@@ -268,3 +268,19 @@ def test_registered_v5_preserves_explicit_review_choice_through_proposal(assembl
         preflight={"status": "GO", "blockers": []})
     assert proposal["approval_status"] == "approvable", proposal["blockers"]
     assert base.read_bytes() == original
+
+
+def test_registered_flow_preserves_mailbox_and_exact_project_effect_authorizations(assembly):
+    base, *_ = assembly
+    docs = list(yaml.safe_load_all(base.read_text()))
+    spec = next(d["spec"] for d in docs if d.get("kind") == "ZfConfig") if any("kind" in d for d in docs) else docs[0]
+    runtime = spec.setdefault("runtime", {})
+    runtime.update(durable_mailbox={"enabled": True}, host_watchdog_seconds=300,
+                   host_verification={"enabled": True, "approval_ref": "owner:demo:host", "commands": ["npm test"],
+                                      "image": "sha256:" + "a" * 64, "max_executions_per_run": 120},
+                   task_publication={"enabled": True, "approval_ref": "owner:demo:publish", "paths": ["app/file.ts"], "max_publications_per_run": 2})
+    base.write_text(yaml.safe_dump_all(docs, sort_keys=False))
+    actual = load_config(_candidate(assembly)[2]).runtime
+    expected = load_config(base).runtime
+    for key in ("durable_mailbox", "host_watchdog_seconds", "host_verification", "task_publication"):
+        assert getattr(actual, key) == getattr(expected, key)

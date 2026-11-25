@@ -73,3 +73,36 @@ test('live Task deep link and exact member history stay bound to one Run', async
   expect(errors).toEqual([]);
   await page.screenshot({path:info.outputPath('member-filter-live.png')});
 });
+
+test('mail addressed to an unassigned member stays private across live and historical views', async ({page, request}, info) => {
+  const project = process.env.ZF_E2E_MAILBOX_PROJECT;
+  test.skip(!project, 'Requires an isolated approved team and real mailbox posts');
+  const base = `/api/projects/${encodeURIComponent(project!)}/workflow-requests/req-1/graph`;
+  const read = async (cursor: number) => {
+    const response = await request.get(base + '/structure', {params: {as_of: cursor}});
+    expect(response.ok()).toBe(true);
+    return await response.json();
+  };
+  const current = await read(0);
+  type Stage = {id:string; data:{team:{members:{role:string; instance:string; mailbox?:{pending:number}}[]}}};
+  const members = (graph: {nodes: Stage[]}) => graph.nodes.find(n => n.id === 'workflow:stage:prd-plan')!.data.team.members;
+  const member = members(current).find(m => m.role === 'tech-scan')!;
+  expect(member.instance).toBe('');
+  expect(member.mailbox?.pending).toBe(1);
+  const previous = await read(Number(process.env.ZF_E2E_MAILBOX_BEFORE));
+  expect(members(previous).every(m => !m.mailbox)).toBe(true);
+  const address = '/tests/inbox-workflow.html?surface=graph-refresh&project=' + encodeURIComponent(project!);
+  await page.goto(address);
+  await page.locator('#root').evaluate(el => {el.style.height='100vh';});
+  const node = page.locator('.react-flow__node[data-id="workflow:stage:prd-plan"]');
+  await expect(node).toContainText('待接手 1');
+  await node.click();
+  const team = page.getByRole('complementary', {name:'图节点详情'}).getByLabel('阶段分工');
+  await expect(team).toContainText('邮件责任人 tech-scan');
+  await expect(team).not.toContainText('private text');
+  await page.screenshot({path:info.outputPath('unassigned-mail.png')});
+  const ledger = await request.get(`/api/projects/${encodeURIComponent(project!)}/events`, {params:{prefix:'workflow.mailbox.',require_fresh:true}});
+  const items: {type:string; payload:Record<string,unknown>}[] = (await ledger.json()).items;
+  expect(items.map(i => i.type)).toEqual(['workflow.mailbox.accepted','workflow.mailbox.accepted']);
+  expect(items.every(i => i.payload.content_visibility === 'restricted' && !('body_ref' in i.payload))).toBe(true);
+});

@@ -74,9 +74,13 @@ def dispatch_advisory_turn(
         )
         from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
 
-        runtime._send_transport_task(
-            orchestrator_instance_id(runtime), briefing_path, prompt, context
-        )
+        if primary.payload.get("durable_mailbox") and guidance:
+            from zf.runtime.assistance_mailbox import send_notice
+
+            send_notice(runtime, primary, lambda: runtime._send_transport_task(
+                orchestrator_instance_id(runtime), briefing_path, prompt, context))
+        else:
+            runtime._send_transport_task(orchestrator_instance_id(runtime), briefing_path, prompt, context)
     except Exception as exc:
         payload = {
             "trigger_event_id": primary.id,

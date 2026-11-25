@@ -148,6 +148,7 @@ def start_autoresearch_resident_sidecar(
     log_handle = log_path.open("a", encoding="utf-8")
     env = os.environ.copy()
     env["ZF_AUTORESEARCH_RESIDENT"] = "authorized"
+    env["ZF_AUTORESEARCH_LAUNCHER_PID"] = str(os.getpid())
     env.setdefault("PYTHONUNBUFFERED", "1")
     try:
         process = subprocess.Popen(

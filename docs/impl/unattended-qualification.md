@@ -80,6 +80,11 @@ resident 重启后只在证实原 owner 已退出时，将悬空诊断明确关�
 preserve/cancel 终止进程且保留磁盘成果；继续运行需要新的受控决定，不能自动把不完整报告判成功。
 continue 仅在主目标完成后移交已运行的 resident，保留其 singleton lock，队列排空后退出；显式 stop/pause 优先。
 
+常驻 watcher 用已准入的 loop request 绑定父 Run。父目标完成时，仅对该 Run 的排队、执行中诊断应用策略，
+其他 Run 的诊断继续。preserve 保存检查点与候选工作区；cancel 保存部分审计并只按原规则清理干净工作区。
+诊断的显式受控取消在当前轮反思、重试之前可见，收尾记录 skipped 与 disposition，归档状态为 cancelled。
+重启只复用已确认的取消回执；旧版 CLI 记录需同时对上原 run-cancel 请求、作用域及成功动作回执。
+
 ## 资格记录
 
 证据写入本 worktree `reports/unattended-qualification-20261116/`。必须区分确定性回归、真实宿主能力和完整真实 PRD。
@@ -350,3 +355,5 @@ B01–B07在本批限定范围内完成：宿主监督及停止保护、有限�
 本资格不包括主机断电重启、Go、跨Provider、8+8满载或长期耐久。Provider诊断输出留存和
 重复读取成本优化属于后续项，不影响本次已获得的限定资格，也未冒称已经实现。
 归档任务：../../tasks/done/2026-11-16-1258-unattended-qualification.md。
+
+Codex Workflow Synthesis 的首次 provider turn 使用当前项目 OA profile 的模型与推理强度。按需反思执行时，Run Manager 与派生诊断使用同一套 provider 选择规则。反思后端与 Run Manager 匹配时，沿用其模型和推理强度，包括常驻 Agent 关闭时的按需调用。切换至不同后端时使用该后端的模型配置。

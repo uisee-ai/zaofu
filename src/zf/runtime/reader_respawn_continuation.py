@@ -170,6 +170,11 @@ def reader_continuation_guidance(
             f"{attempt} --required --resume` only if the earlier pages are still "
             "available in this session; otherwise reread the necessary pages."
         )
+    if runtime is not None:
+        from zf.runtime.mailbox_briefing import mailbox_hint
+        hint = mailbox_hint(getattr(runtime, "config", None), getattr(runtime, "state_dir", None), attempt_id)
+        if hint:
+            text += "\n" + hint
     return text
 
 

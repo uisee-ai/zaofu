@@ -9,7 +9,9 @@ export const TeamViewContext = createContext({clock: 0, historical: false, sessi
 
 
 type Message = {sender: string; recipient: string; source_event_id: string; posted: string; posted_seq?: number; seen_seq?: number; consumed_seq?: number; seen: string; consumed: string};
-type Member = {instances?:string[]; selection_reason?:string; completion_condition?:string; admission_evidence_id?:string; judge_objectives?:string[]; source_seq?:number; attempt_count?:number; wait?:{reason:string; wake_event?:string; deadline?:string}; judge_questions?:{question_id:string;question:string}[]; integration_check_ids?:string[];
+type Mailbox = {pending:number; unanswered:number; sent_unanswered:number; unknown:number; oldest_at:string; owner:string; deadline:string;
+  last_claimed_at:string; last_answered_at:string; recovery_owner:string};
+type Member = {mailbox?:Mailbox; instances?:string[]; selection_reason?:string; completion_condition?:string; admission_evidence_id?:string; judge_objectives?:string[]; source_seq?:number; attempt_count?:number; wait?:{reason:string; wake_event?:string; deadline?:string}; judge_questions?:{question_id:string;question:string}[]; integration_check_ids?:string[];
   obligation_id: string; stage: string; role: string; status: string; instance: string; task_ids: string[]; required?: boolean; reused?: boolean; source_operation_id?: string; source_result_event_id?: string; original_work_unit_id?: string; coverage_owner?: string; disposition?: {reason:string};
   recipient?: string; question?: string; expected_output?: string; owner: string; last_event_at: string; status_since: string;
   source_event_id: string; evidence_ref?: {ref?: string; sha256?: string}; waiting_for?: string[]; operation_ids: string[]; attempt_ids: string[]; verdict?: string;
@@ -86,8 +88,8 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
     {details && view.historical && <button type="button" onClick={() => onReplay?.(0)}>返回实时分工</button>}
     {details && links.length > 0 && <details><summary>沟通关系 · {links.length} 条交接</summary>
       <ul>{links.map(msg => <li key={msg.source_event_id + msg.recipient}><b>{msg.sender}</b> → <b>{msg.recipient}</b>
-        <small> 发布 {msg.posted} · 已读 {msg.seen || '未观测'} · 接手 {msg.consumed || '未观测'}</small>
-        {replay(msg.posted_seq, '回看发布')}{replay(msg.seen_seq, '回看已读')}{replay(msg.consumed_seq, '回看接手')}
+        <small> 发布 {msg.posted} · 已读 {msg.seen || '未观测'} · 已消费 {msg.consumed || '未观测'}</small>
+        {replay(msg.posted_seq, '回看发布')}{replay(msg.seen_seq, '回看已读')}{replay(msg.consumed_seq, '回看消费')}
       </li>)}</ul></details>}
     <div className={details ? '' : 'stage-team-members nowheel'}>{visible.map(m => <div key={JSON.stringify([m.stage,m.obligation_id,m.task_ids])}>
       <b>{m.role}</b>{m.required === false && ' · 可选'}{m.reused && ' · 复用原意见'} · {labels[m.status] || m.status} · {m.instance || '实例待绑定'}
@@ -98,6 +100,10 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
         {m.last_activity ? ` · ${m.last_activity.kind === 'heartbeat' ? '心跳' : m.last_activity.event_type} ${m.last_activity.time}`
                          : m.last_event_at && ` · 最近观测 ${m.last_event_at}`}
         {m.recipient && ` · 交给 ${m.recipient}`}{m.owner && ` · 责任人 ${m.owner}`}
+        {m.mailbox && <span> · 待接手 {m.mailbox.pending} · 已接手待答 {m.mailbox.unanswered} · 已发待答 {m.mailbox.sent_unanswered} · 交付待核实 {m.mailbox.unknown}
+          {m.mailbox.oldest_at && ` · 最早等待 ${m.mailbox.oldest_at}`}{m.mailbox.owner && ` · 邮件责任人 ${m.mailbox.owner}`}
+          {m.mailbox.deadline && ` · 邮件截止 ${m.mailbox.deadline}`}{m.mailbox.last_claimed_at && ` · 最近接手 ${m.mailbox.last_claimed_at}`}
+          {m.mailbox.last_answered_at && ` · 最近回答 ${m.mailbox.last_answered_at}`}{m.mailbox.recovery_owner && ` · 恢复责任人 ${m.mailbox.recovery_owner}`}</span>}
         {m.wait && ` · ${m.wait.reason} · 唤醒 ${m.wait.wake_event || '待核实'}`}{m.wait?.deadline && ` · 截止 ${m.wait.deadline}`}
       </small>
       {details && !team.partial && <MemberHandoff member={m}><summary>{m.obligation_id} · {m.task_ids.join('、') || m.stage} · 查看交接</summary>
@@ -124,7 +130,7 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
         {m.history?.map(h => <button type="button" key={h.operation_id} onClick={() => onSelect?.('operation:' + h.operation_id)}>
           {h.operation_id} · {labels[h.status] || h.status} {h.reason}</button>)}
         {memberMessages(m).map(msg => <p key={msg.source_event_id + msg.recipient}>{msg.sender} → {msg.recipient} · {msg.posted}
-          {msg.seen && ` · 已读 ${msg.seen}`}{msg.consumed && ` · 接手 ${msg.consumed}`}</p>)}
+          {msg.seen && ` · 已读 ${msg.seen}`}{msg.consumed && ` · 已消费 ${msg.consumed}`}</p>)}
       </MemberHandoff>}
     </div>)}</div>
     {details && team.unbound_operation_ids?.length > 0 && <p>归属待核实：{team.unbound_operation_ids.join('、')}</p>}

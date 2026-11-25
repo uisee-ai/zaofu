@@ -112,7 +112,7 @@ def _fake_claude_script(tmp_path: Path) -> Path:
     return script
 
 
-def _fake_codex_script(tmp_path: Path) -> Path:
+def _fake_codex_script(tmp_path: Path, *, reply: str = "headless reply") -> Path:
     script = tmp_path / "fake_codex.py"
     script.write_text(
         "\n".join(
@@ -153,7 +153,7 @@ def _fake_codex_script(tmp_path: Path) -> Path:
                 "            assert msg['params']['effort'] == expected_thinking",
                 "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'turnId':'turn-1'}}), flush=True)",
                 "        print(json.dumps({'jsonrpc':'2.0','method':'item/agentMessage/delta','params':{'delta':'codex '}}), flush=True)",
-                "        print(json.dumps({'jsonrpc':'2.0','method':'item/completed','params':{'item':{'type':'agentMessage','text':'headless reply'}}}), flush=True)",
+                "        print(json.dumps({'jsonrpc':'2.0','method':'item/completed','params':{'item':{'type':'agentMessage','text':" + repr(reply) + "}}}), flush=True)",
                 "        print(json.dumps({'jsonrpc':'2.0','method':'thread/tokenUsage/updated','params':{'usage':{'input_tokens':5,'output_tokens':6}}}), flush=True)",
                 "        print(json.dumps({'jsonrpc':'2.0','method':'turn/completed','params':{'turn':{'status':'completed'}}}), flush=True)",
             ]

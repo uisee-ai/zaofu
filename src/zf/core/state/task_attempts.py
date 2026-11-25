@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -114,6 +115,18 @@ class TaskAttemptStore:
         current_id = str((data.get("current") or {}).get(scope) or "")
         current = (data.get("attempts") or {}).get(current_id)
         return dict(current) if isinstance(current, dict) else None
+
+    @contextmanager
+    def fence_consumer(self, attempt_id: str):
+        """Keep a verified live consumer from being replaced during a dependent commit."""
+        with locked_path(self.path):
+            data = self._load_unlocked()
+            attempt = (data.get("attempts") or {}).get(attempt_id)
+            if attempt:
+                scope = _scope_key(attempt["run_id"], attempt["task_id"], attempt.get("attempt_key") or "")
+                if (data.get("current") or {}).get(scope) != attempt_id:
+                    raise ValueError("task attempt consumer was superseded")
+            yield dict(attempt) if attempt else None
 
     def ensure_for_dispatch(
         self,

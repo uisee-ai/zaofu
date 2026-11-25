@@ -429,6 +429,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "worker.model.claimed",
     "worker.model.returned",
     "worker.model.unavailable",
+    "workflow.mailbox.accepted", "workflow.mailbox.prepared", "workflow.mailbox.acknowledged",
+    "workflow.mailbox.question", "workflow.mailbox.notification", "workflow.mailbox.disposition", "workflow.mailbox.binding",
     "workflow.board.posted",
     "workflow.board.consumed",
     "workflow.board.seen",

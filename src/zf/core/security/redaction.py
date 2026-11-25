@@ -179,7 +179,14 @@ def _redact_dict_value(key: object, value: Any, *, redact=redact_obj) -> Any:
 SESSION_CONTENT_EVENTS = frozenset({"agent.text", "agent.thinking", "agent.tool.use", "agent.tool.result"})
 
 
+def restricted_event_payload(event_type: str) -> bool:
+    return event_type in SESSION_CONTENT_EVENTS or event_type.startswith("workflow.mailbox.")
+
+
 def public_event_metadata(event_type: str, payload: dict) -> dict:
+    if event_type.startswith("workflow.mailbox."):
+        # Only the roster projection may disclose per-recipient metadata.
+        return {"content_visibility": "restricted"}
     if event_type not in SESSION_CONTENT_EVENTS:
         return payload
     public = {"content_visibility": "restricted"}

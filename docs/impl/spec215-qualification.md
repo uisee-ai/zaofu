@@ -71,3 +71,5 @@ PYTHONPATH=src uv run python scripts/compare-stage-team-pilot.py /path/to/captur
 可复现的比较器回归覆盖正常来源、历史窗口重标、模式不符、越 Run 的回执、篡改摘要及控制条件不同。[比较器](../../scripts/compare-stage-team-pilot.py) · [确定性回归](../../tests/test_stage_team_qualification.py)
 
 公开 Web 的事件详情、历史索引、Task 时间线、Trace 和 SSE 对 Worker 的 `agent.text`、`agent.thinking`、`agent.tool.use`、`agent.tool.result` 只展示活动类型、绑定标识与可验证的错误标记。原文保存在内部账本；已获准公开的回复由工作台会话入口按当前身份和目标单独读取。
+
+同一产品在独立机器路径、tmux 和宿主授权下对照时，可在启动前的协议保存每组 `local_bindings`。比较器逐字段核对实际快照，仅归一化项目本地的会话名、目标目录、诊断输出目录、专属 worker cgroup 和宿主授权引用。配置中命令、受保护文件、权限、容量或超时不同都会保留差异。批准后的 Web 受控请求按 Run 归属审计。无法归属的动作进入复核。真实窗口还需绑定覆盖批准至终点的 `host_observation` 及原始采集摘要，缺少独立宿主观察时，介入次数保留未知。

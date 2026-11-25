@@ -5759,13 +5759,10 @@ def _invoke_reflect_function(
             return reflect_fn(prompt, backend=backend, timeout_seconds=timeout_seconds)
         except TypeError:
             return reflect_fn(prompt)
-    from zf.autoresearch.loop_reflect import invoke_reflection_llm
+    from zf.autoresearch.loop_reflect import invoke_reflection_llm, reflection_provider_options
 
-    return invoke_reflection_llm(
-        prompt,
-        backend=backend,
-        timeout_seconds=timeout_seconds,
-    )
+    backend, options = reflection_provider_options(backend, config.runtime.run_manager)
+    return invoke_reflection_llm(prompt, backend=backend, **options)
 
 
 def _reflection_payload(result: Any) -> dict[str, Any]:

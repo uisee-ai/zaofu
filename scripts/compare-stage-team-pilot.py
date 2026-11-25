@@ -12,7 +12,7 @@ from zf.core.events.log import EventLog
 from zf.runtime.automation_metrics import cross_cutting_scorecard
 from zf.runtime.recovery_case import build_recovery_metrics
 from zf.runtime.run_scope import events_for_run
-from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 
 
 def read_capture(root, descriptor):
@@ -42,9 +42,26 @@ def snapshot(state, event):
     return loaded.payload
 
 
-def common_policy_digest(snapshot_body):
+_LOCAL_POLICY_FIELDS = {
+    "session.tmux_session", "workflow._flow_metadata.target_root",
+    "runtime.autoresearch_resident.worktree_root", "runtime.autoresearch_resident.output_root",
+    "runtime.host_verification.approval_ref", "runtime.task_publication.approval_ref",
+}
+
+
+def common_policy_digest(snapshot_body, local_bindings=None):
     """Only the experimental consumer switches and capture-local project identity may differ."""
     config = deepcopy(snapshot_body["config"])
+    for field, frozen in (local_bindings or {}).items():
+        if field not in _LOCAL_POLICY_FIELDS and not field.startswith("workflow._flow_metadata.artifact_worker_cgroups."):
+            raise ValueError("unsupported local identity in comparison")
+        keys = field.split(".")
+        target = config
+        for key in keys[:-1]:
+            target = target[key]
+        if not isinstance(frozen, str) or not frozen or target.get(keys[-1]) != frozen:
+            raise ValueError("local identity differs from preapproved capture")
+        target[keys[-1]] = f"<isolated:{field}>"
     project = config.get("project", {})
     for name in ("name", "state_dir"):
         project.pop(name, None)
@@ -132,6 +149,67 @@ def signed_judge_sources(events, run, proven):
     return signed
 
 
+def intervention_candidates(ledger, window, approve, end, run):
+    """Include Web requests whose public audit envelope has no top-level Run ID."""
+    ids = {e.id for e in window}
+    scoped, unbound = set(), set()
+    owner_actions = {"operator.intent.approved", "replan.owner_decision.approved",
+                     "replan.owner_decision.rejected", "replan.owner_decision.deferred"}
+    for event in ledger[ledger.index(approve) + 1:ledger.index(end) + 1]:
+        if event.type == "web.action.requested" and event.actor == "web" and event.origin in {"", "kernel"}:
+            body = event.payload
+            request = body.get("request") or {}
+            target = body.get("workflow_run_id") or body.get("run_id") or request.get("workflow_run_id") or request.get("run_id")
+            if target == run or event.id in ids:
+                scoped.add(event.id)
+            elif not target:
+                unbound.add(event.id)
+        elif event.id in ids and (event.actor in {"operator", "owner", "human"} or event.type in owner_actions):
+            scoped.add(event.id)
+    return scoped, unbound
+
+
+def task_receipts(rows, by_id, state, run):
+    """Count the integrated task once, preserving both canonical and compatibility IDs."""
+    found = {}
+    rejected = []
+    positions = {event_id: seq for seq, event_id in enumerate(by_id)}
+    for row in rows:
+        event = by_id[row["id"]]
+        body = event.payload
+        task = row["task_id"]
+        if event.type == "task.done":
+            cause = by_id.get(event.causation_id)
+            ref = body.get("integration_receipt_ref")
+            if not (task and body.get("authority") == "task_integration_receipt" and cause
+                    and cause.type == "integration.queue.integrated" and cause.origin == "kernel"
+                    and cause.id == body.get("integration_event_id") and positions[cause.id] < positions[event.id]
+                    and isinstance(ref, dict)
+                    and ref.get("sha256") and ref["sha256"] == body.get("integration_receipt_digest")
+                    and cause.payload.get("receipt_ref") == ref
+                    and cause.payload.get("task_id") == task and cause.payload.get("workflow_run_id") == run):
+                rejected.append(event.id)
+                continue
+            try:
+                evidence = hydrate_sidecar_ref(state, ref)
+            except (SidecarRefError, OSError):
+                rejected.append(event.id)
+                continue
+            expected = {"workflow_run_id": run, "task_id": task, "task_map_generation": body.get("task_map_generation"),
+                        "candidate_generation": body.get("candidate_generation"), "new_candidate_head": body.get("candidate_head")}
+            if not (evidence.ok and isinstance(evidence.payload, dict)
+                    and all(v and evidence.payload.get(k) == v for k, v in expected.items())
+                    and all(cause.payload.get(k) == body.get(k) for k in ("candidate_head", "candidate_generation", "task_map_generation"))):
+                rejected.append(event.id)
+                continue
+        key = task or event.id
+        if key in found:
+            found[key].setdefault("corroborating_event_ids", []).append(event.id)
+        else:
+            found[key] = row
+    return list(found.values()), rejected
+
+
 def compare_arm(root, arm, controls, protocol, mode, authorized_at):
     state = (root / arm["state_dir"]).resolve()
     if not state.is_relative_to(root.resolve()):
@@ -139,7 +217,8 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
     if not (state / "events.jsonl").resolve().is_relative_to(state) or not (state / "events.jsonl").is_file():
         raise ValueError("missing captured event ledger")
     run = arm["run_id"]
-    events = events_for_run(EventLog(state / "events.jsonl").read_all(), run_id=run,
+    ledger = EventLog(state / "events.jsonl").read_all()
+    events = events_for_run(ledger, run_id=run,
                             include_legacy_single_run=False)
     audit = read_capture(root, arm["audit"])
     if (audit["run_id"] != run or audit["evidence_mode"] != mode
@@ -175,7 +254,7 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
     runtime = config["runtime"]
     rm = runtime["run_manager"]["resident_agent"]
     diagnosis = runtime.get("autoresearch_resident", {})
-    frozen_controls = common_policy_digest(snapshot_body)
+    frozen_controls = common_policy_digest(snapshot_body, (protocol.get("local_bindings") or {}).get(arm["group"]))
     if not oa.get("oa_profile") or oa.get("normal_frontier_owner") != "wrc":
         raise ValueError("both arms require configured OA and WRC")
     if rm["enabled"] != (arm["group"] == "A"):
@@ -188,9 +267,7 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
         raise ValueError("B requires configured diagnosis consumer")
     window = events[events.index(approve) + 1:events.index(end) + 1]
     ids = {e.id: e for e in window}
-    recorded = [e.id for e in window if e.actor in {"operator", "owner", "human"} or
-                e.type in {"operator.intent.approved", "replan.owner_decision.approved",
-                           "replan.owner_decision.rejected", "replan.owner_decision.deferred"}]
+    recorded, unbound_web = intervention_candidates(ledger, window, approve, end, run)
     # Off-ledger restarts are visible only to an independent host audit.
     manual = audit.get("interventions")
     if manual is not None and (not isinstance(manual, list)
@@ -301,24 +378,34 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
     if any(value is None or value == "" for value in captures.values()) or captures != protocol["controls"]:
         raise ValueError("captured controls differ from the approved experiment protocol")
     confirmed_manual = {str(row.get("event_id")) for row in manual or [] if row.get("event_id")}
-    if confirmed_manual - ids.keys():
+    if confirmed_manual - (ids.keys() | recorded | unbound_web):
         raise ValueError("intervention references another window")
     consumer_receipts = {"resident_rm": receipts("run.manager.agent.recommendation.consumed"),
                          "on_demand_reflect": receipts("run.manager.reflect.completed"),
                          "autoresearch": receipts("run.manager.autoresearch.consumed")}
-    unseen_owner = sorted(set(recorded) - confirmed_manual)
+    unseen_owner = sorted((recorded | unbound_web) - confirmed_manual)
+    host_observed = mode == "deterministic_replay"
+    if mode == "real_provider" and audit.get("host_observation"):
+        host = read_capture(root, audit["host_observation"])
+        host_observed = (host.get("run_id") == run and host.get("plan_approval") == approve.id
+                         and host.get("window_end") == end.id and bool(host.get("collector"))
+                         and time(host["from"]) <= time(approve.ts) and time(host["through"]) >= time(end.ts)
+                         and host.get("gaps") == [] and bool(host.get("sources"))
+                         and all(read_capture(root, ref).get("run_id") == run for ref in host["sources"]))
+    completed, unconfirmed_tasks = task_receipts(receipts("task.done", "task.done.accepted"), by_id, state, run)
     return {"group": arm["group"], "run_id": run, "window": [approve.id, end.id], "controls": captures,
             "frozen_controls_digest": frozen_controls,
             "approved_config_digest": invoke.payload["effective_config_ref"]["sha256"],
             "oa": oa["oa_profile"], "resident_rm_enabled": rm["enabled"], "configured_consumers": consumers,
             "observed_consumer_receipts": consumer_receipts,
-            "task_completion_events": receipts("task.done.accepted"), "coverage": coverage,
+            "task_completion_events": completed, "unconfirmed_task_event_ids": unconfirmed_tasks, "coverage": coverage,
             "judge_receipts": judge_receipts, "unconfirmed_judge_event_ids": unconfirmed_judge_events,
             "judge_attempt_failures": receipts("goal.closure.synthesis.failed"),
             "delivery_receipts": delivery_receipts,
             "terminal_receipts": receipts("run.goal.completed", "run.goal.blocked", "run.failed"),
             "owner_events_for_review": unseen_owner, "recorded_interventions": len(manual) if manual is not None else None,
-            "post_approval_interventions": len(manual) if manual is not None and not unseen_owner else None,
+            "host_observation_complete": host_observed, "unbound_web_action_ids": sorted(unbound_web),
+            "post_approval_interventions": len(manual) if manual is not None and not unseen_owner and host_observed else None,
             "model_handoff_event_ids": handoffs, "model_handoffs": len(handoffs) if handoffs is not None else None,
             "unowned_wait_seconds": durations if waits is not None else None,
             "first_effective_recovery": ({"fault": fault.id, "receipt": first.id, "action": first.payload["action"],

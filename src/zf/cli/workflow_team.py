@@ -105,6 +105,11 @@ def run(args) -> int:
             print(f"    owner {member['owner']} | last observed {member['last_event_at']} | {member['source_event_id']}")
             print(f"    since {member.get('status_since') or '-'} | attempt {member.get('attempt_count', 0)} | "
                   f"recipient {member.get('recipient') or '-'} | as-of {member.get('source_seq') or '-'}")
+            if mail := member.get("mailbox"):
+                print(f"    mailbox pending {mail['pending']} | claimed unanswered {mail['unanswered']} | sent unanswered {mail['sent_unanswered']} | unknown {mail['unknown']}")
+                for key in ("oldest_at", "owner", "deadline", "last_claimed_at", "last_answered_at", "recovery_owner"):
+                    if mail.get(key):
+                        print(f"    mailbox {key} {mail[key]}")
             if member.get("question"):
                 print(f"    question {member['question']}")
             if args.stage or args.member or args.task or getattr(args, "instance", ""):

@@ -617,6 +617,10 @@ class FanoutBriefingMixin:
             controlled_inputs = render_attempt_source_briefing(
                 child_payload, state_dir=self.state_dir, role_name=role.name,
             ).strip()
+            from zf.runtime.mailbox_briefing import mailbox_hint
+            inbox = mailbox_hint(getattr(self, "config", None), self.state_dir, child_payload.get("attempt_id") or child_payload.get("run_id"))
+            if inbox:
+                payload_section.extend([inbox, ""])
             if controlled_inputs:
                 payload_section.extend([*controlled_inputs.splitlines(), ""])
             instruction = str(

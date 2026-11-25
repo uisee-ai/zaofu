@@ -3904,9 +3904,11 @@ def _build_runtime(
     ar_terminal_policy = autoresearch_resident_raw.get("on_parent_terminal", "preserve")
     if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
         raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
+    from zf.core.config.durable_mailbox import parse_durable_mailbox
     from zf.core.config.host_verification import parse_host_verification
     from zf.core.config.task_publication import parse_task_publication
     try:
+        durable_mailbox = parse_durable_mailbox(data.get("durable_mailbox"))
         host_verification = parse_host_verification(data.get("host_verification"))
         if (host_verification.enabled and host_watchdog_seconds
                 and host_watchdog_seconds <= host_verification.timeout_seconds):
@@ -4289,6 +4291,7 @@ def _build_runtime(
             lock_file=str(skills_raw.get("lock_file", ".zf/skills.lock.json")),
             strict=bool(skills_raw.get("strict", False)),
         ),
+        durable_mailbox=durable_mailbox,
         host_verification=host_verification,
         task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(

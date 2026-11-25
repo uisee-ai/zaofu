@@ -196,7 +196,7 @@ def test_role_token_rotation_rejects_old_token_and_rebinds_active_attempt(
     state_dir = tmp_path / ".zf"
     manifest, event_log, token_path = _grant(state_dir, monkeypatch)
     old_token = token_path.read_text(encoding="utf-8").strip()
-    provision_role_artifact_read_credential(
+    rotated_path = provision_role_artifact_read_credential(
         state_dir,
         "dev-1",
         role_name="dev",
@@ -210,6 +210,11 @@ def test_role_token_rotation_rejects_old_token_and_rebinds_active_attempt(
     assert stale.value.code == "capability_invalid"
 
     monkeypatch.delenv("ZF_ARTIFACT_READ_TOKEN")
+    with pytest.raises(ArtifactReadCapabilityError) as stale_file:
+        _authorize(state_dir, manifest, event_log)
+    assert stale_file.value.code in {"capability_invalid", "capability_unreadable"}
+    assert rotated_path != token_path
+    monkeypatch.setenv("ZF_ARTIFACT_READ_TOKEN_FILE", str(rotated_path))
     assert _authorize(state_dir, manifest, event_log)["actor"] == "dev-1"
 
 

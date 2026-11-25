@@ -32,9 +32,21 @@ def run(args: argparse.Namespace) -> int:
         ctx = resolve_project_context(explicit_state_dir=args.state_dir, load_config_with_explicit=True)
         log = event_log_from_project(ctx.state_dir, config=ctx.config)
         writer = EventWriter(log)
+        from zf.cli.artifact_mailbox import worker_identity
+        from zf.runtime.assistance_mailbox import runtime_view
+        from zf.runtime.durable_mailbox import enabled
+
+        scoped = enabled(ctx.config) and args.owner == "orchestrator"
         if args.mode == "read":
-            result = read_assistance(state_dir=ctx.state_dir, writer=writer, request_id=args.request_id)
+            scoped = any(e.type == "worker.assistance.requested" and e.payload.get("request_id") == args.request_id
+                         and e.payload.get("durable_mailbox") for e in log.read_all())
+        identity = worker_identity(runtime_view(ctx.state_dir, writer, ctx.config), args.attempt_id) if scoped else None
+        if args.mode == "read":
+            result = read_assistance(state_dir=ctx.state_dir, writer=writer, request_id=args.request_id,
+                                     identity=identity, config=ctx.config)
         else:
+            if identity and (identity.get("actor") != args.actor or identity.get("operation_id") != args.operation_id):
+                raise ValueError("assistance request must match its authorized operation")
             operation = load_workflow_operation(log, args.operation_id) or {}
             result = request_assistance(state_dir=ctx.state_dir, writer=writer, config=ctx.config,
                 identity={"operation_id": args.operation_id, "active_attempt_id": args.attempt_id,

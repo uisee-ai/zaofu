@@ -132,6 +132,7 @@ class RunControlActionsMixin:
             )
         event = self.writer.append(ZfEvent(
             type=event_type,
+            origin="kernel" if action == "run-cancel" else "",
             actor=self.actor,
             task_id=entry.task_id or None,
             payload=event_payload,

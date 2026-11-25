@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**337** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**348** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -41,6 +41,17 @@ Artifact manifest helpers
 | `zf artifact handoff-evidence` | Read causally bound predecessor tool observations without accepting them |
 | `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
+| `zf artifact mailbox` | Exchange authorized messages and recover delivery receipts |
+| `zf artifact mailbox ack` | Acknowledge a verified delivery |
+| `zf artifact mailbox answer` | No parser summary. |
+| `zf artifact mailbox cancel` | No parser summary. |
+| `zf artifact mailbox claim` | No parser summary. |
+| `zf artifact mailbox handoff` | No parser summary. |
+| `zf artifact mailbox inbox` | List pending authorized message metadata without consuming a delivery |
+| `zf artifact mailbox pull` | Prepare an exact, replayable batch |
+| `zf artifact mailbox read-answer` | No parser summary. |
+| `zf artifact mailbox send` | Send to an admitted Run obligation or request OA guidance |
+| `zf artifact mailbox wait` | No parser summary. |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
 | `zf artifact milestone` | Read the bound candidate milestone obligations and decision |

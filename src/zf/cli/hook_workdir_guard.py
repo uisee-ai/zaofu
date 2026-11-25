@@ -183,6 +183,7 @@ def _is_simple_controlled_zf_result_command(
         args[:1] == ["emit"]
         or args[:2] in (["result", "submit"], ["result", "validate"])
         or args[:3] == ["recover", "assistance", "request"]
+        or args[:3] in (["artifact", "mailbox", "send"], ["artifact", "mailbox", "answer"])
     )
 
 

@@ -251,3 +251,58 @@ def test_real_completion_gate_proves_actual_judge_and_delivery_even_without_dire
     assert not module().terminal_bound_receipts(events, RUN_ID, end, replace(freeze, id="later-same-head"))
     delivery.payload["claim_id"] = "unrelated"
     assert not module().terminal_bound_receipts(events, RUN_ID, end, freeze)
+
+
+def test_web_mutations_without_top_level_run_binding_remain_reviewable(pilot):
+    path, pair = pilot
+    arm = pair["arms"][0]
+    state = path.parent / arm["state_dir"]
+    log = EventLog(state / "events.jsonl")
+    for eid, target in (("our-web", arm["run_id"]), ("other-web", "another-run"), ("unbound-web", "")):
+        log.append(ZfEvent(type="web.action.requested", id=eid, actor="web",
+                           payload={"action": "runtime-restart", "request": {"run_id": target}}))
+    log.append(ZfEvent(type="human.escalate", id="end", correlation_id=arm["run_id"], actor="supervisor"))
+    audit = json.loads((path.parent / arm["audit"]["path"]).read_text())
+    audit["window_end"] = "end"
+    arm["audit"] = capture(path.parent / arm["audit"]["path"], audit)
+    capture(path, pair)
+    result = module().compare(path)["arms"][0]
+    assert result["owner_events_for_review"] == ["our-web", "unbound-web"]
+    assert result["post_approval_interventions"] is None
+
+
+def test_task_completion_requires_current_digest_and_same_run_integration(tmp_path):
+    common = {"workflow_run_id": "R", "task_map_generation": "G", "candidate_generation": "C"}
+    ref = write_immutable_json_sidecar(tmp_path, {"task_id": "T", **common, "new_candidate_head": "H"}, root="receipts",
+                                       kind="task_integration_receipt", schema_version="task-integration-receipt.v1",
+                                       created_by="kernel")
+    cause = ZfEvent(type="integration.queue.integrated", id="I", origin="kernel",
+                    payload={**common, "task_id": "T", "candidate_head": "H", "receipt_ref": ref})
+    done = ZfEvent(type="task.done", id="D", origin="kernel", task_id="T", causation_id=cause.id,
+                   payload={**common, "candidate_head": "H", "authority": "task_integration_receipt",
+                            "integration_event_id": cause.id, "integration_receipt_ref": ref,
+                            "integration_receipt_digest": ref["sha256"]})
+    alias = ZfEvent(type="task.done.accepted", id="alias", task_id="T", origin="kernel")
+    by_id = {e.id: e for e in (cause, done, alias)}
+    rows = [{"id": e.id, "task_id": "T"} for e in (done, alias)]
+    assert module().task_receipts(rows, by_id, tmp_path, "R") == ([{**rows[0], "corroborating_event_ids": ["alias"]}], [])
+    (tmp_path / ref["ref"]).unlink()
+    assert module().task_receipts(rows[:1], by_id, tmp_path, "R") == ([], ["D"])
+
+
+def test_frozen_machine_local_identities_preserve_comparable_policy():
+    fn = module().common_policy_digest
+    a = {"config":{"runtime":{"run_manager":{"resident_agent":{}}, "host_verification":{
+         "approval_ref":"owner:A", "commands":["npm test"]}}, "session":{"tmux_session":"A"}}}
+    b = json.loads(json.dumps(a))
+    b["config"]["session"]["tmux_session"] = "B"
+    b["config"]["runtime"]["host_verification"]["approval_ref"] = "owner:B"
+    def bindings(group):
+        return {"session.tmux_session":group,"runtime.host_verification.approval_ref":"owner:"+group}
+    assert fn(a, bindings("A")) == fn(b, bindings("B"))
+    with pytest.raises(ValueError, match="differs from preapproved"):
+        fn(b, bindings("A"))
+    with pytest.raises(ValueError, match="unsupported"):
+        fn(b, {"runtime.host_verification.commands":"whatever"})
+    b["config"]["runtime"]["host_verification"]["commands"].append("npm run deploy")
+    assert fn(a, bindings("A")) != fn(b, bindings("B"))

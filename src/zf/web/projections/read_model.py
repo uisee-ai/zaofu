@@ -30,7 +30,7 @@ from zf.core.events.segments import (
     iter_event_records_from_cursor,
     write_event_manifest,
 )
-from zf.core.security.redaction import SESSION_CONTENT_EVENTS, public_event_metadata, redact_obj
+from zf.core.security.redaction import public_event_metadata, redact_obj, restricted_event_payload
 from zf.core.state.locks import locked_path
 from zf.web.projections.sqlite_reader import connect_readonly
 from zf.web.projections.event_index_cursor import active_identity, can_resume
@@ -1606,7 +1606,7 @@ def _row_event_dict(row: sqlite3.Row) -> dict[str, Any]:
     event_type = str(value("type") or "")
     # Older SQLite projections may still contain a full excerpt in both columns.
     payload = public_event_metadata(event_type, payload)
-    restricted = event_type in SESSION_CONTENT_EVENTS
+    restricted = restricted_event_payload(event_type)
     summary = "" if restricted else str(value("summary") or "")
     status = _event_status(event_type) if restricted else str(value("status") or "")
     return {

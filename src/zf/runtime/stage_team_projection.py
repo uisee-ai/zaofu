@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 
 from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
 from zf.runtime.task_pipeline_contexts import latest_task_pipeline_generation_context
+from zf.runtime.stage_team_mailbox import mailbox_index, member_mailbox
 from zf.runtime.stage_team_observations import receipt_observations
 
 
@@ -35,7 +36,7 @@ def _member(declaration, authority, receipt):
 
 def team_summary(team):
     """First paint carries the roster. Member evidence and handoffs stay in node detail."""
-    fields = {"question", "expected_output", "attempt_count", "instances", "source_seq", "last_activity", "wait", "waiting_for", "obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
+    fields = {"mailbox", "question", "expected_output", "attempt_count", "instances", "source_seq", "last_activity", "wait", "waiting_for", "obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
               "status_since", "last_event_at", "source_event_id", "verdict", "pipeline_stage", "task_map_generation", "required", "coverage_owner", "reused"}
     members = [{k: v for k, v in member.items() if k in fields} for member in team["members"]]
     return {**{k: v for k, v in team.items() if k != "communications"}, "partial": True, "members": members}
@@ -317,6 +318,7 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
         elif event.type == "workflow.call.result.admitted":
             admissions[(p.get("operation_id"), p.get("attempt_id"), p.get("request_hash"))] = event
     messages = _message_relations(events, run, positions) if detail_node else {}
+    mailboxes = mailbox_index(events, run)
     observations = receipt_observations(events, operations, positions)
     stage_rows = {n["data"]["stage_id"]: n for n in nodes.values() if n["id"].startswith("workflow:stage:")}
     operations_by_role = defaultdict(dict)
@@ -511,6 +513,10 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                     if latest_input and (latest_input.get("source_seq") or 0) > (m["source_seq"] or 0):
                         m.update(status_since=latest_input["status_since"], last_event_at=latest_input["status_since"],
                                  source_seq=latest_input["source_seq"], source_event_id=latest_input["source_event_id"])
+        for member in observed:
+            mailbox = member_mailbox(member, mailboxes, scope.get("proposal_digest", ""), dynamic.get("freeze_id", ""))
+            if mailbox:
+                member["mailbox"] = mailbox
         bound = bool(declared) and (authority == "approved" or all(binding for _, binding in declared))
         required = [m for m in observed if m.get("required", True)]
         optional = [m for m in observed if not m.get("required", True)]

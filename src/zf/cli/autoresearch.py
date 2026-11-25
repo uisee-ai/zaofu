@@ -953,8 +953,11 @@ def _run_loop(args) -> int:
         backlog_on_failure=args.backlog_on_failure,
     )
     inner_fn = bypass_inner_run if args.bypass_autoresearch else _real_autoresearch_fn
+    from zf.autoresearch.diagnosis_disposition import resident_loop_stop
+    stop_disposition = resident_loop_stop(parent_state_dir, cfg.worktree, cfg.seed_text)
     result = run_loop(
         cfg,
+        **({"stop_disposition": stop_disposition} if stop_disposition else {}),
         autoresearch_fn=inner_fn,
         eval_collector_fn=_real_eval_collector,
         reflect_fn=partial(invoke_reflection_llm, **reflect_options),
