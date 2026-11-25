@@ -311,6 +311,11 @@ Judge/Goal/交付。隔离回归覆盖准备、实际结果提交入口、缺命
   这是完成证据一致性检查，不把执行选择当作编辑授权；全局输入变化仍走原审查。
   `previous_plan_candidate_refs` 中的被拒草稿不是权威基线。提交拒绝仍为 protocol repair，
   不消耗语义返工轮次。
+  OA 的 `candidate_diagnosis_only` 返规从其批准的冻结包、包端口和本次决定读取证据。
+  原扫描触发器中的历史草稿只在本次 marker 显式选中时进入新的 Planner 请求；
+  对新 Planner 请求，只有与账本中本次已准入 OA 决定、返规 marker 明确指定的历史引用、
+  摘要、访问范围和字段全部匹配时，才按指定字段声明必读。普通预检和 Critic 仍要求完整
+  输入。已签发的同一 attempt 沿用其原读取清单，新 attempt 重新校验。
 - 原 OA Candidate 失败入口强制 `return_to_plan`，与 skill 的“普通缺陷走产品返工”不一致。
   现在已准入 OA 可在精确 Reader target 下提交 `rework` + `candidate_repair`，显式判断
   product_defect/合同不变，并提交标准 gap Tasks。窄路由只允许逐项复制原合同，改变新 ID、
@@ -1070,3 +1075,62 @@ guard 内重新验证并领取；重复 tick、丢 wake、并发 dispatcher 不�
 证据，以及blocked诊断引用不可用host事实，保持原有合同；host材料仍可供独立AC/产品
 判断。它不声称证明所有未提供可验证来源的普通probe都真实执行。先前admission保留
 历史，使用已有失败聚合与受控恢复生成新的独立判词，不改写append-only事件。
+
+同一冻结候选的 Reader 受控重试可能先于旧分诊的超时写入。Goal 回放只有在受控动作已应用、同一 Run 和 task map 的同一冻结候选已有新 Reader 派发、且新派发明确引用原失败时，才从当前阻塞中移除对应的旧分诊 effect。原有 pending 或 failed 事件保留。新 Reader 的验收、新失败及交付仍各自按账本判定。
+
+若 worker 的隔离环境不能建立 FUSE 挂载，`zf artifact workspace` 返回非零并提示 `zf artifact index/read/recover`。回退后的 CLI 投递仍按当前 attempt 的完整输出回执验证。宿主上其他目录挂载成功不能作为该 Reader 的原生文件读取证据。
+
+PNG 的索引项提供 `image_page_command`。无法挂载时，可视化客户端按该命令读取第 0 页，再按 `next_page` 获取同一 attempt、来源和 SHA-256 的后续页，直至值为 null。将各页的 `data_base64` 顺序拼接并渲染为一张 PNG，在图像工具返回后独立核对视口。每页重新鉴权，仅返回绑定来源的原始字节。分页产出记为读取成本，图片传输本身不生成产品判词。
+
+对于批准的 Task Map，顶层明确同时声明 `runtime_only: true`、`write_free: true` 和空 `allowed_paths` 的任务进入 `verify_only`。其顶层 `verification_read_paths` 随同一任务写入 TaskStore 的 evidence_contract。顶层与嵌套声明冲突，或只读声明同时携带写路径时，Plan 校验返回具体任务和字段；只有空写路径本身不会把开发任务改成审计。
+
+若已完成的兄弟任务必须保留原合同，只读审计可在自己的 `evidence_contract.frozen_candidate_acceptance_ids` 中列出由最终冻结 Candidate 执行的强制 `candidate_verify` 条款。每个条款须显式绑定命令，本地仍须有可独立执行的强制基线检查。仅候选使用的命令随条款延后，共用命令仍在基线执行。Plan 预览列出实际初审义务及延后的 ID。Task Verify 保留完整合同快照，最终 Candidate 汇集全部强制条款与命令重新验证。使用这项声明需要配置独立的下游 Candidate Reader。
+
+Plan 执行预览在 Critic 必读摘要中列出两类待核对情形。任务管线编译为 standard 且显式写范围为空时，详情标出具体任务；候选命令显式没有 AC、且所有强制 Candidate AC 均未引用它时，详情标出命令 ID。Planner 和 Critic 根据原始目标核对初始审计与最终门，可选探测保留其用途。
+
+对同一任务、同一验收 ID，若 Task Map 与验收矩阵都显式声明了 verification_owner 或 verification_tier，新计划预检和新包准入逐字段比较，返回具体 AC、字段和两侧取值。其他命令的测试分层仍独立；已接纳包按原代际重放。
+
+OA 对新的候选失败作出 `return_to_plan` 后，Planner 以本次决策与失败反馈为输入。上一轮 Owner 给 Reader 的指令、授权引用和阶段代次保存在 `historical_orchestration_context`，标记为 `observation_only`。已批准的 Plan 包及其端口仍按原绑定提供。对同一 Reader 重试和 Owner 明确批准的新代次分别沿用原恢复入口。
+
+当预授权宿主为已弃判的候选 Reader 收齐命令回执，且同组还有 Reader 在执行时，Run Manager 可以从该 Reader 的失败事件恢复单路验证。重试绑定同一 Run、候选提交、合同、operation 与 attempt，逐项检查回执及合同要求的媒体，再经受控 child-rebuild 派发新的独立 Reader。新 Reader 自行审阅证据并提交判词。请求中记录已移交的命令；同组、同目标、同合同及同宿主策略下，其他 Reader 可消费这些回执。已收口的整组走原有聚合恢复入口。
+
+
+OA 请求修复冻结候选的产品缺陷时，运行时按同一 Run 和需求核对每一版任务图的返工来源。已绑定的 Plan 阶段失败和 Owner 拒绝 Plan 不占用候选产品返工次数。实际产品返工按不同失败事件计数，来源不明的历史记录保守计入。相同 OA 检查点继续沿用既有的幂等处理。
+
+同一 Reader 或 Planner 续接时，恢复视图分别报告历史必读缺口和提供方传输缺口。两者均为空时，角色可从原请求指定的结果草稿和最后未解决的步骤继续，按来源索引补读所需条款。工作记录缺失时也可核查原草稿。运行时将草稿视作待核实材料，业务判词仍由独立验收及其签名提交产生。
+
+### 相同冻结上的最终验收
+
+在同一提交上重新发起 Candidate 全组验收时，Goal 完成门禁按当次触发事件确定 Reader 批次。批次必须发布配置声明的成功事件，该事件须来自已经完成的内核汇总。门禁依据派发时声明的 Reader 名单，逐项核对该批次独立签发的通过结果、目标提交和代际。Judge 经 Discovery 取得验收材料时，沿两次 fanout 的触发链核实它读取的是这一批次。
+
+完成回执的 `verification_batch_event_id` 指向整批验收成功事件。`verification_event_id` 保留具名 Reader 签名结果供既有消费者读取。导出回执时，按完成事件所在的历史位置重验这两项出处，后续验收不会重写旧回执。独立目标仍可按其原有单项验证合同完成。
+
+### Reader 恢复时定位已执行的宿主命令
+
+Candidate 的派发说明从本 attempt 的签名输入提取已授权共享观察。涉及媒体时，前置列出冻结命令、`command_id`、生产者执行来源和授权引用，以及原回执与媒体的认证读取入口。其他命令可用输入索引按 ID 检索。挂载视图的 RESUME 同样列出可用的命令和回执 ID。定位不会记录 Reader 已读，也不签发容器执行许可。
+
+Reader 先判断本路验收是否允许使用同一冻结上的该次观察；要求新观察的约束仍需独立执行路径。普通 shell 缺库时，应区分 shell 自身的失败、签名容器已执行的命令和仍缺的独立探针，再提交有证据的判词。
+
+单路 Reader 受控重派后，内核接收结果时按当前派发的 operation、attempt、请求摘要或运行 ID 核对提交携带的标识。旧票重投沿用原票据，已签发的替代 Reader 保持在途。真实替代结果仍可实时消费或经启动补消费恢复。
+
+### 新一轮验证采用的运行时与技能版本
+
+从待验收的干净 ZaoFu 提交执行下列只读检查。项目的 profile 和技能源须指向本轮批准的版本。
+独立批准了某个技能的正文摘要时可重复传入 `--skill NAME=SHA256`。
+
+```sh
+zf doctor dispatch-baseline --path "$project/zf.yaml" --run-id "$run_id" --release "$release_sha"
+```
+
+检查只取此 Run 第一条已成功投递的任务，回查当时的控制面启动、编译后的配置、签发的 WRC、
+交付时的简报摘要和技能清单，再核对该 attempt 首次认证读取所用 CLI 的版本及实际装载函数。
+成功返回 `verified` 和启动、派发、请求、读取四个事件 ID。历史证据缺失、控制面换代、身份或
+摘要不符时返回 `unproven` 和非零退出码。WRC 绑定原始清单文件的 SHA-256，Worker 回执绑定规范化 JSON 的摘要。检查先按 attempt 和前者读取原件，再从同一原件计算后者；两种摘要随结果输出。技能清单证明该方法已随简报交付。模型执行质量、
+独立复核、Judge 和交付分别沿用各自的产物和门禁。
+
+Worker 需能在自己的沙箱内导入 CLI 依赖，并从发布目录解析 Git 提交。工作树的 Git 元数据若位于沙箱外，可将同一提交部署为沙箱可读的独立 checkout。诊断会保留实际认证读取的事件 ID，并单独报告版本不可见。
+
+若子项失败和聚合失败指向同一冻结中唯一的技术弃权，且其余各路均已独立通过，Run Manager 可复用已派发的单路恢复。旧的同义诊断在原票据仍有效、替代 Reader 已通过且整批成功后收束。多个失败、新发现或来源不明的诊断各自保留。
+
+单路恢复诊断、超时对账和运行前 Owner 授权见
+[恢复实施记录](199-worker-recovery-implementation.md)和[恢复执行与授权](autonomous-recovery-closeout.md)。

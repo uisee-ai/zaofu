@@ -18,6 +18,7 @@ from zf.runtime.orchestrator_agent_policy import (
 )
 from zf.runtime.orchestrator_agent_plan_binding import current_checkpoint_plan_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.task_verification_failure_sources import task_verification_failure_sources
 
 
 SEMANTIC_FAILURE_REQUESTED = "orchestrator.semantic.failure.requested"
@@ -191,6 +192,12 @@ def request_semantic_failure_checkpoint(
                 "It grants one stage replay per native freeze, no host execution, product verdict or contract change."
                 if can_rebind else "Verification rebind is not authorized by the current configuration."
             ),
+            **({"return_to_plan_contract": "For an aggregate return_to_plan, put finding_dispositions on the "
+                "directive. Account for each supplied finding_id exactly once with classification "
+                "product_defect/contract_question/execution_unknown, owner, next_action and rationale. "
+                "Identify the independent evidence to obtain; the source Task alone does not authorize "
+                "Writer repair. Separate evidence recovery from a protected scope decision."}
+               if aggregate_candidate else {}),
             "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "
             "exact-target directive: classification=product_defect, contract_changed=false, rationale, "
             "and gap_tasks copied exactly from the pinned Task Map. For mixed outcomes supply "
@@ -202,9 +209,19 @@ def request_semantic_failure_checkpoint(
             "Unknown/input/blocked outcomes require diagnosis; changed obligations require return_to_plan.",
         }
     media_refs = []
+    prior_feedback = []
     if aggregate_candidate:
+        from zf.runtime.candidate_prior_repair import aggregate_prior_repair_feedback
         from zf.runtime.diagnosis_host_recovery import host_recovery_context
         from zf.runtime.host_evidence_media import materialize_container_media
+        from zf.runtime.milestone_task_lifecycles import aggregate_recovery_lifecycles
+
+        prior_feedback, feedback_index = aggregate_prior_repair_feedback(runtime, events, workflow_run_id, candidate)
+        if feedback_index:
+            failure_body["candidate_verify"]["prior_repair_feedback"] = feedback_index
+        lifecycles = aggregate_recovery_lifecycles(runtime.state_dir, events, workflow_run_id, candidate)
+        if lifecycles:
+            failure_body["candidate_verify"]["task_pipeline_lifecycles"] = lifecycles
         host = host_recovery_context(runtime.state_dir, events, runtime.config, workflow_run_id,
             operation_ids=frozenset(member["operation_id"] for member in candidate["members"]))
         failure_body["preauthorized_host_recovery"] = host
@@ -231,12 +248,32 @@ def request_semantic_failure_checkpoint(
         **failure_ref,
         "source_id": "semantic-failure-input",
     }]
-    if aggregate_candidate:
+    if payload.get("reader_marker_id"):
+        from zf.runtime.candidate_obligation_followup import report_sources
+        try:
+            artifact_refs.extend(report_sources(runtime.state_dir, events, event))
+        except (OSError, ValueError, KeyError) as exc:
+            raise SemanticFailureCheckpointError(str(exc)) from exc
+    elif aggregate_candidate:
+        from zf.runtime.candidate_reader_observation import admitted_reader_observation
+
+        observation = admitted_reader_observation(runtime.state_dir, events, {m["child_event_id"] for m in candidate["members"]})
+        if observation:
+            artifact_refs.append(observation)
+        artifact_refs.extend(prior_feedback)
         artifact_refs.extend({**member["control_result_ref"],
             "source_id": f"candidate-verification-{member['child_id']}"}
             for member in candidate["members"])
     elif candidate:
         artifact_refs.append({**candidate["control_result_ref"], "source_id": "candidate-verification"})
+    else:
+        try:
+            artifact_refs.extend(task_verification_failure_sources(
+                runtime.state_dir, events, set(failure_ids), task_id=task_id,
+                workflow_run_id=workflow_run_id, package=package,
+            ))
+        except ValueError as exc:
+            raise SemanticFailureCheckpointError(str(exc)) from exc
     artifact_refs.extend({**ref, "source_id": f"candidate-host-media-{index}"}
                          for index, ref in enumerate(media_refs))
     recovery_ref = payload.get("recovery_context_ref")
@@ -252,7 +289,8 @@ def request_semantic_failure_checkpoint(
         "failure_fingerprint": fingerprint,
         "candidate_failure_id": failures[-1].id if candidate else "",
         "candidate_operation_id": operation_id if candidate else "",
-        "candidate_failure_scope": "aggregate" if aggregate_candidate else "",
+        "candidate_failure_scope": ("reader_obligation_report" if payload.get("reader_marker_id")
+                                    else "aggregate" if aggregate_candidate else ""),
         "workflow_run_id": workflow_run_id,
         "flow_kind": flow_kind,
         "plan_revision": str(package.get("plan_revision") or ""),

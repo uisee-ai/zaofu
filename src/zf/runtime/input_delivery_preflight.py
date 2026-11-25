@@ -19,6 +19,15 @@ def input_delivery_preflight(state_dir: Path, event_log: Any, operation: dict,
             # Canonical admission still checks that this really is a bound
             # input failure, not a successful result disguised as one.
             return []
+        return preflight_required_reads(state_dir, policy)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [{"field": "input_consumption.delivery", "code": "input_delivery_unavailable",
+                 "message": str(exc)}]
+
+
+def preflight_required_reads(state_dir: Path, policy: dict) -> list[dict[str, str]]:
+    """Inspect the active attempt without sealing a ledger or consuming its submission."""
+    try:
         attempt = policy["attempt_id"]
         active = active_read_ledger_path(state_dir, attempt)
         paths = sorted(active.parent.glob("read-ledger-*.jsonl"))
@@ -34,5 +43,4 @@ def input_delivery_preflight(state_dir: Path, event_log: Any, operation: dict,
         return validate_read_rows(state_dir, policy=policy, rows=observed,
                                   allow_ephemeral_observations=True)
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        return [{"field": "input_consumption.delivery", "code": "input_delivery_unavailable",
-                 "message": str(exc)}]
+        return [{"field": "input_consumption.delivery", "code": "input_delivery_unavailable", "message": str(exc)}]

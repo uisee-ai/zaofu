@@ -2,6 +2,7 @@
 
 import json
 import shlex
+import sys
 
 import pytest
 
@@ -11,11 +12,11 @@ from zf.core.events.log import EventLog
 from zf.runtime.reader_submission_guidance import verifier_failure_schema_guidance
 
 
-def _command(state, quote="'", include_runtime_ref=False):
+def _command(state, quote="'", include_runtime_ref=False, *, cli=("/opt/harness/bin/zf",)):
     guidance = verifier_failure_schema_guidance(
         owner="candidate_verify",
         submit_command=shlex.join([
-            "/opt/harness/bin/zf", "result", "validate", "--operation", "op-1",
+            *cli, "result", "validate", "--operation", "op-1",
             "--state-dir", str(state), "--scratch", "--submit",
         ]),
     )
@@ -52,13 +53,14 @@ def _hook(tmp_path, monkeypatch, command, backend="codex"):
     return code, events
 
 
+@pytest.mark.parametrize("cli", [("/opt/harness/bin/zf",), (sys.executable, "-m", "zf.cli.main")])
 @pytest.mark.parametrize("quote", ["'", '"'])
 @pytest.mark.parametrize("backend", ["codex", "claude-code"])
 @pytest.mark.parametrize("include_runtime_ref", [False, True])
 def test_generated_failure_stdin_reaches_controlled_cli(
-    tmp_path, monkeypatch, quote, backend, include_runtime_ref,
+    tmp_path, monkeypatch, quote, backend, include_runtime_ref, cli,
 ):
-    command = _command(tmp_path / ".zf", quote, include_runtime_ref)
+    command = _command(tmp_path / ".zf", quote, include_runtime_ref, cli=cli)
     code, events = _hook(tmp_path, monkeypatch, command, backend)
     assert code == 0
     assert not any(e.type.endswith("write.rejected") for e in events)
@@ -67,12 +69,26 @@ def test_generated_failure_stdin_reaches_controlled_cli(
     assert not (tmp_path / "outside").exists()
 
 
+@pytest.mark.parametrize("cli", [
+    ("python", "-m", "zf.cli.main"),
+    ("/opt/other-python", "-m", "zf.cli.main"),
+    (sys.executable, "-m", "other_module"),
+    ("env", "PYTHONPATH=.", sys.executable, "-m", "zf.cli.main"),
+])
+def test_unbound_module_launcher_keeps_write_guard(tmp_path, monkeypatch, cli):
+    command = _command(tmp_path / ".zf", cli=cli)
+    code, events = _hook(tmp_path, monkeypatch, command)
+    assert code == 2
+    assert any(e.type.endswith("write.rejected") for e in events)
+
+
 @pytest.mark.parametrize("form", [
     "unquoted", "command_substitution", "redirect", "pipe", "separator",
     "suffix", "early_delimiter", "other_program", "missing_delimiter", "without_stdin",
 ])
-def test_composed_or_expandable_stdin_keeps_write_guard(tmp_path, monkeypatch, form):
-    command = _command(tmp_path / ".zf")
+@pytest.mark.parametrize("cli", [("/opt/harness/bin/zf",), (sys.executable, "-m", "zf.cli.main")])
+def test_composed_or_expandable_stdin_keeps_write_guard(tmp_path, monkeypatch, form, cli):
+    command = _command(tmp_path / ".zf", cli=cli)
     header, rest = command.split("\n", 1)
     mutation = f"printf changed > {shlex.quote(str(tmp_path / '.zf/events.jsonl'))}"
     if form == "unquoted":
@@ -90,7 +106,7 @@ def test_composed_or_expandable_stdin_keeps_write_guard(tmp_path, monkeypatch, f
     elif form == "early_delimiter":
         command += "\n" + mutation + "\nZF_EXECUTION_FAILURE"
     elif form == "other_program":
-        command = command.replace("/opt/harness/bin/zf", "python")
+        command = command.replace(shlex.join(cli), "python", 1)
     elif form == "missing_delimiter":
         command = command.rsplit("\n", 1)[0]
     else:

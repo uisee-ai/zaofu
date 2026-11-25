@@ -5,7 +5,7 @@ from pathlib import Path
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def same_execution_contract(state_dir: Path, source: dict, consumer: dict) -> bool:
+def same_execution_contract(state_dir: Path, source: dict, consumer: dict, *, command_id: str) -> bool:
     """Compare all contract content except kernel-generated freeze locators.
 
     Task/Plan generations, child authorities and every unknown future field stay
@@ -21,6 +21,26 @@ def same_execution_contract(state_dir: Path, source: dict, consumer: dict) -> bo
                 or target.get("contract_snapshot_digest") != request["contract_snapshot_digest"]
                 or target.get("target_commit") != request["target_commit"]):
             raise ValueError("candidate execution snapshot binding mismatch")
+        scope = body.get("candidate_reader_scope")
+        if scope:
+            # A shared command proves only execution on the same kernel-frozen
+            # parent. Reader-specific acceptance stays with each consumer.
+            binding = ("candidate_event_id", "target_commit", "plan_artifact_package_digest",
+                       "assignments_digest", "parent_contract_digest")
+            if (not all(scope.get(k) for k in binding)
+                    or scope["role_instance"] != request.get("role_instance")
+                    or scope["candidate_event_id"] != body.get("candidate_event_id")
+                    or scope["target_commit"] != target.get("target_commit")
+                    or scope["plan_artifact_package_digest"] != body.get("plan_artifact_package_digest")):
+                raise ValueError("scoped command parent binding mismatch")
+            commands = [cmd for cmd in body["verification_commands"] if cmd.get("command_id") == command_id]
+            if len(commands) != 1:
+                raise ValueError("shared command is not pinned to this Reader")
+            cmd = commands[0]
+            if not cmd.get("acceptance_ids") or set(cmd["acceptance_ids"]) - set(scope["acceptance_ids"]):
+                raise ValueError("shared command lacks Reader acceptance binding")
+            return ("scoped", tuple(scope[k] for k in binding),
+                    {k: v for k, v in cmd.items() if k != "acceptance_ids"})
         normalized = deepcopy(body)
         for field in ("contract_revision", "candidate_event_id", "source_ref"):
             normalized.pop(field, None)

@@ -7,6 +7,24 @@ from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
+def _prior_product_failures(runtime, events, run_id: str, pdd_id: str, checkpoint: str) -> set[str]:
+    plan_gates = {(stage.id, stage.aggregate.failure_event) for stage in runtime.config.workflow.stages
+                  if stage.attempt_domain == "plan" and stage.aggregate is not None}
+    plan_sources = set()
+    prior = set()
+    for event in events:
+        p = event.payload
+        if (p.get("workflow_run_id") or event.correlation_id) != run_id or p.get("pdd_id") != pdd_id:
+            continue
+        if event.origin == "kernel" and (event.type == "plan.rejected" or (p.get("stage_id"), event.type) in plan_gates):
+            plan_sources.add(event.id)
+        elif event.type == "task_map.ready" and p.get("rework_of") and p.get("resume_checkpoint_ref") != checkpoint:
+            # Unresolved legacy sources retain their charge until their provenance is known.
+            if p["rework_of"] not in plan_sources:
+                prior.add(p["rework_of"])
+    return prior
+
+
 def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: Mapping,
                                  expected: Mapping, candidate: Mapping) -> dict:
     repair = directive.get("candidate_repair")
@@ -47,10 +65,8 @@ def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: 
         "run.cancelled", "run.failed", "run.completed", "run.goal.cancelled", "run.goal.completed",
     } and (e.payload.get("workflow_run_id") or e.payload.get("run_id") or e.correlation_id) == run_id for e in events):
         raise ValueError("candidate repair cannot revive a terminal Run")
-    prior = {e.payload.get("rework_of") for e in events if e.type == "task_map.ready"
-        and (e.payload.get("workflow_run_id") or e.correlation_id) == run_id
-        and e.payload.get("pdd_id") == candidate["pdd_id"] and e.payload.get("rework_of")
-        and e.payload.get("resume_checkpoint_ref") != "oa-candidate-repair-" + identity["operation_id"]}
+    checkpoint = "oa-candidate-repair-" + identity["operation_id"]
+    prior = _prior_product_failures(runtime, events, run_id, candidate["pdd_id"], checkpoint)
     if len(prior) >= 2:
         raise ValueError("candidate product rework cap exhausted")
     package = hydrate_plan_artifact_package(runtime.state_dir, {
@@ -116,7 +132,7 @@ def candidate_task_repair_action(runtime: Any, *, decision: Mapping, directive: 
         "plan_artifact_package_digest": identity["plan_artifact_package_digest"],
         "source_index_ref": next((p["ref"] for p in ports if p["logical_name"] == "source_index"), ""),
         "rework_attempt": len(prior) + 1, "failed_task_ids": sorted(replaced),
-        "checkpoint_id": "oa-candidate-repair-" + identity["operation_id"],
+        "checkpoint_id": checkpoint,
         "rework_feedback": [repair["rationale"], *directive["required_actions"]],
         "rework_summary": {"gap_tasks": deepcopy(gaps), "supersedes_task_ids": sorted(replaced),
                            **({"candidate_obligations": obligations} if obligations else {}),

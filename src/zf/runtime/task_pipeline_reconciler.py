@@ -694,7 +694,8 @@ def _task_view(
         verify = current_by_stage.get("verify")
         impl = current_by_stage.get("impl")
         exhausted = impl if impl is not None and not _semantic_passed(impl) else verify
-        max_rework = int(policy.get("max_rework_attempts") or 0)
+        # A rejected read-only Verify has no permitted local Impl rework.
+        max_rework = 0 if entry_mode == "verify_only" else configured_rework
         if (stage == "blocked" and verify is not None
                 and str(verify.get("status") or "") == "settled"
                 and _verifier_abstained(verify)):
@@ -719,7 +720,10 @@ def _task_view(
                 "semantic_verdict": str(
                     exhausted.get("semantic_verdict") or ""
                 ),
-                "max_rework_attempts": configured_rework,
+                "max_rework_attempts": max_rework,
+                **({"reason": "verify_only_verification_rejected",
+                    "configured_max_rework_attempts": configured_rework}
+                   if entry_mode == "verify_only" else {}),
                 "failure_count": len(failures),
                 "failure_event_ids": [str(row.get("call_result_admitted_event_id") or row.get("last_event_id") or "") for row in failures
                                       if row.get("call_result_admitted_event_id") or row.get("last_event_id")],

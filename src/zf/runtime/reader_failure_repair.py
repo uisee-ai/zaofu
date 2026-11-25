@@ -3,14 +3,16 @@ from pathlib import Path
 
 from zf.core.events import ZfEvent
 from zf.runtime.fanout import FanoutManifestProjector
-from zf.runtime.failure_kind import aggregate_failure_kind, failure_kind_from_payload
+from zf.runtime.failure_kind import aggregate_failure_kind
 from zf.runtime.stage_failure_replan import _event_run_id
 from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
 
 
 def repaired_failure_kind(state_dir, events, failure):
     """Read immutable admitted child evidence; never rewrite historical events."""
-    explicit = failure_kind_from_payload(failure.payload)
+    from zf.runtime.plan_reader_preregistration import plan_failure_kind
+
+    explicit = plan_failure_kind(events, failure)
     if (explicit == 'infra' and failure.origin == 'kernel'
             and failure.type in {'test.failed', 'verify.failed'}
             and failure.payload.get('reason') == 'timeout'):

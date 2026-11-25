@@ -11,8 +11,9 @@ through poll_events(); the EventLog remains the single source of truth.
 
 from __future__ import annotations
 
+from zf.runtime.tmux_launch_environment import agent_env_prefix
+
 from abc import ABC, abstractmethod
-import os
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,6 +82,7 @@ class DispatchContext:
     placement_epoch: int | None = None
     task_stage_session_binding: str | None = None
     worker_envelope_digest: str | None = None
+    reader_recovery_dispatch: str = ""
     continuation: bool = False
     continuation_id: str | None = None
 
@@ -194,16 +196,14 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     """Run each role in its own tmux window. Wraps TmuxSession."""
 
     _SHELL_COMMANDS = frozenset({"", "bash", "sh", "zsh", "fish", "dash"})
-    _AGENT_ENV_KEYS = (
-        "PYTHONPATH",
-        "PATH",
-        "VIRTUAL_ENV",
-        "ZF_PROJECT_ROOT",
-        "ZF_STATE_DIR",
-        "ZF_CLI_CMD",
-    )
-    def __init__(self, tmux: TmuxSession) -> None:
+    def __init__(
+        self, tmux: TmuxSession, *, project_root: Path | None = None,
+        state_dir: Path | None = None, worker_cgroups: dict[str, str] | None = None,
+    ) -> None:
         self.tmux = tmux
+        self._project_root = project_root
+        self._state_dir = state_dir
+        self._worker_cgroups = worker_cgroups or {}
         self._expected_cwds: dict[str, Path] = {}
         self._launch_records: dict[str, dict[str, object]] = {}
         self._readiness_failures: dict[str, dict[str, object]] = {}
@@ -245,6 +245,16 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         from zf.integrations.controller.execution import check_project
         check_project(cwd or Path.cwd())
         self.register_role(role)
+        prefix: list[str] = []
+        if not self.tmux.dry_run and role.backend == "codex" and role.instance_id in self._worker_cgroups:
+            from zf.runtime.artifact_worker_placement import worker_scope_prefix
+
+            if self._project_root is None or self._state_dir is None:
+                raise ValueError("worker cgroup placement requires a bound project and state directory")
+            prefix = worker_scope_prefix(
+                self._project_root, self._state_dir, role.instance_id,
+                self._worker_cgroups[role.instance_id],
+            )
         # WindowPerRoleLayout issues new-window (legacy behavior),
         # PaneGridLayout issues new-window for the first role and
         # split-window for every subsequent role.
@@ -263,11 +273,12 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             # metacharacters (parens, spaces, globs). Without this,
             # tokens like `Bash(zf kanban *)` break the shell command
             # line with "syntax error near unexpected token '('".
-            command = shlex.join(argv)
+            provider_argv = argv
             if cwd is not None and role.backend in {"codex", "claude-code"}:
                 from zf.runtime.environment_usage import guarded_provider_argv
 
-                command = shlex.join(guarded_provider_argv(cwd, argv))
+                provider_argv = guarded_provider_argv(cwd, argv)
+            command = shlex.join([*prefix, *provider_argv])
             env_prefix = self._agent_env_prefix(cwd)
             if env_prefix:
                 command = f"{env_prefix} {command}"
@@ -294,34 +305,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         else:
             self._dry_run_stopped.discard(role.instance_id)
 
-    @classmethod
-    def _agent_env_prefix(cls, cwd: Path | None = None) -> str:
-        """Carry selected launch env into tmux panes.
-
-        tmux panes inherit the long-lived tmux server environment, not
-        reliably the current ``zf start`` process environment. A stale server
-        can therefore launch Codex without the project PYTHONPATH; commands
-        such as ``zf emit`` then import an older installed ZaoFu. Keep this
-        narrow: only runtime resolution variables, never arbitrary secrets.
-        """
-        workspace_venv = (cwd / ".venv").resolve() if cwd is not None else None
-        assignments: list[str] = []
-        unset_keys: list[str] = []
-        for key in cls._AGENT_ENV_KEYS:
-            value = os.environ.get(key)
-            if key == "VIRTUAL_ENV" and value and workspace_venv is not None:
-                if Path(value).resolve() != workspace_venv:
-                    unset_keys.append(key)
-                    continue
-            if value:
-                assignments.append(shlex.quote(f"{key}={value}"))
-        if not assignments and not unset_keys:
-            return ""
-        parts = ["/usr/bin/env"]
-        for key in unset_keys:
-            parts.extend(["-u", key])
-        parts.extend(assignments)
-        return " ".join(parts)
+    _agent_env_prefix = staticmethod(agent_env_prefix)
 
     def pane_current_command(self, role_name: str) -> str:
         return self.tmux.pane_current_command(role_name)
@@ -839,7 +823,12 @@ def make_transport(config: ZfConfig, *, dry_run: bool = False) -> TransportAdapt
     tmux_session = TmuxSession(
         session_name=session_name, dry_run=dry_run, layout=layout,
     )
-    tmux_transport = TmuxTransport(tmux_session)
+    from zf.core.config.artifact_worker_cgroups import artifact_worker_cgroups
+
+    tmux_transport = TmuxTransport(
+        tmux_session, project_root=_Path(project_root), state_dir=state_dir,
+        worker_cgroups=artifact_worker_cgroups(config),
+    )
 
     roles = list(config.roles)
     try:

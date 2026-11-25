@@ -21,6 +21,15 @@ event schema or recovery state machine.
 本轮 Prompt 只提供目标版本、范围和已授权的执行层级。
 单一已知回归可直接执行对应探针，无需重新生成全项目地图。
 
+## Candidate 测试并行
+
+- 在恢复的同一会话，使用当前 attempt 的 `--required --resume` 和返回游标补齐缺页。结合已保存工作记录指出尚未验证的义务；对已遗忘或需复核的原文可精确重读。已换身份时按新派发的必读项独立验收。
+- 先区分测试执行、Reader 读取与判词、重试等待各花了多久。增加测试进程只会影响实际执行测试的那一段。
+- 按冻结命令执行。若已登记的入口使用 `pytest-xdist`（例如 `pytest -n 2`），由该命令的执行者启动 worker。依赖构建的测试保留前置步骤；并行 worker 须隔离数据库、端口和证据输出等共享资源。缺少并行入口时沿用原命令，可为下次冻结提议调整。
+- 首次派发和恢复都从本 attempt 的输入索引开始。合同要求共享宿主证据时，沿 briefing 的挂载或认证读取入口打开 `candidate-host-execution`，按本路验收项定位命令回执、输出和必需媒体。核对来源 operation、候选 SHA、Plan generation、执行合同与环境，再逐项判断实际断言覆盖了什么。每路只引用自己读过且适用的 `host_execution_receipt_ids`，独立提交判词。
+- 索引缺项、回执不可用或必需附件未归档时，标明受影响的验收项、命令、候选 SHA、已有回执和缺失附件，交给相应证据生产或采集责任方。继续验证可独立完成的条款。后到的回执由绑定它的新请求交付；同一冻结请求的恢复沿用原输入。
+- 评估提速时，在同一候选、同一环境对照串行与并行的墙钟耗时、用例 ID 和断言结果。按需核对各 worker 的退出状态、输出与必需附件；分片缺失、提前中止或证据被覆盖时，将受影响条款保留为未验证。
+
 ## Checklist
 
 - The checked worktree/ref is the immutable target named by the briefing.
@@ -120,6 +129,14 @@ amendment. Suggestions and nits stay in the verification report.
 分别列出。不能将偏好的边界行为追补为阻塞 AC；每项阻塞须给原条款、实际触发与失败证据。
 复用执行事实时核对目标、合同、来源、环境和补丁影响；只有审核身份变化不能单独成为重跑
 全部命令的理由。受控交付的历史收据仍需独立判断，不是当前消费者的通过票。
+对跨版本接续的 Candidate，先从冻结条款和 execution spec 确定度量对象与验收责任。
+若度量对象是整个 Run，可核验该 Run 内一个原始执行组的完整证据；分别引用 Run、
+原 Plan 包及 generation、成员、起止事件。保留补跑组的独立身份。若条款限定当前
+generation 或目标，则须提供匹配的记录。分属不同组的峰值不能相加来证明同时发生。
+分别评价当前可观察的事实和后续角色要交付的附件。核对附件的生产者、消费阶段与
+正式交付入口；把尚待生产的附件留给责任阶段跟踪。若当前 mandatory 条款同时要求
+下游尚未发生的动作，提交合同冲突、原文和责任方，保留义务，交由受控修订处理。
+
 Candidate 合同带 `candidate_recovery_obligations` 时，最终通过还须逐项提交
 `recovery_obligation_results`，写明 finding_id、resolved、rationale 与真实 evidence_refs。
 evidence_refs 必须使用当前输入索引中的 ref/sha256 对象；读权限或内容不匹配不能提交。

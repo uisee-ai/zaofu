@@ -147,3 +147,97 @@ def test_large_v2_tail_cli_and_api_share_complete_scoped_results(tmp_path, monke
     cli = json.loads(capsys.readouterr().out)
     assert cli['items'] == page['items'] and cli['sources'] == page['sources']
     assert not active_read_ledger_path(tmp_path, 'a').exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_mixed_media_cli_query_and_exact_lookup(tmp_path, monkeypatch, capsys, legacy):
+    from zf.runtime.artifact_read_ledger import source_manifest_from_payload
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    refs = []
+    for name, content in (("execution.json", b'{"task_id":"T-hello"}'),
+                          ("trace.zip", b"PK\xff"), ("capture.png", b"\x89PNG"),
+                          ("movie.webm", b"\x80movie")):
+        path = artifacts / name
+        path.write_bytes(content)
+        media = path.suffix != ".json"
+        ref = {"source_id": name if media else "candidate-host-execution",
+               "artifact_id": name, "ref": "artifacts/" + name,
+               "kind": "container_media_projection" if media else "artifact"}
+        if not legacy:
+            ref["encoding"] = "binary" if media else "utf-8"
+        refs.append(ref)
+    manifest, _ = source_manifest_from_payload(
+        state_dir=tmp_path, project_root=tmp_path.parent, payload={"input_refs": refs},
+        workflow_run_id="r", task_id="T7", attempt_id="a", dispatch_id="a",
+        manifest_metadata={"read_purpose": "implementation"})
+    _grant(tmp_path, monkeypatch, manifest=manifest)
+    EventWriter(EventLog(tmp_path / "events.jsonl")).append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T7",
+        payload={"dispatch_id": "a", "required_reads": []}))
+    args = ["artifact", "index", "--attempt", "a", "--state-dir", str(tmp_path)]
+    for opts, name in [(["--query", "candidate-host-execution", "--limit", "10"], "execution.json"),
+                       (["--query", "T-hello"], "execution.json"),
+                       (["--source-id", "trace.zip"], "trace.zip")]:
+        assert main(args + opts) == 0
+        rows = expand_input_items(json.loads(capsys.readouterr().out))
+        assert {row["artifact_id"] for row in rows} == {name}
+    assert not active_read_ledger_path(tmp_path, "a").exists()
+
+
+def test_media_navigation_preserves_legacy_manifest_bytes_on_replay(tmp_path):
+    from zf.runtime.artifact_read_ledger import source_manifest_from_payload
+    media = tmp_path / "artifacts" / "capture.png"
+    media.parent.mkdir()
+    media.write_bytes(b"\x89PNG\xff")
+    ref = {"source_id":"image", "artifact_id":"capture.png", "kind":"container_media_projection", "ref":"artifacts/capture.png"}
+    def freeze(source):
+        return source_manifest_from_payload(state_dir=tmp_path, project_root=tmp_path.parent,
+            payload={"input_refs":[source]}, workflow_run_id="same-run", task_id="T", attempt_id="same-attempt", dispatch_id="d")
+    old, old_ref = freeze(ref)
+    current, descriptor = freeze({**ref, "encoding":"binary"})
+    assert current == old and descriptor["sha256"] == old_ref["sha256"]
+    from zf.runtime.artifact_workdir_view import AttemptFiles
+    view = AttemptFiles(tmp_path, current, {**IDENTITY, "operation_id":"op"}, [], lambda: {})
+    name = next(iter(view.files))
+    assert name.endswith(".png") and view.read(name) == (media.read_bytes(), None)
+
+
+def test_mismatched_artifact_id_points_to_exact_authorized_lookup_and_read(tmp_path, monkeypatch, capsys):
+    import shlex
+    from zf.runtime.artifact_read_ledger import source_manifest_from_payload
+
+    state = tmp_path / "worker's state"
+    physical = state / "artifacts" / "8036.json"
+    physical.parent.mkdir(parents=True)
+    physical.write_text('{"receipt": "observed"}')
+    attempt = "attempt with spaces"
+    source_id = "candidate-host-execution '$(false);'"
+    source = {"source_id": source_id, "artifact_id": "declared-evidence", "ref": "artifacts/8036.json"}
+    private = {**source, "artifact_id": "private-sibling", "access_scope": {"roles": ["other"]}}
+    manifest, _ = source_manifest_from_payload(state_dir=state, project_root=tmp_path,
+        payload={"input_refs": [source, private, {**source, "source_id": "different-source"}]},
+        workflow_run_id="run", task_id="T7", attempt_id=attempt,
+        dispatch_id=attempt, manifest_metadata={"read_purpose": "implementation"})
+    _grant(state, monkeypatch, manifest=manifest)
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
+    monkeypatch.setenv("ZF_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZF_STATE_DIR", str(state))
+    EventWriter(EventLog(state / "events.jsonl")).append(ZfEvent(type="task.dispatched", actor="orchestrator",
+        task_id="T7", payload={"dispatch_id": attempt, "required_reads": []}))
+
+    assert main(["artifact", "read", "--attempt", attempt, "--state-dir", str(state),
+                 "--source", source_id, "--artifact", physical.name]) == 1
+    error = capsys.readouterr().err
+    assert "source not found" in error and "private-sibling" not in error
+    executable, *lookup = shlex.split(error.splitlines()[-1])
+    assert executable == "zf" and lookup[:2] == ["artifact", "index"]
+    assert main(lookup) == 0
+    page = json.loads(capsys.readouterr().out)
+    row, = expand_input_items(page)
+    assert row["source_id"] == source_id and row["artifact_id"] == "declared-evidence"
+    assert page["total"] == 1 and "private-sibling" not in json.dumps(page)
+    assert not active_read_ledger_path(state, attempt).exists()
+    assert main(shlex.split(row["read_command"])[1:]) == 0
+    assert json.loads(capsys.readouterr().out) == {"receipt": "observed"}

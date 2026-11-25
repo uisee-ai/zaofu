@@ -34,7 +34,8 @@ def validate_handoff_body(body: Any, target: dict[str, str]) -> None:
         raise ValueError("handoff facts have an invalid shape")
 
 
-def attach_task_handoff(runtime: Any, payload: dict[str, Any], contract: dict[str, Any]) -> None:
+def attach_task_handoff(runtime: Any, payload: dict[str, Any], contract: dict[str, Any],
+                        *, generation_context: dict[str, Any] | None = None) -> None:
     """Pin predecessor facts before the successor operation request is frozen.
 
     Replay reuses the original body even if the workspace has since changed.
@@ -48,6 +49,10 @@ def attach_task_handoff(runtime: Any, payload: dict[str, Any], contract: dict[st
     key = hashlib.sha256(target["operation_id"].encode()).hexdigest()
     with locked_path(Path(runtime.state_dir) / "task-handoffs" / key):
         events = runtime.event_log.read_all()
+        if generation_context is not None:
+            from zf.runtime.candidate_repair_feedback import attach_candidate_repair_feedback
+
+            attach_candidate_repair_feedback(runtime, payload, contract, generation_context, events)
         prior = [e for e in events if e.type == "task.handoff.prepared" and e.origin == "kernel"
                  and e.payload.get("target") == target]
         if prior:

@@ -287,6 +287,9 @@ _AUDITED_FIELDS: set[str] = {
     "_dead_threshold",
     "_dispatch_epoch",
     "_orphan_warned",
+    # Couples the process-local orphan clock to its last observed owner wait.
+    # Gate and Candidate identity are revalidated from the ledger, never from this set.
+    "_orphan_owner_waits",
     "_hard_cap_exceeded",
     # Transient: freeze-silence dedup flag (ZF-E2E-RACING-P2, registered
     # ZF-E2E-PRDCTL). Restart resets to False → at worst one extra layer-2

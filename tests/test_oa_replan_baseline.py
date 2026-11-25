@@ -1,5 +1,6 @@
 """Scoped OA replans preserve the authority that actually admitted the decision."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -151,3 +152,66 @@ def test_oa_baseline_cannot_silently_rebind_unadmitted_claims(tmp_path, mutation
         "source_event_type": marker.payload["rework_source"], "attempt": 1})
     with pytest.raises(ValueError, match="pinned admitted package"):
         build_replan_resynth_event(plan=plan, events=runtime.event_log.read_all(), config=runtime.config)
+
+
+@pytest.mark.parametrize("explicit_previous", [False, True])
+def test_candidate_diagnosis_uses_current_marker_inputs_for_planner(tmp_path, explicit_previous):
+    from zf.runtime.artifact_read_requirements import required_reads_for_attempt
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    runtime, marker, issued = _replan(tmp_path)
+    events = runtime.event_log.read_all()
+    history = events[:events.index(marker)]
+    old_trigger = ZfEvent(type=issued.type, correlation_id=marker.correlation_id, payload={
+        "previous_plan_candidate_refs": [{"ref": "unrelated-draft.json", "sha256": "a" * 64}],
+    })
+    selected = []
+    if explicit_previous:
+        ref = write_immutable_json_sidecar(runtime.state_dir, {"clause": "selected", "other": "outside scope"},
+            root="plan-reviews", kind="review_artifact", schema_version="review.v1", created_by="test")
+        selected = [{**ref, "allowed_paths": ["$.clause"]}]
+    body = {**marker.payload, "resume_scope": "candidate_diagnosis_only", "task_ids": []}
+    if selected:
+        body["previous_plan_candidate_refs"] = selected
+    marker = replace(marker, payload=body)
+    prefix = [*history, old_trigger, marker]
+    recovered, = plan_missing_replan_resynth_events(prefix, config=runtime.config, state_dir=runtime.state_dir)
+    direct = build_replan_resynth_event(plan=SimpleNamespace(**{
+        **body, "trace_id": marker.correlation_id, "source_event_id": body["rework_of"],
+        "source_event_type": body["rework_source"], "attempt": body["rework_attempt"],
+    }), events=prefix, config=runtime.config, state_dir=runtime.state_dir)
+    for trigger in (direct, recovered):
+        assert trigger.payload.get("previous_plan_candidate_refs", []) == selected
+        assert trigger.payload["resume_scope"] == "candidate_diagnosis_only"
+        assert trigger.payload["plan_artifact_package_digest"] == body["plan_artifact_package_digest"]
+        assert trigger.payload["orchestrator_decision_ref"] == body["orchestrator_decision_ref"]
+    sources = build_plan_handoff_input_refs(state_dir=runtime.state_dir, project_root=runtime.project_root,
+                                            payload=recovered.payload)
+    assert {s["source_id"] for s in sources} >= {"plan-rework-package", "plan-rework-decision", "plan-rework-context"}
+    prior = [s for s in sources if s["source_id"].startswith("previous-plan-candidate-")]
+    assert [(s["sha256"], s["allowed_paths"]) for s in prior] == [(s["sha256"], s["allowed_paths"]) for s in selected]
+    # Required sections must be selected by a durable kernel marker, not just
+    # a previous-ref descriptor copied into an otherwise genuine trigger.
+    if selected:
+        with pytest.raises(ValueError, match="outside the published source scope"):
+            _preregister(runtime, recovered)
+    signed_marker = replace(marker, id=ZfEvent(type=marker.type).id)
+    runtime.event_writer.append(signed_marker)
+    if selected:
+        wrong_path = [{**selected[0], "allowed_paths": ["$.other"]}]
+        wrong_scope = [{**selected[0], "access_scope": {"purposes": ["workflow-read"]}}]
+        for changed in (wrong_path, wrong_scope):
+            altered = replace(recovered, payload={**recovered.payload, "previous_plan_candidate_refs": changed})
+            with pytest.raises(ValueError, match="outside the published source scope"):
+                _preregister(runtime, altered)
+    prepared = _preregister(runtime, recovered)
+
+    required = required_reads_for_attempt(runtime.event_log.read_all(), prepared.attempt_id,
+                                         state_dir=runtime.state_dir, operation_id=prepared.operation_id)
+    assert [(r["artifact_sha256"], r["json_path"]) for r in required
+            if r["source_id"].startswith("previous-plan-candidate-")] == [(r["sha256"], "$.clause") for r in selected]
+    retry = _preregister(runtime, recovered)
+    assert retry.replay_hit and retry.request_hash == prepared.request_hash
+    # A checkpoint sweep must not replace a trigger already dispatched by an older release.
+    legacy = replace(recovered, payload={**recovered.payload, **old_trigger.payload})
+    assert plan_missing_replan_resynth_events([*prefix, legacy], config=runtime.config, state_dir=runtime.state_dir) == []

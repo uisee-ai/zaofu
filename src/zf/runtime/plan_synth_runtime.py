@@ -9,6 +9,7 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.plan_synth_handoff import current_synth_recovery_guidance
 from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
@@ -38,6 +39,7 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "plan_review_optimization",
 )
 PLAN_SYNTH_SEMANTIC_FIELDS = (
+    "execution_assessments",
     "failure_class",
     "artifact_refs",
     "evidence_refs",
@@ -298,6 +300,8 @@ class PlanSynthRuntimeMixin:
                 "role_instance": role_instance,
                 "status": "failed",
                 "recommendation": "reject",
+                **{k: payload[k] for k in ("operation_id", "attempt_id", "request_hash")
+                   if manifest.get("critic_handoff_retry_event_id") and payload.get(k)},
                 "reason": f"{loss_reason}_recovery_exhausted",
                 "failure_class": "worker_noop_or_terminal_missing",
                 "summary": (
@@ -340,14 +344,10 @@ class PlanSynthRuntimeMixin:
         if role is None or not briefing_path.is_file():
             return False
         operation_id = str(payload.get("operation_id") or "")
-        operation = None
-        if operation_id:
-            from zf.runtime.workflow_operation import load_workflow_operation
-
-            operation = load_workflow_operation(self.event_log, operation_id)
-            if (not operation or operation.get("request_hash") != payload.get("request_hash")
-                    or operation.get("status") not in {"requested", "reserved", "running"}):
-                return False
+        try:
+            operation, result_guidance = current_synth_recovery_guidance(self, payload, role, zf_cli_cmd())
+        except (KeyError, ValueError, OSError):
+            return False
         self._set_worker_state(
             role_instance,
             "idle",
@@ -375,7 +375,9 @@ class PlanSynthRuntimeMixin:
         prompt += reader_continuation_guidance(
             attempt_id=str(payload.get("attempt_id") or run_id),
             backend=role.backend, cli=zf_cli_cmd(),
+            runtime=self, actor=role.instance_id, operation_id=operation_id,
         )
+        prompt += result_guidance
         dispatch_context = self._dispatch_context(
             role=role,
             briefing_path=briefing_path,
@@ -471,6 +473,8 @@ class PlanSynthRuntimeMixin:
         mode: str,
         synth_role: str,
     ) -> None:
+        from zf.runtime.plan_critic_reassessment import review_checkpoint_id
+        checkpoint = review_checkpoint_id(manifest)
         trace_id = str(manifest.get("trace_id") or "")
         stage_id = str(manifest.get("stage_id") or "")
         role = next(iter(self._fanout_roles([synth_role])), None)
@@ -480,7 +484,7 @@ class PlanSynthRuntimeMixin:
                 actor="zf-cli",
                 payload={
                     "fanout_id": fanout_id,
-                    "review_request_event_id": manifest.get('review_request_event_id', ''),
+                    "review_request_event_id": checkpoint,
                     "trace_id": trace_id,
                     "stage_id": stage_id,
                     "status": "failed",
@@ -504,6 +508,9 @@ class PlanSynthRuntimeMixin:
                 correlation_id=trace_id,
             ))
         run_id = f"run-{fanout_id}-synth"
+        cancellation_retry = manifest.get("cancelled_critic_retry_event_id")
+        if cancellation_retry:
+            run_id += "-retry-" + cancellation_retry
         try:
             if manifest.get('review_checkpoint_ref'):
                 from zf.runtime.plan_critic_reassessment import reassessment_manifest
@@ -553,20 +560,39 @@ class PlanSynthRuntimeMixin:
                     and report["report"].get("execution_status") == "failed"
                     and report["report"].get("failure_class") == "reader_execution_failure"
                 ]
-                if failed_readers:
+                preregistration = []
+                children = manifest.get("children") or []
+                if not failed_readers and children and all(c.get("status") == "failed"
+                        and c.get("failure_kind") == "infra" for c in children):
+                    from zf.runtime.plan_reader_preregistration import preregistration_failures
+
+                    preregistration = preregistration_failures(self.event_log.read_all(),
+                        fanout=fanout_id, stage=stage_id, run=trace_id, trigger=manifest.get("trigger_event_id"))
+                if failed_readers or preregistration:
                     findings = [finding for report in failed_readers
                                 for finding in (report.get("findings") or [])
                                 if isinstance(finding, dict)]
-                    summary = str(failed_readers[0].get("summary") or "Plan reader execution failed")
+                    summary = "Plan reader execution failed"
+                    recommendation = "reject"
+                    failure_metadata = {}
+                    if preregistration:
+                        summary = "Plan Reader operation preregistration failed before dispatch"
+                        recommendation = "abstain"
+                        failure_metadata = {"failure_kind": "infra", "semantic_attempt_consumed": False,
+                                            "semantic_rework_cost": 0}
+                        findings = [{"severity": "high", "message": item.payload.get("reason") or summary,
+                                     "evidence_refs": [f"events.jsonl#{item.id}"]} for item in preregistration]
+                    else:
+                        summary = str(failed_readers[0].get("summary") or summary)
                     failure_event = self.event_writer.append(ZfEvent(
                         type="fanout.synth.completed", actor="zf-cli",
                         payload={"fanout_id": fanout_id, "trace_id": trace_id,
-                                 "review_request_event_id": manifest.get('review_request_event_id', ''),
+                                 "review_request_event_id": checkpoint,
                                  "stage_id": stage_id, "role_instance": role.instance_id,
-                                 "run_id": run_id, "status": "failed", "recommendation": "reject",
-                                 "failure_class": "reader_execution_failure", "summary": summary,
+                                 "run_id": run_id, "status": "failed", "recommendation": recommendation,
+                                 "failure_class": "reader_execution_failure", "summary": summary, **failure_metadata,
                                  "report": {"child_id": "synth", "status": "failed",
-                                            "recommendation": "reject", "summary": summary,
+                                            "recommendation": recommendation, "summary": summary,
                                             "findings": findings}},
                         causation_id=str(manifest.get("trigger_event_id") or "") or None,
                         correlation_id=trace_id,
@@ -639,7 +665,7 @@ class PlanSynthRuntimeMixin:
                             "status": "failed",
                             "recommendation": "reject",
                             "summary": "plan candidate failed mechanical preflight",
-                            "review_request_event_id": manifest.get('review_request_event_id', ''),
+                            "review_request_event_id": checkpoint,
                             "failure_class": "plan_candidate_preflight",
                             "attempt_domain": "protocol_repair",
                             "semantic_rework_cost": 0,
@@ -686,20 +712,13 @@ class PlanSynthRuntimeMixin:
                 from zf.runtime.fanout_artifact_refs import (
                     plan_artifact_workdir_write_scopes,
                 )
-                from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
+                from zf.runtime.diagnosis_critic_handoff import prepare_critic_handoff
 
-                call_payload = build_plan_synth_call_payload(
-                    state_dir=self.state_dir,
-                    project_root=self.project_root,
-                    manifest=manifest,
-                    reports=reports,
-                    run_id=run_id,
-                    role_instance=role.instance_id,
-                )
-                from zf.runtime.plan_critic_reassessment import validate_reassessment_inputs
-                validate_reassessment_inputs(self.state_dir, manifest, call_payload)
+                call_payload = prepare_critic_handoff(self, manifest, reports, run_id=run_id, role=role.instance_id)
+                if call_payload is None:
+                    return
                 call_payload["plan_synth_verdict_only"] = bool(
-                    pure_aggregator_policy_plan(self.config, role).get("applies")
+                    call_payload.get("diagnosis_review") or pure_aggregator_policy_plan(self.config, role).get("applies")
                 )
                 if call_payload["plan_synth_verdict_only"]:
                     from zf.runtime.plan_review_claims import POLICY
@@ -713,7 +732,7 @@ class PlanSynthRuntimeMixin:
                         source_event_id=str(manifest.get("trigger_event_id") or ""),
                     )
                 workdir_write_scopes = []
-                if not pure_aggregator_policy_plan(self.config, role).get("applies"):
+                if not call_payload["plan_synth_verdict_only"]:
                     workdir_write_scopes = plan_artifact_workdir_write_scopes(
                         fanout_id=fanout_id,
                         success_event=success_event,
@@ -722,9 +741,9 @@ class PlanSynthRuntimeMixin:
                     self,
                     payload=call_payload,
                     operation_type="fanout_synth",
-                    operation_key=(
-                        f"synth@trig:{str(manifest.get('trigger_event_id') or '')[:12]}"
-                    ),
+                    operation_key=(f"synth@trig:{str(manifest.get('trigger_event_id') or '')[:12]}"
+                                   + (f"@retry:{cancellation_retry}" if cancellation_retry else "")),
+                    cancelled_critic_checkpoint=manifest.get("cancelled_critic_checkpoint"),
                     stage_id=stage_id,
                     task_id=str(call_payload.get("task_id") or ""),
                     dispatch_id=run_id,
@@ -842,7 +861,7 @@ class PlanSynthRuntimeMixin:
                 failure = self.event_writer.append(ZfEvent(
                     type="fanout.synth.completed", actor="zf-cli", origin="kernel",
                     payload={"fanout_id": fanout_id, "trace_id": trace_id, "stage_id": stage_id,
-                             "review_request_event_id": manifest.get('review_request_event_id', ''),
+                             "review_request_event_id": checkpoint,
                              "role_instance": role.instance_id, "run_id": run_id,
                              "status": "failed", "recommendation": "abstain",
                              "reason": "plan_review_input_budget_exceeded",
@@ -880,7 +899,7 @@ class PlanSynthRuntimeMixin:
                     "status": "failed",
                     "recommendation": "reject",
                     "summary": str(exc),
-                    "review_request_event_id": manifest.get('review_request_event_id', ''),
+                    "review_request_event_id": checkpoint,
                 },
                 correlation_id=trace_id,
             ))
@@ -889,6 +908,9 @@ class PlanSynthRuntimeMixin:
     def _handle_fanout_synth_completed(self, event: ZfEvent) -> None:
         payload = event.payload if isinstance(event.payload, dict) else {}
         manifest = self._fanout_manifest(str(payload.get("fanout_id") or ""))
+        from zf.runtime.plan_critic_reassessment import reassessment_result_current
+        if manifest and not reassessment_result_current(self, manifest, event):
+            return
         if manifest and self._cancel_candidate_superseded_replan_fanout(manifest):
             return
         if str(payload.get("output_profile_id") or "") == "plan-synth":

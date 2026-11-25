@@ -2314,6 +2314,9 @@ class DispatchMixin(
             write_runtime_snapshot,
         )
 
+        from zf.runtime.candidate_reader_method import record_delivered_method
+
+        record_delivered_method(self.state_dir, payload, briefing_path, role=role.name)
         task = None
         task_id = str(payload.get("task_id") or "")
         if task_id:

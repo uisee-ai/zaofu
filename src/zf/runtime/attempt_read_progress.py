@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import shlex
 from typing import Any, Mapping
@@ -30,6 +31,37 @@ def required_read_progress(
         return sum(_coverage(rows, requirement) for requirement in requirements)
     except (OSError, ValueError, TypeError, KeyError, ArtifactReadError):
         return None
+
+
+def gained_required_read_coverage(
+    state_dir: Path, events: list[Any], *, attempt_id: str, operation_id: str,
+    run_id: str, actor: str, dispatch_id: str, since: datetime, now: datetime,
+) -> bool:
+    """Compare unique signed input coverage before and during this wait window."""
+    from zf.runtime.pause_lifecycle import PAUSE_EVENT_TYPES, RESUME_EVENT_TYPES, active_request_age_seconds
+    from zf.runtime.provider_turn_liveness import _parse_event_ts
+
+    lifecycle = [event for event in events if event.type in PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES
+                 or event.type in {"run.paused", "run.resumed"}]
+    timeout = (now - since).total_seconds()
+    try:
+        required, rows = _read_state(state_dir, events, attempt_id, operation_id)
+        previous, current = [], []
+        for row in rows:
+            if (row.get("operation_id") != operation_id or row.get("workflow_run_id") != run_id
+                    or row.get("dispatch_id") != dispatch_id or row.get("consumer_actor") != actor):
+                continue
+            stamp = _parse_event_ts(row.get("read_at"))
+            if stamp is None or stamp > now:
+                continue
+            current.append(row)
+            if stamp <= since and (not lifecycle or active_request_age_seconds(
+                lifecycle, created_at=stamp, now=now, run_id=run_id,
+            ) >= timeout):
+                previous.append(row)
+        return any(_coverage(current, req) > _coverage(previous, req) for req in required)
+    except (OSError, ValueError, TypeError, KeyError, ArtifactReadError):
+        return False
 
 
 def required_reads_complete(state_dir: Path, events: list[Any], *,

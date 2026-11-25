@@ -144,6 +144,7 @@ def build_attempt_source_manifest(
             "handoff_authority_profile",
             "handoff_authority_contract",
             "candidate_snapshot",
+            "candidate_plan_read_selections",
             "candidate_event_id",
             "candidate_head_commit",
             "candidate_snapshot_digest",
@@ -252,6 +253,7 @@ def source_manifest_from_payload(
     )
     required_reads = canonical_required_reads(
         manifest,
+        state_dir=state_dir,
         output_profile_id=str(payload.get("output_profile_id") or ""),
         explicit=(payload.get("required_reads")
                   if isinstance(payload.get("required_reads"), list) else ()),
@@ -281,6 +283,7 @@ def canonical_required_reads(
     *,
     output_profile_id: str,
     explicit: Iterable[Mapping[str, Any]] = (),
+    state_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Declare the canonical artifact slices one stage must actually consume."""
     try:
@@ -288,6 +291,7 @@ def canonical_required_reads(
             manifest,
             output_profile_id=output_profile_id,
             explicit=explicit,
+            state_dir=state_dir,
         )
     except ArtifactReadRequirementError as exc:
         raise ArtifactReadError(str(exc)) from exc
@@ -606,6 +610,25 @@ def render_attempt_source_briefing(
             "(Claude allowlist matching is literal)."
         ),
     ]
+    native = payload.get("native_input_view") is True
+    if native:
+        lines.append(
+            f"- Preferred artifact input: start `{cli_command} artifact workspace --attempt {shlex.quote(attempt_id)}` "
+            "in a persistent tool session. Open the printed INPUTS.md and RESUME.md paths. "
+            "The read-only mount is outside the product checkout. Use a single literal "
+            "`/usr/bin/cat ABSOLUTE_PATH` for each required text selection listed in INPUTS.md. "
+            "For partial delivery, read the missing .chars-START-END slices. Use the CLI fallback "
+            "if the mount or file evidence is unavailable."
+        )
+    if any(isinstance(row, Mapping) and str(row.get("ref", "")).lower().endswith(".png")
+           for row in payload.get("input_refs", [])):
+        lines.append(
+            "- To inspect a PNG without a mount, take its image_page_command from artifact index. "
+            "In a visual tool client, collect each JSON data_base64 field in page order using next_page "
+            "until null, then display image(\"data:image/png;base64,\" + parts.join(\"\")); "
+            "keep the bytes inside the tool and visually inspect the returned image. "
+            "Each page is bound to this attempt and SHA. Do not guess filesystem paths."
+        )
     if required:
         from zf.runtime.reader_replan_feedback import repair_read_navigation
 
@@ -637,7 +660,7 @@ def render_attempt_source_briefing(
                 "predecessor task's contract as the current one."
             )
         lines.extend([
-            f"- Preferred deduplicated read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            f"- {'CLI fallback' if native else 'Preferred deduplicated read'}: `{cli_command} artifact read --attempt {attempt_id} --required`.",
             "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
             "each source is recorded. Follow `--cursor <next_cursor>` until null. "
             "Do not reread complete aliases.",
@@ -645,17 +668,15 @@ def render_attempt_source_briefing(
             "If the tool output budget is smaller, use --page-bytes 2048; consume pages "
             "separately and leave room for tool wrappers. Return each raw page unchanged; do not filter fields or batch pages into a summary. CLI receipts prove production; "
             "provider delivery may remain unknown and never proves understanding.",
-            "- Wait for each page's complete tool response and consume it before requesting "
-            "another page; do not accumulate background page reads. If a response is "
-            "truncated, omitted, or lost, reread that exact page before continuing.",
-            "- If an output is too large or truncated, read that exact source and JSON path "
-            "with `--page-start 0 --page-size 8192`. Read and consume every page, using "
-            "the returned `next_page_start` until it is null. The ledger accepts pages "
-            "only when they cover the entire selected input without gaps.",
+            "- For each page, consume it before requesting the next; do not accumulate background page reads. If a page is lost "
+            "or truncated, reread that exact page before continuing. For --required, reduce "
+            "--page-bytes and reuse its input cursor (no cursor for page one).",
+            "- For a source/path read, start with `--page-start 0 --page-size 8192` and follow "
+            "`next_page_start` to null for gap-free coverage.",
         ])
         if payload.get("output_profile_id") == "plan-synth":
             lines.append(
-                "- For Plan review, prefer --format text --page-bytes 32768 on the required-read command "
+                "- For Plan review through CLI, prefer --format text --page-bytes 32768 on the required-read command "
                 "when the tool can return the full page (reserve at least 16384 output tokens). "
                 "This bounded view prints original content without an outer JSON string escape layer. "
                 "Retain these flags with each cursor; if output truncates, retry the same cursor at 8192 "
@@ -832,6 +853,10 @@ def _manifest_ref_path(state_dir: Path, ref: str) -> Path:
     return sidecar_path(state_dir, safe_sidecar_ref(raw))
 
 
+class ArtifactSourceNotFound(ArtifactReadError):
+    """No occurrence matches the supplied source and artifact identity."""
+
+
 def _find_source(
     manifest: Mapping[str, Any],
     *,
@@ -851,7 +876,7 @@ def _find_source(
         raise ArtifactReadError(f"ambiguous source: {source_id}/{artifact_id}; use the pinned required read")
     if matches:
         return matches[0]
-    raise ArtifactReadError(f"source not found: {source_id}/{artifact_id}")
+    raise ArtifactSourceNotFound(f"source not found: {source_id}/{artifact_id}")
 
 
 def _select_json_path(value: Any, path: str) -> Any:
@@ -913,6 +938,7 @@ __all__ = [
     "READ_POLICY_SCHEMA",
     "SOURCE_MANIFEST_SCHEMA",
     "ArtifactReadError",
+    "ArtifactSourceNotFound",
     "active_ledger_attempt_id",
     "active_read_ledger_path",
     "append_artifact_read",

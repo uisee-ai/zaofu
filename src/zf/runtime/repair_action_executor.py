@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from zf.core.config.schema import RoleConfig
+from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -30,6 +30,8 @@ class RepairActionExecutor:
     respawn_worker: Callable[[RoleConfig], WorkflowRuntimeDecision]
     cancel_worker: Callable[[RoleConfig], WorkflowRuntimeDecision] | None = None
     rerun_fanout_child: Callable[[str, str], WorkflowRuntimeDecision] | None = None
+
+    config: ZfConfig | None = None
 
     def apply(self, event: ZfEvent) -> None:
         """Apply or reject one repair.action.requested event."""
@@ -333,8 +335,9 @@ class RepairActionExecutor:
             event.payload.get("recovery_action") == "child-rebuild"
             and "workflow_run_id" in event.payload
         ):
-            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
-            error = reader_rebuild_error(self.task_store.path.parent, self.event_log.read_all(), event.payload)
+            from zf.runtime.reader_rebuild_admission import reader_request_error
+
+            error = reader_request_error(self.task_store.path.parent, self.event_log.read_all(), event, self.config)
             if error:
                 self._reject(event, action_id=action_id, kind="rerun_fanout_child",
                              task_id=task_id, reason=error,
@@ -370,7 +373,15 @@ class RepairActionExecutor:
                 reason="rerun_fanout_child_unavailable",
             )
             return
-        decision = self.rerun_fanout_child(fanout_id, child_id)
+        from zf.runtime.recovery_authorization import dispatch_with_reader_reservation
+
+        decision, error = dispatch_with_reader_reservation(
+            config=self.config, state=self.task_store.path.parent, writer=self.event_writer, request=event,
+            rerun=self.rerun_fanout_child, fanout_id=fanout_id, child_id=child_id,
+        )
+        if decision is None:
+            self._reject(event, action_id=action_id, kind="rerun_fanout_child", task_id=task_id, reason=error)
+            return
         if decision.action == "rerun_fanout_child":
             self._terminal(
                 event,

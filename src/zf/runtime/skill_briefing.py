@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from zf.core.config.schema import RoleConfig
 
 
@@ -60,6 +63,52 @@ def render_skill_briefing_section(
         ])
     lines.append("")
     return lines
+
+
+def recovery_skill_locators(*, project_root: Path, state_dir: Path, role: RoleConfig) -> str:
+    """Give resumed sessions exact installed bodies, including older role indexes."""
+    from zf.core.security.hash import sha256_file
+
+    index_path = state_dir / "instructions" / f"{role.instance_id}.md"
+    manifest_path = state_dir / "workdirs" / role.instance_id / "runtime" / "skills-manifest.json"
+    try:
+        lines = index_path.read_text(encoding="utf-8").splitlines()
+        indexed = {line.split("`", 2)[1]: line.partition("; dependency of: ")[0].removesuffix(")")
+                   for line in lines if line.startswith("- `/") and "; mode: " in line}
+        if not indexed:
+            return ""
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ""
+    if not isinstance(manifest, dict) or (manifest.get("instance_id"), manifest.get("backend")) != (
+        role.instance_id, role.backend,
+    ):
+        return ""
+    installed = manifest.get("skills")
+    if not isinstance(installed, list):
+        return ""
+    locators = []
+    for row in installed:
+        if not isinstance(row, dict) or not isinstance(row.get("materialized_to"), str) or not row.get("sha256"):
+            continue
+        name = row.get("name")
+        location = row["materialized_to"]
+        suffix = f"; source: {row.get('source')}; runtime: {location}"
+        body = project_root / location / "SKILL.md"
+        if not indexed.get(f"/{name}", "").endswith((suffix, f"; read `{body}`")):
+            continue
+        try:
+            digest = sha256_file(body)
+        except OSError:
+            continue
+        if digest == row["sha256"]:
+            locators.append(f"- `/{name}`: `{body}`")
+    if not locators:
+        return ""
+    return ("\nCurrent installed skill read locators follow. "
+            "Preserve the role index activation rules. Read applicable skills at these exact files "
+            "even if an earlier locator failed.\n"
+            + "\n".join(locators))
 
 
 def auto_injected_skill_entries(skill_entries: list | None) -> list:

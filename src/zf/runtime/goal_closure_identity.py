@@ -73,6 +73,12 @@ def build_closure_identity(
         workflow_run_id=workflow_run_id,
         task_map_generation=generation,
     )
+    from zf.runtime.goal_judge_admissions import current_judge_admissions
+    from zf.runtime.goal_closure_refs import _resolve_candidate_ref
+
+    batch = current_judge_admissions(events, source_event, run=workflow_run_id,
+        candidate_ref=_resolve_candidate_ref(events, workflow_run_id=workflow_run_id,
+            target_commit=candidate_head, payload=payload), target=candidate_head, generation=generation)
     product_acceptance_identity = _current_product_acceptance_identity(
         events,
         state_dir=state_dir,
@@ -80,6 +86,7 @@ def build_closure_identity(
         task_map_generation=generation,
         candidate_head_commit=candidate_head,
         package_identity=package_identity,
+        report_admissions=set(batch["discovery"] or batch["readers"]) if batch else None,
     )
     from zf.runtime.plan_requirement_amendment import current_owner_amendment
     amendment = current_owner_amendment(state_dir, workflow_run_id, events=events)
@@ -105,6 +112,13 @@ def build_closure_identity(
             package_identity=package_identity,
         ),
     }
+    from zf.runtime.milestone_task_lifecycles import judge_candidate_lifecycles
+
+    lifecycles = judge_candidate_lifecycles(state_dir, events, source_event=source_event,
+        run=workflow_run_id, generation=generation, target=candidate_head,
+        package=str(package_identity.get("plan_artifact_package_digest") or ""))
+    if lifecycles:
+        closure_source["candidate_task_lifecycles"] = lifecycles
     from zf.runtime.candidate_continuation import closure_provenance
 
     continuation = closure_provenance(events, state_dir=state_dir, workflow_run_id=workflow_run_id)
@@ -137,6 +151,11 @@ def build_closure_identity(
     identity = _digest(identity_fields)
     return {
         **identity_fields,
+        **({"judge_batch_admissions": batch} if batch else {}),
+        **({"candidate_lifecycle_input": {
+            "ref": lifecycles["lifecycle_ref"], "sha256": lifecycles["lifecycle_digest"],
+            "task_count": len(lifecycles["summary"]["task_ids"]),
+        }} if lifecycles else {}),
         **({"has_historical_candidate_reports": True} if historical else {}),
         "closure_fact_ref": str(descriptor.get("ref") or ""),
         "closure_identity": identity,
@@ -317,8 +336,9 @@ def _current_product_acceptance_identity(
     task_map_generation: str,
     candidate_head_commit: str,
     package_identity: Mapping[str, str],
+    report_admissions: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Select the latest exact Candidate Verify Product report identity."""
+    """Select the latest admitted full Candidate or product-discovery report."""
 
     from zf.runtime.candidate_result_binding import same_task_map_generation
 
@@ -326,13 +346,19 @@ def _current_product_acceptance_identity(
     package_digest = str(
         package_identity.get("plan_artifact_package_digest") or ""
     )
+    discovery_sources = {event.id for event in events if event.type == "flow.discovery.child.completed"}
     for event in reversed(events):
         if event.type != "workflow.call.result.admitted":
             continue
         body = event.payload if isinstance(event.payload, Mapping) else {}
         if str(body.get("workflow_run_id") or "") != workflow_run_id:
             continue
-        if str(body.get("control_result_schema") or "") != "verification-result.v1":
+        if report_admissions is not None and event.id not in report_admissions:
+            continue
+        schema = body.get("control_result_schema")
+        if schema != "verification-result.v1" and not (
+            schema == "workflow-read-result.v1" and body.get("source_event_id") in discovery_sources
+        ):
             continue
         if str(body.get("product_acceptance_report_ref") or "") == "":
             continue

@@ -15,6 +15,17 @@ def repair_read_navigation(required: list, *, cli_command: str, attempt_id: str)
                 or row.get('source_id') != 'critical-reader-repair-context'
                 or not row.get('artifact_id')):
             continue
+        if row is required[0]:
+            return [
+                '- Recovery input first: before probing the runner or declaring it unavailable, '
+                'read the pinned critical-reader-repair-context and evaluate its bound receipts.',
+                '  In the mounted workspace, consume the recovery selection first. For CLI delivery, '
+                'start the required-read command below once. Its first selection is the recovery context. '
+                'Follow its next_cursor through that selection and the remaining required inputs.',
+                '  Check the receipt target, command, source stability, exit code and evidence '
+                'before assessing the original acceptance obligations.',
+            ]
+        # Older declarations can pin a different order. Preserve their cursor and first-read guidance.
         command = ' '.join([
             cli_command, 'artifact read --attempt', shlex.quote(attempt_id),
             '--source critical-reader-repair-context --artifact',

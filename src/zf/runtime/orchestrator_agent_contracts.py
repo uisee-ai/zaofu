@@ -24,6 +24,7 @@ CHECKPOINT_ACTIONS: dict[str, frozenset[str]] = {
     "stage_barrier": frozenset({
         "continue", "replan", "aggregate", "partial", "halt", "escalate",
     }),
+    "candidate_reader_observation": frozenset({"continue"}),
     "semantic_failure": frozenset({
         "continue", "rework", "return_to_plan", "rebind", "invalidate",
         "halt", "escalate",
@@ -146,7 +147,7 @@ def normalize_orchestration_decision(value: Mapping[str, Any]) -> dict[str, Any]
         "identity.effective_config_digest",
     )
     if checkpoint in {
-        "pre_impl", "plan_candidate", "semantic_failure", "pre_closeout",
+        "pre_impl", "plan_candidate", "semantic_failure", "pre_closeout", "candidate_reader_observation",
     }:
         _required_strings(
             identity,

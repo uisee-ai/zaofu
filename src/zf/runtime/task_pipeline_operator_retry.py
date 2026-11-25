@@ -121,6 +121,7 @@ def request_impl_retry(
     config: Any = None,
     authorize_extra_attempt: bool = False,
     approval_ref: str = "",
+    publication_event_id: str = "",
 ) -> dict[str, Any]:
     if not reason.strip():
         raise ValueError("operator repair reason is required")
@@ -212,6 +213,7 @@ def request_impl_retry(
                         "operation_generation": operation["operation_generation"],
                         "source_event_id": source.id,
                         "reason": reason.strip(),
+                        **({"publication_event_id": publication_event_id} if publication_event_id else {}),
                         **grant,
                     },
                 )

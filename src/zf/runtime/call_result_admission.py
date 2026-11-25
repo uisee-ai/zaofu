@@ -185,6 +185,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             state_dir=self.state_dir,
             operation=operation,
             source_event_id=event.id,
+            events=self.event_log.read_all,
         )
         control_ref = {
             "schema_version": adapted.schema_version,

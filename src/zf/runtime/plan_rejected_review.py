@@ -7,10 +7,11 @@ from zf.core.events import EventLog
 from zf.runtime.plan_local_review_policy import reviewed_critic_manifest
 
 
-def rejected_review_source(state_dir: Path, *, trigger_id: str, run: str, rework_of: str) -> dict | None:
+def rejected_review_source(state_dir: Path, *, trigger_id: str, run: str, rework_of: str, events: list | None = None) -> dict | None:
     if not all((trigger_id, run, rework_of)):
         return None
-    events = EventLog(state_dir / 'events.jsonl').read_all()
+    if events is None:
+        events = EventLog(state_dir / 'events.jsonl').read_all()
     by_id = {event.id: event for event in events}
     trigger = by_id.get(trigger_id)
     if (trigger is None or trigger.origin != 'kernel' or trigger.payload.get('workflow_run_id') != run

@@ -1,5 +1,8 @@
 """Operator restarts must continue an active reader dispatch without false loss."""
 
+from hashlib import sha256
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,10 +15,10 @@ from zf.runtime.reader_respawn_continuation import reader_respawn_in_progress
 from zf.runtime.session_mutex import SessionLock
 
 
-def _running_recovered_synth(tmp_path, *, kind="synth"):
+def _running_recovered_synth(tmp_path, *, kind="synth", semantic_plan_submit=False):
     state, log, runtime, fanout = _task_map_synth_orchestrator(
         tmp_path,
-        complete_child=kind == "synth",
+        complete_child=kind == "synth", semantic_plan_submit=semantic_plan_submit,
     )
     name = "task-map-synth" if kind == "synth" else "source-reader"
     role = next(r for r in runtime.config.roles if r.name == name)
@@ -56,6 +59,21 @@ def test_cli_restart_does_not_exhaust_recovered_synth(
         tmp_path, kind=kind
     )
     identity = dispatch.payload
+    installed = state / "workdirs" / role.instance_id / "runtime" / "installed-skill"
+    installed.mkdir(parents=True)
+    body = installed / "SKILL.md"
+    body.write_text("The registered skill")
+    source = "/old-worker-only/source/SKILL.md"
+    relative = str(installed.relative_to(tmp_path))
+    projection = state / "instructions" / f"{role.instance_id}.md"
+    projection.parent.mkdir(exist_ok=True)
+    projection.write_text(f"- `/review` - review (status: resolved; mode: load-on-demand; "
+                          f"source: {source}; runtime: {relative})\n")
+    manifest = installed.parent / "skills-manifest.json"
+    manifest.write_text(json.dumps({"instance_id": role.instance_id, "backend": role.backend,
+        "skills": [{"name": "review", "source": source, "materialized_to": relative,
+                    "sha256": sha256(body.read_bytes()).hexdigest()}]}))
+    original_briefing = Path(identity["briefing_path"]).read_bytes()
     recover = (
         runtime._recover_lost_fanout_synth_dispatches
         if kind == "synth"
@@ -116,6 +134,10 @@ def test_cli_restart_does_not_exhaust_recovered_synth(
     assert recovered[0].payload["recovered_dispatch_event_id"] == dispatch.id
     assert recovered[0].payload["request_hash"] == identity.get("request_hash", "")
     assert "/current/runtime/python -E -m zf.cli.main" in runtime.transport.sent[-1][2]
+    prompt = runtime.transport.sent[-1][2]
+    assert str(body) in prompt and source not in prompt
+    assert ("fanout synthesis briefing" in prompt) == (kind == "synth")
+    assert Path(identity["briefing_path"]).read_bytes() == original_briefing
     assert runtime.transport.sent[-1][3].operation_id == identity.get(
         "operation_id", ""
     )
@@ -184,3 +206,47 @@ def test_only_a_held_lock_for_the_same_role_defers_recovery(tmp_path):
     stale.write_text("stale pid\n")
     assert not reader_respawn_in_progress(tmp_path, "reviewer")
     assert stale.read_text() == "stale pid\n"
+
+
+def test_reader_result_arriving_during_recovery_keeps_original_verdict(tmp_path, monkeypatch):
+    from zf.runtime.reader_respawn_continuation import reader_dispatch_call_identity
+
+    _, log, runtime, role, event, _ = _running_recovered_synth(tmp_path)
+    payload = {**event.payload, "event_id": event.id}
+    identity = reader_dispatch_call_identity(event.payload)
+    original = runtime._dispatch_context
+    def admit_then_prepare(*args, **kwargs):
+        log.append(ZfEvent(type="workflow.call.result.admitted", origin="kernel", actor="zf-cli",
+            task_id=event.task_id, payload={**identity, "admission_status": "admitted", "semantic_verdict": "blocked"}))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(runtime, "_dispatch_context", admit_then_prepare)
+    sent = len(runtime.transport.sent)
+    assert runtime._inject_fanout_recovery_briefing(role, payload)
+    assert len(runtime.transport.sent) == sent
+    assert not [e for e in log.read_all() if e.type == "worker.recovery.injected"]
+
+
+@pytest.mark.parametrize("fault", ["none", "changed_body", "foreign_instance", "foreign_locator"])
+def test_current_skill_locator_is_reissued_only_for_the_installed_role(tmp_path, fault):
+    from zf.runtime.skill_briefing import recovery_skill_locators
+
+    role = SimpleNamespace(instance_id="reader-a", backend="codex")
+    state = tmp_path / ".state"
+    manifest_dir = state / "workdirs" / role.instance_id / "runtime"
+    manifest_dir.mkdir(parents=True)
+    body = manifest_dir / "registered" / "SKILL.md"
+    body.parent.mkdir()
+    body.write_bytes(b"registered")
+    index = state / "instructions" / "reader-a.md"
+    index.parent.mkdir()
+    locator = body if fault != "foreign_locator" else tmp_path / "other/SKILL.md"
+    index.write_text(f"- `/review` (status: resolved; mode: load-on-demand; read `{locator}`)\n")
+    (manifest_dir / "skills-manifest.json").write_text(json.dumps({
+        "instance_id": "other" if fault == "foreign_instance" else role.instance_id,
+        "backend": role.backend, "skills": [{"name": "review", "materialized_to": str(body.parent),
+        "sha256": sha256(body.read_bytes()).hexdigest()}],
+    }))
+    if fault == "changed_body":
+        body.write_bytes(b"changed")
+    prompt = recovery_skill_locators(project_root=tmp_path, state_dir=state, role=role)
+    assert (str(body) in prompt) == (fault == "none")

@@ -232,13 +232,18 @@ def _project_operator_requests(
             RUN_COMPLETED, _PROGRESS_SUCCESS_EVENTS, _human_escalations_by_token, _pending_human_decisions,
         )
 
-        current_tokens = {row["decision_token"] for row in _pending_human_decisions(typed_events)}
+        current_decisions = {row["decision_token"]: row for row in _pending_human_decisions(typed_events)}
         known_tokens = _human_escalations_by_token(typed_events)
         event_positions = {event.id: index for index, event in enumerate(typed_events)}
         for item in items.values():
             token = str(item.get("decision_token") or "")
+            current = current_decisions.get(token)
+            if current and current["review_only"] and item.get("status") == "pending":
+                item["summary"] = current["question"] or item["summary"]
+                item["actions"] = [option for option in item["actions"]
+                                   if option["action"] != "human-decision-approve-controlled-action"]
             if (item.get("kind") == "human_decision" and item.get("status") == "pending"
-                and token in known_tokens and token not in current_tokens):
+                and token in known_tokens and token not in current_decisions):
                 source = known_tokens[token]
                 source_event = events_by_id.get(str(source.get("event_id") or ""))
                 run_id = str(source.get("run_id") or source.get("workflow_run_id")

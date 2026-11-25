@@ -64,6 +64,7 @@ class CanonicalHandoffResolver:
         attempt_id: str,
         dispatch_id: str,
         source_event_id: str = "",
+        read_purpose: str = "",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         mutable = dict(payload)
         currentness = self._validate_currentness(
@@ -187,8 +188,14 @@ class CanonicalHandoffResolver:
                 state_dir=self.state_dir,
                 project_root=self.project_root,
                 payload=mutable,
-                source_event_id=source_event_id,
+                source_event_id=source_event_id, read_events=self.query._events,
             )
+            if plan_inputs and profile in {"workflow-read", "plan-synth"} and mutable.get("operation_id"):
+                from zf.runtime.previous_preflight_delivery import previous_preflight_sources
+
+                plan_inputs = previous_preflight_sources(
+                    self.state_dir, plan_inputs, mutable["operation_id"], config=self.config,
+                )
             if plan_inputs:
                 input_refs = (
                     list(mutable.get("input_refs") or [])
@@ -212,7 +219,7 @@ class CanonicalHandoffResolver:
                 "selection": "canonical-authority-matrix",
             },
             "source_event_id": source_event_id,
-            "read_purpose": profile,
+            "read_purpose": read_purpose or profile,
             "handoff_authority_contract": authority_contract,
             "candidate_snapshot": candidate_snapshot,
             "orchestrator_context_route_source_ids": [
@@ -220,6 +227,11 @@ class CanonicalHandoffResolver:
                 for source in route_sources
             ],
         }
+        if profile == "candidate-verify" and mutable.get("candidate_reader_scope"):
+            from zf.runtime.candidate_reader_assignments import scope_plan_reads
+
+            metadata["candidate_plan_read_selections"] = scope_plan_reads(
+                plan_port_sources, mutable["candidate_reader_scope"], self.state_dir)
         manifest, descriptor = source_manifest_from_payload(
             state_dir=self.state_dir,
             project_root=self.project_root,

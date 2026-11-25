@@ -11,7 +11,7 @@ from zf.runtime.orchestrator_agent_decision_apply import apply_orchestrator_agen
 from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_failure_checkpoint
 
 
-def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=False, capped=False):
+def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=False, capped=False, before_candidate=None):
     task_map = _task_map()
     task = task_map["tasks"][0]
     task.update(task_id="TASK-2", source_refs=["docs/prd.md"], owner_role="dev",
@@ -41,7 +41,7 @@ def incident(tmp_path, monkeypatch, *, blocked=False, canonical=False, peer=Fals
                 payload={"workflow_run_id": run, "pdd_id": "TASK-1", "rework_of": f"earlier-failure-{index}"}))
 
     runtime, request, candidate, child = _incident(tmp_path, blocked=blocked,
-        before_candidate=prior_repairs if capped else None)
+        before_candidate=prior_repairs if capped else before_candidate)
     runtime.event_writer.default_origin = "kernel"
     if peer:
         from tests.test_candidate_semantic_handoff import _peer_failure
@@ -85,6 +85,39 @@ def test_unchanged_contract_product_fix_dispatches_successor_once_without_plan(t
             assert row[key] == original[key]
     assert not any(e.type in {"prd.plan.requested", "orchestrator.semantic.rework.requested", "plan.approved"}
                    for e in runtime.event_log.read_all())
+
+
+@pytest.mark.parametrize("history, expected", [("plan", 1), ("one_product", 2),
+                                              ("two_products", None), ("foreign", None)])
+def test_candidate_repair_budget_uses_same_run_plan_failure_sources(tmp_path, monkeypatch, history, expected):
+    from zf.core.config.schema import FanoutAggregateConfig, WorkflowStageConfig
+    from zf.core.events import ZfEvent
+
+    def previous_maps(runtime, run):
+        runtime.config.workflow.stages.append(WorkflowStageConfig(
+            id="custom-outline", trigger="outline.requested", topology="fanout_reader", attempt_domain="plan",
+            aggregate=FanoutAggregateConfig(success_event="task_map.ready", failure_event="custom.outline.failed")))
+        for kind, stage in [("custom.outline.failed", "custom-outline"), ("plan.rejected", "writers")]:
+            trigger = runtime.event_writer.append(ZfEvent(type=kind, origin="kernel", payload={
+                "workflow_run_id": "elsewhere" if history == "foreign" else run, "pdd_id": "TASK-1",
+                "stage_id": stage}))
+            runtime.event_writer.append(ZfEvent(type="task_map.ready", origin="kernel", payload={
+                "workflow_run_id": run, "pdd_id": "TASK-1", "rework_of": trigger.id}))
+        for _ in range({"one_product": 1, "two_products": 2}.get(history, 0)):
+            failure = runtime.event_writer.append(ZfEvent(type="test.failed", origin="kernel", payload={
+                "workflow_run_id": run, "pdd_id": "TASK-1"}))
+            runtime.event_writer.append(ZfEvent(type="task_map.ready", origin="kernel", payload={
+                "workflow_run_id": run, "pdd_id": "TASK-1", "rework_of": failure.id,
+                "rework_source": "plan.rejected"}))  # An annotation cannot override the source event.
+
+    runtime, request, repair = incident(tmp_path, monkeypatch, before_candidate=previous_maps)
+    _, result = submit(runtime, request, repair)
+    if expected is None:
+        assert not result["applied"] and "cap exhausted" in result["reason"]
+    else:
+        assert result["applied"], result
+        ready = next(e for e in reversed(runtime.event_log.read_all()) if e.type == "task_map.ready")
+        assert ready.payload["rework_attempt"] == expected and ready.payload["task_ids"] == ["TASK-2-FIX"]
 
 
 @pytest.mark.parametrize("change", ["scope", "acceptance", "command", "classification", "contract", "missing",

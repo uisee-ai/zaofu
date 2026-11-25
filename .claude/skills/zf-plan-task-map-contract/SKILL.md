@@ -789,6 +789,25 @@ delta. These are scheduler semantics, not permission to weaken evidence:
   `immutable_baseline`. Its mandatory criteria use `candidate_verify`. A failed
   audit must not silently become an Impl rework of the same read-only task.
 
+For each `verify_only` task, read `initial_readonly_verify` in the Plan execution
+review. Its mandatory criteria and selected commands execute on the task target,
+even when their owner is `candidate_verify`. Trace each assertion to the code
+available on that target. A baseline browser audit can require its browser probe
+there. A journey that needs later writers belongs on the integrated candidate.
+Keep its AC and commands mandatory in the candidate contract and matrices. One
+supported arrangement is to bind them to a standard task with its own independent
+module checks, leaving the read-only task with its baseline obligations. Recheck
+the command producer, unique command IDs and goal references after moving them.
+
+When a completed sibling must retain its approved contract, a read-only audit
+may declare `evidence_contract.frozen_candidate_acceptance_ids` on its own row.
+List only mandatory `candidate_verify` AC IDs that belong to the frozen integrated
+candidate. Bind every AC to explicit command IDs. Keep a separate mandatory local
+criterion with an independently executable check. The initial read-only preview
+shows both the baseline requirements and the deferred IDs. Full Candidate Verify
+still requires the listed criteria and commands. A shared command remains local
+when a baseline criterion names it. Review the configured final Reader stage.
+
 When a candidate audit depends on an external gate, put the gate task in
 `blocked_by` and declare `required_external_digest_env` in the audit's
 `evidence_contract`. The audit command may read that environment variable; the
@@ -933,7 +952,15 @@ bundle's own unit tests and only surfaces at candidate verification as
 `integration.failed` / `test.failed` — e.g. the assembled CLI is non-functional
 because no task owned the root entrypoint that wires the bundles together.
 
-Whenever the plan has more than one parallel bundle, emit exactly one final
+Count independent writer bundles by their actual ownership and dependency
+topology. Pool lanes and independent read-only audits do not by themselves
+create distinct writer bundles. When the shared entrypoint is already wired
+and frozen, identify its baseline and assign integrated journey evidence to an
+existing in-scope task with Candidate Verify on the assembled target. Preserve
+all source-defined tasks, write scopes, and declared assembly policies. Newly
+required cross-bundle wiring still needs an authorized writer.
+
+Whenever the plan has more than one parallel writer bundle, emit exactly one final
 **assembly task**:
 
 - Give it an `owner_role` distinct from the feature tasks it depends on

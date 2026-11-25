@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_freeze_recovery_identity import superseding_reader_freeze
 from zf.runtime.reader_task_recovery_scope import ReaderTaskRecoveryScopes
 from zf.runtime.reader_replan_index import ReaderReplanIndex
 from zf.runtime.plan_artifact_package import (
@@ -520,9 +521,15 @@ def plan_reader_stage_replan(
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
     failure_fanout_id = str(failure_payload.get("fanout_id") or "")
-    from zf.runtime.failure_kind import FAILURE_KIND_INFRA, failure_kind_from_payload
+    from zf.runtime.failure_kind import FAILURE_KIND_INFRA
+    from zf.runtime.plan_reader_preregistration import plan_failure_kind
 
-    if not authorized_generation and failure_kind_from_payload(failure_payload) == FAILURE_KIND_INFRA:
+    if authorized_generation:
+        from zf.runtime.diagnosis_critic_handoff import is_handoff_failure
+
+        if is_handoff_failure(failure_event):
+            return None, "diagnosis_critic_handoff_only"
+    if not authorized_generation and plan_failure_kind(events, failure_event) == FAILURE_KIND_INFRA:
         return None, "infrastructure_failure"
     rejected_id = str(
         failure_payload.get("trigger_event_id") or failure_event.causation_id or ""
@@ -564,6 +571,17 @@ def plan_reader_stage_replan(
             origin_payload = lineage
         else:
             origin_payload = {**lineage, **origin_payload}
+    if trigger_type == "candidate.ready":
+        failure_candidate = index.by_id.get(str(failure_payload.get("candidate_event_id") or ""))
+        binding = origin_payload
+        if (not failure_fanout_id and failure_candidate and failure_candidate.type == trigger_type
+                and _same_run(failure_candidate, failure_run_id)):
+            binding = failure_candidate.payload
+        if superseding_reader_freeze(
+            (event for _, event in reversed(index.rows("candidate.ready"))),
+            failure_run_id, binding.get("freeze_id", ""), binding.get("candidate_head_commit", ""),
+        ):
+            return None, "superseded_by_current_candidate_freeze"
     if (
         _requires_changed_scan_input(stage, failure_event.type)
         and _semantic_failure(failure_payload)
@@ -637,7 +655,7 @@ def plan_reader_stage_replan(
             continue
         if event.id == failure_event.id:
             continue
-        if failure_kind_from_payload(event.payload) == FAILURE_KIND_INFRA:
+        if plan_failure_kind(events, event) == FAILURE_KIND_INFRA:
             continue
         prior_failures += 1
     # A reader child can emit its configured success_event before downstream

@@ -91,12 +91,16 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
         return required, {}, False
     from zf.runtime.host_verification_retained import retained_reader_probes
     receipts = retained_reader_probes(service, operation, contract, policy, events)
-    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()]
+    from zf.runtime.host_probe_recollection import replaced_capture_refs
+    replaced = replaced_capture_refs(service.state_dir, operation['operation_id'], events, policy)
+    retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()
+                if ref.get('sha256') not in replaced]
     failed_probe = any(row.get('exit_code') != 0 or row.get('status') == 'failed' for row in retained)
     for event in events:
         p = event.payload
         if (event.type != 'runtime.action.attempt.completed' or p.get('operation_id') != operation['operation_id']
-                or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'):
+                or p.get('approval_ref') != policy.approval_ref or p.get('kind') != 'verify'
+                or (p.get('receipt_ref') or {}).get('sha256') in replaced):
             continue
         receipt = hydrate_sidecar_ref(service.state_dir, p['receipt_ref']).payload
         from zf.runtime.host_verification_policy import policy_receipt_matches
@@ -108,6 +112,48 @@ def completed_reader_probes(service, operation: dict, contract: dict, policy, ev
             receipts[receipt['command_id']] = p['receipt_ref']
             failed_probe = failed_probe or receipt['exit_code'] != 0 or receipt['status'] == 'failed'
     return required, receipts, failed_probe
+
+
+def _handoff_request(service, events, payload: dict) -> ZfEvent | None:
+    """Resume the same intent, or replace one supersession denial after its gate clears."""
+    from zf.runtime.reader_stage_recovery import SUPERSEDED_FANOUT_REASON, repaired_reader_stage_trigger
+
+    action = 'stage-replan-new-generation'
+    body = {'action': action, **payload}
+    previous = [e for e in events if e.type == 'control.action.requested'
+                and e.payload.get('repaired_failure_event_id') == payload['repaired_failure_event_id']]
+    if not previous:
+        return service.writer.emit('control.action.requested', actor='run-manager', payload=body)
+    request = previous[-1]
+    if (len(previous) > 2 or len(previous) == 2 and request.causation_id != previous[0].id
+            or any(e.actor != 'run-manager' or e.origin != 'kernel' or e.payload != body for e in previous)):
+        return None
+    starts = [e for e in events if e.type == 'runtime.action.attempt.started' and e.origin == 'kernel'
+              and e.causation_id == request.id and e.payload.get('action') == action]
+    if not starts:
+        return request  # Restart after request publication, before the controlled attempt.
+    if len(previous) != 1 or len(starts) != 1:
+        return None
+    start, = starts
+    outcomes = [e for e in events if e.origin == 'kernel' and e.causation_id == start.id
+                and e.type in {'runtime.action.attempt.completed', 'runtime.action.attempt.failed'}]
+    if len(outcomes) != 1:
+        return None
+    outcome, = outcomes
+    denial = next((e for e in events if e.id == outcome.payload.get('result_event_id')), None)
+    if (outcome.type != 'runtime.action.attempt.failed' or outcome.payload.get('status') != 'failed'
+            or outcome.payload.get('action') != action or not start.payload.get('attempt_id')
+            or outcome.payload.get('attempt_id') != start.payload.get('attempt_id')
+            or not denial or denial.origin != 'kernel' or denial.type != 'runtime.action.failed'
+            or denial.causation_id != request.id or denial.payload.get('action') != action
+            or denial.payload.get('reason') != SUPERSEDED_FANOUT_REASON):
+        return None
+    try:
+        repaired_reader_stage_trigger(service.state_dir, service.config, events, payload, request)
+    except ValueError:
+        return None
+    return service.writer.emit('control.action.requested', actor='run-manager',
+                               causation_id=request.id, payload=body)
 
 
 def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events) -> bool:
@@ -125,11 +171,12 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                 or (failure.payload.get('workflow_run_id') or failure.payload.get('run_id') or failure.correlation_id)
                 != operation['workflow_run_id']):
             continue
-        if any(e.payload.get('repaired_failure_event_id') == failure.id for e in events):
-            return False
         stage, _ = reader_stage_for_failure(service.config, events, failure)
         if stage is None:
             continue
+        if any(e.type == stage.trigger and e.payload.get('repaired_failure_event_id') == failure.id
+               and (e.origin == 'kernel' or not e.origin and e.actor == 'zf-cli') for e in events):
+            return False
         from zf.runtime.reader_failure_repair import repaired_failure_kind
         if repaired_failure_kind(service.state_dir, events, failure) != 'infra':
             # Successful commands do not resolve mixed or semantic findings.
@@ -176,9 +223,13 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
                 'Inspect exit codes and output, including failures. Do not repeat an unavailable sandbox command or treat the receipt as a product verdict. '
                 + 'Commands without receipts remain unverified: ' + ', '.join(sorted(unverified)) + '. '
                 + ', '.join(str(service.state_dir / r['ref']) for r in receipts.values()) + media]}
-        requested = service.writer.emit('control.action.requested', actor='run-manager', payload={
-            'action': 'stage-replan-new-generation', **payload})
+        requested = _handoff_request(service, events, payload)
+        if requested is None:
+            return False
         result = service.execute(action='stage-replan-new-generation', requested_action='stage-replan-new-generation',
                                  requested=requested, payload=payload)
         return bool(result.get('ok'))
+    if not failed_probe:
+        from zf.runtime.candidate_probe_source_retry import resume_probe_source
+        return resume_probe_source(service, operation, contract, policy, events, dispatch, receipts)
     return False

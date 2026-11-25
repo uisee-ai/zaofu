@@ -4,7 +4,55 @@ Old recovery copied the native schema marker and pruned empty values. Only a
 complete controlled-action / failed-fanout chain can identify that exact copy.
 Neither the ledger nor the immutable receipt is rewritten.
 """
+from collections.abc import Iterable, Iterator, Sequence
+
 from zf.core.events.model import ZfEvent
+
+
+def _valid_stall_freezes(events: Sequence[ZfEvent]) -> set[str]:
+    """A Stall retry can redeliver only an existing, still-current native receipt."""
+    from zf.runtime.fanout_retrigger_guard import is_stall_trigger_copy
+
+    current: dict[str, ZfEvent] = {}
+    originals: dict[str, ZfEvent] = {}
+    valid: set[str] = set()
+    for event in events:
+        body = event.payload
+        if (event.type != "candidate.ready" or event.origin != "kernel"
+                or body.get("schema_version") != "candidate-freeze-receipt.v1"
+                or body.get("repaired_failure_event_id") or body.get("rework_of")):
+            continue
+        run = str(body.get("workflow_run_id") or event.correlation_id or "")
+        if not run or not body.get("freeze_id"):
+            continue
+        if event.actor != "zf-stall-redispatch":
+            originals[event.id] = current[run] = event
+            continue
+        source = originals.get(body.get("original_trigger_event_id"))
+        latest = current.get(run)
+        if source is None or latest is None or not is_stall_trigger_copy(event, source):
+            continue
+        if source.id == latest.id or (
+            source.payload.get("freeze_receipt_digest")
+            and all(source.payload.get(key) == latest.payload.get(key)
+                    for key in ("freeze_receipt_digest", "freeze_id", "candidate_head_commit"))
+        ):
+            valid.add(event.id)
+    return valid
+
+
+def frozen_candidate_occurrences(events: Sequence[ZfEvent]) -> Iterator[ZfEvent]:
+    """Newest first, preserving valid Stall dispatch ids and ignoring invalid copies."""
+    valid_stalls: set[str] | None = None
+    for event in reversed(events):
+        if event.type != "candidate.ready":
+            continue
+        if event.actor == "zf-stall-redispatch":
+            if valid_stalls is None:
+                valid_stalls = _valid_stall_freezes(events)
+            if event.id not in valid_stalls:
+                continue
+        yield event
 
 
 def native_freeze_for_recovery(events: list[ZfEvent], candidate: ZfEvent) -> ZfEvent:
@@ -17,6 +65,8 @@ def native_freeze_for_recovery(events: list[ZfEvent], candidate: ZfEvent) -> ZfE
 
     def resolve(current: ZfEvent) -> ZfEvent:
         body = current.payload
+        if current.actor == "zf-stall-redispatch" and current.id not in _valid_stall_freezes(events):
+            raise ValueError("Candidate Stall retry lacks its current native freeze")
         if not body.get('repaired_failure_event_id'):
             return current
         if current.id in seen:
@@ -79,3 +129,50 @@ def native_freeze_for_recovery(events: list[ZfEvent], candidate: ZfEvent) -> ZfE
         return native
 
     return resolve(candidate)
+
+
+def superseding_reader_freeze(
+    newest_first: Iterable[ZfEvent],
+    workflow_run_id: str,
+    freeze_id: str,
+    candidate_head_commit: str,
+) -> ZfEvent | None:
+    """A late Reader failure remains bound to the native freeze it evaluated."""
+    if not workflow_run_id or not freeze_id:
+        return None
+    for event in newest_first:
+        if event.type != "candidate.ready" or event.origin != "kernel" or event.actor == "zf-stall-redispatch":
+            continue
+        body = event.payload
+        if (
+            (body.get("workflow_run_id") or event.correlation_id) != workflow_run_id
+            or body.get("schema_version") != "candidate-freeze-receipt.v1"
+            or body.get("repaired_failure_event_id")
+            or body.get("rework_of")
+            or not body.get("freeze_id")
+        ):
+            continue
+        if body["freeze_id"] != freeze_id or (
+            candidate_head_commit and body.get("candidate_head_commit") != candidate_head_commit
+        ):
+            return event
+        return None
+    return None
+
+
+def bind_retrigger_snapshot(events: list[ZfEvent], source: ZfEvent, payload: dict) -> None:
+    """A Reader redrive may reference a current native freeze, never create one."""
+    if source.type != "candidate.ready" or not (
+        payload.get("schema_version") == "candidate-freeze-receipt.v1"
+        or payload.get("candidate_snapshot_event_id")
+    ):
+        return
+    from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+    run = str(payload.get("workflow_run_id") or source.correlation_id or "")
+    native = frozen_candidate_for_payload(events, run, payload={"candidate_event_id": source.id})
+    current = frozen_candidate_for_payload(events, run, payload={})
+    if source.origin != "kernel" or not run or native is None or native.origin != "kernel" or native != current:
+        raise ValueError("Candidate retrigger requires its current native freeze")
+    payload["candidate_snapshot_event_id"] = native.id
+    payload.pop("schema_version", None)

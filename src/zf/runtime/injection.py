@@ -187,7 +187,7 @@ def generate_role_instructions(
             if entry is None:
                 demand_lines.append(f"- `/{skill}`")
                 continue
-            line = _render_skill_instruction_line(skill, entry)
+            line = _render_skill_instruction_line(skill, entry, project_root)
             if entry.auto_inject:
                 auto_lines.append(line)
             else:
@@ -291,10 +291,17 @@ def _backend_skill_discipline_lines(role: RoleConfig) -> list[str]:
     return ["## Backend Skill Discipline", "", *guidance, ""]
 
 
-def _render_skill_instruction_line(skill: str, entry: SkillLockEntry) -> str:
+def _render_skill_instruction_line(
+    skill: str, entry: SkillLockEntry, project_root: Path | str | None,
+) -> str:
     status = entry.status
-    source = entry.source or "missing"
-    materialized = entry.materialized_to or "not materialized"
+    if entry.materialized_to:
+        body = Path(entry.materialized_to) / "SKILL.md"
+        if project_root is not None and not body.is_absolute():
+            body = Path(project_root) / body
+        locator = f"read `{body}`"
+    else:
+        locator = f"source: {entry.source}" if entry.source else "not materialized"
     description = entry.description or "No description available."
     load_state = (
         "load-on-demand"
@@ -309,8 +316,7 @@ def _render_skill_instruction_line(skill: str, entry: SkillLockEntry) -> str:
     )
     return (
         f"- `/{skill}` - {description} "
-        f"(status: {status}; mode: {load_state}; source: {source}; "
-        f"runtime: {materialized}{dependency_suffix})"
+        f"(status: {status}; mode: {load_state}; {locator}{dependency_suffix})"
     )
 
 

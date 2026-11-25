@@ -534,6 +534,13 @@ def _scope_multi_kind_flow_expansion(expansion: dict) -> dict:
         if str(role.get("instance_id") or "").strip() in {"", old_name}:
             role["instance_id"] = new_name
 
+    if "artifact_worker_cgroups" in metadata:
+        groups = metadata["artifact_worker_cgroups"]
+        scoped_groups = {scoped(actor): path for actor, path in groups.items()}
+        if len(scoped_groups) != len(groups):
+            raise KindEnvelopeError("artifactWorkerCgroups has colliding multi-kind instance names")
+        metadata["artifact_worker_cgroups"] = scoped_groups
+
     task_pipeline = metadata.get("task_pipeline")
     if isinstance(task_pipeline, dict):
         for pool in (task_pipeline.get("pools") or {}).values():

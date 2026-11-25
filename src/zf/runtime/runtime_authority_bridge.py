@@ -84,6 +84,13 @@ class RuntimeAuthorityMixin:
             prepare_task_attempt,
         )
 
+        if context is not None and context.reader_recovery_dispatch:
+            from zf.runtime.reader_respawn_continuation import current_reader_input
+            role = self._find_role_by_instance(role_name)
+            dispatch = next((e for e in self.event_log.read_all() if e.id == context.reader_recovery_dispatch), None)
+            if dispatch is None or role is None or context.operation_id != dispatch.payload.get("operation_id"):
+                raise RuntimeError("original reader dispatch is unavailable")
+            current_reader_input(self, role, {**dispatch.payload, "event_id": dispatch.id})
         if context is not None and context.continuation:
             from zf.runtime.task_attempt_continuation import validate_task_continuation
 
@@ -94,6 +101,11 @@ class RuntimeAuthorityMixin:
                 self, context=context, briefing_path=briefing_path,
             )
         delivery_context = prepared.context if prepared is not None else context
+        delivery_evidence = {}
+        if prepared is not None:
+            from zf.runtime.dispatch_baseline import briefing_delivery_evidence
+
+            delivery_evidence = briefing_delivery_evidence(self, prepared, role_name, briefing_path)
         try:
             try:
                 self.transport.send_task(
@@ -113,7 +125,7 @@ class RuntimeAuthorityMixin:
                 fail_task_attempt_delivery(self, prepared, error=exc)
             self._rollback_inflight_dispatch(delivery_context)
             raise
-        mark_task_attempt_sent(self, prepared)
+        mark_task_attempt_sent(self, prepared, delivery_evidence=delivery_evidence)
         return delivery_context
 
     def _task_attempt_rejection(

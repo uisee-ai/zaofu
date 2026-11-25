@@ -87,3 +87,24 @@ def test_one_rejected_reader_still_requires_partition_of_its_blocked_item(tmp_pa
             run_id=request.correlation_id, task_id='TASK-1')
         assert len(retained) == 2
         assert any(r['disposition']['classification'] == 'execution_unknown' for r in retained)
+
+
+def test_pre_upgrade_dispositions_still_apply_after_reader_observations(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    runtime, request, repair = incident(tmp_path, monkeypatch, peer=True, canonical=True)
+    bound = aggregate_candidate_binding(runtime.state_dir, runtime.event_log.read_all(),
+        failure_id=request.payload["failure_event_ids"][0], run_id=request.correlation_id, task_id="TASK-1")
+    # Earlier OA checkpoints bound report findings to the admitted result and pointer,
+    # before aggregate members also carried the fanout child event for shadow triage.
+    dispositions = partition(runtime, request)
+    for finding, disposition in zip(bound["findings"], dispositions, strict=True):
+        if finding.get("control_result_ref"):
+            old_source = {"operation_id": finding["operation_id"], "control_result_ref": finding["control_result_ref"],
+                          "child_event_id": None, "pointer": finding["pointer"]}
+            disposition["finding_id"] = "finding-" + hashlib.sha256(json.dumps(old_source, sort_keys=True).encode()).hexdigest()
+    assert any(m["child_event_id"] and m["control_result_ref"] for m in bound["members"])
+    repair["finding_dispositions"] = dispositions
+    _, result = submit(runtime, request, repair)
+    assert result["applied"], result

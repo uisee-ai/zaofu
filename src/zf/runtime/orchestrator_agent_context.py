@@ -80,7 +80,14 @@ def build_orchestrator_agent_context(
         payload=payload,
         effective_config_ref=effective_config_ref,
         effective_config_summary_ref=effective_config_summary_ref,
+        expand_package=checkpoint != "candidate_reader_observation",
     )
+    from zf.runtime.milestone_successor import successor_context
+
+    successor = successor_context(runtime, checkpoint=checkpoint, run=workflow_run_id,
+                                 operation=operation_id, attempt=attempt_id, source_id=source_event_id, payload=payload)
+    if successor:
+        _append_descriptor(sources, source_id="milestone-successor", kind="milestone_successor", descriptor=successor)
     execution_ref = {}
     if execution_mode:
         input_mode = "execution"
@@ -136,6 +143,7 @@ def build_orchestrator_agent_context(
             ),
         },
         "objective": _checkpoint_objective(checkpoint),
+        **({"milestone_successor_ref": successor} if successor else {}),
         "flow_kind": str(payload.get("flow_kind") or ""),
         "risk_signals": list(risk_signals),
         "checkpoint_context": {
@@ -280,10 +288,13 @@ def build_orchestrator_agent_context(
             "allow_truncated": False,
         }
         for source in required_sources
-        if input_mode != "execution" or source["source_id"] in {
+        if not (checkpoint == "semantic_failure" and source["source_id"].startswith("candidate-prior-repair-"))
+        and (checkpoint != "candidate_reader_observation" or source["source_id"] in {
+            "checkpoint-input", "candidate-reader-counterexample",
+        }) and (input_mode != "execution" or source["source_id"] in {
             "checkpoint-input", "execution-context", "effective-config",
-            "semantic-failure-input", "task-recovery-context",
-        }
+            "semantic-failure-input", "task-recovery-context", "milestone-successor",
+        })
     ]
     from zf.runtime.artifact_read_snapshot import pin_read_selections
     from zf.runtime.artifact_source_versions import pin_source_versions
@@ -361,6 +372,7 @@ def _canonical_sources(
     payload: Mapping[str, Any],
     effective_config_ref: Mapping[str, Any],
     effective_config_summary_ref: Mapping[str, Any],
+    expand_package: bool = True,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     _append_descriptor(
@@ -380,7 +392,7 @@ def _canonical_sources(
     package_digest = str(
         payload.get("plan_artifact_package_digest") or ""
     ).strip()
-    if package_ref and package_digest:
+    if expand_package and package_ref and package_digest:
         package_descriptor = {"ref": package_ref, "sha256": package_digest}
         package = hydrate_plan_artifact_package(
             runtime.state_dir,
@@ -658,6 +670,7 @@ def _checkpoint_objective(checkpoint: str) -> str:
         "pre_impl": "Adopt the Plan-bound execution graph before implementation.",
         "plan_candidate": "Review the current Plan Package for semantic adoption.",
         "stage_barrier": "Resolve result conflicts and select the next semantic action.",
+        "candidate_reader_observation": "Diagnose the admitted Reader counterexample on its frozen target while sibling Readers continue.",
         "semantic_failure": "Produce a bounded target-specific semantic recovery delta.",
         "goal_revision": "Revise the semantic graph and declare exact invalidation.",
         "pre_closeout": "Aggregate admitted results and identify remaining goal gaps.",

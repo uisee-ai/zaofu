@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.candidate_result_binding import candidate_task_integrated_commits
+from zf.runtime.task_ref_handoff_correction import verified_task_ref_correction
 
 
 SCHEMA_VERSION = "attempt-handoff-snapshot.v1"
@@ -267,6 +268,14 @@ def reduce_attempt_handoffs(
                 ]
                 for handoff in matching:
                     valid_targets = set(integrated_commits.get(verified_task_id, set()))
+                    if (valid_targets and handoff["target_commit"] not in valid_targets
+                            and _identity_matches(handoff, payload, require_dispatch=False)):
+                        correction = verified_task_ref_correction(
+                            event_by_id, handoff, event, target_commit, valid_targets,
+                        )
+                        if correction:
+                            handoff["ref_correction"] = correction
+                            handoff["target_commit"] = correction["target_commit"]
                     if target_commit:
                         valid_targets.add(target_commit)
                     if (

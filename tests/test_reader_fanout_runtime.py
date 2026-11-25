@@ -3306,8 +3306,9 @@ def test_artifact_production_briefing_separates_findings_from_execution(
     }
 
 
+@pytest.mark.parametrize("bound_failure", ["issue.triage.child.failed", ""])
 def test_plan_candidate_briefing_validates_before_submit(
-    tmp_path: Path,
+    tmp_path: Path, bound_failure: str,
 ) -> None:
     _state_dir, _log, _transport, orch = _state(tmp_path)
     context = FanoutContext(
@@ -3336,6 +3337,7 @@ def test_plan_candidate_briefing_validates_before_submit(
         ),
         child_payload={
             "operation_id": "wop-plan-1",
+            "canonical_failure_event": bound_failure,
             "output_profile_id": "workflow-read",
             "output_profile_revision": "1",
             "semantic_result_submit_mode": "blocking",
@@ -3366,6 +3368,14 @@ def test_plan_candidate_briefing_validates_before_submit(
     )
 
     briefing = path.read_text(encoding="utf-8")
+    if bound_failure:
+        assert "Submit this operation's result:" in briefing and "Success command:" not in briefing
+        assert "unavailable required input" in briefing and "`execution_status=failed`" in briefing
+        assert "business rejection in its independent review" in briefing
+        assert "Failure command:" not in briefing
+    else:
+        assert "Success command:" in briefing and "Submit this operation's result:" not in briefing
+        assert "same validation and submission commands for this execution failure" not in briefing
     assert briefing.count("result validate") == 1
     assert briefing.count("result submit") == 1
     assert briefing.index("result validate") < briefing.index("result submit")
@@ -4352,6 +4362,7 @@ def _task_map_synth_orchestrator(
     tmp_path: Path,
     *,
     complete_child: bool = True,
+    semantic_plan_submit: bool = False,
 ):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -4387,6 +4398,10 @@ def _task_map_synth_orchestrator(
         ]),
     )
     orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
+    if semantic_plan_submit:
+        config.workflow.flow_metadata = {"result_protocol": {
+            "semantic_submit_profiles": {"plan-synth": "blocking"},
+        }}
     trigger = orch.event_writer.append(ZfEvent(
         type="product.design.ready",
         actor="zf-cli",

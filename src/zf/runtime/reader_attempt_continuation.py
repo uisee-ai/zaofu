@@ -95,6 +95,7 @@ def deliver_reader_continuation(runtime: Any, dispatch: ZfEvent, claim: ZfEvent)
     prompt = build_task_prompt(role.instance_id, briefing, prompt_kind="fanout_child")
     prompt += reader_continuation_guidance(
         attempt_id=claim.payload["attempt_id"], backend=role.backend, cli=zf_cli_cmd(),
+        runtime=runtime, actor=role.instance_id, operation_id=row["operation_id"],
     )
     if claim.payload.get("continuation_phase") == "result_completion":
         prompt += (

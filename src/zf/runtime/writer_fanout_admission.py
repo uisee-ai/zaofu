@@ -143,6 +143,9 @@ def select_writer_task_items(
     payload: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str], int | None, str]:
     """Apply the same task selection for preflight and writer fanout."""
+    if payload.get("resume_scope") == "candidate_diagnosis_only":
+        # A retained task map or wave only supplies context for the Planner.
+        return [], [], None, "candidate_diagnosis_only"
     requested = _string_list(payload.get("task_ids"))
     wave = _optional_int(payload.get("wave"))
     resume_scope = str(

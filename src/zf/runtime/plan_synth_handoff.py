@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
 from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
@@ -126,6 +127,67 @@ def render_plan_synth_completion_command(
     return command
 
 
+def current_synth_recovery_guidance(runtime: Any, dispatch: Mapping[str, Any], role: Any, cli: str) -> tuple[dict[str, Any] | None, str]:
+    """Resolve a recovered transport dispatch to the same live synth operation."""
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    if not dispatch.get("operation_id"):
+        return None, ""
+    operation = load_workflow_operation(runtime.event_log, dispatch["operation_id"])
+    if (not operation or operation.get("request_hash") != dispatch.get("request_hash")
+            or operation.get("status") not in {"requested", "reserved", "running"}):
+        raise ValueError("synth recovery has no matching active operation")
+    return operation, synth_result_recovery_guidance(
+        runtime.state_dir, operation, attempt_id=dispatch.get("attempt_id") or dispatch.get("run_id") or "",
+        actor=role.instance_id, request_hash=dispatch["request_hash"], cli=cli,
+    )
+
+
+def synth_result_recovery_guidance(
+    state_dir: Path, operation: Mapping[str, Any] | None, *,
+    attempt_id: str, actor: str, request_hash: str, cli: str,
+) -> str:
+    """Describe the original signed plan-synth preflight without touching its draft."""
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.stage_execution_card import render_result_scratch_command, render_result_validate_command
+    from zf.runtime.workflow_operation import operation_request_hash
+
+    if not operation or operation.get("operation_type") != "fanout_synth":
+        return ""
+    if (not attempt_id or operation.get("status") not in {"requested", "reserved", "running"}
+            or operation.get("active_attempt_id") != attempt_id or operation.get("role_instance") != actor):
+        return ""
+    body = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload
+    if (not request_hash or operation_request_hash(body) != request_hash or request_hash != operation["request_hash"]
+            or any(body.get(key) != operation.get(key) for key in
+                   ("operation_id", "operation_type", "role_instance", "workflow_run_id", "active_attempt_id"))):
+        raise ValueError("synth recovery result request binding differs")
+    request = body["request"]
+    if (request.get("output_profile_id") != PLAN_SYNTH_PROFILE_ID
+            or request.get("semantic_result_submit_mode") != "blocking"):
+        return ""
+    state = state_dir.resolve()
+    scratch = (state / str(request.get("result_scratch_ref") or "")).resolve()
+    if state not in scratch.parents:
+        raise ValueError("synth recovery scratch is not bound inside the state directory")
+    submit = render_result_scratch_command(state, operation["operation_id"], cli)
+    validate = render_result_validate_command(submit)
+    from zf.runtime.candidate_diagnosis_review import DIAGNOSIS_CRITIC_GUIDANCE
+
+    diagnosis = (request.get("result_identity") or {}).get("diagnosis_review")
+    return (
+        f"\nResume attempt `{attempt_id}` using its signed result scratch `{scratch}`. "
+        "Inspect the existing draft and preserve your independent verdict. An earlier turn's "
+        "validation receipt is historical. If you have an authored draft, check it now. "
+        "Before reporting a validation blocker or submitting "
+        f"the authored draft, run `{validate}` in this turn. Use the current output to repair "
+        "any reproduced mechanical diagnostics, then rerun that preflight. When the current "
+        f"preflight succeeds and your evaluation is complete, run `{submit}` and use its receipt. "
+        "If the result has already been admitted, retain the existing receipt and stop."
+        + (" " + DIAGNOSIS_CRITIC_GUIDANCE if diagnosis else "")
+    )
+
+
 def render_plan_synth_validation_section(
     submit_command: str, *, scratch_path: Path | None = None,
 ) -> list[str]:
@@ -169,20 +231,25 @@ def build_plan_handoff_input_refs(
     project_root: Path,
     payload: Mapping[str, Any],
     source_event_id: str = "",
+    read_events: Callable[[], list[ZfEvent]] | None = None,
 ) -> list[dict[str, Any]]:
     """Materialize canonical requirement and rework inputs for a plan attempt."""
 
     state_dir = Path(state_dir)
     project_root = Path(project_root)
     from zf.runtime.plan_requirement_amendment import amendment_binding
+    from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
     trigger = (
         payload.get("trigger_payload")
         if isinstance(payload.get("trigger_payload"), Mapping)
         else {}
     )
+    diagnosis_events = None
+    if (payload.get("resume_scope") or trigger.get("resume_scope")) == "candidate_diagnosis_only":
+        diagnosis_events = frozen_diagnosis_events(state_dir, project_root, read_events)
     binding = amendment_binding(state_dir, str(payload.get("workflow_run_id")
         or trigger.get("workflow_run_id") or payload.get("trace_id")
-        or trigger.get("trace_id") or ""))
+        or trigger.get("trace_id") or ""), events=diagnosis_events)
     payload = {**payload, **binding}
     source_refs = {
         **(trigger.get("source_refs") if isinstance(trigger.get("source_refs"), Mapping) else {}),
@@ -235,7 +302,7 @@ def build_plan_handoff_input_refs(
         prior_review = rejected_review_source(
             state_dir, trigger_id=source_event_id,
             run=str(payload.get('workflow_run_id') or trigger.get('workflow_run_id') or ''),
-            rework_of=str(rework_context.get('rework_of') or ''),
+            rework_of=str(rework_context.get('rework_of') or ''), events=diagnosis_events,
         )
         if prior_review:
             input_refs.append(prior_review)
@@ -244,12 +311,12 @@ def build_plan_handoff_input_refs(
             state_dir=state_dir, project_root=project_root,
             payload={**trigger, **{key: value for key, value in payload.items()
                                    if value not in (None, "", [], {})}},
-            context=rework_context,
+            context=rework_context, handoff_source_id=source_event_id, diagnosis_events=diagnosis_events,
         ))
         canonical_snapshot = _canonical_rework_task_snapshot(
             state_dir=state_dir,
             payload=payload,
-            trigger=trigger,
+            trigger=trigger, events=diagnosis_events,
         )
         if canonical_snapshot:
             from zf.runtime.plan_rework_snapshot import bind_scoped_snapshot
@@ -348,6 +415,7 @@ def _canonical_rework_task_snapshot(
     state_dir: Path,
     payload: Mapping[str, Any],
     trigger: Mapping[str, Any],
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any]:
     """Bind current TaskStore truth to a replan instead of an obsolete task map."""
 
@@ -383,7 +451,8 @@ def _canonical_rework_task_snapshot(
     latest_delivery: dict[str, dict[str, Any]] = {}
     latest_blocker: dict[str, dict[str, Any]] = {}
     try:
-        events = EventLog(state_dir / "events.jsonl").read_all()
+        if events is None:
+            events = EventLog(state_dir / "events.jsonl").read_all()
     except (OSError, ValueError, TypeError):
         events = []
     for event in events:
@@ -593,6 +662,7 @@ def build_plan_synth_call_payload(
     reports: list[Mapping[str, Any]],
     run_id: str,
     role_instance: str,
+    event_log: EventLog | None = None,
 ) -> dict[str, Any]:
     """Build the immutable input set pinned before a plan synth dispatch."""
 
@@ -617,11 +687,18 @@ def build_plan_synth_call_payload(
         (str(item.get("source_id") or ""), str(item.get("sha256") or ""))
         for item in input_refs
     }
+    diagnosis_events = None
+    from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
+
+    read_events = event_log.read_all if event_log is not None else None
+    if (manifest.get("trigger_payload") or {}).get("resume_scope") == "candidate_diagnosis_only":
+        diagnosis_events = frozen_diagnosis_events(state_dir, project_root, read_events)
     for source in build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
         payload=manifest,
         source_event_id=trigger_event_id,
+        read_events=(lambda: diagnosis_events) if diagnosis_events is not None else read_events,
     ):
         identity = (
             str(source.get("source_id") or ""),
@@ -650,6 +727,11 @@ def build_plan_synth_call_payload(
             for item in input_refs
         ],
     }
+    from zf.runtime.candidate_diagnosis_review import diagnosis_review_scope
+
+    scope = diagnosis_review_scope(state_dir, manifest, reports, input_refs, child_bindings, events=diagnosis_events)
+    if scope:
+        revision_basis["diagnosis_review"] = scope
     plan_revision = f"plan-r{canonical_json_sha256(revision_basis)[:12]}"
     contract = {**revision_basis, "plan_revision": plan_revision}
     contract_ref = write_immutable_json_sidecar(
@@ -673,6 +755,7 @@ def build_plan_synth_call_payload(
         "stage_id": stage_id,
         "child_id": "synth",
         "run_id": run_id,
+        **({"diagnosis_review": scope} if scope else {}),
         "role_instance": role_instance,
         "target_ref": str(manifest.get("target_ref") or ""),
         "plan_revision": plan_revision,

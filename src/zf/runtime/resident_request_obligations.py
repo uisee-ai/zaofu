@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.pause_lifecycle import active_request_age_seconds
+from zf.runtime.candidate_reader_duplicate import duplicate_diagnosis_closed
 
 
 def resident_request_obligations(
@@ -31,13 +32,17 @@ def resident_request_obligations(
                 "status": "pending", "response_event_id": "",
             })
         request = requests.get(request_id)
+        if (request and duplicate_diagnosis_closed(event, request_id)
+                and request["source_action_checkpoint_id"] == payload.get("checkpoint_id")):
+            request["status"] = "superseded"
+            continue
         if (request and event.type in request["expected_output"]
                 and event.actor == request["instance_id"]):
             request["status"] = "responded"
             request["response_event_id"] = event.id
     rows = []
     for request in requests.values():
-        if request["status"] == "responded":
+        if request["status"] in {"responded", "superseded"}:
             continue
         try:
             created = datetime.fromisoformat(str(request["created_ts"]).replace("Z", "+00:00"))

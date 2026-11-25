@@ -45,6 +45,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sub = parser.add_subparsers(dest="workflow_cmd")
     from zf.cli.workflow_prepare import register as register_prepare
     register_prepare(sub)
+    from zf.cli.workflow_schedule import register as register_schedule
+
+    register_schedule(sub)
+    from zf.cli.artifact_milestone import register_operator
+    register_operator(sub)
 
     render = sub.add_parser("render", help="Render linear and star topology")
     render.set_defaults(func=_run_render)

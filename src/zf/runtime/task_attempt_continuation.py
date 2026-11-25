@@ -24,6 +24,16 @@ def continuation_context(runtime: Any, role: str, context: Any) -> Any:
         lease_id=attempt["lease_id"], dispatch_id=attempt["dispatch_id"])
 
 
+def admitted_before_recovery(runtime, row) -> bool:
+    from zf.runtime.workflow_operation import load_workflow_operation
+    operation = load_workflow_operation(runtime.event_log, row["operation_id"]) or {}
+    return any(e.type == "workflow.call.result.admitted" and e.origin == "kernel" and e.actor == "zf-cli"
+               and e.task_id == row.get("task_id") and e.payload.get("admission_status") == "admitted"
+               and bool(e.payload.get("request_hash")) and e.payload["request_hash"] == operation.get("request_hash")
+               and all(e.payload.get(k) == row.get(k) for k in ("operation_id", "attempt_id", "dispatch_id"))
+               for e in runtime.event_log.read_all())
+
+
 def validate_task_continuation(runtime: Any, role: str, context: DispatchContext) -> None:
     events = runtime.event_log.read_all()
     if any(e.type == "event.malformed" and e.payload.get("ledger_integrity") == "unknown" for e in events):
@@ -32,6 +42,15 @@ def validate_task_continuation(runtime: Any, role: str, context: DispatchContext
         raise RuntimeError("continuation is paused")
     if context.continuation_id:
         claim = next((e for e in events if e.id == context.continuation_id), None)
+        if claim and claim.type == "workflow.notification.claimed" and claim.origin == "kernel" and claim.actor == "zf-cli":
+            from zf.runtime.worker_reply_binding import notification_authority
+            binding = claim.payload
+            if (role != binding["instance_id"] or not runtime.transport.is_alive(role)
+                    or any(getattr(context, key) != binding[key] for key in ("operation_id", "attempt_id", "dispatch_id", "lease_id"))
+                    or context.run_id != binding["workflow_run_id"]):
+                raise RuntimeError("notification continuation no longer matches its live recipient")
+            notification_authority(runtime, claim.causation_id, role, None, events)
+            return
         if claim and claim.payload.get("recovery_action") == "result_protocol_correction":
             from zf.runtime.call_result_repair_delivery import validate_repair_continuation
 
@@ -56,7 +75,8 @@ def validate_task_continuation(runtime: Any, role: str, context: DispatchContext
         raise RuntimeError("continuation lease expired")
     from zf.runtime.workflow_operation import load_workflow_operation
     operation = load_workflow_operation(runtime.event_log, str(context.operation_id)) or {}
-    if (operation.get("status") != "running" or operation.get("active_attempt_id") != context.attempt_id
+    if (operation.get("admitted_call_result_ref") or operation.get("call_result_admitted_event_id")
+            or operation.get("status") != "running" or operation.get("active_attempt_id") != context.attempt_id
             or operation.get("dispatch_id") != context.dispatch_id or operation.get("lease_id") != context.lease_id):
         raise RuntimeError("continuation operation identity is stale")
     if not runtime.transport.is_alive(role):

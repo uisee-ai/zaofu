@@ -102,7 +102,10 @@ def test_legacy_timeout_handoff_keeps_negative_results_and_unknown_then_applies(
     assert unknown['outcome'] == 'unknown'
     assert not unknown.get('control_result_ref') and not unknown.get('verdict')
     assert not any(s['source_id'] == 'candidate-verification-verify-timeout' for s in sources)
-    decision = _submit_rework(runtime, prepared, action='return_to_plan')
+    from tests.test_candidate_mixed_repair import partition
+
+    decision = _submit_rework(runtime, prepared, action='return_to_plan',
+                              directive_fields={'finding_dispositions': partition(runtime, request)})
     assert apply_orchestrator_agent_decision(runtime, decision)['applied']
     replan = [e for e in runtime.event_log.read_all() if e.type == 'orchestrator.replan_requested']
     assert len(replan) == 1 and replan[0].payload['failed_task_ids'] == ['TASK-2']

@@ -6,11 +6,33 @@ import json
 import marshal
 import os
 from pathlib import Path
+from types import CodeType
 import subprocess
 import sys
 from uuid import uuid4
 
 from zf.runtime.sidecar_refs import write_sidecar_json
+
+
+# One controller process can emit session.started and loop.started around startup catch-up.
+PROCESS_EPOCH = uuid4().hex
+
+
+def _portable_code(code: CodeType) -> CodeType:
+    constants = tuple(_portable_code(obj) if isinstance(obj, CodeType) else obj for obj in code.co_consts)
+    return code.replace(co_filename="", co_consts=constants)
+
+
+def consumer_receipts(functions) -> dict:
+    return {f"{fn.__module__}.{fn.__qualname__}": {
+        "file": fn.__code__.co_filename,
+        "loaded_code_sha256": hashlib.sha256(marshal.dumps(fn.__code__)).hexdigest(),
+        "portable_code_sha256": hashlib.sha256(marshal.dumps(_portable_code(fn.__code__), 2)).hexdigest(),
+    } for fn in functions}
+
+
+def effective_config_sha256(config) -> str:
+    return hashlib.sha256(json.dumps(asdict(config), sort_keys=True, default=str).encode()).hexdigest()
 
 
 def source_tree_sha256(source_root: Path) -> str:
@@ -25,18 +47,15 @@ def runtime_load_payload(*, config, state_dir: Path, project_root: Path) -> dict
     from zf.runtime.task_pipeline_reconciler import TaskPipelineReconciler
 
     functions = (Orchestrator.run_once, run_manager_tick, TaskPipelineReconciler.reconcile)
-    code = {f"{fn.__module__}.{fn.__qualname__}": {
-        "file": fn.__code__.co_filename,
-        "loaded_code_sha256": hashlib.sha256(marshal.dumps(fn.__code__)).hexdigest(),
-    } for fn in functions}
+    code = consumer_receipts(functions)
     source_root = Path(__file__).resolve().parents[3]
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source_root,
                               capture_output=True, text=True, timeout=5)
-    config_digest = hashlib.sha256(json.dumps(asdict(config), sort_keys=True, default=str).encode()).hexdigest()
+    config_digest = effective_config_sha256(config)
     config_path = project_root / "zf.yaml"
     lockfile = state_dir / "skills.lock.json"
     body = {
-        "schema_version": "runtime-load.v1", "pid": os.getpid(), "python": sys.executable,
+        "schema_version": "runtime-load.v1", "pid": os.getpid(), "runtime_epoch": PROCESS_EPOCH, "python": sys.executable,
         "source_root": str(source_root), "source_revision": revision.stdout.strip() if revision.returncode == 0 else "",
         "source_tree_sha256": source_tree_sha256(source_root),
         "loaded_consumers": code, "effective_config_sha256": config_digest,
@@ -51,4 +70,5 @@ def runtime_load_payload(*, config, state_dir: Path, project_root: Path) -> dict
     }
     ref = write_sidecar_json(state_dir, f"diagnostics/runtime-load/{uuid4().hex}.json", body,
         kind="runtime-load", schema_version="runtime-load.v1", created_by="zf-cli", required=True)
-    return {"runtime_load_ref": ref, "effective_config_sha256": config_digest, "pid": os.getpid()}
+    return {"runtime_load_ref": ref, "effective_config_sha256": config_digest, "pid": os.getpid(),
+            "runtime_epoch": PROCESS_EPOCH}

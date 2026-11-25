@@ -158,6 +158,7 @@ from zf.core.config.schema import (  # noqa: E402
     GitIsolationConfig,
     RuntimeSkillsConfig,
     RuntimeRunManagerConfig,
+    RuntimeRecoveryAuthorization,
     RuntimeRunManagerReflectConfig,
     RuntimeRunManagerResidentAgentConfig,
     RuntimeRunManagerSourceRepairConfig,
@@ -842,9 +843,9 @@ def _build_orchestration_flow_policy(
     if actions is not None:
         if (not isinstance(actions, list)
                 or any(not isinstance(item, str) for item in actions)
-                or set(actions) - {"delegate", "continue", "rework", "rebind"}
+                or set(actions) - {"delegate", "continue", "rework", "rebind", "reassess_reader_evidence"}
                 or len(actions) != len(set(actions))):
-            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework/rebind actions")
+            raise ConfigError(f"{path}.autonomous_actions must list unique delegate/continue/rework/rebind/reassess_reader_evidence actions")
         if mode != "semantic_control":
             raise ConfigError(f"{path}.autonomous_actions requires semantic_control")
     review_blocked = data.get("review_blocked_tasks", False)
@@ -3291,6 +3292,12 @@ def load_config(path: Path) -> ZfConfig:
     # they declare new event names and are NOT validated.
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
+    from zf.core.config.artifact_worker_cgroups import artifact_worker_cgroups
+
+    try:
+        artifact_worker_cgroups(cfg, validate_roles=True)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     _validate_orchestration_blocking_pilot_tiers(cfg)
     _validate_orchestration_oa_profile(cfg)
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
@@ -3658,6 +3665,24 @@ def _build_runtime(
         raise ConfigError("runtime.skills must be a mapping")
     if not isinstance(run_manager_raw, dict):
         raise ConfigError("runtime.run_manager must be a mapping")
+    grant_raw = run_manager_raw.get("recovery_authorization")
+    recovery_authorization = None
+    if grant_raw is not None:
+        if not isinstance(grant_raw, dict) or set(grant_raw) - {
+            "approval_ref", "max_reader_rebuilds_per_run", "max_checkpoint_restarts_per_run", "safe_resume_actions"
+        }:
+            raise ConfigError("invalid runtime.run_manager.recovery_authorization")
+        approval = grant_raw.get("approval_ref")
+        if not isinstance(approval, str) or not approval.strip():
+            raise ConfigError("recovery_authorization requires an owner approval_ref")
+        counts = [grant_raw.get(name, 0) for name in ("max_reader_rebuilds_per_run", "max_checkpoint_restarts_per_run")]
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise ConfigError("recovery_authorization limits must be nonnegative integers")
+        allowed = grant_raw.get("safe_resume_actions", [])
+        if (not isinstance(allowed, list) or any(not isinstance(v, str) or not v.strip() or v == "*" for v in allowed)
+                or (counts[1] > 0 and not allowed)):
+            raise ConfigError("recovery_authorization requires explicit safe_resume_actions for restart")
+        recovery_authorization = RuntimeRecoveryAuthorization(approval.strip(), *counts, list(allowed))
     if not isinstance(autoresearch_resident_raw, dict):
         raise ConfigError("runtime.autoresearch_resident must be a mapping")
     if not isinstance(evolution_raw, dict):
@@ -4261,6 +4286,7 @@ def _build_runtime(
         task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(
             backend=run_manager_backend,
+            recovery_authorization=recovery_authorization,
             reflect=RuntimeRunManagerReflectConfig(
                 enabled=_bool_value(reflect_raw.get("enabled"), default=False),
                 backend=reflect_backend,

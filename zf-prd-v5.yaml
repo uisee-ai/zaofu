@@ -28,6 +28,10 @@ spec:
   evidencePolicy: strict_refs
   deliveryPolicy: ship_candidate
   artifactPackageMode: blocking
+  milestoneHandoff: true
+  # The deployment may map individual worker instances to dedicated host
+  # cgroups here once file delivery is qualified. Other workers use the CLI.
+  artifactWorkerCgroups: {}
   planInputPolicy: task-scoped-v1
   productAcceptanceMode: blocking
   semanticSubmitProfiles:
@@ -261,7 +265,7 @@ spec:
             pre_impl: shadow
             semantic_failure: blocking
           shadow_sample_percent: 100
-          autonomous_actions: [delegate, continue, rework]
+          autonomous_actions: [delegate, continue, rework, reassess_reader_evidence]
           review_blocked_tasks: true
         research:
           mode: exception_advisor

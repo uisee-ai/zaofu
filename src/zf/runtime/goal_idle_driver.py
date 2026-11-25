@@ -12,6 +12,7 @@ codex idle-continuation 的 kernel 侧移植:goal 仍 active 而系统空转
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from zf.core.events.model import ZfEvent
@@ -43,6 +44,7 @@ def maybe_emit_goal_idle_rescan(
     config: Any,
     state: Any,
     event_writer: Any,
+    now: datetime | None = None,
 ) -> str:
     """返回 ""(未点火)/ "rescan" / "exhausted"。
 
@@ -134,6 +136,13 @@ def maybe_emit_goal_idle_rescan(
     if state.goal_idle_ticks < idle_needed:
         return ""
     state.goal_idle_ticks = 0
+    from zf.runtime.goal_idle_recovery import resident_diagnosis_in_flight
+
+    manager = getattr(getattr(config, "runtime", None), "run_manager", None)
+    if resident_diagnosis_in_flight(
+        events, run_id=run_id, resident=getattr(manager, "resident_agent", None), now=now or datetime.now(timezone.utc),
+    ):
+        return ""
     max_rescans = int(getattr(config.goal, "max_rescans", 5) or 0)
     if rescan_count >= max_rescans:
         # 有界:穷尽后升级 human(quiescent 会在宽限后接管静默)

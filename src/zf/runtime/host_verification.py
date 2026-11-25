@@ -133,6 +133,8 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
             return 0
         operations = reduce_workflow_operations(events)
         from zf.runtime.host_verification_handoff import completed_reader_probes, resume_reader_after_probes
+        from zf.runtime.candidate_probe_source_retry import handed_off_probe_commands
+        transferred = handed_off_probe_commands(events, policy)
         eligible = []
         candidate_probe_owners = {}
         for operation_id, operation in operations.items():
@@ -180,12 +182,23 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                     candidate_probe_owners[group] = rank
 
         for operation_id, operation, contract, group, failed_probe, receipts in eligible:
+            run_id = operation.get("workflow_run_id") or ""
             owner = candidate_probe_owners.get(group)
             if owner and owner[-1] != operation_id:
                 continue
             from zf.runtime.task_host_verification_handoff import resume_task_after_probes
             if resume_task_after_probes(service, operation, contract, policy, events):
                 return 1
+            if (allow_execution and failed_probe and contract.get('authority_scope') == 'candidate'
+                    and policy.recollect_commands):
+                from zf.runtime.host_probe_recollection import capture_limit_now_covered
+                for ref in receipts.values():
+                    receipt = hydrate_sidecar_ref(service.state_dir, ref).payload
+                    if (receipt.get('operation_id') == operation_id and isinstance(receipt.get('manifest'), dict)
+                            and receipt.get('command') in policy.recollect_commands
+                            and capture_limit_now_covered(receipt, policy)
+                            and _try_recollect(service, receipt['manifest'], events, policy, run_id)):
+                        return 1
             if resume_reader_after_probes(service, operation, contract, policy, events):
                 return 1
             if not allow_execution:
@@ -195,7 +208,7 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                 # this failure for handoff; do not spend its remaining probes.
                 continue
             for command in contract['verification_commands']:
-                if command['command_id'] in receipts:
+                if command['command_id'] in receipts or command['command_id'] in transferred.get(group, ()):
                     continue
                 if command.get('command') not in policy.commands:
                     continue
@@ -203,21 +216,14 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                     manifest = preview(service, operation_id=operation_id, kind='verify', command_id=command['command_id'])
                 except (ValueError, KeyError, OSError):
                     continue
+                if not _authorized_host_policy(service, manifest, events, run_id):
+                    continue
                 prior = [e for e in events if e.payload.get('manifest_digest') == manifest['manifest_digest']
                          and e.type.startswith('runtime.action.attempt.')]
                 if prior:
                     if not any(e.type == 'runtime.action.attempt.completed' for e in prior):
-                        from zf.runtime.host_probe_recollection import recollection_manifest
-                        try:
-                            recollected = recollection_manifest(service, manifest, events, policy)
-                            if recollected:
-                                apply(service, recollected, approval_ref=policy.approval_ref,
-                                    reviewed_digest=recollected['manifest_digest'], readonly_snapshot=True,
-                                    recollection_base=manifest,
-                                    verifier=lambda root, body: verify_in_container(service, root, body, policy))
-                                return 1
-                        except (ValueError, OSError, subprocess.SubprocessError):
-                            pass  # The exact failure stays available for RM diagnosis.
+                        if _try_recollect(service, manifest, events, policy, run_id):
+                            return 1
                         if command['command'] not in policy.recollect_commands:
                             _escalate_once(service, events, manifest, 'prior container effect is unresolved; inspect before retry')
                     continue
@@ -250,13 +256,50 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
     return 0
 
 
-def _escalate_once(service, events, manifest, reason):
+def _authorized_host_policy(service, manifest, events, run_id) -> bool:
+    from zf.runtime.recovery_authorization import current_run_grant
+
+    grant, error = current_run_grant(service.config, events, run_id)
+    if grant:
+        from zf.runtime.run_continuation import blocking_decisions_for_action
+        from zf.runtime.run_manager import _pending_human_decisions
+
+        identity = manifest.get("identity")
+        if not isinstance(identity, dict) or identity.get("workflow_run_id") != run_id:
+            error = "host_probe_run_identity_mismatch"
+        elif blocking_decisions_for_action(_pending_human_decisions(events), identity, events=events):
+            return False  # The outstanding owner gate already supplies the recovery route.
+    if error:
+        _escalate_once(service, events, manifest, error, run_id=run_id)
+    return not error
+
+
+def _try_recollect(service, manifest, events, policy, run_id) -> bool:
+    from zf.runtime.host_probe_recollection import recollection_manifest
+    if not _authorized_host_policy(service, manifest, events, run_id):
+        return False
+    try:
+        recollected = recollection_manifest(service, manifest, events, policy)
+        if recollected:
+            apply(service, recollected, approval_ref=policy.approval_ref,
+                reviewed_digest=recollected['manifest_digest'], readonly_snapshot=True,
+                recollection_base=manifest,
+                verifier=lambda root, body: verify_in_container(service, root, body, policy))
+            return True
+    except (ValueError, OSError, subprocess.SubprocessError):
+        pass  # The exact failure stays available for RM diagnosis.
+    return False
+
+
+def _escalate_once(service, events, manifest, reason, *, run_id=None):
+    if run_id is None:
+        run_id = manifest["identity"]["workflow_run_id"]
     if any(e.type == 'human.escalate' and e.payload.get('host_manifest_digest') == manifest['manifest_digest']
-           and e.payload.get('reason') == reason
+           and e.payload.get('reason') == reason and e.correlation_id == run_id
            for e in events):
         return
     service.writer.emit('human.escalate', actor='run-manager',
-        correlation_id=manifest['identity']['workflow_run_id'], payload={
+        correlation_id=run_id, payload={
             'reason': reason, 'host_manifest_digest': manifest['manifest_digest'],
             'owner_route': 'run_manager', 'blocking_scope': 'verification',
             'resume_condition': 'authorized resolution of the retained probe checkpoint'})

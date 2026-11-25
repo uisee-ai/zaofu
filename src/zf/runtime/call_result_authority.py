@@ -421,9 +421,9 @@ class CallResultAuthorityMixin:
     ) -> ZfEvent | None:
         """Return immutable candidate authority, excluding recovery signals."""
 
-        for event in reversed(self.event_log.read_all()):
-            if event.type != "candidate.ready":
-                continue
+        from zf.runtime.candidate_freeze_recovery_identity import frozen_candidate_occurrences
+
+        for event in frozen_candidate_occurrences(self.event_log.read_all()):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if str(payload.get("schema_version") or "") != (
                 "candidate-freeze-receipt.v1"
@@ -468,6 +468,21 @@ class CallResultAuthorityMixin:
         workflow_run_id = str(result.get("workflow_run_id") or "")
         task_map_generation = str(result.get("task_map_generation") or "")
         target_commit = str(result.get("target_commit") or "")
+        current = None
+        for event in reversed(events):
+            if event.type not in {"flow.goal.closed", "module.parity.closed"}:
+                continue
+            body = event.payload if isinstance(event.payload, dict) else {}
+            if (
+                str(body.get("workflow_run_id") or "") == workflow_run_id
+                and str(body.get("goal_id") or "") == str(result.get("goal_id") or "")
+            ):
+                current = body
+                break
+        batch = current.get("judge_batch_admissions") if current else None
+        if batch:
+            selected_ids = set(batch["readers"] + batch["discovery"] + batch["supporting"])
+            selected_refs = set(current["input_result_refs"])
         task_source_commits = candidate_task_source_commits(
             events,
             workflow_run_id=workflow_run_id,
@@ -481,6 +496,8 @@ class CallResultAuthorityMixin:
                 continue
             descriptor = event.payload.get("envelope_ref")
             if not isinstance(descriptor, Mapping):
+                continue
+            if batch and (event.id not in selected_ids or descriptor.get("ref") not in selected_refs):
                 continue
             try:
                 envelope = hydrate_call_result_envelope(self.state_dir, descriptor)
@@ -564,17 +581,6 @@ class CallResultAuthorityMixin:
                     "message": waiver_ref,
                 })
 
-        current = None
-        for event in reversed(events):
-            if event.type not in {"flow.goal.closed", "module.parity.closed"}:
-                continue
-            body = event.payload if isinstance(event.payload, dict) else {}
-            if (
-                str(body.get("workflow_run_id") or "") == workflow_run_id
-                and str(body.get("goal_id") or "") == str(result.get("goal_id") or "")
-            ):
-                current = body
-                break
         if current and current.get("has_historical_candidate_reports"):
             from zf.runtime.goal_historical_candidate_evidence import pinned_historical_result_refs
 

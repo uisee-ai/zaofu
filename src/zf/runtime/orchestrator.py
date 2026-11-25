@@ -512,6 +512,7 @@ class WorkflowRuntimeCoordinator(
         # _orphan_warned is per-task dedup so warnings don't flood.
         self._dispatch_epoch: dict[str, float] = {}
         self._orphan_warned: set[str] = set()
+        self._orphan_owner_waits: set[str] = set()
         # LH-0.T4: context hard-cap gate. instance_id → timestamp when
         # ratio first crossed context_hard_cap. Used by
         # _find_available_role (skip dispatch) and _check_context_
@@ -921,6 +922,9 @@ class WorkflowRuntimeCoordinator(
         from zf.runtime.worker_assistance import dispatch_pending_assistance
 
         dispatch_pending_assistance(self)
+        from zf.runtime.candidate_reader_reassessment import dispatch_pending_reassessments
+        if periodic_sweep or any(e.type == "candidate.reader.reassessment.requested" for e in events):
+            self._safe_housekeeping("candidate_reader_reassessment", lambda: dispatch_pending_reassessments(self))
         # doc 69 S-f: emit delivery.phase.* milestones for active features
         # (deterministic, idempotent; counts kernel verdicts, never re-judges).
         self._safe_housekeeping("phase_milestones", self._emit_phase_milestones)
@@ -2149,11 +2153,15 @@ class WorkflowRuntimeCoordinator(
             return
 
         gate_project_root = self._static_gate_project_root(event)
+        from zf.runtime.milestone_gates import bind_static_result, static_target
+
+        initial_commit = static_target(self.config, gate_project_root, event.payload)
         result = run_static_gate(
             config=self.config,
             project_root=gate_project_root,
         )
         gate_event = build_static_gate_event(result, trigger_event=event)
+        bind_static_result(gate_event, event, self.config, gate_project_root, initial_commit)
         gate_event.payload["workdir"] = str(gate_project_root)
         try:
             self.event_writer.append(gate_event)
@@ -3637,6 +3645,7 @@ class WorkflowRuntimeCoordinator(
                 bind_plan_package_source_refs,
                 writer_task_allowed_paths,
                 writer_task_contract_source_ref,
+                writer_task_evidence_contract,
                 writer_task_pipeline_entry_mode,
             )
             bind_plan_package_source_refs(source_refs, loaded)
@@ -3656,11 +3665,7 @@ class WorkflowRuntimeCoordinator(
                 raw.get("affinity_tag"),
                 item.get("affinity_tag"),
             )
-            raw_evidence_contract = (
-                raw.get("evidence_contract")
-                if isinstance(raw.get("evidence_contract"), dict)
-                else {}
-            )
+            raw_evidence_contract = writer_task_evidence_contract(raw)
             goal_id = self._first_nonempty(
                 raw.get("goal_id"),
                 payload.get("goal_id"),

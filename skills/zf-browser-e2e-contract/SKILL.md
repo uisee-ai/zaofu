@@ -26,6 +26,11 @@ Division of labor (avoid dual-source drift):
 
 ## Core Rules
 
+- For a Candidate Reader, first follow the shared-host-evidence step in
+  `zf-harness-verification-checklist`. Apply the Docker commands below when
+  the assigned obligation needs a new execution and the dispatch provides
+  its execution route. The signed observation's approval identifies its producer.
+
 - Preserve an exact browser command or security boundary supplied by the
   canonical Task, PRD, or owner contract byte-for-byte. That run-scoped
   contract takes precedence over this skill's generic command pattern.

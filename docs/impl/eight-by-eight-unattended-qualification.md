@@ -42,6 +42,12 @@ Run Manager 诊断请求；RM 自身也受同一环境问题阻塞，无法读�
 child-rebuild → Kernel 派发验证恢复；同时覆盖进程重建、幂等和错误身份拒绝。
 真实 Provider 的恢复与后续 8×8 仍等待宿主修复，mock 通过不替代该层结论。
 
+同一 Reader 调用更换传输派发时，注入同时列出本次派发 ID 与原工件输入 attempt。
+`artifact recover --attempt` 使用后者；其绑定同时检查原内核派发、活动 Operation、
+不可变请求与来源 manifest。返回 `bound` 即表示本次重试可继续使用该输入，历史读取
+和草稿仍要按实际上下文独立核对。提交沿用本次 briefing 的原命令与有效租约。
+正式重试的回归见 `tests/test_reader_transport_input_navigation.py`。
+
 ## 2026-11-20：宿主修复与旧升级记录关闭
 
 获得用户授权后，执行现有 `scripts/setup-codex-sandbox.sh --apply` 安装发行版
@@ -165,6 +171,8 @@ Provider观察，但自动生成策略仍要求至少1字节，导致反复补�
 
 同一候选的显式`stage-retrigger`原先忽略操作者恢复说明。现沿用已有feedback校验与冻结repair-context路径，在任何修复副作用之前拒绝非法说明，保留候选、任务与原工件绑定；未提供说明时不改变既有行为。恢复说明只是有来源的待审核输入，不替代独立业务裁决或豁免验收。首次候选中的数值范围争议与缺失浏览器证据须完整传递，不能将mixed失败伪装成纯基础设施失败。
 
+同一冻结候选的 `stage-retrigger` 通过 `candidate_snapshot_event_id` 指向当前内核冻结事件。新的 Reader 复用满足原绑定的命令回执和媒体，独立判断验收项。候选已被后续冻结替代时，控制动作返回冲突。
+
 验证：3项红回归已复现；修复后22项聚焦通过，当前增量影响闭包6112 passed、9 skipped，53哨兵和10流程mock通过。采用上一已验证提交5a0a9682作为增量执行基线，同时保留相对dev的全分支验证计划；真实接续另行记录。
 
 ## 2026-11-20：首轮启动期限独立于watchdog
@@ -221,3 +229,27 @@ mixed：6路环境弃权、1路依赖阻塞、1路语义拒绝。宿主成功不
 本补修相对aa4a9611的自动影响闭包6072 passed/8 skipped；sentinel53 passed，flow mock10 passed；聚焦108 passed与闭包有重叠，不合并计数。未运行全pytest或coverage。真实账本只读回放确认8路结果与19条宿主收据绑定同一冻结候选，实际OA接续尚待部署验证。
 
 真实接续已验证：69b2a6e1载入后，OA输入包含8路结果、19条回执及浏览器媒体索引；其return_to_plan决定于20:38:45由Kernel接纳应用，自动启动限定原16任务范围的Planner恢复。保留原失败和冻结候选，未直接重开Task或授予产品通过。最终Candidate/Judge/Goal/交付仍待后续原生结果，初始无人监工失败不变。
+
+
+## 2026-11-24 扫描工作目录的沙箱可见性
+
+批准前的 Run `workflow-c87649819cbe0bb7` 派发了两个扫描 Agent。宿主能够读取简报，
+实际 Codex 工作目录却看不到相邻的简报和 attempt manifest。原启动探针只运行
+`/usr/bin/true`，因此放行了这个目录布局。相同 Provider 沙箱的只读探针复现了该差异。
+
+受限 Codex 角色启动时，`zf start` 在配置的 state_dir 中创建临时工作目录，
+从该目录经同一 workspace profile 读取相邻的随机标记，并核对内容。失败沿已有
+`env.preflight.failed` 入口在模型派发前返回。探针文件由宿主清理。实际 Reader
+仍须通过正式接口提交与本 attempt 绑定的收据；Plan 批准后另计无人干预资格。
+
+
+## 角色登记读取中断后的 watchdog
+
+B 轮 05:04 UTC，watcher 已选出在用角色，检查其生命周期时再读 `role_sessions.yaml` 遇到文件缺失。宿主监督重启了控制面，同一 Run 接着集成任务。此异常只证明打开文件时路径缺失，日志未标明移除者。若再次发生，日志记录角色和路径，该角色本次存活检查延至下一次轮询，保留已有会话绑定与死亡计数；其余角色继续检查。
+
+
+## Candidate 预检缺少宿主回执引用
+
+实跑中，Reader 拿到同一冻结目标的 20 条宿主回执，首次通过草稿只引用了 3 条，预检准确指出另 17 条命令缺少证据，却只指向 `probe_receipts`。Reader 随后自行在 `host_execution_receipt_ids` 补齐 20 条，独立评价 16 项验收条件，原 attempt 得到通过。对已绑定宿主证据索引的 Candidate，预检现在同时指出这两个证据入口。Reader 按 `command_id` 查找、审阅并显式引用对应的宿主回执，只把自己实际执行的检查登记为 probe。缺失、越权和过期的证据继续按原门禁退回。
+
+候选提交草稿还会按当前 Reader 已绑定的宿主观察区分证据来源。对已有可用宿主观察的命令，模板省去预填的本地成功 probe 行，`host_execution_receipt_ids` 初始为空，由 Reader 查验后填写。缺少可用宿主观察的命令仍有本地 probe 模板；所有命令 ID 及验收义务继续来自冻结合同。当前草稿、已提交判词及旧 attempt 的证据不会被模板更新重写。

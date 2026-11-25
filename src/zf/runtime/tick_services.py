@@ -1369,19 +1369,22 @@ def _resident_probe(orchestrator: Any, config: Any):
             return None
         from zf.runtime.run_manager_resident import resident_run_manager_tmux_session
 
-        target = (
-            f"{resident_run_manager_tmux_session(config)}:"
-            f"{getattr(resident, 'instance_id', 'run-manager') or 'run-manager'}"
-        )
+        instance_id = resident.instance_id or "run-manager"
+        target = f"{resident_run_manager_tmux_session(config)}:{instance_id}"
         transport = getattr(orchestrator, "transport", None)
 
         def _probe() -> dict[str, Any]:
+            is_alive = getattr(transport, "is_alive", None)
+            if callable(is_alive):
+                alive = is_alive(instance_id)
+                if isinstance(alive, bool):
+                    return {"ok": alive, "target": target, "reason": "alive" if alive else "pane_dead"}
             pane_display = getattr(transport, "pane_display", None)
             if callable(pane_display):
                 result = pane_display(target)
                 if isinstance(result, dict):
                     return result
-            return {"ok": True, "target": target, "reason": "probe_unavailable"}
+            return {"ok": None, "target": target, "reason": "probe_unavailable"}
 
         return _probe
     except Exception:

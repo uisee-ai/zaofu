@@ -7,6 +7,7 @@ from zf.runtime.goal_historical_candidate_evidence import (
     HistoricalCandidateEvidenceError, add_historical_judge_inputs,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.goal_judge_admissions import JudgeAdmissionError
 from zf.runtime.candidate_result_binding import (
     candidate_task_source_commits,
     same_task_map_generation,
@@ -45,13 +46,17 @@ class GoalClosureBridgeMixin:
         source_payload = (
             source_event.payload if isinstance(source_event.payload, dict) else {}
         )
-        identity = build_closure_identity(
-            events,
-            source_event=source_event,
-            payload={**source_payload, **payload},
-            state_dir=self.state_dir,
-            flow_kind=flow_kind,
-        )
+        try:
+            identity = build_closure_identity(
+                events,
+                source_event=source_event,
+                payload={**source_payload, **payload},
+                state_dir=self.state_dir,
+                flow_kind=flow_kind,
+            )
+        except JudgeAdmissionError as exc:
+            self._emit_goal_closure_identity_invalid(source_event, identity=dict(payload), reason=str(exc))
+            return None
         workflow_run_id = str(identity.get("workflow_run_id") or "")
         goal_id = str(identity.get("goal_id") or "")
         if not all((workflow_run_id, goal_id, identity.get("task_map_generation"), identity.get("candidate_head_commit"))):
@@ -125,7 +130,7 @@ class GoalClosureBridgeMixin:
                 claim_set=claim_set,
                 payload=payload,
             )
-        except HistoricalCandidateEvidenceError as exc:
+        except (HistoricalCandidateEvidenceError, JudgeAdmissionError) as exc:
             self._emit_goal_closure_identity_invalid(source_event, identity=identity, reason=str(exc))
             return None
         if (
@@ -308,6 +313,10 @@ class GoalClosureBridgeMixin:
             workflow_run_id=workflow_run_id,
             candidate_head_commit=str(identity.get("candidate_head_commit") or ""),
         )
+        batch = identity.get("judge_batch_admissions")
+        selected = set(batch["readers"] + batch["discovery"] + batch["supporting"]) if batch else set()
+        remaining = set(selected)
+        history = []
         admitted_refs: list[str] = []
         admitted_index = 0
         candidate_child_authorities: dict[str, dict] = {}
@@ -359,6 +368,10 @@ class GoalClosureBridgeMixin:
             digest = str(descriptor.get("sha256") or "").strip()
             if not ref_text or not digest or ref_text in admitted_refs:
                 continue
+            if batch and event.id not in selected:
+                history.append((ref_text, digest))
+                continue
+            remaining.discard(event.id)
             admitted_index += 1
             admitted_refs.append(ref_text)
             add_descriptor(
@@ -368,7 +381,8 @@ class GoalClosureBridgeMixin:
                 kind="admitted_call_result",
             )
             if (
-                str(body.get("control_result_schema") or "")
+                (not batch or event.id in batch["readers"])
+                and str(body.get("control_result_schema") or "")
                 == "verification-result.v1"
                 and result_target
                 == str(identity.get("candidate_head_commit") or "")
@@ -389,12 +403,17 @@ class GoalClosureBridgeMixin:
                             self.state_dir,
                             {"ref": contract_ref, "sha256": contract_digest},
                         )
-                    except (OSError, ValueError):
+                    except (OSError, ValueError) as exc:
+                        if batch:
+                            raise JudgeAdmissionError("current Reader contract snapshot is unreadable") from exc
                         candidate_contract = {}
                     if str(candidate_contract.get("authority_scope") or "") == "candidate":
                         for item in candidate_contract.get("child_authorities") or []:
                             if isinstance(item, dict) and str(item.get("task_id") or ""):
-                                candidate_child_authorities[str(item["task_id"])] = dict(item)
+                                key = str(item["task_id"])
+                                if batch and key in candidate_child_authorities and candidate_child_authorities[key] != item:
+                                    raise JudgeAdmissionError("current Readers disagree on task authority: " + key)
+                                candidate_child_authorities[key] = dict(item)
                     else:
                         child_task_id = str(
                             candidate_contract.get("task_id")
@@ -429,6 +448,7 @@ class GoalClosureBridgeMixin:
                             }
             if (
                 not product_report_descriptor
+                and (not batch or event.id in (batch["discovery"] or batch["readers"]))
                 and (
                     str(body.get("control_result_schema") or "")
                     == "verification-result.v1"
@@ -502,6 +522,8 @@ class GoalClosureBridgeMixin:
                     kind="product_acceptance_report",
                 )
 
+        if remaining:
+            raise JudgeAdmissionError("missing or unreadable admitted Judge inputs: " + ", ".join(sorted(remaining)))
         add_historical_judge_inputs(self.state_dir, events, identity, admitted_refs, add_descriptor)
 
         planning_result_ref = str(payload.get("task_map_ref") or "").strip()
@@ -682,6 +704,16 @@ class GoalClosureBridgeMixin:
             }
             for item in descriptors
         ]
+        # Keep older signed results discoverable, outside both current acceptance and mandatory reads.
+        for index, (ref, digest) in enumerate(history, 1):
+            add_descriptor(ref=ref, digest=digest, source_id=f"historical-admission-{index}", kind="historical_call_result")
+        # The compact summary is already a required part of closure-fact.
+        if detail := identity.get("candidate_lifecycle_input"):
+            from zf.runtime.milestone_task_lifecycles import SOURCE
+
+            descriptors.append({"source_id": SOURCE, "artifact_id": SOURCE, "kind": SOURCE,
+                "ref": detail["ref"], "sha256": detail["sha256"],
+                "allowed_paths": ["$.summary", *(f"$.tasks[{i}]" for i in range(detail["task_count"]))]})
         return {
             "objective_ref": objective_ref,
             "planning_result_ref": planning_result_ref,

@@ -119,7 +119,11 @@ def test_aggregate_preserves_abstention_and_rejection_then_applies_bound_plan_re
     assert {s['source_id'] for s in sources} >= {
         'candidate-verification-verify-0', 'candidate-verification-verify-peer'}
     assert any(s.get('ref') == ref['ref'] for s in sources)
-    decision = _submit_rework(runtime, prepared, action='return_to_plan')
+    from tests.test_candidate_mixed_repair import partition
+
+    dispositions = partition(runtime, request)
+    decision = _submit_rework(runtime, prepared, action='return_to_plan',
+                              directive_fields={'finding_dispositions': dispositions})
     outcome = apply_orchestrator_agent_decision(runtime, decision)
     assert outcome['applied']
     requests = [e for e in runtime.event_log.read_all() if e.type == 'orchestrator.replan_requested']

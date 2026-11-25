@@ -13,7 +13,7 @@ from zf.runtime.workflow_resume_apply import apply_workflow_resume
 @pytest.mark.parametrize("backend", ["codex", "claude-code"])
 def test_budget_resumed_synth_gets_provider_specific_read_guidance(tmp_path, monkeypatch, backend):
     monkeypatch.setenv("ZF_CLI_CMD", "/current/zf")
-    state, log, runtime, dispatch = _blocked_synth(tmp_path, monkeypatch)
+    state, log, runtime, dispatch = _blocked_synth(tmp_path, monkeypatch, semantic_plan_submit=True)
     next(role for role in runtime.config.roles if role.instance_id == "task-map-synth").backend = backend
     op_id = dispatch.payload["operation_id"]
     assert _run_set(Namespace(objective="", status="active", reason="resume test", operation=op_id,
@@ -23,6 +23,9 @@ def test_budget_resumed_synth_gets_provider_specific_read_guidance(tmp_path, mon
     assert apply_workflow_resume(state, runtime.config, checkpoint_id=cp["checkpoint_id"])["applied"] == 1
     assert runtime._recover_lost_fanout_synth_dispatches(log.read_all())
     prompt = runtime.transport.sent[-1][2]
+    binding = f"--operation {op_id} --state-dir {state.resolve()} --scratch"
+    assert f"run `/current/zf result validate {binding}` in this turn" in prompt
+    assert f"run `/current/zf result submit {binding}`" in prompt
     assert "cannot still use" in prompt
     if backend == "codex":
         assert f'/current/zf artifact read --attempt {dispatch.payload["attempt_id"]} --required --resume' in prompt

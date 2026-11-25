@@ -60,11 +60,13 @@ def test_canonical_admission_checks_pinned_critic_authority(tmp_path):
     control = write_immutable_json_sidecar(runtime.state_dir, body, root="test-controls",
                                          schema_version=body["schema_version"], kind="control_result",
                                          created_by="test")
+    raw_control_before = (runtime.state_dir / control["ref"]).read_bytes()
     envelope = {"control_result": control, "identity": {}}
     issues = CallResultAuthorityMixin._operation_result_currentness_issues(
         runtime, envelope, operation,
     )
     assert any(item["code"] == "plan_synth_structural_output_forbidden" for item in issues)
+    assert (runtime.state_dir / control["ref"]).read_bytes() == raw_control_before
     historical = deepcopy(operation)
     historical["result_identity"].pop("plan_synth_verdict_only")
     issues = CallResultAuthorityMixin._operation_result_currentness_issues(runtime, envelope, historical)

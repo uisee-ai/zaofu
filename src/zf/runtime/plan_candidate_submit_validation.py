@@ -17,6 +17,14 @@ def validate_plan_candidate_semantic(
     profile_id: str,
     project_root: Path,
 ) -> dict[str, Any] | None:
+    if semantic.get("candidate_kind") == "diagnosis_review":
+        from zf.runtime.plan_candidate_owner_review import diagnosis_request_matches
+
+        if not diagnosis_request_matches(request, profile_id) or semantic.get("execution_status") != "completed":
+            return {"schema_version": "plan-candidate-preflight.v1", "status": "failed",
+                    "candidate_kind": "diagnosis_review", "execution_ready": False,
+                    "errors": [{"code": "diagnosis_review_candidate_invalid", "field": "candidate_kind",
+                                "message": "requires a completed artifact on its signed zero-Writer Planner operation"}]}
     validation = request.get("plan_candidate_validation")
     if not isinstance(validation, Mapping):
         return None
@@ -78,7 +86,7 @@ def validate_plan_candidate_semantic(
         ),
         review_input_limits=validation.get("review_input_limits"),
     )
-    if result.get("candidate_kind") == "owner_review":
+    if result.get("candidate_kind") in ("owner_review", "diagnosis_review"):
         return result  # A draft has no executable review package to estimate.
     from zf.runtime.plan_candidate_delivery_cost import candidate_delivery_cost
 

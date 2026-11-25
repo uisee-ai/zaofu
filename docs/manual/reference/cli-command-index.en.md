@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **70** top-level families and **328** addressable command paths.
+The parser currently exposes **70** top-level families and **336** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -30,6 +30,7 @@ Artifact manifest helpers
 | Command | Parser description |
 |---|---|
 | `zf artifact` | Artifact manifest helpers |
+| `zf artifact board` | Read and acknowledge public messages in the bound Run |
 | `zf artifact catalog` | Query rebuildable artifact metadata and lineage |
 | `zf artifact catalog lineage` | Show subject-to-artifact lineage |
 | `zf artifact catalog list` | List artifact objects |
@@ -42,11 +43,14 @@ Artifact manifest helpers
 | `zf artifact list` | List immutable inputs available to one provider attempt |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
+| `zf artifact milestone` | Read the bound candidate milestone obligations and decision |
 | `zf artifact read` | Read one attempt input and append read evidence |
 | `zf artifact recover` | Reconstruct authorized current inputs without granting execution authority |
 | `zf artifact work-record` | Publish or read current worker progress without completing a task |
 | `zf artifact work-record publish` | Publish an optional nonterminal checkpoint without completing a task or replacing acceptance. |
 | `zf artifact work-record show` | No parser summary. |
+| `zf artifact worker-plan` | Consult a frozen tool-free local model for an implementation attempt |
+| `zf artifact workspace` | Serve a read-only input view for a dedicated worker cgroup |
 
 ## `zf attach`
 
@@ -218,6 +222,7 @@ Run operator diagnostics
 |---|---|
 | `zf doctor` | Run operator diagnostics |
 | `zf doctor contract-authority` | Check canonical Task contract CAS lineage and receipts |
+| `zf doctor dispatch-baseline` | Verify the release and skills of the first delivered worker |
 | `zf doctor event-contract` | Check workflow event producer/consumer contracts |
 | `zf doctor panes` | Check pane-grid role bindings |
 | `zf doctor provider` | Check provider CLI preflight |
@@ -559,6 +564,7 @@ Recover deterministic runtime state from append-only events
 | `zf recover` | Recover deterministic runtime state from append-only events |
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
+| `zf recover candidate-repair` | Recheck a cap-rejected OA Candidate repair on its original Run |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
 | `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |
 | `zf recover host-assist` | Preview exact task host assistance without executing it |
@@ -806,10 +812,12 @@ Inspect workflow topology
 | `zf workflow gates` | Render the effective read-only gate projection |
 | `zf workflow hooks` | Render the effective read-only hook registry |
 | `zf workflow inspect` | Preflight inspect workflow graph, handoff, affinity, and skills |
+| `zf workflow milestone` | Inspect readiness of a frozen milestone after its worker has exited |
 | `zf workflow prepare` | Select, clarify and assemble a Workflow for review |
 | `zf workflow preview` | Read the complete redacted YAML and current proposal |
 | `zf workflow render` | Render linear and star topology |
 | `zf workflow routes` | List active workflow routes bound to a Task |
+| `zf workflow schedule` | Inspect persistent job history or run a configured inspection |
 | `zf workflow start` | Preview, propose, or apply a Task-bound workflow route |
 
 ## `zf workspace`

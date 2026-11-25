@@ -8,6 +8,7 @@ removed after a mechanically safe idle period.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -942,10 +943,17 @@ def watchdog_should_skip(host: Any, role: RoleConfig) -> bool:
     """Keep expected inactive panes out of the generic death watchdog."""
     if role.lifecycle.mode != "on_demand":
         return False
-    registry = RoleSessionRegistry(
-        host.state_dir / "role_sessions.yaml",
-        project_root=str(host.project_root),
-    )
+    registry_path = host.state_dir / "role_sessions.yaml"
+    try:
+        registry = RoleSessionRegistry(registry_path, project_root=host.project_root)
+    except FileNotFoundError:
+        # The active-role projection already selected this role. Recheck its
+        # lifecycle on the next poll before counting a missing pane as dead.
+        logging.getLogger(__name__).warning(
+            "Deferring watchdog for %s: %s disappeared during read",
+            role.instance_id, registry_path,
+        )
+        return True
     state = str(
         registry.instance_meta().get(role.instance_id, {}).get(
             "lifecycle_state",

@@ -83,6 +83,12 @@ def reconcile_task_pipeline_semantic_exhaustion(
             "owner_route": "run_manager",
             "recommended_route": "semantic_replan_or_diagnosis",
         }
+        if blocker.get("reason") == "verify_only_verification_rejected":
+            payload.update(
+                reason="verify_only_verification_rejected",
+                last_reason="Read-only verification was rejected. This task permits no local implementation rework.",
+                configured_max_rework_attempts=blocker["configured_max_rework_attempts"],
+            )
         key = _payload_key(payload)
         if key in existing:
             continue

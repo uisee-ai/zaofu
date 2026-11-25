@@ -23,3 +23,6 @@ generation/ref/digest 对应的有效 PlanPackage。只有旧取消 trigger 的�
 摘要/包不符和不可信事件的反例；原业务替换检查继续由
 `tests/test_reader_replacement_closeout.py` 与 `tests/test_reader_failure_supersession.py`
 覆盖。这项修复不代表所有 `task_map.amend.failed` 已具备自动补齐语义输入的能力。
+
+
+Planner 简报提供已启用的宿主验证命令原文。执行审阅在 `candidate_commands_outside_host_registry` 中列出与宿主登记不匹配的 Candidate 命令及其任务 ID。Critic 核对执行渠道和验收时点。阻塞式 Task Pipeline 按任务就绪派发独立 Verify，已配置的 Candidate Verify 在候选冻结后启动。

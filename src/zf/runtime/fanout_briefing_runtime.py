@@ -289,6 +289,15 @@ class FanoutBriefingMixin:
                 )
                 success_payload["reusable_impl_receipts"] = reusable_receipts
             verification_template = verification_result_template(contract_snapshot)
+            if child_payload.get("candidate_host_evidence_ref"):
+                from zf.runtime.candidate_host_consumption import available_host_command_ids
+
+                host_commands = available_host_command_ids(self.state_dir, child_payload)
+                verification_template["probe_receipts"] = [
+                    row for row in verification_template["probe_receipts"]
+                    if row.get("command_id") not in host_commands
+                ]
+                verification_template["host_execution_receipt_ids"] = []
             verification_template["reused_command_receipt_ids"] = [
                 str(item.get("receipt_id") or "")
                 for item in reusable_receipts
@@ -307,14 +316,20 @@ class FanoutBriefingMixin:
                         product_acceptance_report_template,
                     )
 
+                    scope = child_payload.get("candidate_reader_scope")
                     product_binding = product_acceptance_binding_from_package(
                         self.state_dir,
-                        {"ref": package_ref, "sha256": package_digest},
+                        {"ref": package_ref, "sha256": package_digest}, validate_ports=not bool(scope),
                     )
-                    if product_binding.get("spec"):
+                    if product_binding.get("spec") and (not scope or scope["journey_ids"]):
+                        spec = product_binding["spec"]
+                        if scope:
+                            from zf.runtime.candidate_reader_report import scoped_journey_spec
+
+                            spec = scoped_journey_spec(spec, scope)
                         verification_template["product_acceptance_report"] = (
                             product_acceptance_report_template(
-                                spec=dict(product_binding["spec"]),
+                                spec=spec,
                                 spec_ref=str(product_binding.get("spec_ref") or ""),
                                 spec_digest=str(
                                     product_binding.get("spec_digest") or ""
@@ -964,6 +979,7 @@ class FanoutBriefingMixin:
             success_command=success_command,
             failure_command=failure_command,
             semantic_submit=semantic_submit,
+            child_payload=child_payload,
         )
         result_preview_lines: list[str] = []
         if not semantic_submit:
@@ -1033,6 +1049,13 @@ class FanoutBriefingMixin:
                 ),
                 "",
                 *stage_instruction_lines,
+                *([
+                    "Approved Candidate Reader assignment (frozen in the contract snapshot).",
+                    "Acceptance: " + ", ".join(child_payload["candidate_reader_scope"]["acceptance_ids"]),
+                    "Product journeys: " + (", ".join(child_payload["candidate_reader_scope"]["journey_ids"]) or "none assigned"),
+                    "Submit evidence for the assigned checks. Product completeness is owned by post-verify discovery.",
+                    "",
+                ] if child_payload.get("candidate_reader_scope") else []),
                 # Scope task review by affinity, while preserving a bound
                 # candidate Product Acceptance obligation.
                 *affinity_scope_briefing_lines(

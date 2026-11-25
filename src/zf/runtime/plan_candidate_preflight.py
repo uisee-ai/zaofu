@@ -67,8 +67,13 @@ def evaluate_plan_candidate_preflight(
         for row in reports
         if isinstance(row, Mapping) and isinstance(row.get("report"), Mapping)
     ]
-    from zf.runtime.plan_candidate_owner_review import owner_review_preflight
+    from zf.runtime.plan_candidate_owner_review import (
+        bound_candidate_diagnosis, diagnosis_only_writer_error, diagnosis_review_preflight, owner_review_preflight,
+    )
 
+    diagnosis = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
+    if diagnosis is not None:
+        return diagnosis
     draft_review = owner_review_preflight(
         candidates, state_dir=state_dir, project_root=project_root,
     )
@@ -193,7 +198,17 @@ def evaluate_plan_candidate_preflight(
                 "task_map.goal_claims",
                 str(diagnostic.get("goal_claim_id") or "mandatory claim is uncovered"),
             )
-        errors.extend(_claim_acceptance_command_errors(task_map))
+        errors.extend(_claim_acceptance_command_errors(
+            task_map, host_commands=(writer_policy or {}).get("host_verification_commands", ()),
+        ))
+        from zf.runtime.frozen_audit_scope import FROZEN_CANDIDATE_IDS
+
+        for task in tasks:
+            evidence = task.get("evidence_contract")
+            if (isinstance(evidence, Mapping) and FROZEN_CANDIDATE_IDS in evidence
+                    and (writer_policy or {}).get("frozen_candidate_reader") is not True):
+                _error(errors, "frozen_candidate_consumer_missing", f"task_map.tasks[{task.get('task_id')}].evidence_contract",
+                       "The pinned workflow must have a downstream Candidate Verify stage for deferred audit criteria.")
         errors.extend(_rolling_smoke_command_errors(task_map, metadata=metadata))
         if validation.passed:
             task_items: list[dict[str, Any]] = []
@@ -208,14 +223,17 @@ def evaluate_plan_candidate_preflight(
                 )
             if task_items:
                 try:
-                    selected, _, _, _ = select_writer_task_items(dict(task_map), task_items, trigger)
+                    selected, _, _, scope = select_writer_task_items(dict(task_map), task_items, trigger)
                 except (RuntimeError, ValueError) as exc:
                     _error(errors, "writer_fanout_task_selection_invalid", "task_map.tasks", str(exc))
                 else:
                     try:
                         validate_writer_task_items(selected)
                     except (RuntimeError, ValueError) as exc:
-                        _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
+                        if not selected and scope == "candidate_diagnosis_only" and bound_candidate_diagnosis(trigger):
+                            errors.append(diagnosis_only_writer_error(len(task_items)))
+                        else:
+                            _error(errors, "writer_fanout_task_map_invalid", "task_map.tasks", str(exc))
                     try:
                         from zf.runtime.writer_fanout_admission import writer_task_map_dispatch_target
 
@@ -351,7 +369,6 @@ def _product_acceptance_spec_errors(
 
     from zf.runtime.product_acceptance import (
         PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
-        ProductAcceptanceError,
         validate_product_acceptance_spec,
     )
 
@@ -403,7 +420,11 @@ def _product_acceptance_spec_errors(
                 "task_map_generation": generation,
             },
         )
-    except ProductAcceptanceError as exc:
+        if "candidate_reader_assignments" in normalized:
+            from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
+
+            validate_plan_assignment_coverage(normalized, task_map)
+    except ValueError as exc:
         rows: list[dict[str, str]] = []
         _error(
             rows,

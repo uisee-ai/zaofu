@@ -450,6 +450,12 @@ wheels = [
 ]
 
 [[package]]
+name = "fusepy"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/04/0b/4506cb2e831cea4b0214d3625430e921faaa05a7fb520458c75a2dbd2152/fusepy-3.0.1.tar.gz", hash = "sha256:72ff783ec2f43de3ab394e3f7457605bf04c8cf288a2f4068b4cde141d4ee6bd", size = 11519, upload-time = "2018-09-17T00:14:52.666Z" }
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1554,6 +1560,9 @@ dev = [
 feishu = [
     { name = "lark-oapi" },
 ]
+native-inputs = [
+    { name = "fusepy", marker = "sys_platform == 'linux'" },
+]
 stream-json = [
     { name = "claude-code-sdk" },
 ]
@@ -1569,6 +1578,7 @@ requires-dist = [
     { name = "claude-code-sdk", marker = "extra == 'stream-json'", specifier = ">=0.0.25" },
     { name = "cryptography", marker = "extra == 'controller'", specifier = ">=43" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115" },
+    { name = "fusepy", marker = "sys_platform == 'linux' and extra == 'native-inputs'", specifier = "==3.0.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25" },
     { name = "httpx2", marker = "extra == 'controller'", specifier = ">=2,<3" },
     { name = "jsonschema", marker = "extra == 'controller'", specifier = ">=4.23,<5" },
@@ -1583,4 +1593,4 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.32" },
     { name = "websockets", marker = "extra == 'web'", specifier = ">=13" },
 ]
-provides-extras = ["dev", "stream-json", "controller", "web", "feishu"]
+provides-extras = ["native-inputs", "dev", "stream-json", "controller", "web", "feishu"]

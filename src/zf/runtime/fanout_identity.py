@@ -12,6 +12,7 @@ from zf.core.events.model import ZfEvent
 
 
 FANOUT_IDENTITY_SCHEMA_VERSION = "fanout-identity.v1"
+EMPTY_CRITIC_HANDOFF_SUCCESSOR = "empty_critic_handoff_successor"
 
 FANOUT_IDENTITY_EVENT_TYPES = frozenset({
     "fanout.started",
@@ -189,6 +190,16 @@ def build_fanout_identity_projection(events: Iterable[ZfEvent]) -> dict[str, Any
             issues.append(issue)
             stale_events.append(_event_ref(event, stale_reason=issue["reason"]))
             continue
+
+        # The controlled repair has proved its immediate successor never received a WRC.
+        if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
+                and event.actor == "zf-cli" and payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"
+                and (retired_id := payload.get("retired_empty_fanout_id"))
+                and current_by_key.get(identity.logical_key) == retired_id and identity.superseded_by == retired_id):
+            retired = identities[retired_id]
+            retired.current, retired.superseded_by, retired.stale_reason = False, fanout_id, EMPTY_CRITIC_HANDOFF_SUCCESSOR
+            identity.current, identity.superseded_by, identity.stale_reason = True, "", ""
+            current_by_key[identity.logical_key] = fanout_id
 
         if event.type == "fanout.child.stale_completion":
             ref = _event_ref(

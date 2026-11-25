@@ -95,8 +95,11 @@ def test_progress_cannot_bypass_recovery_identity_or_evidence(tmp_path, fault):
     assert load_workflow_operation(log, dispatch.payload["operation_id"])["status"] == "failed"
 
 
-def test_synth_transport_recovery_also_preserves_read_progress(tmp_path):
-    state, log, runtime, _fanout_id = _task_map_synth_orchestrator(tmp_path)
+@pytest.mark.parametrize("semantic_plan_submit", [False, True])
+def test_synth_transport_recovery_also_preserves_read_progress(tmp_path, monkeypatch, semantic_plan_submit):
+    monkeypatch.setenv("ZF_CLI_CMD", "/current/zf")
+    state, log, runtime, _fanout_id = _task_map_synth_orchestrator(
+        tmp_path, semantic_plan_submit=semantic_plan_submit)
     dispatch = next(e for e in log.read_all() if e.type == "fanout.synth.dispatched")
     manifest = hydrate_sidecar_ref(state, dispatch.payload["attempt_source_manifest"]).payload
     ref = next(s for s in manifest["sources"] if s["source_id"] == "plan-synth-contract")
@@ -107,6 +110,10 @@ def test_synth_transport_recovery_also_preserves_read_progress(tmp_path):
     _close(runtime, log, "second", role="task-map-synth")
     dispatches = [e for e in log.read_all() if e.type == "fanout.synth.dispatched"]
     assert len(dispatches) == 3
+    binding = f"--operation {before['operation_id']} --state-dir {state.resolve()} --scratch"
+    prompt = runtime.transport.sent[-1][2]
+    assert (f"run `/current/zf result validate {binding}` in this turn" in prompt) is semantic_plan_submit
+    assert (f"run `/current/zf result submit {binding}`" in prompt) is semantic_plan_submit
     assert not any(e.type == "fanout.synth.completed" for e in log.read_all())
     after = load_workflow_operation(log, dispatch.payload["operation_id"])
     for key in ("request_hash", "request_ref", "active_attempt_id"):

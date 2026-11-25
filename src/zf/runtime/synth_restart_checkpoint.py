@@ -67,6 +67,28 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
             or (stale_reason and not timeout_block)):
         raise ValueError("failed synth carrier is no longer current")
     operation = reduce_workflow_operations(events).get(d.get("operation_id"), {})
+    # A completed checkpoint consumes the transport retry even if the first
+    # terminal fanout was reopened before its WRC failure was reconciled.
+    prior_checkpoint = any(
+        previous.origin == "kernel" and previous.actor == "zf-cli"
+        and previous.payload.get("operation_id") == d.get("operation_id")
+        and previous.payload.get("request_hash") == d.get("request_hash")
+        and previous.payload.get("recovery_kind") == "operator_synth_checkpoint"
+        and previous.payload.get("recovered_failure_event_id") == previous.causation_id
+        and (cause := by_id.get(previous.causation_id)) is not None
+        and cause.type == "fanout.synth.completed" and cause.origin == "kernel"
+        and cause.payload.get("failure_class") == "worker_noop_or_terminal_missing"
+        for previous in dispatches
+    )
+    # A crash after marking this exact retry may still need its dispatch.
+    counted_elsewhere = operation.get("retry_count") and not any(
+        event.type == "workflow.operation.retry_started" and event.origin == "kernel"
+        and event.causation_id == failure.id
+        and event.payload.get("operation_id") == d.get("operation_id")
+        and event.payload.get("request_hash") == d.get("request_hash") for event in events
+    )
+    if not timeout and (prior_checkpoint or counted_elsewhere):
+        raise ValueError("synth transport checkpoint retry already used")
     pending_replay = operation.get("status") == "requested" and any(
         event.type == "workflow.operation.redrive_admitted"
         and event.origin == "kernel"
@@ -81,8 +103,12 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
     )
     suspended_timeout = timeout and operation.get("status") == "suspended" and operation.get("reason") in {
         "graceful_stop", "fast_stop"}
+    closed_transport = (
+        not timeout and operation.get("status") == "failed" and not operation.get("retry_count")
+        and _same_transport_closeout(by_id.get(operation.get("last_event_id")), failure, dispatch)
+    )
     if (operation.get("operation_type") != "fanout_synth"
-            or (operation.get("status") != "running" and not pending_replay and not suspended_timeout)
+            or (operation.get("status") != "running" and not pending_replay and not suspended_timeout and not closed_transport)
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         raise ValueError("operation is blocked, terminal, or already has an admitted result")
     run = build_run_admission_projection(events).runs.get(operation.get("workflow_run_id"))
@@ -108,6 +134,17 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
 
         recovery.update(inspect_synth_timeout(runtime, events=events, failure=failure,
             dispatch=dispatch, operation=operation, run=run, approval_ref=approval_ref))
+    if closed_transport:
+        from zf.runtime.workflow_operation import WorkflowOperationService
+
+        WorkflowOperationService(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                                 event_writer=runtime.event_writer).mark_retry_started(
+            operation_id=d["operation_id"], request_hash=d["request_hash"],
+            workflow_run_id=d["workflow_run_id"], task_id=operation.get("task_id", ""),
+            retry_attempt=1, reason=p["reason"], role_instance=role.instance_id,
+            dispatch_id=d["run_id"], active_attempt_id=d["run_id"],
+            causation_id=failure_id, correlation_id=dispatch.correlation_id,
+        )
     if not partial:
         aggregate_event = runtime.event_writer.append(ZfEvent(
             type="fanout.aggregate.started", actor="zf-cli", origin="kernel",
@@ -125,6 +162,19 @@ def reopen_synth_restart_checkpoint(runtime: Any, role: Any, failure_id: str,
         task_id=dispatch.task_id, payload={**d, **recovery, "retry_of_event_id": dispatch.id},
         causation_id=failure_id, correlation_id=dispatch.correlation_id,
     ))
+
+
+def _same_transport_closeout(close: ZfEvent | None, failure: ZfEvent, dispatch: ZfEvent) -> bool:
+    if not close or (close.type, close.actor, close.origin, close.causation_id) != (
+        "workflow.operation.failed", "zf-cli", "kernel", failure.id,
+    ):
+        return False
+    expected = {key: dispatch.payload.get(key) for key in (
+        "workflow_run_id", "operation_id", "request_hash", "fanout_id",
+    )}
+    expected.update(child_id="synth", reason=failure.payload["reason"],
+                    failure_class=failure.payload["failure_class"])
+    return all(value and close.payload.get(key) == value for key, value in expected.items())
 
 
 def mark_reopened_synth_started(runtime: Any, role: Any, fanout_child: dict) -> None:

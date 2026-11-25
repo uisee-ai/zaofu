@@ -279,8 +279,11 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
                     and payload.get("request_kind") == "recovery_diagnosis"):
                 # The recommendation fulfils the diagnosis step. Keep the case
                 # open for its controlled successor; it is not product recovery.
+                from zf.runtime.candidate_reader_duplicate import duplicate_diagnosis_closed
+
                 if case["status"] not in {"waiting", "blocked", "superseded"}:
-                    case["status"] = "diagnosing"
+                    case["status"] = ("superseded" if duplicate_diagnosis_closed(event, payload.get("request_id", ""))
+                                      and explicit != payload.get("superseding_recovery_case_id") else "diagnosing")
                 continue
             if event_type == "run.manager.action.verify.passed" and (
                 payload.get("effect_expected_events")

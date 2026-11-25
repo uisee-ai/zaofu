@@ -22,6 +22,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("doctor", help="Run operator diagnostics")
     sub = parser.add_subparsers(dest="doctor_cmd")
 
+    baseline = sub.add_parser("dispatch-baseline", help="Verify the release and skills of the first delivered worker")
+    baseline.add_argument("--path", type=Path, help="Project zf.yaml", default=Path("zf.yaml"))
+    baseline.add_argument("--run-id", required=True)
+    baseline.add_argument("--release", required=True, help="Full Git revision of the inspected ZaoFu checkout")
+    baseline.add_argument("--skill", action="append", default=[], metavar="NAME=SHA256",
+                          help="Pin an expected skill body independently of its configured source")
+    baseline.set_defaults(func=_run_dispatch_baseline)
+
     workdirs = sub.add_parser("workdirs", help="Check runtime workdirs")
     workdirs.set_defaults(func=_run_workdirs)
 
@@ -134,6 +142,37 @@ def _run(args: argparse.Namespace) -> int:
     elif not issues:
         print("OK: runtime diagnostics clean with warnings")
     return 1 if issues else 0
+
+
+def _run_dispatch_baseline(args: argparse.Namespace) -> int:
+    import re
+
+    from zf.runtime.dispatch_baseline import first_dispatch_baseline
+    from zf.runtime.load_receipt import source_tree_sha256
+
+    checkout = Path(__file__).resolve().parents[3]
+    try:
+        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout, text=True).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all", "--", "src/zf", "skills"],
+            cwd=checkout, text=True,
+        )
+        if args.release != head or dirty:
+            raise ValueError("inspect from the exact release with clean runtime and skill sources")
+        pins = {}
+        for row in args.skill:
+            name, sep, digest = row.partition("=")
+            if not sep or not name or name in pins or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                raise ValueError("each --skill must uniquely pin NAME=SHA256")
+            pins[name] = digest
+        project, state, config = _load_runtime_from_path(args.path.resolve())
+        events = event_log_from_project(state, config=config).read_all()
+        result = first_dispatch_baseline(project, state, config, events, run_id=args.run_id,
+                                         revision=head, source_digest=source_tree_sha256(checkout), pins=pins)
+    except (OSError, ValueError, ConfigError, subprocess.CalledProcessError) as exc:
+        result = {"status": "unproven", "reason": str(exc)}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["status"] == "verified" else 1
 
 
 def _run_workdirs(args: argparse.Namespace) -> int:

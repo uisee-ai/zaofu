@@ -14,10 +14,12 @@ def candidate_review_binding(state_dir: Path | None, config: Any,
     p = failure.payload
     run_id = p.get("workflow_run_id")
     task_id = p.get("pdd_id")
+    infra = p.get("failure_kind") == "infra"
     if (state_dir is None or failure.origin != "kernel"
             or failure.type not in {"test.failed", "verify.failed"}
             or not run_id or not task_id or not p.get("fanout_id")
-            or p.get("failure_kind") in {"infra", "budget"}):
+            or p.get("failure_kind") == "budget"
+            or (infra and p.get("failure_class") != "dependency_blocked")):
         return None
     package = next((e.payload for e in reversed(events) if e.type == "plan.artifact_package.admitted"
                     and (e.payload.get("workflow_run_id") or e.correlation_id) == run_id), {})
@@ -49,9 +51,13 @@ def candidate_review_binding(state_dir: Path | None, config: Any,
             or aggregate.payload.get("fanout_id") != p["fanout_id"] or aggregate.payload.get("status") != "failed"):
         return None
     try:
+        # An infra-labeled dependency transfers to OA only when all failed Readers
+        # submitted a completed, admitted dependency verdict for this frozen target.
         bound = aggregate_candidate_binding(state_dir, events, failure_id=failure.id,
-                                             run_id=run_id, task_id=task_id)
+            run_id=run_id, task_id=task_id, require_completed_dependencies=infra)
     except (ValueError, OSError, KeyError, TypeError) as exc:
+        if infra:
+            return None  # Keep unproven execution failures on their existing recovery route.
         # Missing evidence does not transfer this current failure to generic retry.
         return {"workflow_run_id": run_id, "flow_kind": flow, "anchor_task_id": task_id,
                 "pdd_id": task_id, "task_map_generation": p.get("task_map_generation"),

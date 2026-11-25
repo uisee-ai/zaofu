@@ -51,6 +51,16 @@ def typed_result_admission_issues(
         schema_version == "verification-result.v1"
         and bool(result.get("contract_snapshot_ref") or result.get("contract_snapshot_digest"))
     )
+    if semantic_submit and schema_version == "verification-result.v1":
+        nested = result.get("control_result")
+        if isinstance(nested, Mapping) and nested.get("host_execution_receipt_ids"):
+            return [_issue(
+                field="control_result.host_execution_receipt_ids",
+                code="verification_host_receipts_misnested",
+                message=("Move the receipt IDs from scratch control_result.host_execution_receipt_ids "
+                         "to top-level host_execution_receipt_ids beside verdict. Validate the same scratch again."),
+                owner="candidate_verify", action="result_repair",
+            )]
     if (schema_version == "verification-result.v1" and result.get("host_execution_receipt_ids")
             and not contract_bound_verification):
         return [_issue(field="control_result.host_execution_receipt_ids",
@@ -58,12 +68,46 @@ def typed_result_admission_issues(
             owner="candidate_verify", action="result_repair")]
     # Contract-bound Verify evidence has the same obligations on the legacy
     # event transport as on the controlled result-submit transport.
+    if (schema_version == "implementation-result.v1" and operation
+            and operation.get("task_pipeline_stage") == "impl"
+            and (result.get("execution_status") or "completed") == "completed"
+            and (result.get("verdict") or "passed") == "passed"):
+        from subprocess import SubprocessError
+        from zf.runtime.implementation_commit import validate_impl_commit
+
+        try:
+            validate_impl_commit(Path(state_dir), operation, result, events or [])
+        except (KeyError, OSError, ValueError, SubprocessError) as exc:
+            return [_issue(field="control_result.target_commit", code="implementation_commit_invalid",
+                           message=str(exc), owner="implementation_owner", action="result_repair")]
     if not semantic_submit and not contract_bound_verification:
         return []
     if schema_version == "implementation-result.v1":
         return _implementation_issues(Path(state_dir), result)
     if schema_version == "verification-result.v1":
-        return _verification_issues(Path(state_dir), result, operation=operation, events=events)
+        issues = _verification_issues(Path(state_dir), result, operation=operation, events=events)
+        if (issues and operation and operation.get("request_ref")
+                and issues[0]["code"] in {
+                    "verification_command_evidence_missing",
+                    "verification_canonical_command_coverage_missing",
+                }):
+            # Only an index frozen for this consumer offers the host evidence route.
+            try:
+                request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
+            except (OSError, ValueError, KeyError, TypeError):
+                return issues
+            if (isinstance(request, Mapping) and request.get("output_profile_id") == "candidate-verify"
+                    and request.get("candidate_host_evidence_ref")):
+                issue = issues[0]
+                issue["field"] = "control_result"
+                issue["recovery_owner"] = "candidate_verify"
+                issue["message"] += (
+                    ". Match each uncovered command_id against candidate-host-execution. "
+                    "For applicable passing facts you reviewed, cite their receipt_id values "
+                    "in host_execution_receipt_ids beside verdict. Use probe_receipts for "
+                    "checks this Reader executed. Validate the same result again."
+                )
+        return issues
     if schema_version == "task-integration-acceptance-result.v1":
         return _integration_acceptance_issues(Path(state_dir), result)
     return []

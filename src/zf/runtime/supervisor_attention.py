@@ -53,6 +53,8 @@ def build_attention_items(
             item = _attention_from_replan_eval(event)
             if item:
                 items.append(item)
+    from zf.runtime.run_manager_watchdog import resident_restart_attention
+    items.extend(resident_restart_attention(history_events if history_events is not None else events, _attention_item))
     from zf.runtime.task_pipeline_dispatch_attention import dispatch_failure_attention_items
     items.extend(task_state_admission_attention_items(
         history_events if history_events is not None else events, make_item=_attention_item,

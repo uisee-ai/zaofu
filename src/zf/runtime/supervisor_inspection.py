@@ -153,6 +153,8 @@ def build_supervisor_snapshot(
         plan_integrity=plan_integrity,
         history_events=all_events,
     )
+    from zf.runtime.board_liveness import board_silence_attention
+    base_attention_items.extend(board_silence_attention(state_dir, config, all_events, now, paused=bool(pause.get("paused")), tasks=tasks))
     base_attention_items.extend(plan_insight_attention_items(plan_insights))
     base_attention_items.extend(pane_probe_attention_items(pane_probe))
     base_attention_items.extend(_workflow_resume_attention_items(

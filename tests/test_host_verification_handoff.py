@@ -61,6 +61,55 @@ def test_failed_probe_can_return_to_reader_without_running_remaining_commands(re
     assert not any(e.type in {'test.passed','task.done'} for e in service.writer.event_log.read_all())
 
 
+@pytest.mark.parametrize("interruption", ["supersession", "unknown_denial", "request_only"])
+def test_host_handoff_recovers_one_exact_request_after_its_gate_clears(recovery, monkeypatch, interruption):
+    from zf.runtime import reader_stage_recovery
+
+    service, failure, trigger = recovery
+    service.writer.default_origin = "kernel"
+    p = policy()
+    operation = {"workflow_run_id": "run-1", "operation_id": "op-reader"}
+    service.writer.emit("fanout.child.dispatched", payload={**operation, "fanout_id": "f1"})
+    failure = service.writer.emit(failure.type, correlation_id="run-1", payload=failure.payload)
+    ref = write_sidecar_json(service.state_dir, "artifacts/probe.json", {
+        "command_id": "probe", "status": "completed", "source_stable": True,
+        "exit_code": 0, "execution_origin": "preauthorized_container", "policy_digest": digest(asdict(p)),
+    }, kind="test", schema_version="test.v1", created_by="test")
+    service.writer.emit("runtime.action.attempt.completed", payload={
+        **operation, "approval_ref": p.approval_ref, "kind": "verify", "receipt_ref": ref,
+    })
+    contract = {"verification_commands": [{"command_id": "probe", "command": "python3 probe.py"}]}
+
+    def reconcile():
+        return resume_reader_after_probes(service, operation, contract, p, service.writer.event_log.read_all())
+
+    def denial(*args):
+        reason = reader_stage_recovery.SUPERSEDED_FANOUT_REASON if interruption == "supersession" else "unclassified"
+        raise ValueError(reason)
+
+    with monkeypatch.context() as scoped:
+        if interruption == "request_only":
+            scoped.setattr(service, "execute", lambda **kwargs: {"ok": False})
+        else:
+            scoped.setattr(reader_stage_recovery, "repaired_reader_stage_trigger", denial)
+        assert not reconcile()
+        assert not reconcile()
+
+    should_resume = interruption != "unknown_denial"
+    assert reconcile() is should_resume
+    assert not reconcile()
+    events = service.writer.event_log.read_all()
+    requests = [e for e in events if e.type == "control.action.requested"]
+    assert len(requests) == (2 if interruption == "supersession" else 1)
+    if len(requests) == 2:
+        assert requests[1].causation_id == requests[0].id and requests[1].payload == requests[0].payload
+    effects = [e for e in events if e.type == trigger.type and e.payload.get("repaired_failure_event_id") == failure.id]
+    assert len(effects) == int(should_resume)
+    if effects:
+        assert effects[0].causation_id == requests[-1].id
+    assert not any(e.payload.get("action") == "task-host-assist" for e in events)
+
+
 @pytest.mark.parametrize('invalid', ['', 'request_only', 'worker_ready', 'other_run', 'other_failure'])
 def test_reconciler_skips_old_reader_only_after_kernel_successor(recovery, monkeypatch, invalid):
     from unittest.mock import Mock

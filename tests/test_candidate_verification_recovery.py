@@ -70,11 +70,12 @@ def test_admitted_mixed_rebind_preserves_native_freeze_and_replays_once(tmp_path
                    for e in runtime.event_log.read_all())
 
 
-@pytest.mark.parametrize("fault", ["member", "missing_member", "contract", "candidate", "failure", "cap",
+@pytest.mark.parametrize("fault", ["member", "wrong_child_event", "missing_member", "contract", "candidate", "failure", "cap",
                                   "authority", "paused", "human_gate", "shadow", "stage_members", "stage_config"])
 def test_recovery_never_changes_authority_or_drops_members(tmp_path, fault):
     runtime, _, prepared, recovery = _case(tmp_path)
     if fault == "member": recovery["member_reviews"][0]["operation_id"] = "foreign"
+    elif fault == "wrong_child_event": recovery["member_reviews"][0]["child_event_id"] = "foreign"
     elif fault == "missing_member": recovery["member_reviews"].pop()
     elif fault == "contract": recovery["contract_changed"] = True
     elif fault == "candidate": recovery["candidate_snapshot_event_id"] = "other-freeze"

@@ -49,7 +49,7 @@ def bound_container_probe_receipt(
         for key, value in identity.items():
             if p.get(key) != value or receipt.get(key) != value or start.payload.get(key) != value:
                 return None
-        for key in ('recollection_of_start_id', 'original_manifest_digest'):
+        for key in ('recollection_of_start_id', 'original_manifest_digest', 'recollection_of_receipt_id'):
             if any(value != manifest.get(key) for value in (p.get(key), start.payload.get(key), receipt.get(key))):
                 return None
         if (receipt.get("schema_version") != "task-host-receipt.v1"

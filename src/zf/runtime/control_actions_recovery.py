@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 from zf.core.events.model import ZfEvent
@@ -165,20 +164,28 @@ class RecoveryActionsMixin:
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
         if any(payload.get(k) for k in ("fanout_id", "fanout_child_id", "target_operation_id")):
-            from zf.runtime.reader_rebuild_admission import reader_rebuild_error
-            error = reader_rebuild_error(self.state_dir, self.writer.event_log.read_all(), payload)
+            from zf.runtime.reader_rebuild_admission import reader_rebuild_error, reader_rebuild_key
+            events = self.writer.event_log.read_all()
+            error = reader_rebuild_error(self.state_dir, events, payload,
+                                         config=self.config if self.actor == "run-manager" else None)
             if error:
                 return self._recovery_failed(requested, action, requested_action, error, 409)
+            try:
+                key = reader_rebuild_key(events, payload)
+            except ValueError as exc:
+                return self._recovery_failed(requested, action, requested_action, str(exc), 409)
             action_id = f"child-rebuild-{requested.id}"
             emitted = self.writer.append(ZfEvent(
                 type="repair.action.requested", actor=self.actor, origin="kernel",
                 correlation_id=payload["workflow_run_id"], causation_id=requested.id,
                 payload={**{k: payload[k] for k in (
                     "fanout_id", "fanout_child_id", "workflow_run_id",
-                    "target_operation_id", "active_attempt_id", "source_event_id") if k in payload},
+                    "target_operation_id", "active_attempt_id", "source_event_id", "reader_method_digest") if k in payload},
                     "action_id": action_id, "kind": "rerun_fanout_child",
                     "recovery_action": action,
-                    "idempotency_key": f"reader-rebuild:{payload.get('target_operation_id') or payload['active_attempt_id']}:{payload['source_event_id']}",
+                    "idempotency_key": key,
+                    **({k: payload[k] for k in ("retry_after_rejection_event_id", "approval_ref")}
+                       if payload.get("retry_after_rejection_event_id") else {}),
                     "reason": str(payload.get("reason") or "retry the exact failed Reader")},
             ))
             return self._recovery_ok(requested, emitted, action, requested_action,
@@ -315,8 +322,13 @@ class RecoveryActionsMixin:
                     f"already retriggered by {event.id}", 409,
                 )
         base = dict(source.payload if isinstance(source.payload, dict) else {})
+        from zf.runtime.candidate_freeze_recovery_identity import bind_retrigger_snapshot
         from zf.runtime.plan_declared_inputs import supplemental_plan_inputs
 
+        try:
+            bind_retrigger_snapshot(events, source, base)
+        except ValueError as exc:
+            return self._recovery_failed(requested, action, requested_action, str(exc), 409)
         try:
             supplemental = supplemental_plan_inputs(
                 self.state_dir, payload, request_id=requested.id)
@@ -384,6 +396,14 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if {"retry_cancelled_critic_event_id", "retry_critic_handoff_event_id"}.intersection(payload):
+            from zf.runtime.critic_handoff_retry import apply_critic_recovery
+            return apply_critic_recovery(self, requested, action, requested_action, payload)
+        from zf.runtime.candidate_media_review import KEY
+        if KEY in payload and (self.actor != 'operator' or not payload.get('repaired_failure_event_id')
+                               or payload.get('review_only') or payload.get('orchestrator_decision_event_id')):
+            return self._recovery_failed(requested, action, requested_action,
+                'Candidate media review requires an owner-controlled Reader repair', 409)
         if payload.get('review_only') is True:
             from zf.runtime.plan_critic_reassessment import apply_reassessment
             return apply_reassessment(self, requested, action, requested_action, payload)
@@ -496,9 +516,9 @@ class RecoveryActionsMixin:
                 "stage failure has no canonical workflow Run",
                 409,
             )
-        generation = "stage-replan-" + hashlib.sha256(
-            f"{run_id}|{escalation.id}".encode("utf-8")
-        ).hexdigest()[:20]
+        from zf.runtime.stage_replan_generation import escalation_generation_id
+
+        generation = escalation_generation_id(run_id, escalation.id)
         existing_trigger = next(
             (
                 event for event in events

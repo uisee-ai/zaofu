@@ -36,4 +36,11 @@ def explicit_retry_reads(runtime, payload: dict, predecessor: str) -> list[dict]
             if row['source_id'] == 'candidate-host-execution']
         remaining = [row for row in remaining if row not in derived]
         predecessor = str(operation.get('parent_operation_id') or '')
+        parent = operations.get(predecessor, {})
+        # The initial Reader is a child of its Workflow invocation. Only
+        # earlier Reader attempts own consumer-specific read obligations.
+        if (parent.get('operation_type') == 'workflow'
+                and not request.get('retry_of_operation_id')
+                and all(parent.get(k) == payload.get(k) for k in ('workflow_run_id', 'task_id'))):
+            break
     return remaining

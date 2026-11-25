@@ -11,24 +11,32 @@ from zf.runtime.result_submit import SemanticResultSubmitService, provision_role
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def failed_reader(tmp_path):
+def failed_reader(tmp_path, *, pending_sibling=False, failure_class="reader_execution_failure", frozen_inputs=None, before_start=None):
     from zf.core.config.schema import (ZfConfig, ProjectConfig, RoleConfig, WorkflowConfig,
         WorkflowStageConfig, FanoutChildConfig, FanoutAggregateConfig)
     from zf.runtime.orchestrator import Orchestrator
-    fixture = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(fixture)
+    if frozen_inputs:
+        fixture, seeded = frozen_inputs
+    else:
+        fixture = _runtime(tmp_path)
+        seeded = _seed_frozen_candidate(fixture)
     state, log = fixture.state_dir, fixture.event_log
+    roles = ["verify-1", "verify-2"] if pending_sibling else ["verify-1"]
     config = ZfConfig(project=ProjectConfig(name="test", state_dir=str(state)),
-        roles=[RoleConfig(name="verify-1", backend="mock", role_kind="reader")],
+        roles=[RoleConfig(name=name, backend="mock", role_kind="reader") for name in roles],
         workflow=WorkflowConfig(flow_metadata=fixture.config.workflow.flow_metadata,
             stages=[WorkflowStageConfig(id="issue-lanes-verify", trigger="candidate.ready", topology="fanout_reader",
-                children=[FanoutChildConfig(role_instance="verify-1", payload={"task_id":"FLOW-ANCHOR",
-                    "output_profile_id":"candidate-verify"})],
+                children=[FanoutChildConfig(role_instance=name, payload={"task_id":"FLOW-ANCHOR",
+                    "output_profile_id":"candidate-verify"}) for name in roles],
                 aggregate=FanoutAggregateConfig(mode="wait_for_all", child_success_event="verify.child.completed",
                     child_failure_event="verify.child.failed", success_event="test.passed", failure_event="test.failed"))]))
+    if frozen_inputs:
+        config.runtime.host_verification = fixture.config.runtime.host_verification
     token = provision_role_submit_credential(state, "verify-1").read_text().strip()
     transport = _RecordingTransport()
     runtime = Orchestrator(state, config, transport, project_root=fixture.project_root)
+    if before_start:
+        before_start(runtime, seeded["run_id"])
     runtime.event_writer.emit("run.started", payload={"workflow_run_id":seeded["run_id"]})
     trigger = next(e for e in log.read_all() if e.type == "candidate.ready")
     runtime.run_once(events=[trigger])
@@ -37,7 +45,7 @@ def failed_reader(tmp_path):
     result = SemanticResultSubmitService(state_dir=state, event_log=log, event_writer=runtime.event_writer).submit(
         operation_id=op_id, role_instance="verify-1", credential=token, semantic_result={
             "schema_version":"verification-result.v1", "execution_status":"failed", "verdict":"abstained",
-            "failure_class":"reader_execution_failure", "summary":"current input could not be read",
+            "failure_class":failure_class, "summary":"the verifier could not execute the required check",
             "verification_owner":"candidate_verify", "verification_tier":"integration",
             "evidence_refs":["tool-output:mock-input-failure"], "requirement_results":[],
             "probe_receipts":[], "reused_command_receipt_ids":[], "rework_items":[]})

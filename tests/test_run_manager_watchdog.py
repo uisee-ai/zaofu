@@ -107,6 +107,32 @@ def test_watchdog_requests_resident_restart_for_dead_pane(tmp_path: Path) -> Non
     assert request.payload["first_tick_mode"] == "observe_only"
 
 
+def test_dead_resident_restarts_once_per_observed_outage_even_after_replay(tmp_path):
+    state_dir, log, writer = _state(tmp_path)
+    args = dict(state_dir=state_dir, writer=writer, config=_config(resident=True),
+                event_log=log, resident_probe=lambda: {"ok": False, "target": "zf-rm:run-manager", "reason": "pane_dead"})
+    assert run_manager_watchdog_tick(**args).resident_restart_requested == 1
+    for _ in range(205):
+        log.append(ZfEvent(type="worker.heartbeat", actor="dev"))
+    log.append(ZfEvent(type="run.manager.agent.observation", origin="worker", actor="another-role"))
+    assert run_manager_watchdog_tick(**args).resident_restart_requested == 0
+    log.append(ZfEvent(type="run.manager.agent.observation", origin="worker", actor="run-manager"))
+    assert run_manager_watchdog_tick(**args).resident_restart_requested == 1
+    assert run_manager_watchdog_tick(**args).resident_restart_requested == 0
+
+
+def test_resident_probe_exception_does_not_restart_working_slot(tmp_path):
+    state_dir, log, writer = _state(tmp_path)
+    def unknown():
+        raise OSError("probe transport is unavailable")
+    result = run_manager_watchdog_tick(state_dir=state_dir, writer=writer, config=_config(resident=True),
+                                       event_log=log, resident_probe=unknown)
+    assert result.resident_restart_requested == 0
+    assert result.unhealthy_emitted == 1
+    finding, = [e for e in log.read_all() if e.type == RUN_MANAGER_UNHEALTHY]
+    assert finding.payload["reason"] == "resident_probe_unavailable"
+
+
 def test_watchdog_source_repair_dispatch_requires_enablement(tmp_path: Path) -> None:
     state_dir, log, writer = _state(tmp_path)
     for i in range(3):

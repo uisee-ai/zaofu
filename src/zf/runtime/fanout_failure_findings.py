@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from zf.core.events import ZfEvent
+
 from zf.runtime.candidate_rework import candidate_quality_failure_message
 from zf.runtime.verification_result import (
     verification_findings_from_payload,
@@ -17,11 +19,12 @@ def fanout_failure_findings(
     manifest: dict[str, Any],
     *,
     extra_payloads: list[dict[str, Any]] | None = None,
+    events: list[ZfEvent] | None = None,
 ) -> list[dict[str, Any]]:
     payloads = _fanout_failure_payloads(
         owner,
         manifest,
-        extra_payloads=extra_payloads,
+        extra_payloads=extra_payloads, events=events,
     )
 
     findings: list[dict[str, Any]] = []
@@ -48,10 +51,23 @@ def fanout_failure_context(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if not failed:
         return [], {}
-    return (
-        fanout_failure_findings(owner, manifest),
-        fanout_failure_recovery(owner, manifest),
-    )
+    events = None
+    children = manifest.get("children") or []
+    if (manifest.get("topology") == "fanout_reader" and children
+            and all((child.get("payload") or {}).get("output_profile_id") == "candidate-verify"
+                    for child in children)):
+        from zf.runtime.candidate_reader_recovery_owner import candidate_reader_outcomes
+
+        events = owner.event_log.read_all()
+        terminals = {c["child_id"]: c["last_event_id"] for c in children
+                     if c.get("status") in {"completed", "failed"} and c.get("last_event_id")}
+        outcomes = candidate_reader_outcomes(events, terminals, manifest["fanout_id"], manifest.get("workflow_run_id") or "")
+    else:
+        outcomes = {}
+    recovery = fanout_failure_recovery(owner, manifest, events=events)
+    if outcomes:
+        recovery["reader_outcomes"] = outcomes
+    return fanout_failure_findings(owner, manifest, events=events), recovery
 
 
 def fanout_failure_recovery(
@@ -59,6 +75,7 @@ def fanout_failure_recovery(
     manifest: dict[str, Any],
     *,
     extra_payloads: list[dict[str, Any]] | None = None,
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any]:
     """Project admitted dependency blockers into bounded routing facts."""
 
@@ -68,14 +85,14 @@ def fanout_failure_recovery(
     candidate_scope = {}
     candidate_operations = set()
     candidate_unscoped = False
-    reader_events = None
+    reader_events = events
     seen_controls = set()
     dependency_blocked = False
     plan_port_rework = False
     payloads = _fanout_failure_payloads(
         owner,
         manifest,
-        extra_payloads=extra_payloads,
+        extra_payloads=extra_payloads, events=events,
     )
     typed_handoff = _typed_handoff_recovery(payloads)
     if typed_handoff:
@@ -215,6 +232,7 @@ def _fanout_failure_payloads(
     manifest: dict[str, Any],
     *,
     extra_payloads: list[dict[str, Any]] | None = None,
+    events: list[ZfEvent] | None = None,
 ) -> list[dict[str, Any]]:
     child_payloads = {
         str(payload.get("child_id") or ""): payload
@@ -232,10 +250,11 @@ def _fanout_failure_payloads(
     payloads.extend(
         payload for payload in (extra_payloads or []) if isinstance(payload, dict)
     )
-    try:
-        events = owner.event_log.read_all()
-    except Exception:
-        events = []
+    if events is None:
+        try:
+            events = owner.event_log.read_all()
+        except Exception:
+            events = []
     fanout_id = str(manifest.get("fanout_id") or "")
     current_failures = {
         str(child.get("child_id") or ""): child

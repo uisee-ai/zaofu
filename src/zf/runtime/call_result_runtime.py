@@ -76,9 +76,13 @@ def prepare_call_operation(
     correlation_id: str = "",
     workdir_write_scopes: list[str] | None = None,
     scheduler_attempt_id: str = "",
+    reassessment_scope_ref: dict | None = None,
+    cancelled_critic_checkpoint: dict | None = None,
 ) -> PreparedCallOperation:
     """Pin call identity and immutable inputs before provider dispatch."""
 
+    if (stage_id == "reader-evidence-reassessment") != bool(reassessment_scope_ref):
+        raise ValueError("Reader evidence reassessment requires the kernel's scoped request")
     mode = result_protocol_mode(runtime.config, payload)
     workflow_run_id = str(
         payload.get("workflow_run_id")
@@ -127,7 +131,7 @@ def prepare_call_operation(
         operation_key=scoped_operation_key,
         operation_type=operation_type,
     )
-    context_delivery_enabled, context_inheritance = (
+    context_delivery_enabled, context_inheritance, previous_request = (
         _context_protocol_for_operation(
             runtime,
             operation_id=operation_id,
@@ -229,7 +233,10 @@ def prepare_call_operation(
         from zf.runtime.candidate_host_consumption import prepare_candidate_host_consumption
 
         prepare_candidate_host_consumption(runtime, payload=payload,
-            operation_id=operation_id, attempt_id=attempt_id)
+            operation_id=operation_id, attempt_id=attempt_id, source_event_id=causation_id)
+        from zf.runtime.milestone_handoff import attach_milestone_handoff
+
+        attach_milestone_handoff(runtime, payload, operation_id, attempt_id)
     payload["handoff_authority_contract"] = build_handoff_authority_contract(
         payload,
         output_profile_id=output_profile_id,
@@ -244,6 +251,8 @@ def prepare_call_operation(
         role_instance=role_instance,
         payload=payload,
     )
+    if reassessment_scope_ref:
+        semantic_submit_mode = "blocking"
     payload["semantic_result_submit_mode"] = semantic_submit_mode
 
     if output_profile_id == "artifact-delivery":
@@ -350,6 +359,7 @@ def prepare_call_operation(
         attempt_id=attempt_id,
         dispatch_id=dispatch_id,
         source_event_id=causation_id,
+        **({"read_purpose": "candidate-verify"} if reassessment_scope_ref else {}),
     )
     payload.pop("_context_delivery_enabled", None)
     payload.update({
@@ -371,6 +381,7 @@ def prepare_call_operation(
         ]
     required_reads = canonical_required_reads(
         source_manifest,
+        state_dir=runtime.state_dir,
         output_profile_id=output_profile_id,
         explicit=(
             explicit_required_reads
@@ -426,6 +437,9 @@ def prepare_call_operation(
             runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
             explicit=bool(explicit_required_reads), strategy=strategy,
         )
+    from zf.runtime.artifact_review_scope import select_review_inputs
+    required_reads = select_review_inputs(runtime, operation_id, output_profile_id, payload, source_manifest,
+                                         required_reads, explicit_required_reads)
     if output_profile_id == "plan-synth":
         from zf.runtime.plan_review_inspection import review_scope_diagnostics
         from zf.runtime.plan_review_input_budget import check_review_input_budget
@@ -462,6 +476,17 @@ def prepare_call_operation(
             "input_consumption_policy_digest": str(policy_descriptor.get("sha256") or ""),
         })
 
+    from zf.runtime.worker_model_handoff import freeze_model_profile
+    freeze_model_profile(runtime, operation_id, payload)
+    from zf.runtime.artifact_workdir_view import available_input_cgroup, configured_input_cgroup
+    pinned_group = ""
+    if previous_request is not None:
+        pinned_group = previous_request.get("native_input_cgroup", "")
+    elif source_manifest["sources"]:
+        pinned_group = configured_input_cgroup(runtime.config, role_instance)
+    payload.pop("native_input_view", None)
+    if pinned_group and pinned_group == available_input_cgroup(runtime.config, role_instance):
+        payload["native_input_view"] = True
     context_envelope: dict[str, Any] = {}
     context_envelope_descriptor: dict[str, Any] = {}
     provider_session_id = ""
@@ -491,6 +516,9 @@ def prepare_call_operation(
         "effective_config_digest": str(
             payload.get("effective_config_digest") or ""
         ),
+        **({"review_scope_ref": payload["review_scope_ref"]} if payload.get("review_scope_ref") else {}),
+        **({"native_input_cgroup": pinned_group} if pinned_group else {}),
+        **({"worker_model_planner": payload["worker_model_planner"]} if payload.get("worker_model_planner") else {}),
         "source_manifest_digest": str(source_descriptor.get("sha256") or ""),
         "read_policy_digest": str(payload.get("input_consumption_policy_digest") or ""),
         **({"input_delivery_mode": payload["input_delivery_mode"]}
@@ -544,6 +572,7 @@ def prepare_call_operation(
                 "plan_synth_contract_digest",
                 "plan_synth_verdict_only",
                 "plan_review_evidence_policy",
+                "diagnosis_review",
                 "reviewed_plan_candidate_digest",
                 "pdd_id",
                 "feature_id",
@@ -640,6 +669,25 @@ def prepare_call_operation(
             )
         },
     }
+    if output_profile_id == "candidate-verify":
+        from zf.runtime.candidate_reader_reassessment import enabled, policy_kind
+        if previous_request is not None:
+            authorized = previous_request.get("candidate_reader_reassessment") is True
+            flow_kind = previous_request.get("candidate_reassessment_flow_kind", "")
+        else:
+            flow_kind = policy_kind(runtime.config, payload)
+            authorized = enabled(runtime.config, flow_kind)
+        if authorized:
+            request["candidate_reader_reassessment"] = True
+            request["candidate_reassessment_flow_kind"] = flow_kind
+    if reassessment_scope_ref:
+        request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
+    if output_profile_id == "candidate-verify" and payload.get("candidate_reader_scope"):
+        request["candidate_reader_scope"] = dict(payload["candidate_reader_scope"])
+    if payload.get("candidate_repair_feedback_ref"):
+        request["candidate_repair_feedback_ref"] = dict(payload["candidate_repair_feedback_ref"])
+    if payload.get("milestone_handoff_ref"):
+        request["milestone_handoff_ref"] = dict(payload["milestone_handoff_ref"])
     if payload.get("candidate_host_evidence_ref"):
         request["candidate_host_evidence_ref"] = dict(payload["candidate_host_evidence_ref"])
     pinned_write_scopes = list(dict.fromkeys(
@@ -671,6 +719,9 @@ def prepare_call_operation(
     if provider_session is not None and provider_session.max_parallel_agents is not None:
         request["provider_session_max_parallel_agents"] = provider_session.max_parallel_agents
     service = workflow_operation_service(runtime)
+    if cancelled_critic_checkpoint is not None:
+        from zf.runtime.cancelled_critic_recovery import verify_replacement_inputs
+        verify_replacement_inputs(runtime.state_dir, cancelled_critic_checkpoint, request, source_manifest)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
         operation_id=operation_id,
@@ -943,6 +994,8 @@ def admit_runtime_call_result(
             "output_profile_id": str(operation_request.get("output_profile_id") or ""),
             "output_profile_revision": str(operation_request.get("output_profile_revision") or ""),
             "canonical_success_event": str(operation_request.get("canonical_success_event") or ""),
+            "fanout_id": operation_request.get("fanout_id"),
+            "candidate_reader_scope": operation_request.get("candidate_reader_scope"),
             "handoff_authority_contract": dict(operation_request.get("handoff_authority_contract") or {}),
         },
         require_semantic_submit=require_semantic_submit,
@@ -1171,12 +1224,12 @@ def _context_protocol_for_operation(
     *,
     operation_id: str,
     requested: Any,
-) -> tuple[bool, dict[str, Any]]:
+) -> tuple[bool, dict[str, Any], Mapping[str, Any] | None]:
     from zf.runtime.context_delivery import normalize_context_inheritance
 
     operation = load_workflow_operation(runtime.event_log, operation_id)
     if operation is None:
-        return True, normalize_context_inheritance(requested)
+        return True, normalize_context_inheritance(requested), None
     descriptor = operation.get("request_ref")
     if not isinstance(descriptor, Mapping):
         raise WorkflowOperationError(
@@ -1196,8 +1249,8 @@ def _context_protocol_for_operation(
     pinned = request.get("context_inheritance")
     if not isinstance(pinned, Mapping):
         # Pre-H0 operations retain their original manifest and request hash.
-        return False, {}
-    return True, normalize_context_inheritance(pinned)
+        return False, {}, request
+    return True, normalize_context_inheritance(pinned), request
 
 
 def _semantic_submit_mode(

@@ -46,6 +46,9 @@ def test_replan_input_manifest_exposes_current_package_ports_and_oa_authority(tm
             "baseline-plan-port-task_map"} <= sources.keys()
     decision = hydrate_sidecar_ref(runtime.state_dir, sources["plan-rework-decision"]).payload
     assert decision["decision"] == "return_to_plan"
+    basis = decision["delta"]["directives"][0]["basis_refs"][0]
+    assert any(key.startswith("replan-evidence-") and row["ref"] == basis["ref"]
+               and row["sha256"] == basis["sha256"] for key, row in sources.items())
     assert sources["plan-rework-decision"]["sha256"] == marker.payload["orchestrator_decision_ref"]["sha256"]
     required = canonical_required_reads(
         {"sources": refs, "handoff_authority_contract": {"attempt_domain": "plan"}},
@@ -111,9 +114,76 @@ def test_cited_oa_evidence_keeps_original_descriptor_and_rejects_tampering(tmp_p
     request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload["request"]
     manifest = hydrate_sidecar_ref(runtime.state_dir, request["source_manifest_ref"]).payload
     original = manifest["sources"][0]
+    # Isolate the legacy top-level shape from current directive evidence.
+    decision.pop("delta", None)
     decision["evidence_refs"] = [original["ref"], "artifacts/unregistered.json"]
     refs = _decision_evidence_sources(runtime.state_dir, decision)
     assert refs == [{**original, "source_id": f"replan-evidence-{original['source_id']}"}]
     (runtime.state_dir / original["ref"]).write_text('{"tampered":true}')
     with pytest.raises(ValueError):
         _decision_evidence_sources(runtime.state_dir, decision)
+
+
+def test_replan_does_not_import_other_action_or_wrong_digest(tmp_path):
+    runtime, marker, _trigger = _return_to_plan(tmp_path)
+    decision = hydrate_sidecar_ref(runtime.state_dir, marker.payload["orchestrator_decision_ref"]).payload
+    directive = decision["delta"]["directives"][0]
+    unchanged = {**directive, "action": "rework"}
+    wrong_digest = {**directive, "basis_refs": [{**directive["basis_refs"][0], "sha256": "f"*64}]}
+    decision["delta"]["directives"] = [unchanged, wrong_digest]
+    decision.pop("evidence_refs", None)
+    assert _decision_evidence_sources(runtime.state_dir, decision) == []
+
+
+def test_replan_only_exposes_directives_for_scoped_tasks(tmp_path):
+    runtime, marker, _trigger = _return_to_plan(tmp_path)
+    decision = hydrate_sidecar_ref(runtime.state_dir, marker.payload["orchestrator_decision_ref"]).payload
+    directive = decision["delta"]["directives"][0]
+    op = load_workflow_operation(runtime.event_log, decision["operation_id"])
+    request = hydrate_sidecar_ref(runtime.state_dir, op["request_ref"]).payload["request"]
+    manifest = hydrate_sidecar_ref(runtime.state_dir, request["source_manifest_ref"]).payload
+    other_source = next(s for s in manifest["sources"] if s["ref"] != directive["basis_refs"][0]["ref"])
+    other = {**directive, "target": {**directive["target"], "task_id": "TASK-2"},
+             "basis_refs": [{"ref": other_source["ref"], "sha256": other_source["sha256"]}]}
+    decision["delta"]["directives"].append(other)
+    decision.pop("evidence_refs", None)
+    assert _decision_evidence_sources(runtime.state_dir, decision, task_ids=set()) == []
+    refs = _decision_evidence_sources(runtime.state_dir, decision, task_ids={"TASK-1"})
+    assert [r["ref"] for r in refs] == [directive["basis_refs"][0]["ref"]]
+
+
+def test_new_oa_replan_only_exposes_prior_operator_grant_as_history(tmp_path):
+    runtime = _runtime(tmp_path)
+    prior = {
+        "operator_feedback": ["Restore the blank-input assertion."],
+        "stage_replan_generation": "owner-blank-input-generation",
+        "stage_replan_generation_source_event_id": "prior-escalation",
+        "operator_authorized": True,
+        "operator_authorization_ref": "owner:blank-input",
+    }
+    old = runtime.event_writer.append(ZfEvent(
+        type="prd.plan.requested", correlation_id="run-semantic-1",
+        payload={"rework_of": "prior-failure", **prior},
+    ))
+    prepared = request_semantic_failure_checkpoint(runtime, _semantic_request(runtime))
+    outcome = apply_orchestrator_agent_decision(
+        runtime, _submit_rework(runtime, prepared, action="return_to_plan"),
+    )
+    assert outcome["applied"]
+    events = runtime.event_log.read_all()
+    trigger = next(e for e in events if e.type == old.type and e.id != old.id)
+    assert prior.keys().isdisjoint(trigger.payload)
+    history = trigger.payload["historical_orchestration_context"]
+    assert history["authority"] == "observation_only"
+    assert history["source_rework_of"] == "prior-failure"
+    assert {key: history[key] for key in prior} == prior
+    refs = build_plan_handoff_input_refs(
+        state_dir=runtime.state_dir, project_root=tmp_path, payload=trigger.payload,
+        source_event_id=trigger.id,
+    )
+    context = next(row for row in refs if row["source_id"] == "plan-rework-context")
+    body = hydrate_sidecar_ref(runtime.state_dir, context).payload
+    assert "operator_feedback" not in body
+    assert body["rework_feedback"] == trigger.payload["rework_feedback"]
+    assert body["historical_orchestration_context"] == history
+    assert old.payload["operator_feedback"] == prior["operator_feedback"]

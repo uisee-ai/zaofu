@@ -13,17 +13,17 @@ def has_candidate_verification_consumer(config: Any) -> bool:
     """Require a real reader stage reached after the candidate is frozen."""
     readers = {
         str(role.instance_id or role.name)
-        for role in config.roles
-        if role.role_kind == "reader"
+        for role in getattr(config, "roles", ())
+        if getattr(role, "role_kind", "") == "reader"
     }
     return any(
         stage.trigger == "candidate.ready"
         and stage.topology == "fanout_reader"
         and bool(stage.roles)
         and set(stage.roles) <= readers
-        and stage.aggregate.child_success_event == "verify.child.completed"
+        and getattr(getattr(stage, "aggregate", None), "child_success_event", "") == "verify.child.completed"
         and stage.aggregate.success_event == "test.passed"
-        for stage in config.workflow.stages
+        for stage in getattr(getattr(config, "workflow", None), "stages", ())
     )
 
 

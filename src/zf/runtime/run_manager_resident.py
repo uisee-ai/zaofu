@@ -32,6 +32,7 @@ RESIDENT_RUN_MANAGER_ROLE_NAME = "run-manager"
 RUN_MANAGER_RESIDENT_RESTART_REQUESTED = "run.manager.resident.restart_requested"
 RUN_MANAGER_RESIDENT_RESTARTED = "run.manager.resident.restarted"
 RUN_MANAGER_RESIDENT_RESTART_FAILED = "run.manager.resident.restart_failed"
+RUN_MANAGER_RESIDENT_RESTART_SUPERSEDED = "run.manager.resident.restart_superseded"
 RUN_MANAGER_RESIDENT_PRESERVED = "run.manager.resident.preserved"
 RUN_MANAGER_RESIDENT_REBOUND = "run.manager.resident.rebound"
 _PRESERVED_MARKER = "run-manager-resident-preserved.json"
@@ -249,6 +250,10 @@ def build_resident_run_manager_briefing(
         "4. 判断是否只是正常等待、是否有确定性 action、是否需要 repair worker、"
         "autoresearch 深诊断、reflect 或人工介入。",
         "   先读取本次 context 的 recovery_capabilities；关闭或未知的能力不得当作已可用。",
+        "   reader_rebuild 如存在，核对该失败与执行条件是否已改变。其 recommendation 只供提案；",
+        "   有 method_change 时核对原派发的 delivered_method_ref 和当前预览的 added_routes。仅将业务上适用的新入口作为方法改善依据，"
+        "保留原 recommendation 的 reader_method_digest。unchanged/unknown 时诊断具体缺口或走其他已有授权路径；预览尚未派送，派送也不证明读取。",
+        "   保留 WRC active_attempt_id，先核对 blocking_human_decisions 与最新门禁，再决定是否建议精确重试。",
         "   同时核对 preauthorized_host_recovery 的宿主策略、同Run执行事件和绑定收据；",
         "   reflect/source_repair关闭不代表宿主验证关闭。策略声明不证明执行，单条命令",
         "   通过不证明产品验收；部分非浏览器收据也不证明浏览器恢复队列不存在。",
@@ -338,6 +343,9 @@ def build_resident_run_manager_briefing(
         "  stage-replan-new-generation、rescan-grant 由 owner 审批后执行，不据此宣称可自动恢复。",
         "- 若矛盾根因是配置/代码(如质量门命令不适配栈),优先",
         "  `recommended_route=human` 并写明修改建议,不要用流程动词硬推。",
+        "- 请求 owner 时给出具体 question 和 blocking_scope。仅当决定只涉及独立诊断记录或归档、",
+        "  且已有证据表明产品推进不依赖该决定时，使用 side。任务级决定给出 task 和 task_id；",
+        "  涉及整个 run 或影响范围未明时使用 run。已有门禁继续有效。",
         "",
         f"现在开始观察当前 run。先执行一次 `{status_command}`，再按上述请求与引用定位证据。",
     ])
@@ -586,7 +594,8 @@ def apply_pending_resident_restart_requests(
         events = []
     consumed = _consumed_restart_request_ids(events)
     for event in events:
-        if event.type != RUN_MANAGER_RESIDENT_RESTART_REQUESTED:
+        if (event.type != RUN_MANAGER_RESIDENT_RESTART_REQUESTED or event.origin not in {"", "kernel"}
+                or event.actor != "run-manager-watchdog"):
             continue
         if event.id in consumed:
             continue
@@ -639,6 +648,23 @@ def _apply_resident_restart_request(
         return
     session_mode = resident_run_manager_session_mode(config)
     tmux_session = str(payload.get("tmux_session") or resident_run_manager_tmux_session(config))
+
+    probe = getattr(transport, "is_alive", None)
+    if callable(probe) and not dry_run:
+        try:
+            alive = probe(role.instance_id)
+        except Exception as exc:
+            _emit_restart_failed(writer, event=event, reason=f"resident liveness unavailable: {exc}")
+            return
+        if alive is True:
+            writer.emit(RUN_MANAGER_RESIDENT_RESTART_SUPERSEDED, actor="run-manager-watchdog",
+                        causation_id=event.id, payload={
+                            "schema_version": "run-manager.resident-restart.v1", "status": "superseded",
+                            "source_restart_request_id": event.id, "instance_id": role.instance_id,
+                            "restart_scope": "resident_only", "workflow_restart": False,
+                            "reason": "resident already alive before queued restart",
+                        })
+            return
 
     registrar = getattr(transport, "register_role", None)
     if callable(registrar):
@@ -777,6 +803,12 @@ def _apply_resident_restart_request(
             "zf_cli_cmd": zf_cli_cmd(),
         },
     )
+    if not dry_run and (not ready or (config.runtime.run_manager.resident_agent.prompt_on_start and not prompted)):
+        _emit_restart_failed(writer, event=event,
+            reason="resident did not become ready" if not ready else "resident recovery briefing was not delivered",
+            extra={"tmux_session": tmux_session, "ready": ready, "prompted": prompted,
+                   "spawned_event_id": spawned.id, "prompted_event_id": prompt_event.id})
+        return
     writer.emit(
         RUN_MANAGER_RESIDENT_RESTARTED,
         actor="run-manager-watchdog",
@@ -806,7 +838,9 @@ def _apply_resident_restart_request(
 def _consumed_restart_request_ids(events: list[ZfEvent]) -> set[str]:
     consumed: set[str] = set()
     for event in events:
-        if event.type not in {RUN_MANAGER_RESIDENT_RESTARTED, RUN_MANAGER_RESIDENT_RESTART_FAILED}:
+        if (event.type not in {RUN_MANAGER_RESIDENT_RESTARTED, RUN_MANAGER_RESIDENT_RESTART_FAILED,
+                               RUN_MANAGER_RESIDENT_RESTART_SUPERSEDED}
+                or event.origin not in {"", "kernel"} or event.actor != "run-manager-watchdog"):
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         request_id = str(payload.get("source_restart_request_id") or event.causation_id or "").strip()

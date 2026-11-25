@@ -43,7 +43,9 @@ def execution_policy(config: Any) -> dict[str, Any]:
     from zf.runtime.workflow_route_policy import effective_execution_policy_digest
 
     workflow = getattr(config, "workflow", None)
+    host = getattr(getattr(config, "runtime", None), "host_verification", None)
     return {
+        "host_verification_commands": list(host.commands) if host and host.enabled else [],
         "effective_policy_digest": effective_execution_policy_digest(config),
         "setup_declared": bool(str(getattr(getattr(config, "project", None),
                                          "setup_script", "") or "").strip()),
@@ -100,6 +102,7 @@ def review_execution(
     graph = _graph(tasks)
     pipeline = metadata.get("task_pipeline") or {}
     per_task = isinstance(pipeline, Mapping) and pipeline.get("mode") == "blocking"
+    write_scope, writer_items = _review_writer_items(task_map)
     commands = [c for t in tasks for c in _rows(_object(t.get("validation")).get("commands"))
                 if isinstance(c, Mapping)]
     owners = Counter(str(c.get("owner") or "impl_self_check") for c in commands)
@@ -112,16 +115,57 @@ def review_execution(
     stages = [s for s in policy.get("stages", [])
               if not kind or str(s.get("id") or "").startswith(kind + "-")]
     candidate_trigger = any(s.get("trigger") == "candidate.ready" for s in stages)
+    host_commands = set(policy.get("host_verification_commands") or ())
+    unregistered = [
+        {"task_id": task.get("task_id") or task.get("id"), "command_id": cmd.get("id"),
+         "command": cmd["command"]}
+        for task in tasks for cmd in _rows(_object(task.get("validation")).get("commands"))
+        if isinstance(cmd, Mapping) and cmd.get("owner") == "candidate_verify"
+        and isinstance(cmd.get("command"), str) and host_commands and cmd["command"] not in host_commands
+    ]
+    if unregistered:
+        items.append("candidate_commands_outside_host_registry")
     if owners.get("task_verify") and not per_task:
         items.append("task_verify_after_candidate" if candidate_trigger else "verify_wiring_unconfirmed")
     if setup_commands and not policy.get("setup_declared"):
         items.append("setup_not_wired")
     if not policy.get("impl_self_check_required"):
         items.append("self_check_not_required")
+    requirements = [
+        _task_requirements(task, writer_items.get(str(task.get("task_id") or task.get("id") or ""))
+                           if per_task else None) for task in tasks
+    ]
+    if any(row.get("standard_with_empty_write_scope") for row in requirements):
+        items.append("standard_with_empty_write_scope")
+    # An optional Candidate probe can legitimately lack a mandatory AC. Report the
+    # exact declarations to reviewers without turning them into a product verdict.
+    mandatory_refs = {
+        cid for task in tasks for ac in _rows(task.get("acceptance_criteria") or task.get("acceptance"))
+        if isinstance(ac, Mapping) and ac.get("mandatory", True) is not False
+        and ac.get("verification_owner") == "candidate_verify"
+        for cid in _rows(ac.get("verification_command_ids")) + _rows(ac.get("command_ids"))
+        if isinstance(cid, str)
+    }
+    for task, row in zip(tasks, requirements, strict=True):
+        unbound = [
+            c["id"] for c in _rows(_object(task.get("validation")).get("commands"))
+            if isinstance(c, Mapping) and isinstance(c.get("id"), str) and c["id"]
+            and c.get("owner") == "candidate_verify" and c.get("acceptance_ids") == []
+            and not c.get("acceptance_id")
+            and c["id"] not in mandatory_refs
+        ]
+        if unbound:
+            row["unbound_candidate_command_ids"] = unbound
+    if any(row.get("unbound_candidate_command_ids") for row in requirements):
+        items.append("candidate_commands_without_mandatory_binding")
     writers = [role for role in policy.get("writer_instances", [])
                if not kind or role.get("flow_kind") in ("", kind)]
+    from zf.runtime.plan_review_comparisons import execution_comparisons
+
+    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger)
     return {
         "schema_version": "plan-execution-review.v1",
+        **({"execution_comparisons": comparisons} if comparisons else {}),
         "scope": "mechanical_facts_for_semantic_review",
         "plan_review": metadata.get("plan_review", {}),
         "usage_observations": dict(usage_facts or {"available": False}),
@@ -138,14 +182,15 @@ def review_execution(
             "configured_writer_instances": writers,
             "configured_writer_count": len(writers),
             "dependency_level_peak_width": max(graph["level_widths"].values(), default=0),
-            "write_scope_validation": _write_scope_validation(task_map),
+            "write_scope_validation": write_scope,
         },
         "verification": {
+            "candidate_commands_outside_host_registry": unregistered,
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
             "rolling_smoke_policy": _rolling_smoke_policy(),
-            "task_requirements": [_task_requirements(task) for task in tasks],
+            "task_requirements": requirements,
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
         },
@@ -158,7 +203,9 @@ def review_execution(
         "review_items": items,
         "limitations": [
             "Counts do not establish slice quality or elapsed execution time.",
-            "Task verification ownership does not create a dispatch stage.",
+            ("The blocking Task Pipeline dispatches independent Task Verify when its task is ready; "
+             "Candidate Verify begins after candidate.ready." if per_task and candidate_trigger else
+             "Check the compiled Task Pipeline and stage triggers for actual Verify dispatch."),
             "Required-by owners use runtime selectors; declared execution_stage is only an annotation.",
             "Setup presence does not prove installation or product execution.",
             "Port byte counts are JSON serialization sizes, not model token usage.",
@@ -172,17 +219,68 @@ def _digest(body: Mapping[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _write_scope_validation(task_map: Mapping[str, Any]) -> dict[str, Any]:
+def _review_writer_items(task_map: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, dict]]:
     from zf.runtime.writer_fanout_admission import validate_writer_task_items, writer_task_items
 
     try:
-        validate_writer_task_items(writer_task_items(dict(task_map)))
+        items = writer_task_items(dict(task_map))
+        validate_writer_task_items(items)
     except (RuntimeError, ValueError) as exc:
-        return {"status": "failed", "reason": str(exc)}
-    return {"status": "passed"}
+        return {"status": "failed", "reason": str(exc)}, {}
+    return {"status": "passed"}, {item["task_id"]: item for item in items}
 
 
-def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
+def _initial_readonly_verify(item: dict) -> dict:
+    from zf.runtime.task_contract_snapshot import (
+        normalize_acceptance_criteria, snapshot_verification_route,
+    )
+    from zf.runtime.verification_commands import (
+        acceptance_required_for_stage, task_map_verification_commands,
+        verification_command_required_for_stage,
+    )
+    from zf.runtime.writer_task_materialization import writer_task_pipeline_entry_mode
+
+    raw = item["raw_task"]
+    mode = writer_task_pipeline_entry_mode(item, raw)
+    if mode == "standard" and raw.get("allowed_paths") == []:
+        return {"standard_with_empty_write_scope": True}
+    if mode != "verify_only":
+        return {}
+    task_id = item["task_id"]
+    criteria = raw.get("acceptance_criteria") or raw.get("acceptance") or []
+    if not criteria or not all(isinstance(c, dict) and (c.get("id") or c.get("acceptance_id"))
+                               for c in criteria):
+        return {"initial_readonly_verify": {"status": "requires_dispatch_contract"}}
+    try:
+        criteria = normalize_acceptance_criteria(criteria, task_id=task_id, contract_revision="",
+                                                verification_tiers=item["verification_tiers"])
+    except ValueError:
+        return {"initial_readonly_verify": {"status": "requires_dispatch_contract"}}
+    commands = task_map_verification_commands(raw)
+    from zf.runtime.frozen_audit_scope import bind_frozen_audit_scope
+    from zf.runtime.writer_task_materialization import writer_task_evidence_contract
+
+    try:
+        bind_frozen_audit_scope(writer_task_evidence_contract(raw), criteria, commands,
+                                task_id=task_id, write_paths=raw.get("allowed_paths"))
+    except ValueError as exc:
+        return {"initial_readonly_verify": {"status": "invalid", "reason": str(exc)}}
+    owner, _ = snapshot_verification_route(criteria, commands=commands, task_id=task_id)
+    baseline = raw.get("immutable_baseline") or _object(raw.get("evidence_contract")).get("immutable_baseline", "")
+    return {"initial_readonly_verify": {
+        "verification_owner": owner,
+        "declared_baseline": baseline,
+        **({"frozen_candidate_acceptance_ids": [c["acceptance_id"] for c in criteria
+                                               if c.get("frozen_candidate_only")]}
+           if any(c.get("frozen_candidate_only") for c in criteria) else {}),
+        "mandatory_acceptance_ids": [c["acceptance_id"] for c in criteria if c["mandatory"]
+                                     and acceptance_required_for_stage(c, verification_owner=owner)],
+        "command_ids": [c["id"] for c in commands if verification_command_required_for_stage(
+            c, verification_owner=owner, task_id=task_id)],
+    }}
+
+
+def _task_requirements(task: Mapping[str, Any], writer_item: dict | None) -> dict[str, Any]:
     from zf.runtime.verification_commands import (
         acceptance_required_for_stage, verification_command_required_for_stage,
     )
@@ -191,6 +289,7 @@ def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
     owners = ("impl_self_check", "task_verify", "candidate_verify")
     return {
         "task_id": task_id,
+        **(_initial_readonly_verify(writer_item) if writer_item else {}),
         "rolling_smoke_command_ids": [
             str(command.get("id") or "")
             for command in _rows(_object(task.get("validation")).get("commands"))
@@ -309,15 +408,19 @@ def _object(value: Any) -> Mapping[str, Any]:
 def plan_candidate_writer_policy(config: Any) -> dict[str, Any]:
     """Snapshot the exact mechanical writer policy used after Plan."""
 
+    from zf.runtime.candidate_verification_stages import has_candidate_verification_consumer
     from zf.runtime.plan_candidate_role_preflight import writer_role_policy
 
     workflow = getattr(config, "workflow", None)
     work_units = getattr(workflow, "work_units", None)
     split = getattr(work_units, "split_quality", None)
+    compiled = execution_policy(config)
     return {
+        "frozen_candidate_reader": has_candidate_verification_consumer(config),
+        "host_verification_commands": compiled["host_verification_commands"],
         "harness_profile": str(getattr(workflow, "harness_profile", "") or ""),
         "role_closure": writer_role_policy(config),
-        "execution": execution_policy(config),
+        "execution": compiled,
         "candidate_quality_source": str(
             getattr(workflow, "candidate_quality_source", "auto") or "auto"
         ),

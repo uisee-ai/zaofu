@@ -8,6 +8,7 @@ from typing import Any
 from zf.runtime.artifact_access import require_artifact_access
 from zf.runtime.artifact_query.extractors import _intersect_access_scopes
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.candidate_media_review import KEY, authorized_review, review_body, reviewed_paths
 from zf.runtime.host_evidence_media import materialize_container_media, required_media_paths
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, verify_sidecar_ref
 from zf.runtime.task_host_evidence import host_execution_facts
@@ -38,10 +39,12 @@ def _source_fact(state_dir: Path, source: dict, request: dict, fact: dict,
             or source.get('workflow_run_id') != consumer['workflow_run_id']
             or source.get('task_id') != consumer['task_id']):
         return None
+    if fact['command_id'] not in commands:
+        return None
     receipt = hydrate_sidecar_ref(state_dir, fact['receipt_ref']).payload
     if any(request.get(k) != consumer.get(k) for k in BOUND_FIELDS[4:]):
         from zf.runtime.candidate_execution_equivalence import same_execution_contract
-        if not same_execution_contract(state_dir, request, consumer):
+        if not same_execution_contract(state_dir, request, consumer, command_id=fact['command_id']):
             return None
     if receipt.get('execution_origin') == 'preauthorized_container':
         from zf.core.config.host_verification import parse_host_verification
@@ -70,7 +73,7 @@ def _source_fact(state_dir: Path, source: dict, request: dict, fact: dict,
 
 
 def prepare_candidate_host_consumption(runtime: Any, *, payload: dict, operation_id: str,
-                                        attempt_id: str) -> None:
+                                        attempt_id: str, source_event_id: str = '') -> None:
     """Only new calls receive new evidence. Frozen legacy calls remain unchanged."""
     payload.pop('candidate_host_evidence_ref', None)
     payload['input_refs'] = [s for s in payload.get('input_refs', [])
@@ -102,6 +105,12 @@ def prepare_candidate_host_consumption(runtime: Any, *, payload: dict, operation
         'ref': payload['contract_snapshot_ref'], 'sha256': payload['contract_snapshot_digest']}).payload
     commands = {c['command_id']: c for c in contract['verification_commands']}
     events = runtime.event_log.read_all()
+    review_ref = authorized_review(events, run=consumer['workflow_run_id'],
+        fanout_id=payload.get('fanout_id'), source_event_id=source_event_id)
+    review = review_body(runtime.state_dir, review_ref) if review_ref else {}
+    if review_ref:
+        consumer.update({KEY: review_ref, 'review_source_event_id': source_event_id,
+                         'review_fanout_id': payload.get('fanout_id')})
     positions = {e.id: i for i, e in enumerate(events)}
     latest = {}
     for source in reduce_workflow_operations(events).values():
@@ -123,8 +132,14 @@ def prepare_candidate_host_consumption(runtime: Any, *, payload: dict, operation
     policy = getattr(getattr(runtime.config, 'runtime', None), 'host_verification', None)
     receipts, inputs, grant_scope = [], [], {}
     for command_id, (fact, receipt, scope) in sorted(latest.items()):
+        applies = fact['event_id'] == review.get('host_receipt_event_id') and fact['receipt_ref'] == review.get('original_receipt')
+        if applies:
+            require_artifact_access(review_ref.get('access_scope'), role=consumer['role_instance'],
+                                    actor=consumer['role_instance'], purpose='candidate-verify')
+            inputs.append({**review_ref, 'source_id': PREFIX + 'review', 'artifact_id': 'candidate-media-review.json',
+                           'allowed_paths': ['$'], 'access_scope': _intersect_access_scopes(scope, review_ref.get('access_scope'))})
         item, sources = _freeze_fact(runtime.state_dir, fact, receipt, scope,
-                                    commands[command_id], policy)
+                                    commands[command_id], policy, review=review if applies else None)
         receipts.append(item)
         inputs.extend(sources)
         grant_scope = _intersect_access_scopes(grant_scope, scope)
@@ -145,7 +160,7 @@ def _inputs(ref: dict, binding: dict) -> list[dict]:
 
 
 def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
-                 command: dict, policy: Any) -> tuple[dict, list[dict]]:
+                 command: dict, policy: Any, *, review: dict | None = None) -> tuple[dict, list[dict]]:
     suffix = fact['event_id']
     item = {'receipt_id': suffix, 'source_operation_id': fact['binding']['operation_id'],
             'source_attempt_id': fact['attempt_id'], 'receipt_ref': fact['receipt_ref'],
@@ -166,10 +181,12 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
                             'access_scope': scope, 'source_id': f'{PREFIX}file-{suffix}-{i}',
                             'artifact_id': f['path'], 'allowed_paths': ['$']}
                            for i, f in enumerate(body['files']))
-        if not required_media_paths(command) <= produced:
+        required = reviewed_paths(command, review) if review else required_media_paths(command)
+        if not required <= produced:
             raise ValueError('required host media is missing')
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        item.update(status='unavailable', reason=str(exc))
+        item.update(status='unavailable', reason=str(exc),
+                    declared_paths=[p for p in command.get('producer_paths', []) if isinstance(p, str)])
     body = {**fact, 'consumption_status': item['status'], 'media_refs': item['media_refs']}
     if item.get('reason'):
         body['consumption_reason'] = item['reason']
@@ -185,6 +202,29 @@ def _freeze_fact(state_dir: Path, fact: dict, receipt: dict, scope: dict,
             sources.append({**value, 'access_scope': scope, 'source_id': f'{PREFIX}original-{field}-{suffix}',
                             'artifact_id': Path(value['ref']).name, 'allowed_paths': ['$']})
     return item, sources
+
+
+def available_host_receipts(state_dir: Path, request: dict) -> list[dict]:
+    """Return offered execution observations bound to this exact consumer."""
+    try:
+        binding = hydrate_sidecar_ref(state_dir, request['candidate_host_evidence_ref']).payload
+        consumer = binding['consumer']
+        if (binding.get('schema_version') != 'candidate-host-evidence.v1'
+                or binding.get('authorizes_execution') is not False
+                or any(not request.get(key) or consumer.get(key) != request[key]
+                       for key in (*BOUND_FIELDS, 'operation_id', 'role_instance'))
+                or consumer.get('attempt_id') != request.get('attempt_id')):
+            return []
+        rows = [row for row in binding['receipts'] if row['status'] == 'available']
+        if any(not isinstance(row['command_id'], str) or not row['command_id'] for row in rows):
+            return []
+        return rows
+    except (OSError, ValueError, TypeError, KeyError):
+        return []  # Read/admission gates retain responsibility for unavailable evidence.
+
+
+def available_host_command_ids(state_dir: Path, request: dict) -> set[str]:
+    return {row["command_id"] for row in available_host_receipts(state_dir, request)}
 
 
 def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | None,
@@ -218,13 +258,30 @@ def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | N
     require_artifact_access(ref.get('access_scope'), role=consumer['role_instance'],
                             actor=consumer['role_instance'], purpose='candidate-verify')
     available = {r['receipt_id']: r for r in binding['receipts']}
-    if len(available) != len(binding['receipts']) or any(i not in available for i in ids):
-        raise ValueError('unknown or duplicate bound host receipt')
+    if len(available) != len(binding['receipts']):
+        raise ValueError('frozen candidate-host-execution binding contains duplicate receipts[].receipt_id values. '
+                         'Report this immutable binding for runtime diagnosis.')
+    unknown = [index for index, receipt_id in enumerate(ids) if receipt_id not in available]
+    if unknown:
+        raise ValueError(
+            f'{len(unknown)} unbound entries in the draft, first at result.host_execution_receipt_ids[{unknown[0]}]. '
+            'For each host observation used, identify its command_id and cite its host event ID from '
+            'candidate-host-execution.receipts[].receipt_id. The manifest_digest identifies the execution manifest.'
+        )
     contract = hydrate_sidecar_ref(state_dir, {
         'ref': result['contract_snapshot_ref'], 'sha256': consumer['contract_snapshot_digest']}).payload
     specs = {c['command_id']: c for c in contract['verification_commands']}
     operations = reduce_workflow_operations(events)
     covered = []
+    review = {}
+    if KEY in consumer:
+        authorized = authorized_review(events, run=consumer['workflow_run_id'],
+            fanout_id=consumer['review_fanout_id'], source_event_id=consumer['review_source_event_id'])
+        if authorized != consumer[KEY]:
+            raise ValueError('Candidate media review no longer matches its controlled action')
+        require_artifact_access(authorized.get('access_scope'), role=consumer['role_instance'],
+                                actor=consumer['role_instance'], purpose='candidate-verify')
+        review = review_body(state_dir, authorized)
     for receipt_id in ids:
         row = available[receipt_id]
         source = operations.get(row['source_operation_id'])
@@ -255,7 +312,9 @@ def admitted_host_commands(state_dir: Path, result: dict, *, operation: dict | N
                 verify_sidecar_ref(state_dir, file)
                 produced.add(file['path'])
         spec = specs[fact['command_id']]
-        if not required_media_paths(spec) <= produced:
+        applies = receipt_id == review.get('host_receipt_event_id') and fact['receipt_ref'] == review.get('original_receipt')
+        required = reviewed_paths(spec, review) if applies else required_media_paths(spec)
+        if not required <= produced:
             raise ValueError('required host media is missing')
         if result.get('verdict') == 'passed' and (receipt['status'] != 'completed' or fact['exit_code'] != 0):
             raise ValueError('failed host execution cannot support a passed verdict')

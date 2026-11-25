@@ -156,6 +156,43 @@ def test_start_registration_keeps_on_demand_role_dormant(
     ) == "dormant"
 
 
+def test_watchdog_defers_role_when_registry_disappears_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    orchestrator, role, transport = _runtime(tmp_path)
+    registry = orchestrator.state_dir / "role_sessions.yaml"
+    RoleSessionRegistry(registry, tmp_path).update_instance_meta(
+        role.instance_id, lifecycle_state="active",
+    )
+    saved = registry.read_bytes()
+    read_text = Path.read_text
+    probed = []
+    registry_reads = 0
+
+    def missing_on_open(path, *args, **kwargs):
+        nonlocal registry_reads
+        if path == registry:
+            registry_reads += 1
+            if registry_reads == 2:  # after the active-role projection read
+                raise FileNotFoundError(2, "No such file or directory", str(path))
+        return read_text(path, *args, **kwargs)
+
+    def record_probe(instance_id):
+        probed.append(instance_id)
+        return True
+
+    monkeypatch.setattr(transport, "is_alive", record_probe)
+    with monkeypatch.context() as concurrent_open:
+        concurrent_open.setattr(Path, "read_text", missing_on_open)
+        orchestrator._capture_logs()
+    assert not probed
+    assert not transport.spawned
+    assert role.instance_id in caplog.text and registry.name in caplog.text
+    orchestrator._capture_logs()
+    assert probed == [role.instance_id]
+    assert registry.read_bytes() == saved
+
+
 def test_taskless_skill_materialization_cannot_overwrite_active_treatment(
     tmp_path: Path,
 ) -> None:

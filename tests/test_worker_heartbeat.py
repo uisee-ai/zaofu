@@ -539,9 +539,10 @@ def _make_task() -> Task:
         ("judge", ["judge.passed"]),
     ],
 )
-def test_briefing_includes_heartbeat_instruction_for_worker_roles(role_name, publishes):
+def test_briefing_includes_heartbeat_instruction_for_worker_roles(role_name, publishes, monkeypatch):
     from zf.runtime.injection import generate_task_briefing
 
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
     briefing = generate_task_briefing(
         _make_config(),
         _make_role(role_name, publishes),

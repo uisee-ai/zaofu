@@ -209,6 +209,10 @@ def test_complete_inputs_allow_one_bounded_result_completion_turn(tmp_path):
     operation_id = child["payload"]["operation_id"]
     before = reduce_workflow_operations(log.read_all())[operation_id]
     close_turn(runtime, "reads-complete")
+    first_continuation = transport.sent[-1][2]
+    assert "historical_missing is zero" in first_continuation
+    assert "existing result scratch" in first_continuation and "--scratch path" in first_continuation
+    assert "source index" in first_continuation
     close_turn(runtime, "result-in-progress")
     claims = [e for e in log.read_all() if e.type == "worker.continuation.claimed"
               and e.payload.get("continuation_phase") == "result_completion"]

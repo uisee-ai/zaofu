@@ -80,3 +80,17 @@ def test_current_task_and_handoff_keep_delivery_diagnosis(tmp_path):
     summary = project_handoff_summary(runtime.state_dir, "T1", task=task)
     assert summary["input_recovery"]["provider_delivery"]["missing_count"] == 1
     assert any(row["kind"] == "provider_input_delivery" for row in summary["missing_evidence"])
+
+
+def test_all_observed_gaps_remain_addressable_and_a_changed_binding_restarts_paging():
+    from zf.runtime.input_delivery_recovery import delivery_gap_page
+    rows = [{"source_id": str(i), "artifact_id": "body", "json_path": "$"} for i in range(10)]
+    keys = {"actor": "reader-1", "attempt": "first"}
+    first = delivery_gap_page(rows, binding=keys, cursor="")
+    second = delivery_gap_page(rows, binding=keys, cursor=first["next_gap_cursor"])
+    third = delivery_gap_page(rows, binding=keys, cursor=second["next_gap_cursor"])
+    assert first["missing"] + second["missing"] + third["missing"] == rows
+    assert third["next_gap_cursor"] is None
+    for other_rows, other_keys in ((rows[1:], keys), (rows, {**keys, "actor": "reader-2"})):
+        with pytest.raises(ValueError, match="cursor"):
+            delivery_gap_page(other_rows, binding=other_keys, cursor=first["next_gap_cursor"])

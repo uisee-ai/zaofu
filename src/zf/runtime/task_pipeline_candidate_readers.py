@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from zf.core.config.schema import FanoutAssignmentConfig, WorkflowStageConfig
@@ -16,13 +17,80 @@ def candidate_reader_stages(runtime: Any, event: ZfEvent) -> list[WorkflowStageC
 
     frozen = bound_stage(runtime, event.payload or {})
     if frozen is not None:
-        return [frozen] if frozen.trigger == event.type else []
-    return [
-        frozen_candidate_reader_stage(runtime, stage, event)
-        for stage in runtime.config.workflow.stages
-        if stage.topology == "fanout_reader" and stage.trigger == event.type
-        and runtime._fanout_stage_matches_trigger_event(stage, event)
-    ]
+        stages = [frozen] if frozen.trigger == event.type else []
+    else:
+        stages = [
+            frozen_candidate_reader_stage(runtime, stage, event)
+            for stage in runtime.config.workflow.stages
+            if stage.topology == "fanout_reader" and stage.trigger == event.type
+            and runtime._fanout_stage_matches_trigger_event(stage, event)
+        ]
+    selected = []
+    for stage in stages:
+        try:
+            selected.append(_assigned_reader_stage(runtime, stage, event))
+        except ValueError as exc:
+            prior = runtime.event_log.read_all()
+            if not any(e.type == "task.fanout.rejected" and e.causation_id == event.id
+                       and e.payload.get("stage_id") == stage.id for e in prior):
+                runtime.event_writer.append(ZfEvent(
+                    type="task.fanout.rejected", actor="zf-cli", origin="kernel",
+                    task_id=event.task_id, causation_id=event.id, correlation_id=event.correlation_id,
+                    payload={"reason": "invalid_candidate_reader_assignment", "error": str(exc),
+                             "stage_id": stage.id, "source_event_id": event.id,
+                             "workflow_run_id": event.payload.get("workflow_run_id") or event.correlation_id,
+                             "recovery_owner": "run_manager", "diagnosis_status": "required"},
+                ))
+    return selected
+
+
+def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEvent) -> WorkflowStageConfig:
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    from zf.runtime.candidate_reader_assignments import assigned_spec
+    from zf.runtime.call_result_admission import result_protocol_mode
+
+    if (event.type != "candidate.ready" or stage.topology != "fanout_reader"
+            or stage.aggregate.success_event not in {"test.passed", "verify.passed"}):
+        return stage
+    body = event.payload
+    if body.get("candidate_snapshot_event_id"):
+        from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
+
+        native = frozen_candidate_for_payload(runtime.event_log.read_all(),
+            str(body.get("workflow_run_id") or event.correlation_id or ""), payload=body)
+        if native is None:
+            raise ValueError("Candidate Reader retrigger lacks its frozen candidate")
+        body = native.payload
+    if body.get("schema_version") != CANDIDATE_FREEZE_RECEIPT_SCHEMA:
+        return stage
+    spec = assigned_spec(Path(runtime.state_dir), body)
+    if not spec:
+        return stage
+    metadata = flow_metadata_for(runtime.config, payload=event.payload)
+    kind = spec["flow_kind"]
+    discovery = next((s for s in runtime.config.workflow.stages if s.id == f"{kind}-post-verify-discovery"
+                      and s.trigger == "flow.discovery.requested" and s.topology == "fanout_reader"
+                      and s.aggregate.child_success_event == "flow.discovery.child.completed"
+                      and s.aggregate.success_event == "flow.discovery.completed"), None)
+    discovery_roles = runtime._fanout_roles(discovery.roles) if discovery else []
+    if (kind not in {"prd", "issue"} or metadata.get("flow_kind") != kind
+            or metadata.get("post_verify_discovery") != "product_completeness" or discovery is None
+            or stage.children or discovery.children or discovery.assignment.strategy != "static_index"
+            or stage.aggregate.review_strategy not in {"", "all_approve_or_one_rejects"}
+            or stage.aggregate.mode != "wait_for_all" or len(discovery_roles) != 1):
+        raise ValueError("assigned Candidate readers require wait_for_all and one wired product_completeness Reader")
+    submit_modes = (metadata.get("result_protocol") or {}).get("semantic_submit_profiles") or {}
+    if (result_protocol_mode(runtime.config, body) != "blocking"
+            or any(submit_modes.get(profile) != "blocking" for profile in ("candidate-verify", "workflow-read"))):
+        raise ValueError("assigned Candidate readers require blocking Candidate and product discovery result admission")
+    if stage.assignment.strategy == "affinity_stage_slots":
+        eligible = {r.instance_id for _, r in runtime._fanout_affinity_lane_roles(stage)}
+    else:
+        eligible = {r.instance_id for r in runtime._fanout_roles(stage.roles)}
+    roles = [r["role_instance"] for r in spec["candidate_reader_assignments"]]
+    if set(roles) - eligible or discovery_roles[0].instance_id in roles:
+        raise ValueError("assigned Candidate Reader requires a configured seat and independent discovery")
+    return replace(stage, roles=roles, assignment=FanoutAssignmentConfig())
 
 
 def frozen_candidate_reader_stage(

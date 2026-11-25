@@ -88,6 +88,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd = sub.add_parser("index", help="Browse authorized attempt input locators without consuming bodies")
     index_cmd.add_argument("--attempt", required=True)
     index_cmd.add_argument("--query", default="", help="Literal filter over source, artifact, path and ref")
+    index_cmd.add_argument("--source-id", default="", help="Look up only the authorized, exact source ID")
     index_cmd.add_argument("--relation-id", default="", help="Exact declared Task, REQ, AC or dependency id")
     index_cmd.add_argument("--navigate", action="store_true", help="Include declared relations and Markdown section locators")
     index_cmd.add_argument("--cursor", default=None)
@@ -98,11 +99,30 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     index_cmd.set_defaults(func=run_input_index)
     recover_cmd = sub.add_parser("recover", help="Reconstruct authorized current inputs without granting execution authority")
     recover_cmd.add_argument("--attempt", required=True)
-    recover_cmd.add_argument("--cursor", default=None)
+    recovery_page = recover_cmd.add_mutually_exclusive_group()
+    recovery_page.add_argument("--cursor", default=None)
+    recovery_page.add_argument("--delivery-cursor", help="Continue the frozen observed delivery gap list")
     recover_cmd.add_argument("--state-dir", default=None)
     from zf.cli.artifact_input_recovery import run_input_recovery
 
     recover_cmd.set_defaults(func=run_input_recovery)
+    from zf.cli.artifact_board import register as register_board
+    register_board(sub)
+    from zf.cli.artifact_milestone import run_milestone
+
+    milestone = sub.add_parser("milestone", help="Read the bound candidate milestone obligations and decision")
+    milestone.add_argument("--attempt", required=True)
+    milestone.add_argument("--state-dir", default=None)
+    milestone.set_defaults(func=run_milestone)
+
+    from zf.cli.artifact_worker_plan import register as register_worker_plan
+    register_worker_plan(sub)
+    from zf.cli.artifact_workspace import run_workspace
+    workspace = sub.add_parser("workspace", help="Serve a read-only input view for a dedicated worker cgroup")
+    workspace.add_argument("--attempt", required=True)
+    workspace.add_argument("--state-dir")
+    workspace.set_defaults(func=run_workspace)
+
     costs = sub.add_parser("costs", help="Inspect attempt input costs without inferring provider savings")
     costs.add_argument("--attempt", required=True)
     costs.add_argument("--state-dir", default=None)
@@ -133,6 +153,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
+    read_cmd.add_argument("--image-page", type=int, help="Read one bounded base64 page of an authorized original PNG for a visual tool")
     read_cmd.add_argument("--page-start", type=int, default=None, help="Start character offset for a bounded complete-read page")
     read_cmd.add_argument("--page-size", type=int, default=8192, help="Characters per page, 1..8192")
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
@@ -239,6 +260,7 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
     from time import perf_counter
+    from zf.runtime.artifact_read_ledger import ArtifactSourceNotFound
     started = perf_counter()
     try:
         required = getattr(args, "required", False)
@@ -276,6 +298,19 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
         )
         from zf.runtime.worker_load_receipt import record_worker_cli_load
         record_worker_cli_load(context.state_dir, event_log, manifest, identity, _run_attempt_read)
+        if getattr(args, "image_page", None) is not None:
+            if (required or args.json_path != "$" or args.max_items or args.max_chars
+                    or args.page_start is not None or args.output_format != "json"):
+                raise ValueError("--image-page requires an exact whole-image source and JSON output")
+            from zf.runtime.artifact_image import image_page
+            from zf.runtime.artifact_input_costs import record_input_observation
+
+            frame = image_page(context.state_dir, manifest, identity, args.source, args.artifact, args.image_page)
+            output = json.dumps(frame, separators=(",", ":"))
+            print(output, flush=True)
+            record_input_observation(event_log, manifest, identity, kind="image_page", output=output,
+                                     elapsed_ms=(perf_counter()-started)*1000)
+            return 0
         if required:
             from zf.runtime.artifact_read_requirements import required_reads_for_attempt
             from zf.runtime.artifact_context_events import artifact_context_events
@@ -332,6 +367,15 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
 
     except (ConfigError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        if isinstance(exc, ArtifactSourceNotFound) and args.source and args.artifact:
+            import shlex
+            from zf.runtime.cli_command import zf_cli_cmd
+
+            lookup = ["artifact", "index", f"--attempt={args.attempt}", f"--source-id={args.source}"]
+            if args.state_dir:
+                lookup.append(f"--state-dir={args.state_dir}")
+            print("Use the read_command for the declared artifact_id and json_path from this authorized lookup.", file=sys.stderr)
+            print(f"{zf_cli_cmd()} {shlex.join(lookup)}", file=sys.stderr)
         return 1
     if getattr(args, "page_start", None) is not None:
         row = result["read"]

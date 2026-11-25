@@ -207,3 +207,59 @@ def test_reader_preregistration_failure_reaches_aggregate_as_infrastructure(tmp_
     aggregate = next(e for e in log.read_all() if e.type == 'review.rejected')
     assert aggregate.payload['failure_kind'] == 'infra'
     assert not any(e.type in {'candidate.rework.requested', 'task_map.ready'} for e in log.read_all())
+
+
+@pytest.mark.parametrize('successor', [
+    'obsolete', 'different_freeze_same_sha', 'same_freeze', 'missing_parent', 'untrusted_source',
+    'contradictory_sha', 'untrusted_fanout', 'future_trigger', 'duplicate_start', 'unproven_stall',
+    'untrusted_original_failure', 'untrusted_original_fanout', 'untrusted_original_trigger',
+])
+def test_controlled_retry_distinguishes_obsolete_fanouts_from_current_or_unbound_ones(mixed, successor):
+    from dataclasses import replace
+    from zf.runtime.reader_stage_recovery import repaired_reader_stage_trigger, SUPERSEDED_FANOUT_REASON
+
+    native, _, failure = recover(mixed)
+    events = mixed.event_log.read_all()
+    rows = events[:events.index(failure) + 1]
+    old = replace(native, id='old-freeze', origin='kernel', payload={
+        **native.payload, 'freeze_id':'obsolete-freeze',
+        'candidate_head_commit':native.payload['candidate_head_commit'] if successor=='different_freeze_same_sha'
+                                else '0' * 40})
+    rows.insert(rows.index(native), old)
+    bound = native if successor == 'same_freeze' else old
+    later = ZfEvent(type='candidate.ready', origin='kernel', correlation_id='run-1',
+        payload={'workflow_run_id':'run-1', 'freeze_id':bound.payload['freeze_id'],
+                 'candidate_head_commit':bound.payload['candidate_head_commit'], 'candidate_snapshot_event_id':bound.id})
+    start = ZfEvent(type='fanout.started', origin='kernel', correlation_id='run-1',
+        payload={'stage_id':'candidate-verify', 'fanout_id':'later', 'trigger_event_id':later.id})
+    if successor=='missing_parent':
+        later.payload['candidate_snapshot_event_id']='unknown'
+    elif successor=='untrusted_source':
+        later.origin='worker'
+    elif successor=='contradictory_sha':
+        later.payload['candidate_head_commit']='f' * 40
+    elif successor=='untrusted_fanout':
+        start.origin='worker'
+    elif successor=='duplicate_start':
+        start.payload['fanout_id']=failure.payload['fanout_id']
+    elif successor=='unproven_stall':
+        later.actor='zf-stall-redispatch'
+    elif successor=='untrusted_original_failure':
+        rows[rows.index(failure)]=replace(failure,origin='worker')
+    elif successor=='untrusted_original_fanout':
+        original_start=next(e for e in rows if e.type=='fanout.started'
+                            and e.payload.get('fanout_id')==failure.payload['fanout_id'])
+        rows[rows.index(original_start)]=replace(original_start,origin='worker')
+    elif successor=='untrusted_original_trigger':
+        rows[rows.index(native)]=replace(native,origin='worker')
+    rows.extend([start,later] if successor=='future_trigger' else [later,start])
+    payload={'repaired_failure_event_id':failure.id,'approval_ref':'reviewed-owner-policy',
+             'reason':'bound host evidence available'}
+    requested=ZfEvent(type='control.action.requested',origin='kernel',correlation_id='run-1',payload=payload)
+    if successor in {'obsolete','different_freeze_same_sha'}:
+        event=repaired_reader_stage_trigger(mixed.state_dir,mixed.config,rows,payload,requested)
+        assert (event.type,event.payload['candidate_snapshot_event_id'],event.payload['repaired_failure_event_id']) == (
+            'candidate.ready',native.id,failure.id)
+    else:
+        with pytest.raises(ValueError, match=SUPERSEDED_FANOUT_REASON):
+            repaired_reader_stage_trigger(mixed.state_dir,mixed.config,rows,payload,requested)

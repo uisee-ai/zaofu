@@ -91,9 +91,14 @@ Task恢复的`task-handoff-cited-evidence`输入显式列出前驱admitted结果
 声明为可安全重复观测的精确命令，且是 commands 的子集；不根据命令名称推测安全。
 原镜像摘要、网络、保护文件、超时及既有执行上限继续适用。
 
-仅原生 verify start、当前来源/合同、相同既有授权、无 completed 且 Docker 只读查询
-确认原命名容器不存在时，允许一次独立补采。仍存活、查询失败、来源改变、暂停、终态、
-预算不足均不能执行。不强杀容器；不转到宿主 shell 执行业务代码。
+当前来源、合同及既有授权均一致，且 Docker 只读查询确认原命名容器不存在时，
+两种情况可触发一次独立补采。第一种是原生 verify start 没有 completed。
+第二种是当前 Candidate 的精确容器命令已经退出 0、源码稳定，但已绑定的原回执
+记录某个普通文件超过单件或累计采集上限。owner 必须将权限提高到足以覆盖实测
+大小，且明确列入可重采命令。新回执关联原完成事件，保留原失败回执，独立
+Reader 仍须验收完整证据。其他采集错误或断言失败继续由诊断责任方处理。
+容器仍存活、查询失败、来源改变、暂停、终态或预算不足时，运行时保留断点和诊断记录。
+补采只在预授权容器内执行，保留仍在运行的原容器。
 
 新 manifest 绑定 recollection_of_start_id 和 original_manifest_digest，拥有自己的
 effect、输出和 receipt 路径；原 unknown 永不改写为成功。一次补采的完成事实可解除
@@ -186,3 +191,23 @@ child observer 配置错误明确返回 observation unavailable，不能当作�
 本批新回归覆盖 controlled action → Critic dispatch → 独立拒绝、重放/重启、当前事实
 反例、独立诊断仲裁和 AR 后继。测试命令与结果记录于本批任务；此前 12142 等数字
 属于前轮验证。真实 8×8 的旧 closed_failed 和未交付状态不由本批单元测试改写。
+
+## 在 Run 准入时冻结无人恢复授权
+
+Owner 可在项目的 `zf.yaml` 开跑前声明单个 Run 的恢复额度。下面的例子允许对原候选的一条失败 Reader 进行一次重建，以及在已验证的控制面修复后从指定的安全断点重启一次。
+
+```yaml
+runtime:
+  run_manager:
+    recovery_authorization:
+      approval_ref: owner:unattended-policy-v1
+      max_reader_rebuilds_per_run: 1
+      max_checkpoint_restarts_per_run: 1
+      safe_resume_actions: [needs_stage_dispatch]
+```
+
+实际权限取交集。容器探针仍需在 `runtime.host_verification` 配好明确的命令、镜像及执行预算，单次独立补采另需 `recollect_commands`。控制面修复仍需 `source_repair` 开启候选发布、`verified_checkpoint_apply`、`operator_approved`、重启前回放和允许的文件范围。安全断点必须已注册为可自动执行，并绑定通过验证的不可变修复合同。Reader 重建必须复核原 Run、候选快照、失败调用、单路身份，以及该 Reader 获准读取的原执行收据和媒体。
+
+运行时从有效配置生成授权摘要，随 `run.admission.admitted` 记账。Run Manager 在执行上述动作前会对账事件、当前授权和原证据。额度耗尽、更换候选、变更批准的命令或预算以及尚未处置的 Owner 决策都会阻止自动执行。建议正文不能授予权限，运行中追加的配置不能追溯授权。没有声明该块的既有 Run 沿用原有审批和执行策略。
+
+若发出控制面修复重启请求时事件账本已使用 HMAC 签名，延迟重启器会保留这项要求。重启前仍通过项目事件工厂读取并验证原请求。只撤销恢复授权时，拒绝事件使用同一签名账本。若已停用签名或密钥不可用，重启器在自己的日志中记录原因并退出，保持账本原样；普通事件的可选无签名回退不能代替这次已签名的授权。

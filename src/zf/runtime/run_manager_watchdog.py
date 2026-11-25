@@ -78,9 +78,15 @@ def run_manager_watchdog_tick(
         resident_probe=resident_probe,
     ):
         fingerprint = f"run-manager:{reason}:{detail.get('fingerprint_hint', '')}"
-        if _fingerprint_seen(events, fingerprint):
+        resident_dead = reason == "resident_pane_dead"
+        previous = None
+        if resident_dead:
+            previous = _resident_outage_event(events, fingerprint, _resident_instance_id(config))
+            if previous is not None and previous.type == RUN_MANAGER_RESIDENT_RESTART_REQUESTED:
+                continue
+        elif _fingerprint_seen(events, fingerprint):
             continue
-        unhealthy = writer.emit(
+        unhealthy = previous or writer.emit(
             RUN_MANAGER_UNHEALTHY,
             actor="run-manager-watchdog",
             payload={
@@ -94,8 +100,8 @@ def run_manager_watchdog_tick(
                 "handled_by": "watchdog",
             },
         )
-        emitted_unhealthy += 1
-        if reason in {"resident_pane_dead", "resident_pane_unhealthy"}:
+        emitted_unhealthy += int(previous is None)
+        if resident_dead:
             writer.emit(
                 RUN_MANAGER_RESIDENT_RESTART_REQUESTED,
                 actor="run-manager-watchdog",
@@ -206,9 +212,11 @@ def _health_findings(
         try:
             probe = resident_probe()
         except Exception as exc:
-            probe = {"ok": False, "reason": str(exc)}
-        if not bool(probe.get("ok", False)):
-            findings.append(("resident_pane_dead", {
+            probe = {"ok": None, "reason": "probe_unavailable", "error": str(exc)}
+        if probe.get("ok") is not True:
+            reason = ("resident_pane_dead" if probe.get("ok") is False
+                      and probe.get("reason") in {"pane_dead", "pane_missing"} else "resident_probe_unavailable")
+            findings.append((reason, {
                 "probe": probe,
                 "fingerprint_hint": str(probe.get("target") or probe.get("reason") or "resident"),
             }))
@@ -332,6 +340,47 @@ def _latest_quiescent_exit(events: list[ZfEvent]) -> datetime | None:
         if event.type != "run.goal.quiescent.exited":
             continue
         return _parse_ts(event.ts)
+    return None
+
+
+def resident_restart_attention(events: list[ZfEvent], make_item: Callable[..., dict]) -> list[dict]:
+    """Keep a failed restart visible until the named resident responds."""
+    failures: dict[str, ZfEvent] = {}
+    for event in events:
+        if (event.type == "run.manager.resident.restart_failed" and event.actor == "run-manager-watchdog"
+                and event.origin in {"", "kernel"} and event.payload.get("instance_id")):
+            failures[event.payload["instance_id"]] = event
+        elif _resident_response(event):
+            failures.pop(event.actor, None)
+    items = []
+    for failure in failures.values():
+        owner = failure.payload["instance_id"]
+        items.append(make_item(
+            source="run_manager_watchdog", fingerprint=f"resident_restore:{owner}:{failure.id}",
+            severity="high", title=f"Resident {owner} recovery failed",
+            summary=str(failure.payload.get("reason") or "No confirmed resident recovery"),
+            source_event_ids=[failure.causation_id, failure.id], source_ref=f"events.jsonl#{failure.id}",
+            suggested_route="autoresearch_trigger", notification_policy="owner_on_repair_failed",
+            suggested_action={"kind": "diagnose_resident_recovery", "instance_id": owner},
+        ))
+    return items
+
+
+def _resident_response(event: ZfEvent) -> bool:
+    return event.origin == "worker" and event.type in {
+        "run.manager.agent.observation", "run.manager.agent.recommendation",
+    }
+
+
+def _resident_outage_event(events: list[ZfEvent], fingerprint: str, owner: str) -> ZfEvent | None:
+    """The same dead slot gets one restart until its resident actually responds."""
+    for event in reversed(events):
+        if event.actor == owner and _resident_response(event):
+            return None
+        if (event.origin in {"", "kernel"} and event.actor == "run-manager-watchdog"
+                and event.payload.get("fingerprint") == fingerprint
+                and event.type in {RUN_MANAGER_UNHEALTHY, RUN_MANAGER_RESIDENT_RESTART_REQUESTED}):
+            return event
     return None
 
 

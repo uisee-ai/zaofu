@@ -54,3 +54,23 @@ def test_retry_required_reads_resolve_to_current_manifest(evidence, retain_stale
                 artifact_sha256=row['artifact_sha256'], json_path=row['json_path'])
     assert original_path.read_bytes() == original_request
     assert sum(e.type == 'runtime.action.attempt.started' for e in runtime.event_log.read_all()) == 1
+
+
+@pytest.mark.parametrize('parent_run', ['same', 'foreign'])
+def test_reader_retry_stops_at_own_enclosing_workflow(evidence, parent_run):
+    from zf.runtime.reader_retry_reads import explicit_retry_reads
+
+    runtime, seeded, *_ = evidence
+    run = seeded['run_id']
+    parent = 'wop-parent-workflow'
+    runtime.event_writer.append(ZfEvent(type='workflow.operation.requested', origin='kernel',
+        payload={'operation_id': parent, 'operation_type': 'workflow',
+                 'workflow_run_id': run if parent_run == 'same' else 'foreign-run',
+                 'task_id': 'FLOW-ANCHOR', 'request_hash': 'workflow-request'}))
+    prepared, payload = prepare(runtime, seeded, 'nested-reader', parent_operation_id=parent)
+    if parent_run == 'foreign':
+        with pytest.raises(ValueError, match='scope changed'):
+            explicit_retry_reads(runtime, payload, prepared.operation_id)
+        return
+    seen = explicit_retry_reads(runtime, payload, prepared.operation_id)
+    assert seen == [row for row in payload['required_reads'] if row['source_id'] != 'candidate-host-execution']

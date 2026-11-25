@@ -16,12 +16,14 @@ from zf.runtime.task_host_evidence import IDENTITY
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def prepare(runtime, seeded, role):
+def prepare(runtime, seeded, role, *, parent_operation_id=None):
     payload = {'workflow_run_id': seeded['run_id'], 'task_id': 'FLOW-ANCHOR',
         'fanout_id': 'fanout-candidate', 'child_id': role, 'role_instance': role,
         'stage_id': 'issue-lanes-verify', 'output_profile_id': 'candidate-verify',
         'artifact_package_mode': 'shadow', 'target_commit': seeded['candidate_head'],
         'canonical_success_event': 'test.passed', 'canonical_failure_event': 'test.failed'}
+    if parent_operation_id:
+        payload['parent_operation_id'] = parent_operation_id
     prepared = prepare_call_operation(runtime, payload=payload, operation_type='fanout_reader_child',
         operation_key=role, stage_id='issue-lanes-verify', task_id='FLOW-ANCHOR',
         dispatch_id='attempt-' + role, causation_id='evt-candidate-ready')
@@ -29,10 +31,35 @@ def prepare(runtime, seeded, role):
 
 
 @pytest.fixture
-def evidence(tmp_path, request):
+def evidence(tmp_path, request, monkeypatch):
     fault = getattr(request, 'param', '')
     runtime = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(runtime, producer_paths={
+    extra = {}
+    if fault == 'scoped':
+        from tests import test_product_acceptance as product
+        from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package, package_event_payload
+
+        spec = product._spec()
+        spec["candidate_reader_assignments"] = [
+            {"role_instance": role, "acceptance": [{"task_id": "TASK-1", "acceptance_id": ac_id}],
+             "journey_ids": journeys}
+            for role, ac_id, journeys in (("source-reader", "AC-1", ["journey-create"]),
+                                          ("consumer-reader", "AC-2", []), ("other-reader", "AC-3", []),
+                                          ("refreeze-consumer", "AC-2", []))
+        ]
+        monkeypatch.setattr(product, "_spec", lambda **kw: spec)
+        package, _ = product._package(runtime.state_dir)
+        admitted = package_event_payload(hydrate_plan_artifact_package(runtime.state_dir, package),
+                                         package, status="admitted")
+        runtime.event_log.append(ZfEvent(type="plan.artifact_package.admitted", origin="kernel",
+                                         correlation_id=product.RUN_ID, payload=admitted))
+        extra = dict(run_id=product.RUN_ID, generation=product.GENERATION,
+                     additional_checks=[("AC-2", "cmd-2", "pytest -q tests/test_pulse.py"),
+                                        ("AC-3", "cmd-3", "pytest -q tests/test_other.py")],
+                     package_fields={"plan_artifact_package_id": package["package_id"],
+                                     "plan_artifact_package_ref": package["ref"],
+                                     "plan_artifact_package_digest": package["sha256"]})
+    seeded = _seed_frozen_candidate(runtime, **extra, producer_paths={
         'output-root': ['ZF_EVIDENCE_DIR/artifacts/probe.json'],
         'directory-output': ['artifacts/evidence/browser/'],
     }.get(fault))
@@ -132,6 +159,37 @@ def test_new_consumers_receive_bound_facts_without_reexecuting_or_mutating_sourc
     assert not any(e.type in {'test.passed', 'task.done'} for e in runtime.event_log.read_all())
 
 
+@pytest.mark.parametrize("evidence,probe_count", [("", 0), ("bad-media-sha", 1)], indirect=["evidence"])
+def test_candidate_draft_keeps_only_uncovered_local_probes(evidence, probe_count):
+    import json
+
+    from zf.core.config.schema import FanoutAggregateConfig, ProjectConfig, RoleConfig, ZfConfig
+    from zf.runtime.fanout import FanoutContext
+    from zf.runtime.orchestrator import Orchestrator
+
+    runtime, seeded, _, _, _, _ = evidence
+    role = "consumer-submit"
+    prepared, payload = prepare(runtime, seeded, role)
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.state_dir, orch.project_root, orch.event_log = runtime.state_dir, runtime.project_root, runtime.event_log
+    orch.config = ZfConfig(project=ProjectConfig(name="reader-draft"))
+    payload.update(operation_id=prepared.operation_id, semantic_result_submit_mode="blocking",
+                   attempt_id="attempt-" + role)
+    context = FanoutContext("fanout-candidate", payload["stage_id"], "fanout_reader",
+                            seeded["run_id"], "evt-candidate-ready", payload.get("target_ref", ""))
+    briefing = orch._write_fanout_briefing(
+        role=RoleConfig(name=role, instance_id=role, backend="mock", role_kind="reader"),
+        context=context, child_id=role, run_id=payload["attempt_id"],
+        aggregate=FanoutAggregateConfig(mode="wait_for_all", child_success_event="verify.child.completed",
+            child_failure_event="verify.child.failed", success_event="test.passed", failure_event="test.failed"),
+        child_payload=payload,
+    )
+    draft = json.loads((runtime.state_dir / prepared.result_scratch_ref).read_bytes())
+    assert len(draft["probe_receipts"]) == probe_count
+    assert draft["host_execution_receipt_ids"] == []
+    assert "host_execution_receipt_ids" in briefing.read_text()
+
+
 def test_shared_host_fact_validation_is_read_only_and_accepts_generation_zero(evidence):
     from zf.runtime.task_host_evidence import host_execution_facts
     runtime, _, source_op, _, _, completed = evidence
@@ -192,7 +250,29 @@ def test_actual_preflight_and_admission_consume_same_receipt_independently(evide
     assert sum(e.type == 'runtime.action.attempt.started' for e in runtime.event_log.read_all()) == 1
 
 
-@pytest.mark.parametrize('fault', ['unknown-id', 'duplicate-id', 'missing-output', 'changed-receipt',
+@pytest.mark.parametrize("independent_probe", [False, True])
+def test_missing_candidate_coverage_points_back_to_bound_host_index(evidence, independent_probe):
+    _, payload, service, kwargs = consumer_result(evidence)
+    semantic = kwargs["semantic_result"]
+    ids = semantic.pop("host_execution_receipt_ids")
+    if independent_probe:
+        semantic["probe_receipts"] = [{
+            "probe_id": "independent-review", "status": "passed",
+            "evidence_refs": ["event:independent-review"],
+        }]
+    original = service.validate_plan_candidate(**kwargs)
+    [issue] = original["errors"]
+    assert issue["field"] == "control_result"
+    assert "host_execution_receipt_ids" in issue["message"]
+    assert issue["recovery_owner"] == "candidate_verify"
+    assert "candidate-host-execution" in issue["message"]
+    assert "probe_receipts" in issue["message"]
+    assert payload["candidate_host_evidence_ref"]
+    semantic["host_execution_receipt_ids"] = ids
+    assert service.validate_plan_candidate(**kwargs)["status"] == "passed"
+
+
+@pytest.mark.parametrize('fault', ['unknown-id', 'manifest-digest', 'duplicate-id', 'missing-output', 'changed-receipt',
                                   'missing-media', 'changed-media', 'duplicate-completion', 'no-ac'])
 def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     runtime, _, _, _, receipt_ref, completed = evidence
@@ -201,6 +281,8 @@ def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     receipt = hydrate_sidecar_ref(runtime.state_dir, receipt_ref).payload
     if fault == 'unknown-id':
         semantic['host_execution_receipt_ids'] = ['evt-unbound']
+    elif fault == 'manifest-digest':
+        semantic['host_execution_receipt_ids'] += [receipt['manifest_digest'], 'foreign-value']
     elif fault == 'duplicate-id':
         semantic['host_execution_receipt_ids'] *= 2
     elif fault == 'missing-output':
@@ -224,6 +306,35 @@ def test_preflight_rejects_unbound_or_incomplete_host_claims(evidence, fault):
     result = service.validate_plan_candidate(**kwargs)
     assert result['status'] == 'failed', result
     assert not any(e.type == 'workflow.call.result.admitted' for e in runtime.event_log.read_all())
+    if fault == 'manifest-digest':
+        issue, = result['errors']
+        assert 'result.host_execution_receipt_ids[1]' in issue['message'] and '2 unbound' in issue['message']
+        assert 'candidate-host-execution.receipts[].receipt_id' in issue['message'] and 'manifest_digest' in issue['message']
+        assert completed.id not in issue['message'] and semantic['host_execution_receipt_ids'][1] == receipt['manifest_digest']
+        semantic['host_execution_receipt_ids'] = [completed.id]
+        assert service.validate_plan_candidate(**kwargs)['status'] == 'passed'
+
+
+def test_duplicate_receipts_in_frozen_binding_are_diagnosed_separately_from_invalid_draft(evidence):
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    runtime, seeded, _, _, _, completed = evidence
+    prepared, payload = prepare(runtime, seeded, 'consumer-index')
+    events = runtime.event_log.read_all()
+    op = reduce_workflow_operations(events)[prepared.operation_id]
+    envelope = hydrate_sidecar_ref(runtime.state_dir, op['request_ref']).payload
+    ref = payload['candidate_host_evidence_ref']
+    binding = hydrate_sidecar_ref(runtime.state_dir, ref).payload
+    corrupt = write_sidecar_json(runtime.state_dir, 'artifacts/invalid-binding.json',
+        {**binding, 'receipts': binding['receipts'] * 2}, kind=ref['kind'], schema_version=ref['schema_version'],
+        created_by='test', access_scope=ref['access_scope'])
+    bad_request = write_sidecar_json(runtime.state_dir, 'artifacts/invalid-request.json',
+        {**envelope, 'request': {**envelope['request'], 'candidate_host_evidence_ref': corrupt}},
+        kind='request', schema_version='request.v1', created_by='test')
+    result = {**payload, 'host_execution_receipt_ids': [completed.id], 'request_hash': prepared.request_hash}
+    with pytest.raises(ValueError, match='frozen candidate-host-execution binding contains duplicate') as exc:
+        admitted_host_commands(runtime.state_dir, result, operation={**op, 'request_ref': bad_request}, events=events)
+    assert 'result.host_execution_receipt_ids[' not in str(exc.value)
 
 
 @pytest.mark.parametrize('field', ['operation_id', 'attempt_id', 'request_hash', 'workflow_run_id',
@@ -319,7 +430,8 @@ def test_new_target_or_authority_does_not_receive_old_host_facts(evidence, field
     assert not payload.get('candidate_host_evidence_ref')
 
 
-def test_same_source_refreeze_rebinds_facts_to_new_consumer(evidence):
+@pytest.mark.parametrize("evidence, scoped", [("", False), ("scoped", True)], indirect=["evidence"])
+def test_source_refreeze_reuse_requires_the_same_execution_authority(evidence, scoped):
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     from zf.runtime.candidate_host_consumption import admitted_host_commands
 
@@ -335,6 +447,9 @@ def test_same_source_refreeze_rebinds_facts_to_new_consumer(evidence):
             'freeze_receipt_ref': ref, 'freeze_receipt_digest': ref['sha256']}))
     prepared, payload = prepare(runtime, seeded, 'refreeze-consumer')
     assert payload['contract_snapshot_digest'] != original_payload['contract_snapshot_digest']
+    if scoped:
+        assert not payload.get('candidate_host_evidence_ref')
+        return
     binding = hydrate_sidecar_ref(runtime.state_dir, payload['candidate_host_evidence_ref']).payload
     assert binding['receipts'][0]['source_operation_id'] == source.operation_id
     assert binding['receipts'][0]['receipt_ref'] == receipt
@@ -366,3 +481,23 @@ def test_unchanged_commit_with_changed_dependency_bytes_cannot_reuse(evidence, m
     (runtime.project_root / 'node_modules' / 'tool.js').write_text('changed dependency without commit')
     _, after = prepare(runtime, seeded, 'consumer-dependency-after')
     assert not after.get('candidate_host_evidence_ref')
+
+@pytest.mark.parametrize("evidence", ["scoped"], indirect=True)
+def test_scoped_readers_share_only_identical_command_execution_facts(evidence):
+    from zf.runtime.candidate_host_consumption import admitted_host_commands
+
+    runtime, seeded, source, source_payload, receipt, completed = evidence
+    prepared, consumer = prepare(runtime, seeded, "consumer-reader")
+    assert source_payload["contract_snapshot_digest"] != consumer["contract_snapshot_digest"]
+    assert source_payload["candidate_reader_scope"]["acceptance_ids"] != consumer["candidate_reader_scope"]["acceptance_ids"]
+    binding = hydrate_sidecar_ref(runtime.state_dir, consumer["candidate_host_evidence_ref"]).payload
+    assert [(row["source_operation_id"], row["receipt_ref"]) for row in binding["receipts"]] == [
+        (source.operation_id, receipt)]
+    assert not binding["authorizes_execution"]
+    events = runtime.event_log.read_all()
+    op = reduce_workflow_operations(events)[prepared.operation_id]
+    result = {**consumer, "host_execution_receipt_ids": [completed.id], "request_hash": prepared.request_hash,
+              "verdict": "passed"}
+    assert admitted_host_commands(runtime.state_dir, result, operation=op, events=events)
+    _, other = prepare(runtime, seeded, "other-reader")
+    assert not other.get("candidate_host_evidence_ref")

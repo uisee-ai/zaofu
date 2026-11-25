@@ -58,6 +58,7 @@ def build_canonical_required_reads(
     *,
     output_profile_id: str,
     explicit: Iterable[Mapping[str, Any]] = (),
+    state_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Declare the canonical artifact slices one stage must consume."""
 
@@ -85,13 +86,17 @@ def build_canonical_required_reads(
         source_ids = {
             str(source.get("source_id") or "") for source in _sources(manifest)
         }
+        # A recovered Reader needs the native roster summary to distinguish original
+        # Task operations from the later Candidate review. Member rows stay on demand.
+        if {"critical-reader-repair-context", "milestone-task-lifecycles"} <= source_ids:
+            required_paths["milestone-task-lifecycles"] = ("$.summary",)
         if "candidate-freeze" in source_ids:
             required_paths["candidate-freeze"] = ("$",)
         else:
             # Legacy stage-barrier Candidate Verify remains source-compatible.
             required_paths["impl-self-check"] = ("$",)
         for source_id in source_ids:
-            if source_id == "candidate-host-execution" or source_id.startswith(
+            if source_id in {"candidate-host-execution", "candidate-host-review"} or source_id.startswith(
                     ("candidate-host-fact-", "candidate-host-media-")):
                 required_paths[source_id] = ("$",)
     elif profile == "integration-acceptance-review":
@@ -117,6 +122,10 @@ def build_canonical_required_reads(
                              and profile == "candidate-verify"))
                     else ("$",)
                 )
+    if profile == "candidate-verify":
+        for source_id, selected in manifest.get("candidate_plan_read_selections", {}).items():
+            if source_id in required_paths:
+                required_paths[source_id] = tuple(selected)
     elif profile == "artifact-delivery":
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
@@ -134,6 +143,14 @@ def build_canonical_required_reads(
         )
     required_paths.update(reader_paths)
 
+    if profile == "plan-synth":
+        # Only controlled review-only requests supply these sources. The owner
+        # reason and citations suffice; the full candidate index is already bound.
+        required_paths.update({
+            "plan-review-counter-evidence": ("$.reason", "$.counter_evidence"),
+            "plan-review-prior-verdict": ("$",),
+        })
+
     authority_contract = (
         manifest.get("handoff_authority_contract")
         if isinstance(manifest.get("handoff_authority_contract"), Mapping)
@@ -143,6 +160,9 @@ def build_canonical_required_reads(
         profile == "plan-synth"
         or str(authority_contract.get("attempt_domain") or "") == "plan"
     ):
+        from zf.runtime.plan_diagnosis_read_scope import previous_candidate_slices
+
+        selected_previous = previous_candidate_slices(state_dir, manifest, profile)
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
             if (
@@ -168,7 +188,8 @@ def build_canonical_required_reads(
             ):
                 required_paths[source_id] = (
                     tuple(source.get("allowed_paths") or ["$"])
-                    if source.get("kind") in {"plan_rework_candidate_partition", "plan_declared_input"}
+                    if (source_id in selected_previous or source.get("kind") == "plan_rework_candidate_partition"
+                        or (source.get("kind") == "plan_declared_input" and not source_id.startswith("previous-plan-candidate-")))
                     else ("$",)
                 )
 
@@ -183,7 +204,7 @@ def build_canonical_required_reads(
     for source in sources:
         source_id = str(source.get("source_id") or "")
         if source_id.startswith("critical-") or source_id in {
-            "rework-feedback", "task-handoff", "task-handoff-cited-evidence",
+            "rework-feedback", "task-handoff", "task-handoff-cited-evidence", "candidate-repair-feedback",
         }:
             required_paths[source_id] = ("$",)
         for json_path in required_paths.get(source_id, ()):
@@ -241,7 +262,9 @@ def build_canonical_required_reads(
         deduped.append(row)
     # Only new declarations change order; pinned attempts/cursors keep theirs.
     # The default page must expose the recovery input before bulk product data.
-    return sorted(deduped, key=lambda row: row['source_id'] != 'critical-reader-repair-context')
+    recovery_order = {"critical-reader-repair-context": 0, "plan-review-counter-evidence": 1,
+                      "plan-review-prior-verdict": 2, "milestone-task-lifecycles": 1}
+    return sorted(deduped, key=lambda row: recovery_order.get(row["source_id"], 3))
 
 
 def _selected_minimum_bytes(source: Mapping[str, Any], json_path: str) -> int:

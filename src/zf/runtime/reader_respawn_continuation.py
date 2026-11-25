@@ -20,6 +20,73 @@ def reader_dispatch_call_identity(payload: dict) -> dict:
         "attempt_id": nested.get("attempt_id") or payload.get("attempt_id") or ""}
 
 
+def _bound_reader_manifest(state_dir: Path, dispatch: ZfEvent, operation: dict, identity: dict) -> dict:
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_operation import operation_request_hash
+
+    nested = dispatch.payload.get("payload") or {}
+    descriptor = dispatch.payload.get("attempt_source_manifest") or nested.get("attempt_source_manifest")
+    if not isinstance(descriptor, dict):
+        raise ValueError("reader recovery source manifest is missing")
+    request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload
+    if (operation_request_hash(request) != operation["request_hash"]
+            or descriptor.get("sha256") != request["request"].get("source_manifest_digest")):
+        raise ValueError("reader recovery immutable input binding differs")
+    manifest = hydrate_sidecar_ref(state_dir, descriptor).payload
+    if (not isinstance(manifest, dict) or not manifest.get("attempt_id")
+            or manifest["attempt_id"] != operation.get("active_attempt_id")
+            or manifest["attempt_id"] != identity.get("attempt_id")):
+        raise ValueError("reader recovery immutable input binding differs")
+    return manifest
+
+
+def transport_retry_input_attempt(runtime, dispatch: ZfEvent, *, operation_id: str, role: str) -> str:
+    """Locate the original input attempt before assigning the new transport lease."""
+    from zf.runtime.workflow_operation import load_workflow_operation
+
+    identity = reader_dispatch_call_identity(dispatch.payload)
+    if (not operation_id or identity.get("operation_id") != operation_id
+            or dispatch.type != "fanout.child.dispatched" or dispatch.origin != "kernel"
+            or dispatch.actor != "zf-cli" or dispatch.payload.get("role_instance") != role):
+        return ""
+    operation = load_workflow_operation(runtime.event_log, operation_id) or {}
+    if (operation.get("operation_type") != "fanout_reader_child"
+            or operation.get("status") not in {"requested", "running"}
+            or operation.get("role_instance") != role
+            or not identity.get("request_hash") or identity["request_hash"] != operation.get("request_hash")
+            or not identity.get("workflow_run_id") or identity["workflow_run_id"] != operation.get("workflow_run_id")):
+        return ""
+    try:
+        return _bound_reader_manifest(runtime.state_dir, dispatch, operation, identity)["attempt_id"]
+    except (KeyError, OSError, TypeError, ValueError):
+        return ""
+
+
+def reader_transport_retry_guidance(
+    runtime, dispatch: ZfEvent, *, operation_id: str, role: Any, dispatch_id: str,
+    continue_session: bool, cli: str,
+) -> str:
+    """Describe the new transport identity and the retained artifact input separately."""
+    import shlex
+
+    attempt = transport_retry_input_attempt(runtime, dispatch, operation_id=operation_id, role=role.instance_id)
+    text = ""
+    if attempt:
+        text = (
+            f" The new transport dispatch is `{dispatch_id}`. The same Reader operation "
+            f"keeps input attempt `{attempt}` for all artifact commands. "
+            f"Use `{cli} artifact recover --attempt {shlex.quote(attempt)}` for CLI recovery. "
+            "A bound response is current for this retry. Keep the briefing's exact submission "
+            "command and current transport lease."
+        )
+    if continue_session:
+        text += reader_continuation_guidance(
+            attempt_id=attempt, backend=role.backend, cli=cli, runtime=runtime,
+            actor=role.instance_id, operation_id=operation_id,
+        )
+    return text
+
+
 def reader_respawn_in_progress(state_dir: Path, role_instance: str) -> bool:
     """Observe the existing replacement lock without creating or unlinking it."""
     path = state_dir / "locks" / "respawns" / f"{role_instance}.lock"
@@ -64,19 +131,31 @@ def reader_recovery_fence(
     return dispatch_index
 
 
-def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> str:
+def reader_continuation_guidance(
+    *, attempt_id: str, backend: str, cli: str, runtime=None, actor: str = "", operation_id: str = "",
+) -> str:
     """Offer a bounded read continuation without asserting current memory."""
     import shlex
 
+    from zf.runtime.artifact_workdir_view import recovery_hint
+
+    files = recovery_hint(runtime, actor, attempt_id, operation_id) if runtime and backend == "codex" else ""
+    entry = files or " Use the input attempt from the controlled artifact briefing for recovery."
     text = (
         " Continue the same pending operation from the available session and "
         "frozen inputs. Re-read any source you cannot still use; historical "
         "delivery alone does not prove current context after compaction. "
         "Reconcile unfinished tool calls and external effects before retrying."
-        " Use artifact recover for this attempt; if it exposes work_record_read, "
+        f"{entry} If the recovery view exposes work_record_read, "
         "read its digest-bound semantic checkpoint and assess pending criteria and "
         "report draft against current inputs. The record is unverified history, "
         "not a verdict or permission to skip required reads."
+        " When historical_missing is zero, check the recovery view for delivery gaps. "
+        "If none remain, inspect the existing result scratch at the original briefing's "
+        "--scratch path for the draft and last unresolved step, even if no work record was published. Treat "
+        "the draft as unverified. Use the source index to retrieve the exact clauses "
+        "needed to check it. A fresh --required without a cursor starts at page one; "
+        "use that only when a full reread is actually needed."
         " Continue consuming remaining pages in this turn until all required inputs "
         "are covered or a concrete blocker prevents progress. Do not stop merely "
         "after an arbitrary number of pages or to report partial progress. Once "
@@ -84,7 +163,7 @@ def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> 
         "result submission under the original briefing. Preserve permission, "
         "budget and evidence gates; input coverage is not an acceptance verdict."
     )
-    if backend == "codex" and attempt_id:
+    if backend == "codex" and attempt_id and not files:
         attempt = shlex.quote(attempt_id)
         text += (
             f" For a lost required-read cursor, use `{cli} artifact read --attempt "
@@ -94,28 +173,59 @@ def reader_continuation_guidance(*, attempt_id: str, backend: str, cli: str) -> 
     return text
 
 
-def reader_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
+def fanout_recovery_guidance(runtime: Any, role: Any, child: dict) -> str:
     """Prepare authenticated continuation before delivering a recovery prompt."""
     from zf.runtime.cli_command import zf_cli_cmd
+    from zf.runtime.plan_synth_handoff import current_synth_recovery_guidance
 
-    attempt_id = renew_reader_recovery_capability(runtime, role, child)
-    return reader_continuation_guidance(attempt_id=attempt_id,
-                                       backend=role.backend, cli=zf_cli_cmd())
+    cli = zf_cli_cmd()
+    guidance = ""
+    if role.role_kind == "reader":
+        attempt_id = renew_reader_recovery_capability(runtime, role, child)
+        guidance = reader_continuation_guidance(
+            attempt_id=attempt_id, backend=role.backend, cli=cli,
+            runtime=runtime, actor=role.instance_id, operation_id=child.get("operation_id", ""),
+        )
+    if child.get("child_id") == "synth":
+        _, result_guidance = current_synth_recovery_guidance(runtime, child, role, cli)
+        guidance += result_guidance
+    return guidance
 
 
 def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> str:
     """Renew the existing input grant only after checking its immutable carrier."""
     from zf.runtime.artifact_read_capability import bind_attempt_artifact_read_capability
-    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
-    from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
 
-    operation_id = str(child.get("operation_id") or "")
-    if not operation_id:  # Legacy unbound fanouts have no capability to renew.
+    if not child.get("operation_id"):
         return str(child.get("attempt_id") or "")
+    manifest, request_hash = current_reader_input(runtime, role, child)
+    attempt_id = manifest["attempt_id"]
+    bind_attempt_artifact_read_capability(runtime.state_dir, operation_id=child["operation_id"],
+        attempt_id=attempt_id, role_instance=role.instance_id, manifest=manifest)
+    child.update(attempt_id=attempt_id, request_hash=request_hash)
+    return attempt_id
+
+
+class ReaderAlreadySettled(ValueError):
+    """The previous result is authoritative; the kernel can route it without another send."""
+
+
+def current_reader_input(runtime: Any, role: Any, child: dict) -> tuple[dict, str]:
+    """Validate the original dispatch again without rotating or granting a capability."""
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    operation_id = str(child["operation_id"])
     events = runtime.event_log.read_all()
     dispatch = next((e for e in reversed(events) if e.id == child.get("event_id")), None)
     identity = reader_dispatch_call_identity(dispatch.payload) if dispatch else {}
     operation = reduce_workflow_operations(events).get(operation_id, {})
+    if (dispatch and dispatch.origin == "kernel" and dispatch.actor == "zf-cli"
+            and dispatch.payload.get("role_instance") == role.instance_id and identity.get("operation_id") == operation_id
+            and identity.get("request_hash") and any(e.origin == "kernel" and
+                e.type == "workflow.call.result.admitted" and e.actor == "zf-cli" and e.payload.get("admission_status") == "admitted"
+                and e.payload.get("operation_id") == operation_id and e.payload.get("request_hash") == identity["request_hash"]
+                and e.payload.get("attempt_id") == identity["attempt_id"] for e in events)):
+        raise ReaderAlreadySettled("reader result already admitted; preserve its verdict")
     if (operation.get("operation_type") not in {"fanout_synth", "fanout_reader_child"}
             or operation.get("status") not in {"requested", "running"}
             or operation.get("role_instance") != role.instance_id
@@ -130,22 +240,19 @@ def renew_reader_recovery_capability(runtime: Any, role: Any, child: dict) -> st
                    for k in ("operation_id", "run_id", "role_instance"))
             or runtime._fanout_dispatch_has_authoritative_result(events, dispatch)):
         raise ValueError("reader recovery capability has no current dispatch")
-    nested = dispatch.payload.get("payload") or {}
-    descriptor = dispatch.payload.get("attempt_source_manifest") or nested.get("attempt_source_manifest")
-    if not isinstance(descriptor, dict):
-        raise ValueError("reader recovery source manifest is missing")
-    request = hydrate_sidecar_ref(runtime.state_dir, operation["request_ref"]).payload
-    manifest = hydrate_sidecar_ref(runtime.state_dir, descriptor).payload
-    attempt_id = str(manifest.get("attempt_id") or "")
-    if (operation_request_hash(request) != operation["request_hash"]
-            or descriptor.get("sha256") != request["request"].get("source_manifest_digest")
-            or operation.get("active_attempt_id") != attempt_id
-            or identity.get("attempt_id") != attempt_id
-            or (child.get("attempt_id") and child["attempt_id"] not in {
-                attempt_id, dispatch.payload.get("attempt_id")})):
+    manifest = _bound_reader_manifest(runtime.state_dir, dispatch, operation, identity)
+    attempt_id = manifest["attempt_id"]
+    if child.get("attempt_id") and child["attempt_id"] not in {attempt_id, dispatch.payload.get("attempt_id")}:
         raise ValueError("reader recovery immutable input binding differs")
-    bind_attempt_artifact_read_capability(runtime.state_dir, operation_id=operation_id,
-        attempt_id=attempt_id, role_instance=role.instance_id, manifest=manifest)
-    # This is a local lifecycle descriptor, not a canonical operation mutation.
-    child.update(attempt_id=attempt_id, request_hash=identity["request_hash"])
-    return attempt_id
+    if dispatch.payload.get("lease_id"):
+        from zf.core.state.task_attempts import TaskAttemptStore
+
+        rows = [row for row in TaskAttemptStore(runtime.state_dir / "task_attempts.json").current_rows()
+                if row.get("instance_id") == role.instance_id and row.get("dispatch_id") == operation["dispatch_id"]]
+        if len(rows) != 1 or rows[0].get("lease_id") != dispatch.payload["lease_id"] or rows[0].get("status") != "sent":
+            raise ValueError("reader recovery transport lease changed")
+        from datetime import datetime, timezone
+        expiry = rows[0].get("lease_expires_at")
+        if expiry and datetime.fromisoformat(expiry) <= datetime.now(timezone.utc):
+            raise ValueError("reader recovery transport lease expired")
+    return manifest, identity["request_hash"]

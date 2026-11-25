@@ -270,20 +270,21 @@ def prepare_result_file_command(
                 sort_keys=True,
             ) + "\n",
         )
-    cli = " ".join(
-        shlex.quote(part)
-        for part in shlex.split(cli_command) or ["zf"]
-    )
-    command = " ".join([
+    return render_result_scratch_command(state_root, operation_id, cli_command), scratch
+
+
+def render_result_scratch_command(state_dir: Path, operation_id: str, cli_command: str) -> str:
+    """Render submission for the signed scratch without creating or editing a draft."""
+    cli = " ".join(shlex.quote(part) for part in shlex.split(cli_command) or ["zf"])
+    return " ".join([
         cli,
         "result submit",
         "--operation",
         shlex.quote(operation_id),
         "--state-dir",
-        shlex.quote(str(state_root)),
+        shlex.quote(str(state_dir.resolve())),
         "--scratch",
     ])
-    return command, scratch
 
 
 def render_result_validate_command(submit_command: str) -> str:
@@ -330,8 +331,9 @@ def prepare_fanout_result_guidance(
         if child_payload.get("candidate_host_evidence_ref"):
             guidance.append(
                 "Read candidate-host-execution and its bound fact/media sources. You may consume "
-                "only its receipt_id values in host_execution_receipt_ids, preserving the source "
-                "operation's identity. These are execution facts, not Impl reusable receipts or "
+                f"only its receipt_id values in `{verification_prefix}host_execution_receipt_ids` beside verdict, preserving the source "
+                "operation's identity. An available host observation has no prefilled local probe row. "
+                "These are execution facts, not Impl reusable receipts or "
                 "your fresh probe_receipts. Do not repeat a command solely because reusable=false; "
                 "that flag governs Impl self-check reuse. Independently judge every required "
                 "acceptance criterion and product report; host exit 0 supplies no product verdict."
@@ -357,14 +359,27 @@ def prepare_fanout_result_guidance(
     return guidance, semantic_submit, result_prefix
 
 
+def _plan_failure_submission_bound(payload: Mapping[str, Any]) -> bool:
+    validation = payload.get("plan_candidate_validation")
+    return bool(
+        payload.get("semantic_result_submit_mode") == "blocking"
+        and payload.get("operation_id")
+        and payload.get("output_profile_id") == "workflow-read"
+        and isinstance(validation, Mapping) and isinstance(validation.get("manifest"), Mapping)
+        and str(payload.get("canonical_failure_event") or "").strip()
+    )
+
+
 def render_fanout_submit_commands(
     *,
     success_command: str,
     failure_command: str,
     semantic_submit: bool,
+    child_payload: Mapping[str, Any],
 ) -> list[str]:
     if semantic_submit:
-        return ["Success command:", "```bash", success_command, "```", ""]
+        label = "Submit this operation's result:" if _plan_failure_submission_bound(child_payload) else "Success command:"
+        return [label, "```bash", success_command, "```", ""]
     return [
         "Success command:",
         "```bash",
@@ -400,7 +415,21 @@ def _render_plan_candidate_policy(
     candidate = candidate if isinstance(candidate, Mapping) else {}
 
     policy_rows: list[str] = []
+    from zf.runtime.plan_candidate_owner_review import bound_candidate_diagnosis
     from zf.runtime.plan_artifact_package import required_plan_ports
+
+    manifest = validation.get("manifest")
+    if isinstance(manifest, Mapping) and bound_candidate_diagnosis(manifest.get("trigger_payload")):
+        policy_rows.append("- candidate_diagnosis_only authorizes independent diagnosis and zero Writers. "
+                           "Retain findings and source refs. Only a genuine blocking Owner decision warrants an "
+                           "owner_review draft for independent Critic review. With no remaining Owner question submit "
+                           "candidate_kind=diagnosis_review, execution_status=completed, result_semantics=artifact_production, "
+                           "recommendation=abstain, summary, owner_decision_items=[], plan_artifact_ref + plan_artifact_sha256, "
+                           "source_index_ref + source_index_sha256, exact signed operator_feedback, and one finding_results "
+                           "row per signed candidate_obligations finding_id: outcome (supported/refuted/unknown), explanation, "
+                           "evidence_refs=[control_result_ref.ref]. Clear executable task_map_ref, backlog_ref and plan_ports "
+                           "from the draft; use this operation's result validate and result submit commands below.")
+        return policy_rows
 
     ports = required_plan_ports(flow_kind=str(metadata.get("flow_kind") or ""), metadata=metadata)
     authored_ports = list(dict.fromkeys([
@@ -529,6 +558,17 @@ def prepare_profiled_stage_result(
         cli_command=cli_command,
         semantic_template=semantic_body,
     )
+    plan_failure_bound = _plan_failure_submission_bound(child_payload)
+    failure_guidance = (
+        "- If unavailable required input or a tool or control-plane failure prevents producing the Plan, preserve partial artifacts "
+        "and record the actual cause and evidence in this scratch: `execution_status=failed`, "
+        "`recommendation=abstain`, a specific `summary`, and `findings` as a list. "
+        "Use the same validation and submission commands for this execution failure. "
+        "Correct repairable validation errors in place. Keep a business rejection in its independent review "
+        "and use the Owner-review draft only for a genuine blocking decision."
+        if plan_failure_bound else
+        "- For failure, set `execution_status`/`verdict` and exact findings before running the same command."
+    )
     lines = [
         "## Output Contract",
         "",
@@ -541,8 +581,7 @@ def prepare_profiled_stage_result(
         "The Kernel supplies immutable identity and selects the canonical event.",
         "- Update the prefilled scratch file in place. With apply_patch use "
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
-        "- For failure, set `execution_status`/`verdict` and exact findings before "
-        "running the same command.",
+        failure_guidance,
         "- Complete authoring contract: this briefing, prefilled result, and skills. "
         "Do not inspect ZaoFu runtime source/tests/examples/package for hidden fields.",
         "- Submit authorization is transport-owned; do not print or inspect it.",
@@ -560,7 +599,7 @@ def prepare_profiled_stage_result(
         ))
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
-            "for an exact command already present in the prefilled template; "
+            "for an exact command in the frozen verification contract; "
             "record extra independent probes without `command_id` and attach "
             "their command/evidence through requirement reproduction evidence.",
         ]
@@ -603,13 +642,14 @@ def prepare_profiled_stage_result(
     if isinstance(plan_candidate_validation, Mapping):
         lines.extend(_render_plan_candidate_policy(plan_candidate_validation))
         validate_command = render_result_validate_command(command) + " --summary"
+        submit_label = "operation result submission command" if plan_failure_bound else "Success command"
         lines.extend([
             "- Plan candidate rule: after authoring, run only the pre-submit "
             "validation command below. It uses the same runtime evaluator as "
             "formal Plan admission and does not consume the submit capability.",
             "- If validation fails, edit this same scratch/artifact set from the "
             "structured diagnostics and rerun validation in this turn. After exit "
-            "0, the next tool call MUST be the Success command; do not run any "
+            f"0, the next tool call MUST be the {submit_label}; do not run any "
             "other audit, search, test, or readback.",
             "- On validation or submission rejection, follow structured "
             "diagnostics only; do not reverse-engineer the harness.",
@@ -678,6 +718,8 @@ def prepare_writer_execution_card(
         or not str(task_item.get("operation_id") or "").strip()
     ):
         return completion_command, blocked_command, display, []
+    is_task_impl = task_payload.get("task_pipeline_stage") == "impl"
+    target = completion_payload.get("source_commit") if is_task_impl else None
     command, scratch = prepare_result_file_command(
         state_dir=state_dir,
         result_scratch_ref=str(
@@ -696,7 +738,7 @@ def prepare_writer_execution_card(
             "verdict": "passed",
             "failure_class": "none",
             "blocker_kind": "none",
-            "target_commit": "<HEAD commit>",
+            "target_commit": target or "<HEAD commit>",
             "changed_files": [],
             "evidence_refs": ["<implementation summary artifact or event ref>"],
             "self_check": dict(completion_payload.get("impl_self_check") or {}),
@@ -704,6 +746,8 @@ def prepare_writer_execution_card(
             "summary": "<concise implementation outcome>",
         },
     )
+    if is_task_impl:
+        command = render_result_validate_command(command) + " --submit"
     lines = [
         "## Output Contract",
         "",

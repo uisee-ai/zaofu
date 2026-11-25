@@ -9,8 +9,24 @@ RECOVERY_FIELDS = (
     "task_id", "fanout_id", "fanout_child_id", "workflow_run_id",
     "target_operation_id", "active_attempt_id", "source_event_id",
     "reason", "approval_ref", "escalation_event_id",
-    "supplemental_input_refs",
+    "supplemental_input_refs", "reader_method_digest",
 )
+
+
+def resident_decision_question(payload: dict[str, Any]) -> str:
+    disposition = payload.get("recommended_replan_or_resume_action")
+    nested = disposition.get("decision_required") if isinstance(disposition, dict) else None
+    action = payload.get("recommended_run_manager_action")
+    action_question = action.get("question") if isinstance(action, dict) else None
+    for value in (payload.get("question"), nested, action_question, payload.get("summary"), payload.get("reason")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def review_only_escalation(payload: dict[str, Any]) -> bool:
+    return (payload.get("action") == "agent-recommendation"
+            and payload.get("safe_resume_action") == "agent_recommendation")
 
 
 def normalize_recovery_recommendation(payload: dict[str, Any]) -> dict[str, Any]:

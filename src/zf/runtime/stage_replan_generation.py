@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -12,6 +14,14 @@ STAGE_REPLAN_GENERATION_EXPECTED_EVENTS = frozenset({
     "run.goal.updated",
     "run.manager.action.applied",
 })
+
+
+def escalation_generation_id(run_id: str, escalation_id: str) -> str:
+    return "stage-replan-" + hashlib.sha256(f"{run_id}|{escalation_id}".encode()).hexdigest()[:20]
+
+
+def generation_publication_lock(state_dir: Path, request_id: str) -> Path:
+    return state_dir / "locks" / "stage-replan-publications" / hashlib.sha256(request_id.encode()).hexdigest()
 
 
 def completed_generation_source(

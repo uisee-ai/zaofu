@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
@@ -145,6 +145,14 @@ def validate_product_acceptance_spec(
             raise ProductAcceptanceError(
                 "required provider qualification must declare ttl_seconds"
             )
+
+    if "candidate_reader_assignments" in spec:
+        from zf.runtime.candidate_reader_assignments import validate_reader_assignments
+
+        try:
+            validate_reader_assignments(spec)
+        except ValueError as exc:
+            raise ProductAcceptanceError(str(exc)) from exc
 
 
 def validate_provider_qualification_receipt(
@@ -334,10 +342,12 @@ def validate_product_acceptance_report(
 def product_acceptance_binding_from_package(
     state_dir: Path,
     package_descriptor: Mapping[str, Any],
+    *,
+    validate_ports: bool = True,
 ) -> dict[str, Any]:
     if not str(package_descriptor.get("ref") or ""):
         return {"required": False}
-    package = hydrate_plan_artifact_package(state_dir, package_descriptor)
+    package = hydrate_plan_artifact_package(state_dir, package_descriptor, validate_ports=validate_ports)
     port = next(
         (
             dict(item)
@@ -420,6 +430,7 @@ def bind_product_acceptance_report(
     operation: Mapping[str, Any] | None,
     source_event_id: str,
     persist: bool = True,
+    events: Sequence | Callable[[], Sequence] = (),
 ) -> Any:
     """Bind Candidate Verify and discovery to the exact full-product report.
 
@@ -481,38 +492,32 @@ def bind_product_acceptance_report(
         or (str(result.get("verification_owner") or "") == "candidate_verify"
             and not is_task_verify)
     )
-    if not package_ref or not package_digest:
-        return adapted
     try:
+        if not package_ref or not package_digest:
+            if operation.get("candidate_reader_scope"):
+                raise ProductAcceptanceError("Candidate Reader lacks its frozen Plan package")
+            return adapted
         binding = product_acceptance_binding_from_package(
             Path(state_dir),
             {"ref": package_ref, "sha256": package_digest},
+            validate_ports=not bool(operation.get("candidate_reader_scope")),
         )
         if not binding.get("spec"):
-            if is_candidate and binding.get("required"):
+            if is_candidate and (binding.get("required") or operation.get("candidate_reader_scope")):
                 raise ProductAcceptanceError(
                     "Candidate Verify requires product_acceptance_spec"
                 )
             return adapted
         if not is_candidate:
             return adapted
-        raw_report = result.get("product_acceptance_report")
-        if not isinstance(raw_report, Mapping) and result.get("product_acceptance_report_ref"):
-            raw_report = dict(hydrate_sidecar_ref(Path(state_dir), {
-                "ref": result["product_acceptance_report_ref"],
-                "sha256": str(result.get("product_acceptance_report_digest") or ""),
-            }).payload)
-            raw_report["provider_qualification_receipts"] = [
-                dict(hydrate_sidecar_ref(Path(state_dir), descriptor).payload)
-                for descriptor in _objects(raw_report.pop("provider_qualification_receipt_refs", []))
-            ]
-        if not isinstance(raw_report, Mapping):
-            if binding.get("required"):
-                raise ProductAcceptanceError(
-                    "Candidate Verify requires product_acceptance_report"
-                )
-            return adapted
         spec = _mapping(binding.get("spec"))
+        assigned_readers = "candidate_reader_assignments" in spec
+        if operation.get("candidate_reader_scope") and not assigned_readers:
+            raise ProductAcceptanceError("Candidate Reader scope lacks a matching Plan assignment")
+        if (not binding.get("required") and not assigned_readers
+                and not isinstance(result.get("product_acceptance_report"), Mapping)
+                and not result.get("product_acceptance_report_ref")):
+            return adapted
         expected = {
             "workflow_run_id": str(binding["package"].get("workflow_run_id") or ""),
             "task_map_generation": str(binding["package"].get("task_map_generation") or ""),
@@ -538,6 +543,40 @@ def bind_product_acceptance_report(
                 "Candidate Verify lacks Product Acceptance authority: "
                 + ", ".join(missing_expected)
             )
+        scoped_result_refs = []
+        if assigned_readers:
+            from zf.runtime.candidate_reader_report import bind_scoped_report, validate_integration_readers
+
+            if is_discovery:
+                if result.get("verdict") == "passed":
+                    scoped_result_refs = validate_integration_readers(
+                        Path(state_dir), events() if callable(events) else events,
+                        operation, spec, expected, package_digest,
+                    )
+            elif operation.get("output_profile_id") == "candidate-verify":
+                return bind_scoped_report(
+                    adapted, Path(state_dir), operation, result, spec, expected,
+                    operation.get("candidate_reader_scope") or {},
+                    source_event_id=source_event_id, persist=persist,
+                )
+            else:
+                raise ProductAcceptanceError("Candidate results require an assigned Candidate Reader operation")
+        raw_report = result.get("product_acceptance_report")
+        if not isinstance(raw_report, Mapping) and result.get("product_acceptance_report_ref"):
+            raw_report = dict(hydrate_sidecar_ref(Path(state_dir), {
+                "ref": result["product_acceptance_report_ref"],
+                "sha256": str(result.get("product_acceptance_report_digest") or ""),
+            }).payload)
+            raw_report["provider_qualification_receipts"] = [
+                dict(hydrate_sidecar_ref(Path(state_dir), descriptor).payload)
+                for descriptor in _objects(raw_report.pop("provider_qualification_receipt_refs", []))
+            ]
+        if not isinstance(raw_report, Mapping):
+            if binding.get("required") or (assigned_readers and is_discovery):
+                raise ProductAcceptanceError(
+                    "Candidate Verify requires product_acceptance_report"
+                )
+            return adapted
         report = dict(raw_report)
         validate_product_acceptance_report(report, spec=spec, expected=expected)
         verification_verdict = str(result.get("verdict") or "")
@@ -566,6 +605,9 @@ def bind_product_acceptance_report(
                 source_event_id=source_event_id,
             ))
         persisted_report = dict(report)
+        persisted_report.pop("candidate_reader_result_refs", None)
+        if scoped_result_refs:
+            persisted_report["candidate_reader_result_refs"] = scoped_result_refs
         persisted_report.pop("provider_qualification_receipts", None)
         persisted_report["provider_qualification_receipt_refs"] = receipt_refs
         report_descriptor = write_immutable_json_sidecar(

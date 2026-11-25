@@ -1170,7 +1170,17 @@ class WorkflowOperationService:
             emitted_body["redrive_count"] = int(existing_operation.get("redrive_count") or 0)
         if parent_task_id:
             emitted_body.setdefault("parent_task_id", parent_task_id)
+        seen_failure_cause = False
         for event in reversed(events):
+            if event_type == "workflow.operation.failed" and causation_id:
+                if event.id == causation_id:
+                    seen_failure_cause = True
+                if (seen_failure_cause and event.type == "workflow.operation.retry_started"
+                        and event.origin == "kernel" and event.payload.get("operation_id") == operation_id
+                        and event.payload.get("request_hash") == request_hash):
+                    # Only a failure caused after the retry belongs to this new
+                    # occurrence. Replaying an older cause remains idempotent.
+                    break
             if (event_type == "workflow.operation.blocked"
                     and payload.get("reason") in {"request_hash_divergence", "request_hash_compatibility_failed"}
                     and event.type == "loop.started" and event.origin == "kernel"):

@@ -18,6 +18,7 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.workflow.graph import compile_workflow_graph
+from zf.runtime.candidate_freeze_recovery_identity import superseding_reader_freeze
 from zf.runtime.candidate_rework import _feedback_lines_from_payload
 from zf.runtime.failure_kind import (
     FAILURE_KIND_INFRA,
@@ -866,6 +867,12 @@ def build_workflow_batch_resume_checkpoints(
             from zf.runtime.candidate_reader_recovery_owner import admitted_reader_recovery_owns_failure
 
             if candidate_trigger is not None and admitted_reader_recovery_owns_failure(event_list, event):
+                continue
+            from zf.runtime.candidate_registration_failure import obsolete_roster_failure
+
+            # The product was never evaluated. Run Manager owns the existing infrastructure
+            # failure until it diagnoses the fixed input or a new native freeze resumes dispatch.
+            if candidate_trigger is not None and obsolete_roster_failure(state_dir, failure_inputs, event, candidate_trigger):
                 continue
             candidate_runtime_retry = (
                 candidate_trigger is not None
@@ -1775,6 +1782,12 @@ def _batch_checkpoint_superseded_reason(
         return _repair_checkpoint_superseded_reason(events, checkpoint)
     if checkpoint.safe_resume_action != "reemit_candidate_ready":
         return ""
+    current = superseding_reader_freeze(
+        reversed(events), checkpoint.workflow_run_id or checkpoint.trace_id,
+        checkpoint.freeze_id, checkpoint.candidate_head_commit,
+    )
+    if current:
+        return f"stale batch checkpoint superseded by current candidate freeze {current.id}"
     from zf.runtime.candidate_repair_resume import candidate_repair_supersedes
 
     repair_reason = candidate_repair_supersedes(events, checkpoint)

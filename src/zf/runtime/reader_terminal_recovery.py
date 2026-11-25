@@ -55,7 +55,7 @@ def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -
             continue
         service = workflow_operation_service(runtime)
         settle = service.fail if is_synth else service.block
-        settle(
+        closed = settle(
             operation_id=op["operation_id"],
             request_hash=op["request_hash"],
             workflow_run_id=op["workflow_run_id"],
@@ -69,5 +69,6 @@ def reconcile_exhausted_reader_operations(runtime: Any, events: list[ZfEvent]) -
                 "child_id": child,
             },
         )
-        return True
+        if closed is not None:
+            return True
     return False

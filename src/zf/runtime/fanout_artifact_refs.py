@@ -126,6 +126,18 @@ def relocate_fanout_artifact_refs(
         )
         if relocated and relocated != ref:
             replacements[ref] = relocated
+    from zf.runtime.plan_report_compaction import pin_report_port_refs
+
+    # Final aggregation must use the same pinned descriptors as Critic input.
+    return pin_report_port_refs(
+        rebind_fanout_refs(rewritten, replacements),
+        state_dir=state_dir, project_root=project_root,
+    )
+
+
+def rebind_fanout_refs(payload: dict[str, Any], replacements: dict[str, str]) -> dict[str, Any]:
+    """Apply exact bound refs to declared outputs, preserving semantic bodies."""
+    rewritten = dict(payload)
     for key in _SCALAR_REF_KEYS:
         value = str(rewritten.get(key) or "")
         if value in replacements:
@@ -139,13 +151,7 @@ def relocate_fanout_artifact_refs(
             for item in raw
             if str(item)
         ]
-    from zf.runtime.plan_report_compaction import pin_report_port_refs
-
-    # Final aggregation must use the same pinned descriptors as Critic input.
-    return pin_report_port_refs(
-        _rewrite_plan_port_refs(rewritten, replacements),
-        state_dir=state_dir, project_root=project_root,
-    )
+    return _rewrite_plan_port_refs(rewritten, replacements)
 
 
 def _rewrite_plan_port_refs(

@@ -31,3 +31,9 @@ evt-166a7abae525。派发效果仍 pending，不等于产品实现或验收成�
 位于 datal diagnostics/reader-triage-20261109/。
 
 后续建议消费兼容修复见 [legacy OA 转交](legacy-diagnostic-handoff-20261109.md)。
+
+Candidate Reader 聚合失败时，`fanout.aggregate.completed` 与下游失败事件的
+`reader_outcomes` 按实际子事件列出每种结果及其证据 ID。只有同一运行、子任务、
+operation、请求摘要及控制结果都匹配内核准入时才展示对应判词。耗尽提交恢复且没有
+控制结果的 Reader 单列为 `without_result`，无法确认来源的记录列为 `unconfirmed`。
+该字段供诊断和定位；单项通过、拒绝、弃判及发布 Judge 的权限沿用原有验收合同。

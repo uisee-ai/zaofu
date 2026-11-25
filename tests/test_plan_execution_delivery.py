@@ -69,6 +69,8 @@ def test_legacy_review_replay_keeps_original_required_body(tmp_path):
 
     runtime = _runtime(tmp_path)
     review = _review()
+    review['input_binding']['effective_policy_digest'] = 'sha256:' + 'a' * 64
+    indexed = {**review, 'execution_comparisons': {'standard_with_empty_write_scope': {'task_ids': ['T']}}}
     source = write_immutable_json_sidecar(runtime.state_dir, review, root='plan-execution-reviews',
         kind='plan_execution_review', schema_version='plan-execution-review.v1', created_by='plan-preflight', source_event_id='evt')
     legacy = {'workflow_run_id': 'run', 'fanout_id': 'fanout', 'role_instance': 'critic',
@@ -81,13 +83,13 @@ def test_legacy_review_replay_keeps_original_required_body(tmp_path):
     base = {k: v for k, v in legacy.items() if k != 'input_refs'}
     first = prepare_call_operation(runtime, payload=legacy, **kwargs)
     fresh = deepcopy(base)
-    attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=review, source_event_id='evt')
+    attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=indexed, source_event_id='evt')
     second = prepare_call_operation(runtime, payload=fresh, **kwargs)
     assert second.replay_hit and first.request_hash == second.request_hash
     assert not any(s['source_id'] == 'plan-execution-verification' for s in fresh['input_refs'])
     old = next(s for s in fresh['input_refs'] if s['source_id'] == 'plan-execution-review')
     assert hydrate_sidecar_ref(runtime.state_dir, old).payload == json.loads(json.dumps(review))
-    changed = deepcopy(review)
+    changed = deepcopy(indexed)
     changed['verification']['task_requirements'][0]['commands'][0]['owner'] = 'human'
     fresh = deepcopy(base)
     attach_execution_review(state_dir=runtime.state_dir, payload=fresh, review=changed, source_event_id='evt')
@@ -108,3 +110,39 @@ def test_verification_detail_tampering_fails_closed(tmp_path):
     (tmp_path / detail['ref']).write_text('{}')
     with pytest.raises(ValueError, match='mismatch'):
         expanded_verification(tmp_path, body, payload['input_refs'])
+
+
+def test_critic_summary_identifies_missing_audit_entry_and_unbound_candidate_probes(tmp_path):
+    from zf.runtime.plan_execution_delivery import execution_review_delivery
+
+    audit = {'task_id': 'AUDIT', 'phase': 'verify_only', 'allowed_paths': []}
+    commands = [
+        {'id': key, 'owner': 'candidate_verify', 'command': f'run {key}', 'acceptance_ids': []}
+        for key in ('build', 'all-tests', 'browser')
+    ]
+    impl = {'task_id': 'IMPL', 'allowed_paths': ['src/tool'], 'validation': {'commands': commands}}
+    consumer = {'task_id': 'OTHER', 'allowed_paths': ['src/other'], 'acceptance_criteria': [
+        {'id': 'journey', 'statement': 'Real browser', 'verification_owner': 'candidate_verify',
+         'verification_command_ids': ['browser']}]}
+    def check():
+        return review_execution({'tasks': [audit, impl, consumer]}, ports={}, policy={},
+                                metadata={'task_pipeline': {'mode': 'blocking'}})
+
+    first = check()
+    payload = {}
+    attach_execution_review(state_dir=tmp_path, payload=payload, review=first, source_event_id='evt')
+    sources = {s['source_id']: s for s in payload['input_refs']}
+    summary = hydrate_sidecar_ref(tmp_path, sources['plan-execution-review']).payload
+    assert {'standard_with_empty_write_scope', 'candidate_commands_without_mandatory_binding'} <= set(summary['review_items'])
+    detail = hydrate_sidecar_ref(tmp_path, sources['plan-execution-verification']).payload
+    rows = {row['task_id']: row for row in detail['task_requirements']}
+    assert rows['AUDIT']['standard_with_empty_write_scope'] is True
+    assert 'initial_readonly_verify' not in rows['AUDIT']
+    assert rows['IMPL']['unbound_candidate_command_ids'] == ['build', 'all-tests']
+    assert 'unbound_candidate_command_ids' not in rows['OTHER']
+    audit.update(execution_mode='runtime_only', runtime_only=True, write_free=True)
+    consumer['acceptance_criteria'][0]['verification_command_ids'].extend(['build', 'all-tests'])
+    for command in commands:
+        command['acceptance_ids'] = ['journey']
+    fixed, _ = execution_review_delivery(check())
+    assert not {'standard_with_empty_write_scope', 'candidate_commands_without_mandatory_binding'} & set(fixed['review_items'])

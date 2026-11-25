@@ -313,8 +313,11 @@ layers it needs, plus its focused tests and evidence. A good task has:
 Every mandatory user journey must map to one or more bounded tasks and exact
 acceptance ids. Do not create independent "backend", "frontend", and "tests"
 tasks that cannot demonstrate a user-visible outcome on their own. When more
-than one slice feeds the same product, preserve one final assembly owner that
-owns shared wiring and the real product entrypoint.
+than one slice needs changes to shared wiring, assign that wiring and the real
+entrypoint to one assembly owner. For an already wired, frozen entrypoint, cite
+the baseline, identify the existing task responsible for integrated evidence,
+and bind the final journeys to Candidate Verify. Apply the declared assembly
+policy and the distinct writer-bundle checks in the task-map contract.
 
 Each `exclusive_files` path has one owner across the full map. A later wave or
 dependency does not permit duplicate ownership; assign shared entrypoint and
@@ -441,7 +444,36 @@ when a clean rescan lets the loop reach it instead of `run.goal.blocked`.
 Planner/Critic 对账，不能依赖运行时从散文猜测；目前导航只提取这些字段中的字符串引用。
 章节/关系目录只定位固定版本，导航不完整时继续核查获准正文，不将无命中视为无需求。
 
+## Planner 在预检受阻时保留进度
+
+当重复预检仍有未解错误，或本轮将中断，且已有值得接续的判断或草稿时，查看当前 attempt 的
+`artifact recover`。若返回 `work_record_publish`，按其中的绑定命令用 `--stdin` 发布一次非终态工作记录。
+`completed_actions` 写明已核对的 finding、条款和当前输入摘要；`pending` 保留最新预检的实际错误码、
+字段和未决事项；`next_step` 给出恢复后第一个获准动作。可在 `report_draft` 留下有用草稿，
+大工件记录已持久化的准确 ref 和 SHA-256。`evidence_files` 使用空列表，保留正式 result scratch。
+重送同一记录复用相同 request-id 和正文，只有产生新进展才另发。
+
+恢复时从同一 attempt 的 `artifact recover` 取得 `work_record_read`，核对记录与当前输入和草稿绑定，
+按需补读遗忘的条款，再继续预检或正式提交。工作记录仅保存未经独立验证的进度，原有必读、
+验证和授权仍有效。已经能够提交结果时，使用该 operation 的正式结果入口。
+
 ## 无法完成可执行计划时的草案审查
+
+当冻结请求为 `candidate_diagnosis_only`，任务图用于追溯已获批的工作。即使图中保留全部
+Task，本次也只授权诊断。逐项记录原 finding、独立判断、当前冻结的证据，以及仍缺的核验。
+完整任务图报 `candidate_diagnosis_no_writer_authority` 时，增删任务均无法改变派发权限。
+若下一步确实需要 Owner 决定受保护的合同范围、签发新的工作或独立重验授权，将这一具体选择
+与已经查清的结论分开，使用下述非执行草案交给 Critic。精确说明决定关乎哪项权限或范围，
+以及可供核对的证据。
+
+原合同和已签入本轮的 Owner 答复足以完成诊断时，提交 `candidate_kind=diagnosis_review`。
+沿用 `execution_status=completed`、`result_semantics=artifact_production`、`recommendation=abstain`，
+写下独立 `summary`、`owner_decision_items=[]`、实际 Markdown 诊断和来源索引的 ref 与 SHA-256。
+从本次 `plan-rework-context` 原样保留 `operator_feedback`。逐项检查 `rework_summary.candidate_obligations`，
+为每个原始 `finding_id` 提交一条 `finding_results`，记录 `outcome`（`supported`、`refuted` 或
+`unknown`）、有依据的 `explanation` 和 `evidence_refs=[该项 control_result_ref.ref]`。证据仍不充分时说明哪些
+事实未知。清除结果模板中的任务图、backlog 与执行端口。使用当前 operation 的 `zf result validate`
+自检并以 `zf result submit` 交给独立 Critic。产品验收、重验与新增工作各自使用原有授权入口。
 
 先遵循 Task Map Skill 的来源 AC 归组、原子场景保留和逐片验收责任方法。
 业务约束冲突不等于 Provider/传输故障。若已完成分析，但真实互斥要求使完整 Task Map 无法成立，

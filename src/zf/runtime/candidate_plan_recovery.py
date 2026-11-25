@@ -32,15 +32,16 @@ def candidate_recovery_superseded(
     return not seen
 
 
-def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -> dict:
-    """Return only implicated child Tasks; an unmapped AC requires planner scoping."""
+def current_frozen_reader_inputs(
+    state_dir: Path, events: list[ZfEvent], result: dict,
+) -> tuple[ZfEvent, ZfEvent, dict]:
+    """Bind a Reader result to the native freeze and both original snapshots."""
     run_id = result.get("workflow_run_id")
     generation = result.get("task_map_generation")
     required = (
         "target_commit",
         "task_id",
         "contract_revision",
-        "plan_artifact_package_digest",
         "contract_snapshot_digest",
         "target_snapshot_digest",
     )
@@ -66,8 +67,6 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
         or current.payload.get("plan_artifact_package_digest") != result.get("plan_artifact_package_digest")
     ):
         raise ValueError("candidate recovery generation or target mismatch")
-    if not current.payload.get("candidate_ref") or not current.payload.get("pdd_id"):
-        raise ValueError("candidate recovery PDD or reference missing")
     expected = {
         "workflow_run_id": run_id,
         "task_map_generation": generation,
@@ -81,7 +80,7 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
         descriptor_from_payload(result),
         expected={
             **expected,
-            "plan_artifact_package_digest": result["plan_artifact_package_digest"],
+            "plan_artifact_package_digest": result.get("plan_artifact_package_digest"),
         },
     )
     hydrate_target_snapshot(
@@ -93,6 +92,16 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
             "contract_snapshot_digest": result["contract_snapshot_digest"],
         },
     )
+    return current, trigger, contract
+
+
+def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -> dict:
+    """Return only implicated child Tasks; an unmapped AC requires planner scoping."""
+    if not result.get("plan_artifact_package_digest"):
+        raise ValueError("candidate recovery identity incomplete")
+    current, trigger, contract = current_frozen_reader_inputs(state_dir, events, result)
+    if not current.payload.get("candidate_ref") or not current.payload.get("pdd_id"):
+        raise ValueError("candidate recovery PDD or reference missing")
     sources = {
         row["acceptance_id"]: row.get("source_task_id")
         for row in contract["acceptance_criteria"]
@@ -104,7 +113,7 @@ def candidate_plan_scope(state_dir: Path, events: list[ZfEvent], result: dict) -
         "candidate_event_id": current.id,
         "trigger_event_id": trigger.id,
         "source_commit": result["target_commit"],
-        "task_map_generation": generation,
+        "task_map_generation": result["task_map_generation"],
         "plan_artifact_package_digest": result["plan_artifact_package_digest"],
         "candidate_ref": current.payload["candidate_ref"],
         "pdd_id": current.payload["pdd_id"],

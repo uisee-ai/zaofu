@@ -32,6 +32,13 @@ Critic 先按本次批准的 `plan_review` 与[按需审查](references/review-s
 [执行路线与任务切片](references/execution-route.md)核对有效配置和反馈时点。
 Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本计划的匹配关系；
 该报告没有语义 verdict，不能把机械 preflight passed 当成实施就绪。
+完整复审时查看当前摘要的 `execution_comparisons`。有空写入范围的标准入口时，按列出的
+task_id 对照需求声明与实际派发入口。对于候选验证，分别列出冻结需求要求的独立命令、
+当前 Task Map 登记的命令及宿主许可范围。复合调用中的子命令与独立执行产生不同回执。
+上一轮修好了其中一个缺口，本轮仍要对照当前版本处理其余差异。
+本轮批准时，将每项核对结论写入 `report.execution_assessments`，给出 comparison、
+conclusion、摘要中列出的 task_ids（如有），以及引用冻结需求和当前候选的 basis。
+仅获准但本轮无需执行的命令可解释排除。没有缺陷时 findings 保持空。
 对照 `rolling_smoke_policy` 与每片 `rolling_smoke_command_ids` 检查独立集成工作区
 的构建/生成前置；在 Writer 中通过或正文声明“先构建”不证明集成器实际会执行它。
 将其中 `input_binding` 的 Task Map／有效策略摘要、revision／generation 与本次产物
@@ -110,6 +117,18 @@ owner、tier 和实际阶段一致。只有 `node --test` 的 AC 绑定不能证
   prerequisite 标签、空 journey_ids 豁免整个章节。
 - `task_verify` 的局部结果只能依赖本片及已完成前置行为。跨后续切片的结果可以
   保留为 mandatory `candidate_verify`，必须有明确后续生产者和验证时点。
+- 按来源逐项核对预期只读任务与执行预览中的 `initial_readonly_verify`。若摘要标出
+  `standard_with_empty_write_scope`，按需查看详情中的任务 ID，核对实际入口、基线与本地命令。
+  `phase` 是作者标注，调度读取 `execution_mode` 与只读合同。对照已完成任务的保留范围再提出修改。
+- 宿主验收使用已登记的完整命令。Planner 从编译策略的 `host_verification_commands` 复制所需命令，保留组合命令的前置构建。Critic 对照 `candidate_commands_outside_host_registry` 的任务和命令 ID，核实另有执行渠道或提出修订。按原始需求确认哪些检查必须执行。
+- 多个 Candidate Reader 共用一次宿主观察时，Planner 用 AC 的 `verification_command_ids` 关联 `validation.commands`，在命令的 `producer_paths` 列出验收要读的文件。用 `candidate_reader_assignments` 中的条款或旅程定位依赖它的 Reader。在 Plan 写明由谁在候选 SHA 冻结后采集一次、哪些 Reader 需等回执和所需文件归档、哪些可立即并行。各 Reader 仍独立判断自己的条款。
+- Critic 核实提前执行这条命令的独立授权及实际调度入口。若该 Run 仅支持 Reader 弃判后采集，在 Plan 标明实际触发时点及尚缺的前置能力。换 SHA 时重新核对证据适用性；缺少当前候选回执或必需媒体的条款保留为待验证。
+- 若 Candidate 的耗时集中在可隔离的测试套件，冻结前优先选择已登记、覆盖相同用例和断言的并行命令。按宿主可用资源及同时执行的套件数选 worker 数。若需新增命令，先走现有授权路径，当前计划沿用已授权入口。
+- 为可独立验收的候选使用 `product_acceptance_spec.candidate_reader_assignments`。逐路填已配置的 `role_instance`、`acceptance`（原 `task_id` 与 `acceptance_id` 对）、`journey_ids`。给共享接口指定跨任务旅程。高风险条款可同时指派两路独立探测；审批前核对全部必需条款、旅程和命令的归属。需要缩小原始材料时以可解析的 `plan_reads` 指向已有授权的原文。完整合同仍适合单路或整体验收。
+- 对照各任务的 `initial_readonly_verify` 选择，确认初审时测试所需的实现已存在。依赖完整候选的验收绑定到冻结后的 Candidate 阶段。按编译策略检查每任务 Verify 的就绪条件，再单独检查 Candidate 阶段的触发事件。
+- 若摘要出现 `candidate_commands_without_mandatory_binding`，查看对应任务的
+  `unbound_candidate_command_ids`，从原始需求确认每一项是强制门还是可选探测。
+  对所有强制门核对 Candidate AC 与命令的双向引用、执行者及同版矩阵，逐项指出缺口。
 - 条件扩展保留来源、启用决定和未启用范围；只在进入受影响阶段前关闭阻塞决定。
   不为开始工程盘点提前猜测所有产品决定，不把未启用条件写成产品已通过。
 

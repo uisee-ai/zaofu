@@ -8,6 +8,7 @@ import subprocess
 import logging
 
 from zf.core.state.locks import locked_path
+from zf.runtime.implementation_commit import publication_retry_reason
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -75,9 +76,8 @@ def reconcile_task_publication(service) -> int:
                         raise ValueError('published candidate changed; do not automatically continue')
                     retry = request_impl_retry(state_dir=service.state_dir,
                         event_log=service.writer.event_log, event_writer=service.writer, operation_id=op_id,
-                        reason='Preauthorized candidate publication completed: source_commit=' + receipt['source_commit']
-                            + '; receipt=' + completed[0].payload['receipt_ref']['ref']
-                            + '. Reassess the exact commit and required self-checks; publication is not an Impl verdict.',
+                        reason=publication_retry_reason(receipt['source_commit'], completed[0].payload['receipt_ref']['ref']),
+                        publication_event_id=completed[0].id,
                         config=service.config, apply=True)
                     if retry['status'] == 'requested':
                         applied += 1

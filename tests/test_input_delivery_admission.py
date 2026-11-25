@@ -19,8 +19,8 @@ from zf.runtime.result_submit import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _operation(tmp_path, *, observed=True, pipeline=False, submit_blocking=True):
-    runtime = _runtime(tmp_path)
+def _operation(tmp_path, *, observed=True, pipeline=False, submit_blocking=True, runtime=None):
+    runtime = runtime or _runtime(tmp_path)
     if observed:
         runtime.config.workflow.flow_metadata["result_protocol"]["input_delivery_mode"] = "observed"
     if not submit_blocking:

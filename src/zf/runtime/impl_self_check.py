@@ -310,6 +310,7 @@ def completion_payload_template(
     task_id: str,
     run_id: str,
     child_id: str,
+    commit: str = "<HEAD commit>",
 ) -> dict[str, Any]:
     """Return the worker-facing exact-target self-check completion template."""
 
@@ -347,8 +348,8 @@ def completion_payload_template(
             "attempt_id": attempt_id,
             "contract_revision": str(contract_snapshot.get("contract_revision") or ""),
             "task_map_generation": str(contract_snapshot.get("task_map_generation") or ""),
-            "source_commit": "<HEAD commit>",
-            "target_commit": "<HEAD commit>",
+            "source_commit": commit,
+            "target_commit": commit,
             "contract_snapshot_ref": str(task_item.get("contract_snapshot_ref") or ""),
             "contract_snapshot_digest": str(
                 task_item.get("contract_snapshot_digest") or ""
@@ -363,7 +364,7 @@ def completion_payload_template(
                     "receipt_id": f"receipt-{item.get('command_id')}",
                     "command_id": str(item.get("command_id") or ""),
                     "command_digest": str(item.get("command_digest") or ""),
-                    "target_commit": "<HEAD commit>",
+                    "target_commit": commit,
                     "status": "passed",
                     "exit_code": 0,
                     "evidence_refs": ["<durable command output or event ref>"],

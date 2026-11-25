@@ -141,6 +141,18 @@ Worker、Supervisor、操作员和计划检查点均可提供事实或请求，�
 明确责任方，混合问题移交时携带原案卷、原因、证据与待回答问题；多个专家可协作，
 但不让 RM agent 与 OA 无依据地重复分诊或互相等待。复用故障矩阵和动作注册，不另造 router。
 
+#### 冻结候选的混合失败
+
+阻塞式 OA 收到同一冻结候选的聚合失败后，在 `return_to_plan` 的指令里给出逐 finding 分类、责任人、下一动作及理由。Kernel 核对完整覆盖、来源 Reader、Run 和候选版本，将义务绑定在 `orchestrator.replan_requested`。只有明确判为可修复产品缺陷的任务进入 Writer 范围。全为取证与合同问题时，`candidate_diagnosis_only` 将原任务图留给 Planner 查阅，空的 Writer 选择在后续派发入口仍为空。新写入工作需要正常的计划审查和授权。
+
+PRD v5 的 `workflow.orchestration.flow_policies.prd.autonomous_actions` 可显式配置 `reassess_reader_evidence`。当原 Candidate Reader 请求已冻结此权限，且当前 Flow 仍允许时，Run Manager 为各 Reader 请求独立的只读补证。补证结果绑定具体 finding、冻结目标及证据引用，保留原 fanout 的判词。所需证据位于另一个角色的授权范围或需要新增宿主操作时，按原授权路径处理。合同和受保护用例的问题交 Planner 判断，需要 Owner 决定时保留具体请求。
+
+Run Manager 用原决定与 Reader operation 跟踪请求、派发和回执。控制面重启后依据账本恢复；相同请求只消费一次。缺少补证权限、执行失败或证据仍无法回答时，回传原决定、未决 finding、已经尝试的动作及证据，由 OA 判断后续处置。补证回执供原工作流消费，最终交付仍需独立 Candidate Verify、Judge 与 Goal 终态。
+
+正式 Candidate Verify 在原生冻结发生时确定合同里的未结义务。后继 Candidate 沿同一 Run、工作流锚点和分支的基线提交追溯前序冻结，只接收已准入 OA 决定中与该冻结绑定的 finding。代码提交不变而 Plan 更换时，后继冻结需要用自己的已准入 generation 关联原规划请求、失败事件与决定摘要。相同 finding 只进合同一次。历史冻结和补证报告各自保留原摘要，Reader 对执行事实的判断不签发产品交付许可。[冻结合同回归](../../tests/test_candidate_obligation_freeze.py)
+
+[OA 分诊回归](../../tests/test_candidate_replan_dispositions.py) · [Reader 补证](../../src/zf/runtime/candidate_reader_reassessment.py) · [Run Manager 交接](../../src/zf/runtime/candidate_obligation_followup.py)
+
 ### 3.2 WRC 是任务恢复的执行主体
 
 WRC 不是 OA，也不是只管首次派发。当前实际链路为
@@ -1036,3 +1048,17 @@ authority 仍经过既有身份与摘要检查，不因恢复而扩大授权。
 该边界由 [stage recovery](../../src/zf/runtime/stage_failure_replan.py) 实施，
 [因果输入及 Kernel caller 回归](../../tests/test_plan_admission_replan_lineage.py)
 覆盖历史污染、缺源／跨 Run、当前显式授权和重放；真实交付恢复仍需独立验证。
+
+
+### Task ref 更正如何结清原交接
+
+对于已由操作员恢复的任务，原 Impl 可能已提交通过的结果，但发布 task ref 时被内核拒绝。
+重放保留原结果、错误提交号和拒绝事件。原派单须明确引用同一重试请求，更正派单须引用这次拒绝及原结果。
+原 Impl、更正 Impl、独立 Task Verify 须各有正式准入，并绑定同一任务合同与修复反馈。
+独立 Verify 必须验证内核实际发布的更正提交。待包含该任务及提交的冻结候选获得正式验证成功后，
+反馈与交接才一同结清。投影保留更正及验证事件 ID，可从完成门禁反查完整链路。
+
+RM 收到 `task.attempt.failed` 后，可通过同一 WRC 的正式准入、结算和 Candidate Reader
+的终态确认一次技术弃权。即使任务尝试先于 fanout 子项记账，诊断卡也能在子项入账后给出
+精确的 Reader 重试提案。常驻 RM 评估现有证据能否支持再次独立判读，并通过既有
+`child-rebuild` 受控动作派发。其余 Reader 保留结果，原产品否决与未解决的 Owner 门禁继续有效。

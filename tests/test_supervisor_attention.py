@@ -51,6 +51,19 @@ def test_abnormal_event_registry_routes_runtime_events_to_attention() -> None:
     assert by_source["owner_delivery"]["problem_envelope"]["problem_class"] == "external_gate"
 
 
+def test_resident_restore_failure_has_an_independent_diagnosis_owner_until_scoped_reply():
+    failed = ZfEvent(type="run.manager.resident.restart_failed", actor="run-manager-watchdog", origin="kernel",
+                     causation_id="restart-request", payload={"instance_id": "resident", "reason": "send failed"})
+    events = [failed, ZfEvent(type="run.manager.agent.observation", actor="another-role", origin="worker")]
+    args = dict(events=[], history_events=events, automation={}, failure_signals=[], plan_integrity={})
+    item, = build_attention_items(**args)
+    assert item["suggested_route"] == "autoresearch_trigger"
+    assert item["source_event_ids"] == ["restart-request", failed.id]
+    assert item["suggested_action"]["instance_id"] == "resident"
+    events.append(ZfEvent(type="run.manager.agent.observation", actor="resident", origin="worker"))
+    assert not build_attention_items(**args)
+
+
 def test_single_expected_negative_event_does_not_create_attention() -> None:
     items = build_attention_items(
         events=[

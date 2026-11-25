@@ -38,7 +38,7 @@ def delivered_rows(state_dir: Path, policy: dict, rows: list[dict], *,
     result = []
     for row in rows:
         try:
-            if (row.get("production_status") != "stdout_flushed"
+            if (row.get("production_status") not in {"stdout_flushed", "mounted_file_read"}
                     or row.get("provider_delivery_status") != "observed_in_transcript"
                     or row.get("consumer_provider") != "codex"
                     or row.get("consumer_actor") != binding.get("consumer_actor")
@@ -59,6 +59,10 @@ def delivered_rows(state_dir: Path, policy: dict, rows: list[dict], *,
                     path=_manifest_ref_path(state_dir, source["ref"]))
                 selected[key] = encode_selected(_select_json_path(decode_artifact_text(raw, path), path))
             text = selected[key]
+            if row["production_status"] == "mounted_file_read":
+                from zf.runtime.artifact_native_delivery import verified_native
+                result.extend(verified_native(state_dir, row, text, ephemeral=allow_ephemeral_observations))
+                continue
             output = load(row["output_ref"])
             body = output["body"]
             if (output.get("schema_version") != "artifact-output.v1"

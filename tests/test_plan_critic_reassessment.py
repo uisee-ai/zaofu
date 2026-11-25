@@ -100,6 +100,11 @@ def test_controlled_reassessment_dispatches_only_critic_and_survives_restart(tmp
     assert dispatch.payload['operation_id'] != 'old-operation'
     manifest = hydrate_sidecar_ref(runtime.state_dir, dispatch.payload['attempt_source_manifest']).payload
     assert {'plan-review-counter-evidence', 'plan-review-prior-verdict'} <= {s['source_id'] for s in manifest['sources']}
+    review_reads = {(r['source_id'], r['json_path']) for r in dispatch.payload['required_reads']
+                    if r['source_id'].startswith('plan-review-')}
+    assert review_reads == {('plan-review-counter-evidence', '$.reason'),
+                            ('plan-review-counter-evidence', '$.counter_evidence'),
+                            ('plan-review-prior-verdict', '$')}
     assert (runtime.state_dir / source['ref']).read_bytes() == before
     assert not any(e.type in {'plan.requested', 'task_map.ready', 'fanout.child.dispatched'} for e in events)
     assert _apply(service, payload)['replayed']
@@ -110,11 +115,23 @@ def test_controlled_reassessment_dispatches_only_critic_and_survives_restart(tmp
     from zf.runtime.plan_critic_reassessment import reassessment_result_current
     current = restarted._fanout_manifest('fanout')
     assert not reassessment_result_current(restarted, current, next(e for e in events if e.id == 'old-synth'))
-    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact, seal_read_ledger
     from zf.runtime.result_submit import SemanticResultSubmitService, provision_role_submit_credential
-    for row in manifest['sources']:
-        read_attempt_artifact(runtime.state_dir, manifest=manifest, source_id=row['source_id'],
-                              artifact_id=row['artifact_id'], json_path='$')
+    from zf.runtime.artifact_read_ledger_validation import validate_required_reads
+    requirements = dispatch.payload['required_reads']
+    for group in (False, True):
+        for row in requirements:
+            if row['source_id'].startswith('plan-review-') == group:
+                read_attempt_artifact(runtime.state_dir, manifest=manifest, source_id=row['source_id'],
+                                      artifact_id=row['artifact_id'], json_path=row['json_path'])
+        ledger = seal_read_ledger(runtime.state_dir, manifest['attempt_id'])
+        gaps = validate_required_reads(runtime.state_dir, policy={
+            'attempt_id': manifest['attempt_id'], 'required_reads': requirements}, ledger_descriptor=ledger)
+        if group:
+            assert not gaps
+        else:
+            assert {issue['message'].split('/', 1)[0] for issue in gaps} == {
+                'plan-review-counter-evidence', 'plan-review-prior-verdict'}
     row = next(s for s in manifest['sources'] if s['source_id'] == 'child-result-planner')
     citation = {k: row[k] for k in ('source_id', 'artifact_id', 'sha256')}
     citation.update(json_path='$', quote='confirmed')

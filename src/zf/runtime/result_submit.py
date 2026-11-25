@@ -350,6 +350,15 @@ class SemanticResultSubmitService:
         if delivery_errors:
             return {"schema_version": "semantic-result-preflight.v1", "status": "failed",
                     "profile_id": profile_id, "profile_revision": _revision, "errors": delivery_errors}
+        if request.get("reassessment_scope_ref"):
+            from zf.runtime.candidate_reader_reassessment import validate_submission
+            issues = []
+            try:
+                validate_submission(self.state_dir, request, semantic, self.event_log.read_all())
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                issues.append({"field": "finding_results", "code": "reader_evidence_scope_invalid", "message": str(exc)})
+            return {"schema_version": "semantic-result-preflight.v1", "status": "failed" if issues else "passed",
+                    "profile_id": profile_id, "profile_revision": _revision, "errors": issues}
         validation = validate_plan_candidate_semantic(
             state_dir=self.state_dir,
             request=request,
@@ -372,7 +381,7 @@ class SemanticResultSubmitService:
                 profile_id=profile_id,
                 revision=_revision,
             )
-        if profile_id in {"task-verify", "candidate-verify"} or (
+        if profile_id in {"implementation", "task-verify", "candidate-verify"} or (
             profile_id == "workflow-read"
             and request.get("canonical_success_event") == "flow.discovery.child.completed"
         ):
@@ -429,6 +438,12 @@ class SemanticResultSubmitService:
             raise ResultSubmitError("input_delivery_not_admitted", "Required input delivery is incomplete",
                 details={"status": "repair_required", "attempt_domain": "protocol_repair",
                          "semantic_rework_cost": 0, "issues": delivery_errors})
+        if request.get("reassessment_scope_ref"):
+            from zf.runtime.candidate_reader_reassessment import validate_submission
+            try:
+                validate_submission(self.state_dir, request, semantic, self.event_log.read_all())
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                raise ResultSubmitError("reader_evidence_scope_invalid", str(exc)) from exc
         profile = self.registry.profile(profile_id, revision)
         if profile_id == "orchestrator-semantic-decision":
             from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
@@ -552,6 +567,8 @@ class SemanticResultSubmitService:
                 "output_profile_id": profile_id,
                 "output_profile_revision": revision,
                 "canonical_success_event": str(request.get("canonical_success_event") or ""),
+                "fanout_id": request.get("fanout_id"),
+                "candidate_reader_scope": request.get("candidate_reader_scope"),
                 "handoff_authority_contract": dict(request.get("handoff_authority_contract") or {}),
             },
             input_policy=policy,

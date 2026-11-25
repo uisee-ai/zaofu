@@ -30,6 +30,8 @@ from zf.runtime.verification_commands import (
     task_map_verification_commands as task_verification_commands,
 )
 from zf.runtime.verification_path_refs import command_path_refs as _command_path_refs
+from zf.runtime.frozen_audit_scope import FROZEN_CANDIDATE_IDS, bind_frozen_audit_scope
+from zf.runtime.writer_task_materialization import writer_task_evidence_contract
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,18 @@ def validate_task_map_payload(
         owner_role = str(raw.get("owner_role") or "").strip()
         task_dependencies[task_id] = _string_list(raw.get("blocked_by"))
         errors.extend(successor_base_errors(raw, task_id=task_id))
+        try:
+            evidence = writer_task_evidence_contract(raw)
+            if FROZEN_CANDIDATE_IDS in evidence:
+                from zf.runtime.task_contract_snapshot import normalize_acceptance_criteria
+                from zf.runtime.verification_commands import task_map_verification_commands
+
+                criteria = normalize_acceptance_criteria(raw.get("acceptance_criteria"), task_id=task_id,
+                                                        contract_revision="")
+                bind_frozen_audit_scope(evidence, criteria, task_map_verification_commands(raw),
+                                        task_id=task_id, write_paths=raw.get("allowed_paths"))
+        except ValueError as exc:
+            errors.append(f"{task_id}: {exc}")
         if str(raw.get("root_owner_class") or "").strip().lower() == "assembly":
             if owner_role:
                 assembly_owner_roles[task_id] = owner_role

@@ -143,6 +143,17 @@ def _reconcile_cancelled_reader_dispatches(runtime: Any, events: list[ZfEvent]) 
         if not manifest or manifest.get("topology") != "fanout_reader":
             continue
         cancellation = cancellations[fanout_id]
+        restored = manifest.get("cancelled_critic_retry_event_id")
+        if restored:
+            marker = next((e for e in events if e.id == restored), None)
+            if marker and marker.payload.get("fanout_cancelled_event_id") == cancellation.id:
+                # Retry outstanding stops against the operations this cancellation actually owned.
+                # A later authorized Critic uses the same fanout and role, with a distinct attempt.
+                from zf.runtime.fanout import FanoutManifestProjector
+
+                manifest = FanoutManifestProjector(runtime.state_dir).rebuild(
+                    fanout_id, events[:events.index(cancellation) + 1],
+                )
         runtime._cancel_superseded_reader_fanout_operations(
             manifest=manifest, cancellation_event=cancellation,
             reason=str(cancellation.payload.get("reason") or "fanout_cancelled"),

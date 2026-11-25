@@ -36,7 +36,7 @@ authoritative when it differs from an older Skill example.
 
 ## Rules
 
-- 大体积受控必读使用本次 briefing 的 `zf artifact read --attempt <本次attempt> --required`，
+- 本次 briefing 指定只读挂载时，先打开 INPUTS.md，按其 selector 用单个 `/usr/bin/cat 绝对路径` 读取必读正文，恢复时按 RESUME.md 补齐缺口。CLI 路径上的大体积受控必读使用 `zf artifact read --attempt <本次attempt> --required`，
   按 `required-artifact-page.v2` 逐页读取全部 `items[].content`；使用 `next_cursor`
   继续，直到为空。工具上限较小时加 `--page-bytes 2048`，每页单独返回并完整阅读，
   不并发堆积页面或把全文拼回超大输出。截断必须补读原页；CLI 回执与 read-ledger
@@ -60,8 +60,9 @@ authoritative when it differs from an older Skill example.
   `verification_tier`、`verification_command_ids`。
 - **命令保持独立身份**:新 task map 把命令写入 `validation.commands[]`,
   每项至少包含 `id`、`command`、`acceptance_ids`、`owner`、`tier`,并按
-  实际性质声明 `deterministic`、`reusable`、`timeout_seconds`。不要把多条
-  命令拼成 `cmd1 && cmd2`;`verification` 单字符串只用于旧合同兼容。命令
+  实际性质声明 `deterministic`、`reusable`、`timeout_seconds`。独立授权的命令分别登记。
+  若宿主已把构建与特定测试预授权为一条复合命令，整条原文对应一个 command id；
+  保留其中的 `&&`、执行者和验收阶段。`verification` 单字符串只用于旧合同兼容。命令
   identity 包含完整字符串:必须按最终序列化后的原文可执行,不能用补转义后的
   “等价命令”代替。含多层引号/反斜杠的断言应落到本 task 拥有的测试或脚本。
 - 流程审批的 `manual_evidence` 命令按绑定事件 ID 或具体类型收集原始事件，

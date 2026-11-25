@@ -10,8 +10,9 @@ from zf.runtime.synth_restart_checkpoint import reopen_synth_restart_checkpoint
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def failed_synth(tmp_path):
-    state, log, runtime, role, dispatch, before = _running_recovered_synth(tmp_path)
+def failed_synth(tmp_path, *, semantic_plan_submit=False):
+    state, log, runtime, role, dispatch, before = _running_recovered_synth(
+        tmp_path, semantic_plan_submit=semantic_plan_submit)
     runtime.event_writer.append(ZfEvent(type="run.admission.admitted", actor="zf-cli",
                                        payload={"workflow_run_id": "trace-product"}))
     log.append(ZfEvent(type="provider.turn.closed", actor=role.instance_id,
@@ -21,8 +22,11 @@ def failed_synth(tmp_path):
     return state, log, runtime, role, dispatch, before, failure
 
 
-def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monkeypatch):
+@pytest.mark.parametrize("closed", [False, True])
+def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monkeypatch, closed):
     state, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path)
+    if closed:
+        _close_failed_operation(runtime, dispatch, failure)
     alive = [True]
     monkeypatch.setattr(runtime.transport, "terminate", lambda _: alive.__setitem__(0, False), raising=False)
     monkeypatch.setattr(runtime.transport, "is_alive", lambda _: alive[0])
@@ -35,6 +39,10 @@ def test_cli_resumes_exact_failed_synth_without_replacing_request(tmp_path, monk
     after = reduce_workflow_operations(log.read_all())[dispatch.payload["operation_id"]]
     for key in ("request_hash", "request_ref", "active_attempt_id", "budget_snapshot"):
         assert after[key] == before[key]
+    if closed:
+        retries = [e for e in log.read_all() if e.type == "workflow.operation.retry_started"]
+        assert len(retries) == 1 and retries[0].causation_id == failure.id
+        assert after["retry_count"] == 1
     manifest = runtime._fanout_manifest(dispatch.payload["fanout_id"])
     assert manifest["synth"]["status"] == "dispatched"
     assert manifest["aggregate"]["status"] == "started"
@@ -76,8 +84,11 @@ def test_failed_synth_resume_rejects_unsafe_checkpoint(tmp_path, fault):
     assert len(log.read_all()) == original
 
 
-def test_partial_reopen_replays_without_duplicate_aggregate(tmp_path, monkeypatch):
-    _state, log, runtime, role, _dispatch, _before, failure = failed_synth(tmp_path)
+@pytest.mark.parametrize("already_closed", [True, False])
+def test_partial_reopen_replays_without_duplicate_aggregate(tmp_path, monkeypatch, already_closed):
+    _state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    if already_closed:
+        _close_failed_operation(runtime, dispatch, failure)
     append = runtime.event_writer.append
     def interrupted(event):
         if event.type == "fanout.synth.dispatched": raise OSError("operator process stopped")
@@ -151,7 +162,13 @@ def test_requested_synth_reopen_rejects_unbound_redrive(tmp_path, fault):
 
 @pytest.mark.parametrize('backend', ['codex', 'claude-code'])
 def test_operator_synth_resume_briefing_uses_safe_provider_read_guidance(tmp_path, monkeypatch, backend):
-    state, log, runtime, role, dispatch, _before, failure = failed_synth(tmp_path)
+    state, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path, semantic_plan_submit=True)
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    request = hydrate_sidecar_ref(state, before["request_ref"]).payload["request"]
+    scratch = state / request["result_scratch_ref"]
+    draft = '{"recommendation":"needs_rework","summary":"Independent review in progress"}'
+    scratch.write_text(draft)
     role.backend = backend
     alive = [True]
     monkeypatch.setattr(runtime.transport, 'terminate', lambda _: alive.__setitem__(0, False), raising=False)
@@ -164,6 +181,12 @@ def test_operator_synth_resume_briefing_uses_safe_provider_read_guidance(tmp_pat
     assert _restart_role(role.name, runtime.config, runtime.transport, log, state, tmp_path,
                          False, resume_failed_synth=failure.id) == 0
     prompt = runtime.transport.sent[-1][2]
+    assert f"attempt `{before['active_attempt_id']}`" in prompt and str(scratch) in prompt
+    binding = f"--operation {before['operation_id']} --state-dir {state.resolve()} --scratch"
+    assert f"run `/current/zf result validate {binding}` in this turn" in prompt
+    assert f"run `/current/zf result submit {binding}`" in prompt
+    assert "preserve your independent verdict" in prompt
+    assert scratch.read_text() == draft
     assert 'cannot still use' in prompt
     if backend == 'codex':
         assert f'/current/zf artifact read --attempt {dispatch.payload["attempt_id"]} --required --resume' in prompt
@@ -177,3 +200,81 @@ def test_unknown_attempt_guidance_never_invents_resume_cursor():
     prompt = reader_continuation_guidance(attempt_id='', backend='codex', cli='/current/zf')
     assert 'cannot still use' in prompt
     assert '--required --resume' not in prompt
+
+
+def _close_failed_operation(runtime, dispatch, failure, **override):
+    p = dispatch.payload
+    event = ZfEvent(type="workflow.operation.failed", actor="zf-cli", origin="kernel",
+        causation_id=failure.id, correlation_id=dispatch.correlation_id, payload={
+            "workflow_run_id": p["workflow_run_id"], "operation_id": p["operation_id"],
+            "request_hash": p["request_hash"], "fanout_id": p["fanout_id"], "child_id": "synth",
+            "reason": failure.payload["reason"], "failure_class": failure.payload["failure_class"],
+        })
+    for key, value in override.items():
+        setattr(event, key, value)
+    runtime.event_writer.append(event)
+
+
+@pytest.mark.parametrize("override", [{"origin": "external"}, {"causation_id": "other-failure"}])
+def test_transport_resume_rejects_an_unrelated_operation_closeout(tmp_path, override):
+    _state, log, runtime, role, dispatch, _, failure = failed_synth(tmp_path)
+    _close_failed_operation(runtime, dispatch, failure, **override)
+    before = len(log.read_all())
+    with pytest.raises(ValueError, match="blocked, terminal"):
+        reopen_synth_restart_checkpoint(runtime, role, failure.id)
+    assert len(log.read_all()) == before
+
+
+@pytest.mark.parametrize("first_closed", [True, False])
+def test_exhausted_synth_checkpoint_accounts_second_failure_once(tmp_path, first_closed):
+    from zf.runtime.call_result_runtime import workflow_operation_service
+    from zf.runtime.reader_terminal_recovery import reconcile_exhausted_reader_operations
+
+    _, log, runtime, role, dispatch, before, first = failed_synth(tmp_path)
+    op_id = dispatch.payload["operation_id"]
+    if first_closed:
+        assert reconcile_exhausted_reader_operations(runtime, log.read_all())
+        assert not reconcile_exhausted_reader_operations(runtime, log.read_all())
+    reopen_synth_restart_checkpoint(runtime, role, first.id)
+    if first_closed:
+        # A delayed replay of the old failure must not terminate the live retry.
+        assert workflow_operation_service(runtime).fail(
+            operation_id=op_id, request_hash=before["request_hash"],
+            workflow_run_id=before["workflow_run_id"], reason=first.payload["reason"],
+            causation_id=first.id) is None
+    log.append(ZfEvent(type="provider.turn.closed", actor=role.instance_id,
+                       payload={"backend": "codex", "turn_id": "second-stop"}))
+    assert runtime._recover_lost_fanout_synth_dispatches(log.read_all())
+    second = next(e for e in reversed(log.read_all()) if e.type == "fanout.synth.completed")
+    assert second.id != first.id
+    # The fanout finalizer and the WRC terminal reconciliation run on different ticks.
+    assert reduce_workflow_operations(log.read_all())[op_id]["status"] == "running"
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, second.id)
+    assert reconcile_exhausted_reader_operations(runtime, log.read_all())
+    assert not reconcile_exhausted_reader_operations(runtime, log.read_all())
+    rows = log.read_all()
+    closeouts = [e for e in rows if e.type == "workflow.operation.failed"
+                 and e.payload.get("operation_id") == op_id]
+    assert [e.causation_id for e in closeouts] == ([first.id, second.id] if first_closed else [second.id])
+    view = reduce_workflow_operations(rows)[op_id]
+    assert view["status"] == "failed" and view["last_event_id"] == closeouts[-1].id
+    assert view["request_hash"] == before["request_hash"] and not view["call_result_admitted_event_id"]
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, second.id)
+    assert len(log.read_all()) == len(rows)
+
+
+def test_running_retry_for_different_cause_cannot_open_synth(tmp_path):
+    from zf.runtime.call_result_runtime import workflow_operation_service
+
+    _, log, runtime, role, dispatch, before, failure = failed_synth(tmp_path)
+    _close_failed_operation(runtime, dispatch, failure)
+    workflow_operation_service(runtime).mark_retry_started(
+        operation_id=dispatch.payload["operation_id"], request_hash=before["request_hash"],
+        workflow_run_id=before["workflow_run_id"], retry_attempt=1,
+        reason="transport recovery", causation_id=dispatch.id)
+    previous = log.read_all()
+    with pytest.raises(ValueError, match="already used"):
+        reopen_synth_restart_checkpoint(runtime, role, failure.id)
+    assert log.read_all() == previous

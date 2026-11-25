@@ -37,6 +37,7 @@ from zf.runtime.fanout_failure_findings import (
     findings_from_payload,
 )
 from zf.runtime.fanout_result_identity import bind_blocking_writer_result_identity
+from zf.runtime.fanout_retry_projection import reader_result_dispatch_id
 from zf.runtime.fanout_retrigger_guard import (
     suppress_completed_generation,
     suppress_handled_stall_trigger,
@@ -826,7 +827,15 @@ class FanoutCoordinationMixin(
         }
         completed_fanouts: set[str] = set()
         completed_synth_sources: set[tuple[str, str]] = set()
-        for event in events:
+        retry_floor = {}
+        for position, event in enumerate(events):
+            if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
+                    and event.actor == "zf-cli" and event.payload.get("recovery_kind") in {
+                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry",
+                    }):
+                fanout = event.payload.get("fanout_id")
+                retry_floor[fanout] = position
+                completed_fanouts.discard(fanout)
             if event.type != "fanout.aggregate.completed":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
@@ -850,7 +859,7 @@ class FanoutCoordinationMixin(
                 continue
             if fanout_id in completed_fanouts:
                 continue
-            if index < latest_dispatch.get(fanout_id, -1):
+            if index < max(latest_dispatch.get(fanout_id, -1), retry_floor.get(fanout_id, -1)):
                 continue
             if (fanout_id, event.id) in completed_synth_sources:
                 continue
@@ -937,7 +946,10 @@ class FanoutCoordinationMixin(
                 continue
             statuses = [str(child.get("status") or "") for child in children]
             if not all(status in {"completed", "failed"} for status in statuses):
-                continue
+                from zf.runtime.candidate_reader_observation import replay_partial_candidate_observation
+
+                if not replay_partial_candidate_observation(self, manifest, events):
+                    continue
             before = event_log_snapshot_token(self.event_log)
             self._evaluate_reader_fanout(fanout_id)
             if event_log_snapshot_token(self.event_log) != before:
@@ -2345,6 +2357,9 @@ class FanoutCoordinationMixin(
         stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
+        from zf.runtime.plan_diagnosis_repair_lineage import awaiting_diagnosis_repair_receipt
+        if awaiting_diagnosis_repair_receipt(event, self.state_dir):
+            return False
         from zf.runtime.writer_replan_frontier import suppress_retired_plan_branch
         if suppress_retired_plan_branch(self, event, stage_ids=[
             stage.id for stage in stages if stage.attempt_domain == "plan"
@@ -3281,6 +3296,11 @@ class FanoutCoordinationMixin(
     def _maybe_start_writer_fanout(self, event: ZfEvent) -> None:
         if getattr(event, "type", "") == "plan.approved":
             self._resume_writer_fanout_on_plan_approved(event)
+            return
+        from zf.runtime.candidate_repair_outcome import routable_candidate_repair
+
+        event = routable_candidate_repair(self, event)
+        if event is None:
             return
         stages = [
             stage for stage in getattr(self.config.workflow, "stages", [])
@@ -4464,7 +4484,9 @@ class FanoutCoordinationMixin(
         )
         if child and child.get("status") in {"completed", "failed"}:
             return
-        run_id = str(payload.get("run_id") or (child or {}).get("run_id") or "")
+        run_id = reader_result_dispatch_id(child or {}, payload)
+        if run_id is None:
+            return
         raw_child_payload = (child or {}).get("payload")
         child_payload = raw_child_payload if isinstance(raw_child_payload, dict) else {}
         base_payload = {
@@ -5651,6 +5673,10 @@ class FanoutCoordinationMixin(
         config = manifest.get("aggregate_config") or {}
         mode = str(config.get("mode") or "wait_for_all")
         synth_role = str(config.get("synth_role") or "")
+        if failed and not all_terminal and mode == "wait_for_all":
+            from zf.runtime.candidate_reader_observation import observe_partial_candidate_failure
+
+            observe_partial_candidate_failure(self, fanout_id, manifest)
         if synth_role:
             if not all_terminal:
                 return
@@ -6563,6 +6589,8 @@ class FanoutCoordinationMixin(
                 "role_instance": str(synth.get("role_instance") or ""),
                 "status": "failed",
                 "recommendation": "reject",
+                **{k: synth[k] for k in ("operation_id", "attempt_id", "request_hash")
+                   if manifest.get("critic_handoff_retry_event_id") and synth.get(k)},
                 "reason": "synth_timeout",
                 "failure_class": "reader_execution_failure",
                 "failure_kind": "infra",
@@ -6755,12 +6783,13 @@ class FanoutCoordinationMixin(
                 return False
             task_item = {}
             from zf.runtime.fanout_retry_briefing import reader_retry_operation_id
+            operation_id = reader_retry_operation_id(manifest, child, previous_dispatch, prepared_call)
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,
                 manifest=manifest,
                 child=child,
                 run_id=run_id,
-                effective_operation_id=reader_retry_operation_id(manifest, child, previous_dispatch, prepared_call),
+                effective_operation_id=operation_id,
             )
             identity_sources = (child, manifest, prepared_call)
         prompt = build_task_prompt(
@@ -6768,21 +6797,13 @@ class FanoutCoordinationMixin(
             briefing_path,
             prompt_kind="fanout_child",
         )
-        if (
-            str(manifest.get("topology") or "") == "fanout_reader"
-            and provider_session_replaced and recovery_decision_event is not None
-            and not fresh_operation
-        ):
-            from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
+        if manifest.get("topology") == "fanout_reader" and not fresh_operation:
+            from zf.runtime.reader_respawn_continuation import reader_transport_retry_guidance
 
-            original_payload = previous_dispatch.payload.get("payload") or {}
-            attempt_id = str(
-                getattr(prepared_call, "attempt_id", "")
-                or original_payload.get("attempt_id")
-                or previous_dispatch.payload.get("attempt_id") or ""
-            )
-            prompt += reader_continuation_guidance(
-                attempt_id=attempt_id, backend=role.backend, cli=zf_cli_cmd(),
+            prompt += reader_transport_retry_guidance(
+                self, previous_dispatch, operation_id=operation_id, role=role, dispatch_id=run_id,
+                continue_session=provider_session_replaced and recovery_decision_event is not None,
+                cli=zf_cli_cmd(),
             )
         try:
             dispatch_context = self._send_scoped_transport_task(
@@ -7062,6 +7083,18 @@ class FanoutCoordinationMixin(
         trace_id = str(manifest.get("trace_id") or payload.get("trace_id") or "")
         stage_id = str(manifest.get("stage_id") or payload.get("stage_id") or "")
         artifact_payload: dict = {}
+        if final_status == "completed" and (manifest.get("trigger_payload") or {}).get("resume_scope") == "candidate_diagnosis_only":
+            from zf.runtime.candidate_diagnosis_review import settle_diagnosis_review
+
+            try:
+                settle_diagnosis_review(self, event, manifest)
+                return
+            except (KeyError, ValueError, OSError, TypeError) as exc:
+                final_status, recommendation = "failed", "reject"
+                artifact_payload = self._contract_failure_payload({
+                    "failure_class": "plan_artifact_package_protocol",
+                    "attempt_domain": "protocol_repair", "semantic_rework_cost": 0,
+                }, f"frozen diagnosis handoff failed: {exc}")
         if final_status == "completed":
             artifact_projection = self._project_refactor_success_artifacts(
                 manifest=manifest,
@@ -7073,6 +7106,21 @@ class FanoutCoordinationMixin(
                 if not artifact_projection.ok:
                     final_status = "failed"
                     recommendation = "reject"
+            elif success_event == "task_map.ready" and payload.get("plan_synth_verdict_only") is True:
+                from zf.runtime.reviewed_plan_handoff import reviewed_plan_children
+
+                try:
+                    producers = reviewed_plan_children(self, manifest, payload)
+                    artifact_payload = self._generic_fanout_success_payload(
+                        manifest=manifest, success_event=success_event,
+                        extra_payloads=[payload], reviewed_children=producers,
+                    )
+                except (OSError, ValueError) as exc:
+                    final_status, recommendation = "failed", "reject"
+                    artifact_payload = self._contract_failure_payload({
+                        "failure_class": "plan_artifact_package_protocol",
+                        "attempt_domain": "protocol_repair", "semantic_rework_cost": 0,
+                    }, f"reviewed Plan handoff failed: {exc}")
             else:
                 artifact_payload = self._generic_fanout_success_payload(
                     manifest=manifest,
@@ -7105,6 +7153,7 @@ class FanoutCoordinationMixin(
             **artifact_payload,
         }
         if final_status == "failed":
+            from zf.runtime.diagnosis_critic_handoff import is_handoff_failure
             from zf.runtime.fanout_report_failure import project_synth_failure_payload
 
             artifact_payload = project_synth_failure_payload(
@@ -7112,6 +7161,7 @@ class FanoutCoordinationMixin(
                 payload,
                 report_result.report,
                 report_result.diagnostics,
+                verified_diagnosis_handoff=(event.causation_id == manifest.get("trigger_event_id") and is_handoff_failure(event)),
             )
         if final_status == "completed":
             contract_failure = self._success_payload_contract_failure(
@@ -8260,7 +8310,7 @@ class FanoutCoordinationMixin(
             ).rstrip().splitlines()
             child_report_lines = [
                 "Child report bodies are canonical required inputs in the Source Manifest.",
-                "Read every required child result with `zf artifact read`; do not rely on copied inline JSON. Update the prefilled result scratch in place; with apply_patch use `*** Update File`, and never delete, add, move, or recreate that path.",
+                "Read each required child result using the Controlled Artifact Inputs for this attempt. Update the prefilled result scratch in place; with apply_patch use `*** Update File`, and never delete, add, move, or recreate that path.",
                 "",
             ]
         else:
@@ -8272,6 +8322,8 @@ class FanoutCoordinationMixin(
                 "```",
                 "",
             ]
+        from zf.runtime.candidate_diagnosis_review import DIAGNOSIS_CRITIC_GUIDANCE
+
         briefing_text = "\n".join([
                 f"# Fanout Synth: {fanout_id}",
                 "",
@@ -8285,6 +8337,7 @@ class FanoutCoordinationMixin(
                 "",
                 *runner_policy_lines,
                 *review_claim_briefing(str(call_payload.get("plan_review_evidence_policy") or "")),
+                *([DIAGNOSIS_CRITIC_GUIDANCE] if call_payload.get("diagnosis_review") else []),
                 *scope_summary_lines,
                 *research_handoff_lines,
                 *source_lines,

@@ -23,6 +23,10 @@ def has_new_reader_diagnosis_input(
     from zf.runtime.reader_diagnosis_scope import has_retired_reader_diagnosis
 
     events = list(events)
+    if action.get("reader_method_predecessor"):
+        from zf.runtime.candidate_reader_recheck import bound_reader_method_followup
+
+        return bound_reader_method_followup(events, action, state)
     if has_retired_reader_diagnosis(events, action, state):
         return True
     if state.get("status") != "resolved" or not (
@@ -185,6 +189,10 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
                      and e.payload.get("request_id") == request_id), None)
     if delivery is None or event.actor != delivery.payload.get("instance_id"):
         raise ValueError("recommendation_responder_mismatch")
+    from zf.runtime.candidate_reader_duplicate import duplicate_diagnosis_closed
+
+    if any(duplicate_diagnosis_closed(e, request_id) and e.payload["effect_pending_event_id"] == request.id for e in events):
+        raise ValueError("recommendation_request_superseded_by_reader_recovery")
     bound = dict(payload)
     for key in (*IDENTITY_FIELDS, "recovery_case_id", "target_operation_id", "operation_precondition"):
         value = request.payload.get(key)

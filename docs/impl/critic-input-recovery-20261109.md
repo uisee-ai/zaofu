@@ -77,3 +77,29 @@ fail-closed 拒绝，不能仅验证新控制面能读取配置。升级时需�
 
 实现及验收见 [局部 Plan P0](local-plan-p0-20261109.md)。补充原生分区的精确比较、
 Impl/Verify 未读完输入时的技术失败收敛、Planner 提交前成本观察及字符分页口径。
+
+### 首次独立 Critic 派发前的交接修复
+
+零 Writer 诊断的 Planner 已准入、Critic 尚未签发 WRC 时，操作员可通过
+`stage-replan-new-generation` 提交 `retry_critic_handoff_event_id`、`workflow_run_id`、
+`candidate_event_id`、`planner_admitted_event_id`、`planner_control_sha256` 和
+`approval_ref`。控制面绑定当前冻结、原始签名结果和失败的 fanout。
+若通用 replan 已产生一个因果上直接相连的后继，只有它以基础设施失败终止且未签发任何
+Reader WRC 时才能收回。恢复沿用原 Planner、原 trigger 和证据，由已有 fanout
+调度器第一次签发 Critic。重复执行同一授权会返回原回执。业务裁定仍等待独立 Critic 的正式结果。
+
+恢复标记划分了本次 Critic 的结果范围。新 WRC 签发前，只有携带该标记的本轮技术失败能结束本次交接。
+签发后，控制面按 operation、attempt 和 request hash 接受当前结果。若结果已准入、汇总前控制面退出，
+重启会消费当前签名结果一次；首次派发前的旧失败仍保留在历史中。
+周期恢复扫描在比较各次 replan 时也沿用身份投影。已经明确退役并指回当前 fanout 的空后继，
+不再作为取消该 Critic 的依据。其余新代际仍按原有规则判定。
+
+### 已签发的 Critic 被空后继误取消
+
+对于已签发、因同一个已退休后继而取消的诊断 Critic，操作员可通过上述受控动作提交
+`retry_cancelled_critic_event_id`、`prior_critic_dispatch_event_id`、`prior_critic_request_hash`、
+`critic_handoff_event_id`、`planner_admitted_event_id`、`candidate_event_id`、`workflow_run_id` 与
+`approval_ref`。控制面核对原请求及来源、取消因果、Provider 停止回执、旧 attempt 终止、当前冻结、
+后续派发和新授权。批准后在原 fanout 签发新 attempt，将原 WRC、取消记录以及已准入的 Planner 保留在账本。
+新 WRC 签发前逐项核对原 result identity、必读选择、来源内容摘要和访问范围。重启重放使用同一恢复事件身份。
+恢复后重放旧取消时，从该取消事件的账本位置重建待停任务。随后发生的合法取消仍会关闭当时正在执行的任务。

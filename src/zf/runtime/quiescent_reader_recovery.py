@@ -5,6 +5,10 @@ from zf.runtime.quiescent import host_probe_budget_hold
 def reconcile_quiescent_reader_handoff(*, state_dir, config, writer, project_root,
                                        events, escalation_id) -> bool:
     alert = next((event for event in events if event.id == escalation_id), None)
+    from zf.runtime.task_orphan_recovery import orphaned_review_needs_tick
+
+    if orphaned_review_needs_tick(state_dir, config, project_root, events, alert):
+        return True
     if alert is not None and _host_diagnosis_ready(state_dir, config, project_root, events, alert):
         return True  # The normal RM tick retains its gate and single-flight checks.
     if alert is None or not host_probe_budget_hold(config, events, alert):

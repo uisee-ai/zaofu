@@ -3,6 +3,15 @@
 2026-11-20 GitHub 集成的兼容边界与验证方法见
 [本地恢复能力与 GitHub dev 的集成核查](github-dev-integration-20261120.md)。
 
+## Goal 空闲检查与在途恢复诊断
+
+目标处于活动状态且没有 Worker Operation 时，心跳仍会核查本 Run 的恢复案例。若受控
+恢复已验证 resident Run Manager 收到同一检查点的诊断请求，且该请求和效果回执均在
+有效期内，心跳暂缓空闲 rescan 及其用尽升级。正式答复、效果结算或超时、案例阻塞、
+resident 实例失效后，心跳复用原有计数和上限重新判断。未交付的请求或其他 Run 的恢复
+不能触发这段等待。已有 Owner 门沿用原决策入口。回归见
+`tests/test_goal_idle_resident_diagnosis.py`。
+
 ## 2026-11-20 多跳接力与重新入队效果补齐
 
 接续 b4f63e6e，任务 `2026-11-20-0808-unattended-lineage-and-effect.md`。
@@ -540,6 +549,11 @@ Candidate operation。不是缺少业务测试或模型额度，不能靠伪造�
 here-doc。正文作为CLI输入交给既有身份、权限、schema及一次性准入检查；这不授予
 runtime目录写权限，也不把hook放行当作提交成功或产品通过。未引用delimiter、
 头部替换/重定向/管道/分号、尾随命令、提前结束、其他程序等仍走原保守检查。
+
+宿主服务也会用启动 hook 的绝对 Python 路径和固定模块 `-m zf.cli.main`
+生成这个命令。分类器识别该启动形式时逐字对照生成器的 shell 引用和参数。
+2026-11-24 的 Candidate `706f8284` 中，lane 1 的两次误拒记录为
+`evt-8ebaa6ed6872` 和 `evt-cce725e60b8d`。该 lane 最终没有提交验证结果。
 
 回归`tests/test_hook_literal_result_stdin.py`直接使用真实提示生成器和Codex/Claude
 hook入口，覆盖合法正文及shell副作用反例。运行中的旧实验不因源码修复而变为

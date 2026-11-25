@@ -27,7 +27,8 @@ from zf.runtime.task_contract_snapshot import (
 from zf.runtime.verification_result import normalize_candidate_blocker, VerificationResultError
 
 
-def _incident(tmp_path, *, unknown_ac=False, blocked=False, expected_children=None, before_candidate=None):
+def _incident(tmp_path, *, unknown_ac=False, blocked=False, expected_children=None, before_candidate=None,
+              on_reader_failed=None):
     runtime = _runtime(tmp_path)
     runtime.config.roles.append(RoleConfig(name="verify", instance_id="verify-0", role_kind="reader"))
     package = runtime.event_log.read_all()[-1].payload
@@ -143,7 +144,9 @@ def _incident(tmp_path, *, unknown_ac=False, blocked=False, expected_children=No
         "control_result_schema": result["schema_version"],
         "verification_result": result,
     }
-    emit("fanout.child.failed", child)
+    failed_reader = emit("fanout.child.failed", child)
+    if on_reader_failed:
+        on_reader_failed(runtime, candidate, failed_reader)
     aggregate = emit(
         "fanout.aggregate.completed", {**child, "status": "failed", "failed_children": ["verify-0"]}
     )

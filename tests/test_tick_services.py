@@ -83,8 +83,9 @@ class _TickRestartTransport:
         self.sent = []
         self.initialized = 0
 
-    def pane_display(self, target: str) -> dict[str, object]:
-        return {"ok": False, "target": target, "reason": "pane_dead"}
+    def is_alive(self, role_name: str) -> bool:
+        assert role_name == "run-manager"
+        return False
 
     def register_role(self, role) -> None:
         self.registered.append(role)

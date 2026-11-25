@@ -151,10 +151,12 @@ class LifecycleManagerMixin(
         self._reconcile_task_attempts()
         now = self._now()
         from datetime import datetime, timezone
+        from zf.runtime.candidate_anchor_owner_wait import CandidateAnchorWaits
         from zf.runtime.pause_lifecycle import active_request_age_seconds, is_run_dispatch_paused
         from zf.runtime.run_admission import task_workflow_run_id
 
         pause_events = self.event_log.read_all()
+        owner_waits = CandidateAnchorWaits(pause_events)
         try:
             latest_dispatched = self._latest_dispatched_per_task()
         except Exception:
@@ -165,6 +167,7 @@ class LifecycleManagerMixin(
                 # prior warning mark so reentering in_progress gets a
                 # fresh clock.
                 self._orphan_warned.discard(task.id)
+                self._orphan_owner_waits.discard(task.id)
                 continue
             if self._task_has_admitted_writer_completion(task.id):
                 self._dispatch_epoch.pop(task.id, None)
@@ -246,7 +249,22 @@ class LifecycleManagerMixin(
             elapsed = active_request_age_seconds(pause_events,
                 created_at=datetime.fromtimestamp(epoch, timezone.utc),
                 now=datetime.fromtimestamp(now, timezone.utc), run_id=task_run)
+            was_waiting = task.id in self._orphan_owner_waits
+            if was_waiting or (not assignee and elapsed >= role.orphan_warning_seconds):
+                waiting = (not assignee and self.config.runtime.run_manager.resident_agent.enabled
+                           and owner_waits.holds(task_run, task.id))
+                if waiting:
+                    self._orphan_owner_waits.add(task.id)
+                else:
+                    self._orphan_owner_waits.discard(task.id)
+                if waiting or was_waiting:
+                    self._dispatch_epoch[task.id] = now
+                    self._orphan_warned.discard(task.id)
+                    continue
             if elapsed >= role.orphan_escalate_seconds:
+                from zf.runtime.task_orphan_recovery import anchor_awaits_candidate_review
+                if anchor_awaits_candidate_review(self.state_dir, self.config, pause_events, task.id):
+                    continue  # The frozen Candidate already has a recovery owner.
                 self._emit_task_orphaned(task, role, elapsed)
                 # After escalate, clear tracking so the clock restarts
                 # when someone reassigns.
@@ -274,38 +292,9 @@ class LifecycleManagerMixin(
     def _emit_task_orphaned(
         self, task: Task, role: RoleConfig, elapsed: float,
     ) -> None:
-        """LH-0.T3: full orphan escalation — emit, unassign, requeue."""
-        try:
-            self.event_writer.append(ZfEvent(
-                type="task.orphaned",
-                actor="zf-cli",
-                task_id=task.id,
-                payload={
-                    "role": role.name,
-                    "assigned_to": task.assigned_to or "",
-                    "elapsed_seconds": round(elapsed, 1),
-                    "threshold_seconds": role.orphan_escalate_seconds,
-                },
-            ))
-        except Exception:
-            pass
-        try:
-            self.escalation.escalate(
-                f"task {task.id}: orphaned "
-                f"({elapsed:.0f}s > {role.orphan_escalate_seconds:.0f}s)",
-                task_id=task.id,
-                metadata={"failure_class": "orphaned_task"},
-            )
-        except Exception:
-            pass
-        # Requeue for future dispatch. Clearing assigned_to also frees
-        # the WIP slot for that instance.
-        try:
-            self.task_store.update(
-                task.id, status="backlog", assigned_to="",
-            )
-        except Exception:
-            pass
+        from zf.runtime.task_orphan_recovery import record_task_orphaned
+
+        record_task_orphaned(self, task, role, elapsed)
 
     def _get_spawn_coordinator(self) -> "SpawnCoordinator":
         """Lazily build the coordinator (avoids circular init)."""
@@ -692,6 +681,7 @@ class LifecycleManagerMixin(
             respawn_worker=self._respawn_instance,
             cancel_worker=self._cancel_instance,
             rerun_fanout_child=self._rerun_fanout_child,
+            config=self.config,
         ).apply(event)
 
 
@@ -1946,6 +1936,7 @@ class LifecycleManagerMixin(
         an idle packet and loses the child. The existing fanout briefing is
         the canonical contract; re-deliver it into the fresh worker context.
         """
+        from zf.runtime.reader_respawn_continuation import ReaderAlreadySettled
         path = self._fanout_child_briefing_path(role, fanout_child)
         if path is None:
             try:
@@ -1965,16 +1956,21 @@ class LifecycleManagerMixin(
             return False
         try:
             snapshot_ref = str(fanout_child.get("snapshot_ref") or "")
-            prompt = build_task_prompt(role.instance_id, path, "fanout_child")
+            from zf.runtime.skill_briefing import recovery_skill_locators
+
+            kind = "fanout_synth" if fanout_child.get("child_id") == "synth" else "fanout_child"
+            prompt = build_task_prompt(role.instance_id, path, kind)
+            prompt += recovery_skill_locators(project_root=self.project_root, state_dir=self.state_dir,
+                                              role=role)
             prompt += (
                 f"\nCurrent runtime CLI: `{zf_cli_cmd()}`. Use it with the same arguments "
                 "instead of older executable paths in the original briefing. "
                 "The original request identity and required reads remain unchanged."
             )
-            if role.role_kind == "reader":
-                from zf.runtime.reader_respawn_continuation import reader_recovery_guidance
+            if role.role_kind == "reader" or kind == "fanout_synth":
+                from zf.runtime.reader_respawn_continuation import fanout_recovery_guidance
 
-                prompt += reader_recovery_guidance(self, role, fanout_child)
+                prompt += fanout_recovery_guidance(self, role, fanout_child)
             context = self._dispatch_context(
                 role=role,
                 briefing_path=path,
@@ -1983,6 +1979,11 @@ class LifecycleManagerMixin(
                 dispatch_id=str(fanout_child.get("run_id") or ""),
                 run_id=str(fanout_child.get("workflow_run_id") or ""),
             )
+            if role.role_kind == "reader" and fanout_child.get("operation_id"):
+                from zf.runtime.reader_respawn_continuation import current_reader_input
+                current_reader_input(self, role, fanout_child)
+                from dataclasses import replace
+                context = replace(context, reader_recovery_dispatch=str(fanout_child["event_id"]))
             self._send_transport_task(role.instance_id, path, prompt, context)
             if fanout_child.get("recovery_kind") == "operator_synth_checkpoint":
                 from zf.runtime.synth_restart_checkpoint import mark_reopened_synth_started
@@ -2019,6 +2020,8 @@ class LifecycleManagerMixin(
                     },
                     correlation_id=str(fanout_child.get("trace_id") or "") or None,
                 ))
+        except ReaderAlreadySettled:
+            return True
         except Exception:
             return False
         return True
@@ -2057,6 +2060,8 @@ class LifecycleManagerMixin(
                     pass
                 return True
             task = idle_task
+        from zf.runtime.task_pipeline_attempt_recovery import live_task_pipeline_attempt_for_role
+        before = live_task_pipeline_attempt_for_role(self, role.instance_id)
         git_context = None
         try:
             git_context = capture_recovery_git_context(self, role, task)
@@ -2096,7 +2101,18 @@ class LifecycleManagerMixin(
             )
             from zf.runtime.task_attempt_continuation import continuation_context
 
+            if before:
+                from zf.runtime.task_attempt_continuation import admitted_before_recovery
+                if admitted_before_recovery(self, before):
+                    return True
+                latest = live_task_pipeline_attempt_for_role(self, role.instance_id)
+                if not latest or any(before.get(k) != latest.get(k) for k in (
+                        "task_id", "attempt_id", "operation_id", "dispatch_id", "lease_id", "instance_id")):
+                    return False
             context = continuation_context(self, role.instance_id, context)
+            if before:
+                from zf.runtime.artifact_workdir_view import recovery_hint
+                prompt += recovery_hint(self, role.instance_id, before["attempt_id"], before["operation_id"])
             self._send_transport_task(role.instance_id, path, prompt, context)
             self._get_spawn_coordinator().notify_first_dispatch(role)
         except Exception:

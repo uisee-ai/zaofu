@@ -54,6 +54,8 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert config.runtime.run_manager.resident_agent.enabled is True
     assert config.runtime.run_manager.resident_agent.session_mode == "dedicated"
     assert config.runtime.workdirs.mode == "worktree"
+    assert config.workflow.flow_metadata["milestone_handoff"] is True
+    assert config.workflow.flow_metadata["artifact_worker_cgroups"] == {}
 
     task_pipeline = config.workflow.flow_metadata["task_pipeline"]
     assert task_pipeline["profile_id"] == "prd-flow-v4-task-pipeline"
@@ -66,6 +68,8 @@ def test_versioned_prd_v5_production_config_loads_the_blocking_pipeline(
     assert task_pipeline["candidate"]["final_verify_target"] == "frozen_exact_commit"
 
     prd_policy = config.workflow.orchestration.flow_policies["prd"]
+    assert "reassess_reader_evidence" in prd_policy.autonomous_actions
+    assert "rebind" not in prd_policy.autonomous_actions
     assert prd_policy.checkpoint_policies["pre_impl"] == "shadow"
     assert prd_policy.checkpoint_policies["semantic_failure"] == "blocking"
     assert prd_policy.shadow_sample_percent == 100

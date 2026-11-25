@@ -196,6 +196,7 @@ def project_synth_failure_payload(
     payload: dict[str, Any],
     report: dict[str, Any],
     diagnostics: list[str],
+    *, verified_diagnosis_handoff: bool = False,
 ) -> dict[str, Any]:
     summary = str(
         report.get("summary") or payload.get("summary") or payload.get("reason") or ""
@@ -223,6 +224,10 @@ def project_synth_failure_payload(
         value = payload.get(key)
         if value not in (None, "", [], {}):
             artifact_payload[key] = value
+    if verified_diagnosis_handoff:
+        for key in ("failure_scope", "planner_admitted_event_id", "planner_result_ref", "planner_request_hash"):
+            if key in payload:
+                artifact_payload[key] = payload[key]
     return artifact_payload
 
 

@@ -10,10 +10,10 @@ from zf.runtime.orchestrator_agent_semantic_failure import request_semantic_fail
 from zf.runtime.run_manager import run_manager_tick, build_run_manager_projection, _action_payload
 
 
-def _mixed(tmp_path, width=2):
-    runtime, original, _, child = _incident(tmp_path, expected_children=[
+def _mixed(tmp_path, width=2, *, blocked=False):
+    runtime, original, _, child = _incident(tmp_path, blocked=blocked, expected_children=[
         {"child_id": role, "role_instance": role} for role in ("verify-0", "verify-peer")])
-    original, peer_ref = _peer_failure(runtime, original, child)
+    original, peer_ref = _peer_failure(runtime, original, child, verdict="blocked" if blocked else "abstained")
     if width > 2:
         from zf.runtime.call_result_envelope import write_immutable_json_sidecar
         from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -41,7 +41,8 @@ def _mixed(tmp_path, width=2):
             {"child_id": r, "role_instance": r} for r in roles]}) if e.type == "fanout.started" else e for e in events]
     failure = events[-1]
     # Production aggregate failures carry the anchor in payload, not event.task_id.
-    failure = replace(failure, task_id=None, payload={**failure.payload, "failure_kind": "mixed"})
+    classification = {"failure_kind": "infra", "failure_class": "dependency_blocked"} if blocked else {"failure_kind": "mixed"}
+    failure = replace(failure, task_id=None, payload={**failure.payload, **classification})
     # Isolated fixture log rewrite, never a live-state operation.
     runtime.event_log.path.write_text("")
     for e in [*events[:-1], failure]:
@@ -51,9 +52,9 @@ def _mixed(tmp_path, width=2):
     return runtime, failure, peer_ref
 
 
-@pytest.mark.parametrize("width", [2, 8])
-def test_first_mixed_aggregate_rm_tick_requests_once_then_binds_every_member(tmp_path, width):
-    runtime, failure, peer_ref = _mixed(tmp_path, width)
+@pytest.mark.parametrize(("width", "blocked"), [(2, False), (8, False), (2, True)])
+def test_rm_tick_requests_once_then_binds_every_candidate_member(tmp_path, width, blocked):
+    runtime, failure, peer_ref = _mixed(tmp_path, width, blocked=blocked)
     projection = build_run_manager_projection(runtime.state_dir, config=runtime.config,
                                               project_root=runtime.project_root)
     actions = [a for a in projection["pending_actions"] if a.get("source_event_id") == failure.id]
@@ -136,3 +137,21 @@ def test_rejected_goal_binding_allows_one_fresh_candidate_review(tmp_path):
     actions = pending_candidate_reviews(state_dir=runtime.state_dir, config=runtime.config,
                                         events=runtime.event_log.read_all())
     assert len(actions) == 1 and actions[0]["request_id"] != request.payload["request_id"]
+
+
+@pytest.mark.parametrize("fault", ["budget", "execution_failure", "missing_admission", "unfinished_execution"])
+def test_infra_aggregate_requires_admitted_completed_dependency_verdicts(tmp_path, fault):
+    from zf.runtime.candidate_aggregate_review import pending_candidate_reviews
+
+    runtime, failure, _ = _mixed(tmp_path, blocked=fault != "unfinished_execution")
+    events = runtime.event_log.read_all()
+    changes = {"failure_kind": "infra", "failure_class": "dependency_blocked"}
+    if fault == "budget":
+        changes["failure_kind"] = "budget"
+    elif fault == "execution_failure":
+        changes["failure_class"] = "reader_execution_failure"
+    elif fault == "missing_admission":
+        events = [e for e in events if not (e.type == "workflow.call.result.admitted"
+                  and e.payload.get("operation_id") == "peer-operation")]
+    events = [replace(e, payload={**e.payload, **changes}) if e.id == failure.id else e for e in events]
+    assert not pending_candidate_reviews(state_dir=runtime.state_dir, config=runtime.config, events=events)

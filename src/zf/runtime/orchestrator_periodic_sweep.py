@@ -119,7 +119,14 @@ def run_post_dispatch_sweep(
     channel_reply_failed = any(
         event.type == "channel.agent.reply.failed" for event in (events or [])
     )
+    if periodic_sweep or any(e.type == "workflow.board.posted" for e in (events or [])):
+        from zf.runtime.workflow_board import deliver_mentions
+
+        runtime._safe_housekeeping("workflow_board", lambda: deliver_mentions(runtime))
     if periodic_sweep:
+        from zf.runtime.workflow_schedule import reconcile_schedules
+
+        runtime._safe_housekeeping("workflow_schedules", lambda: reconcile_schedules(runtime))
         runtime._safe_housekeeping("orphaned_tasks", runtime._check_orphaned_tasks)
         runtime._safe_housekeeping(
             "unclaimed_new_tasks",

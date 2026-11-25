@@ -30,3 +30,27 @@ def project_reader_retry(manifest: dict, child: dict, payload: dict, event_id: s
         "recovered_from_aggregate_status": aggregate["status"],
     }
     child.update(reason="", evidence={})
+
+
+def reader_result_dispatch_id(child: dict, payload: dict) -> str | None:
+    """Resolve the dispatch that may consume this result, including signed replacements."""
+    request = child.get("payload")
+    if not (isinstance(request, dict) and request.get("retry_of_operation_id")
+            and request.get("operation_id")):
+        return str(payload.get("run_id") or child.get("run_id") or "")
+    dispatch_id = child.get("run_id")
+    current = {
+        "operation_id": request["operation_id"],
+        "request_hash": request.get("request_hash"),
+        "attempt_id": request.get("attempt_id"),
+        "active_attempt_id": request.get("attempt_id"),
+    }
+    supplied = {key: payload[key] for key in current if payload.get(key)}
+    if supplied:
+        # Signed results and provider-stop projections report WRC identity. The
+        # child owns the dispatch ID used for releasing the worker and closing the barrier.
+        return dispatch_id if all(current[key] == value for key, value in supplied.items()) else None
+    run_id = payload.get("run_id")
+    if not run_id and request.get("result_protocol_mode") != "blocking":
+        return dispatch_id  # Legacy non-blocking reports can omit per-attempt identity.
+    return dispatch_id if dispatch_id and run_id == dispatch_id else None

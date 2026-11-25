@@ -1,10 +1,11 @@
 """Typed Candidate execution failures retain a diagnosis owner."""
 from zf.core.events import ZfEvent
 from zf.runtime.canonical_recovery import classify_recovery_scope
+from zf.runtime.candidate_registration_failure import is_registration_failure, is_freeze_failure
 
 
 def candidate_infrastructure_failure(event: ZfEvent) -> bool:
-    return (event.type in {"test.failed", "verify.failed", "review.rejected"}
+    return is_registration_failure(event) or is_freeze_failure(event) or (event.type in {"test.failed", "verify.failed", "review.rejected"}
         and event.payload.get("failure_kind") == "infra"
         and bool(event.payload.get("fanout_id"))
         and classify_recovery_scope(event) == "candidate")

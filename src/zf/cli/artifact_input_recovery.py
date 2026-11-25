@@ -28,13 +28,21 @@ def run_input_recovery(args: argparse.Namespace) -> int:
         events = artifact_context_events(log)
         required = required_reads_for_attempt(events, args.attempt, state_dir=context.state_dir, operation_id=identity["operation_id"])
         service = ArtifactQueryService(state_dir=context.state_dir, project_root=context.project_root, config=context.config)
-        from zf.core.task.store import TaskStore
+        if getattr(args, "delivery_cursor", None):
+            from zf.runtime.input_delivery_recovery import input_delivery_recovery
 
-        task = TaskStore(context.state_dir / "kanban.json").get(manifest.get("task_id", ""))
-        current = current_task_input_recovery(context.state_dir, events, task, actor=identity["actor"])
-        checkpoint = (current.get("checkpoint") if current.get("identity", {}).get("attempt_id") == args.attempt else None)
-        result = build_input_recovery(state_dir=context.state_dir, manifest=manifest, identity=identity,
-            events=events, required=required, reads=service._read_rows(args.attempt), cursor=args.cursor, checkpoint=checkpoint)
+            result = input_delivery_recovery(context.state_dir, events, identity, args.attempt,
+                service._read_rows(args.attempt), cursor=args.delivery_cursor)
+            if not result or result.get("status") == "unavailable":
+                raise ValueError(result.get("reason") or "no observed input policy for this attempt")
+        else:
+            from zf.core.task.store import TaskStore
+
+            task = TaskStore(context.state_dir / "kanban.json").get(manifest.get("task_id", ""))
+            current = current_task_input_recovery(context.state_dir, events, task, actor=identity["actor"])
+            checkpoint = (current.get("checkpoint") if current.get("identity", {}).get("attempt_id") == args.attempt else None)
+            result = build_input_recovery(state_dir=context.state_dir, manifest=manifest, identity=identity,
+                events=events, required=required, reads=service._read_rows(args.attempt), cursor=args.cursor, checkpoint=checkpoint)
     except (ConfigError, OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

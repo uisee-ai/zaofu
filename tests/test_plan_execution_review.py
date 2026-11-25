@@ -10,10 +10,13 @@ def test_planner_receives_compiled_policy_without_future_approval_claim():
 
     config = ZfConfig()
     config.workflow.plan_approval_enabled = True
+    config.runtime.host_verification.enabled = True
+    config.runtime.host_verification.commands = ["npm run build && node checks.cjs"]
     config.workflow.flow_metadata_by_kind = {"prd": {"task_pipeline": {"mode": "blocking"}}}
     lines = planning_execution_context(config, flow_kind="prd")
     facts = json.loads(lines[lines.index("```json") + 1])
     assert facts["plan_approval_required"] is True
+    assert facts["host_verification_commands"] == ["npm run build && node checks.cjs"]
     assert facts["task_pipeline"]["mode"] == "blocking"
     assert facts["authorizes_execution"] is False
     assert facts["effective_policy_digest"] == execution_policy(config)["effective_policy_digest"]
@@ -255,3 +258,52 @@ workflow:
         report = json.loads(capsys.readouterr().out)
         assert report["verification"]["independent_task_verify"] is expected
     assert not (tmp_path / "state").exists()
+
+
+def test_blocking_pipeline_previews_baseline_audit_without_waiving_its_browser():
+    from zf.runtime.plan_execution_review import review_execution
+
+    def criterion(name):
+        return {"id": name, "statement": name, "verification_owner": "candidate_verify",
+                "verification_command_ids": [name]}
+
+    def probe(name):
+        return {"id": name, "command": "run " + name, "owner": "candidate_verify"}
+
+    audit = {"task_id": "AUDIT", "execution_mode": "runtime_only", "allowed_paths": [],
+             "runtime_only": True, "write_free": True,
+             "immutable_baseline": "git:frozen", "acceptance_criteria": [criterion("MODULE"), criterion("BROWSER")],
+             "validation": {"commands": [probe("MODULE"), probe("BROWSER")]}}
+    def projection(task):
+        report = review_execution({"tasks": [task]}, ports={}, policy={},
+                                  metadata={"task_pipeline": {"mode": "blocking"}})
+        return report["verification"]["task_requirements"][0]["initial_readonly_verify"]
+
+    before = projection(audit)
+    assert before["verification_owner"] == "candidate_verify"
+    assert before["mandatory_acceptance_ids"] == before["command_ids"] == ["MODULE", "BROWSER"]
+    assert before["declared_baseline"] == "git:frozen"
+    assert "verdict" not in before
+    # A genuine baseline browser audit stays locally required.
+    browser_audit = {**audit, "acceptance_criteria": [criterion("BROWSER")],
+                     "validation": {"commands": [probe("BROWSER")]}}
+    assert projection(browser_audit)["command_ids"] == ["BROWSER"]
+
+
+def test_review_reports_exact_candidate_host_command_mismatches_without_a_verdict():
+    cfg = ZfConfig()
+    cfg.runtime.host_verification.enabled = True
+    cfg.runtime.host_verification.commands = ["node unit.cjs", "npm run build && node browser.cjs"]
+    plan = {"tasks": [{"task_id": "audit", "validation": {"commands": [
+        {"id": "unit", "command": "node unit.cjs", "owner": "candidate_verify"},
+        {"id": "browser", "command": "node browser.cjs", "owner": "candidate_verify"},
+        {"id": "local", "command": "node dev.cjs", "owner": "impl_self_check"},
+    ]}}]}
+    review = review_execution(plan, ports={}, policy=execution_policy(cfg), metadata={})
+    assert review["verification"]["candidate_commands_outside_host_registry"] == [
+        {"task_id": "audit", "command_id": "browser", "command": "node browser.cjs"}]
+    assert "candidate_commands_outside_host_registry" in review["review_items"]
+    cfg.runtime.host_verification.enabled = False
+    disabled = review_execution(plan, ports={}, policy=execution_policy(cfg), metadata={})
+    assert "candidate_commands_outside_host_registry" not in disabled["review_items"]
+    assert "verdict" not in review

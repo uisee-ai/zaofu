@@ -1597,6 +1597,7 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
                 "max_active_runs",
             ],
             "optional": [
+                "recovery_authorization",
                 "effective_config_digest",
                 "run_contract_digest",
             ],

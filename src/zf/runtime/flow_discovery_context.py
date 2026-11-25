@@ -132,7 +132,7 @@ def build_flow_discovery_context(
         value = payload.get(key) or fallback.get(key)
         if value not in (None, "", {}):
             request_payload[key] = value
-    if event.type == "test.passed":
+    if event.type in {"test.passed", "verify.passed"}:
         request_payload["result_refs"] = _admitted_verify_results(
             events, payload=request_payload, fanout_id=str(payload.get("fanout_id") or ""),
         )
