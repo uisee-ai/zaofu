@@ -17,6 +17,7 @@ from typing import Any
 from zf.runtime import verification_command_safety
 from zf.runtime.task_map_assembly import (
     assembly_ownership_errors as _assembly_ownership_errors,
+    read_only_verification_ids,
 )
 from zf.runtime.task_map_goal_coverage import validate_goal_coverage
 from zf.runtime.plan_modules import plan_module_errors
@@ -244,13 +245,12 @@ def validate_task_map_payload(
         if not isinstance(value, bool):
             errors.append(f"{field_name} must be a boolean when present")
 
-    errors.extend(_shared_convention_errors(
-        payload,
-        [raw for raw in tasks_raw if isinstance(raw, dict)],
-    ))
+    items = [raw for raw in tasks_raw if isinstance(raw, dict)]
+    errors.extend(_shared_convention_errors(payload, items))
+    readonly = read_only_verification_ids(items)
     errors.extend(_assembly_ownership_errors(
         assembly_owner_roles=assembly_owner_roles, bundle_owner_roles=bundle_owner_roles,
-        task_dependencies=task_dependencies,
+        task_dependencies=task_dependencies, read_only_task_ids=readonly,
     ))
     goal_coverage, goal_coverage_errors = validate_goal_coverage(
         payload,
@@ -268,7 +268,7 @@ def validate_task_map_payload(
         "tasks_by_wave": task_count_by_wave,
         "exclusive_file_count": len(exclusive_claims),
         "tasks_missing_allowed_paths_reason": missing_allowed_path_reason,
-        "bundle_owner_count": len(set(bundle_owner_roles.values())),
+        "bundle_owner_count": len({owner for task, owner in bundle_owner_roles.items() if task not in readonly}),
         "assembly_task_count": len(assembly_owner_roles),
         "goal_coverage": goal_coverage,
         "topological_order": topological_order,

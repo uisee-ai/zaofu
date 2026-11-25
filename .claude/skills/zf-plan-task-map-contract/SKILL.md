@@ -25,6 +25,12 @@ authoring the result. Adapt its commands, owners, journeys and assertions to
 the actual requirements; it demonstrates field names, not product scope or a
 default provider waiver. Keep `journey_id` and assertion-local `assertion_id`
 distinct; `id` and `kind` are not substitutes for those schema keys.
+Each Candidate `integration_checks` row has exactly `check_id`, `task_ids` and
+`assertion`. Name at least two different tasks and the observable result of
+their interaction. For scoped Candidate readers, the same descriptor example shows
+a complete `candidate_reader_assignments` row. Bind each acceptance to both
+`task_id` and `acceptance_id`; bind `plan_reads` to port-specific JSON paths.
+Use the roster authorized for the actual project.
 
 ## Mechanical Closure Before Output
 
@@ -953,8 +959,10 @@ bundle's own unit tests and only surfaces at candidate verification as
 because no task owned the root entrypoint that wires the bundles together.
 
 Count independent writer bundles by their actual ownership and dependency
-topology. Pool lanes and independent read-only audits do not by themselves
-create distinct writer bundles. When the shared entrypoint is already wired
+topology. An independent audit can retain its own reviewer `owner_role` when its
+Task Pipeline entry is `verify_only`, its evidence declares `write_free: true`,
+and its explicit `allowed_paths: []` has no other write claims. Pool lanes
+and these read-only audits do not create separate writer bundles. When the shared entrypoint is already wired
 and frozen, identify its baseline and assign integrated journey evidence to an
 existing in-scope task with Candidate Verify on the assembled target. Preserve
 all source-defined tasks, write scopes, and declared assembly policies. Newly

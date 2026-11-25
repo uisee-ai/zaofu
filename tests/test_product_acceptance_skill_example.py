@@ -17,8 +17,13 @@ def test_shipped_product_acceptance_descriptor_passes_preflight(source):
     descriptor = json.loads((ROOT / source / EXAMPLE).read_text())
     assert descriptor["logical_name"] == "product_acceptance_spec"
     assert descriptor["schema_version"] == "product_acceptance_spec.v1"
+    task_map = {"tasks": [
+        {"task_id": "TASK-SAVE", "acceptance_criteria": [{"id": "AC-PERSIST"}]},
+        {"task_id": "TASK-ASSEMBLY", "acceptance_criteria": [{"id": "AC-DISPLAY"}]},
+    ]}
+    assert descriptor["body"]["candidate_reader_assignments"][0]["integration_check_ids"] == ["save-and-view"]
     assert _product_acceptance_spec_errors(
-        descriptor["body"], task_map={}, manifest={}, flow_kind="prd",
+        descriptor["body"], task_map=task_map, manifest={}, flow_kind="prd",
     ) == []
 
 

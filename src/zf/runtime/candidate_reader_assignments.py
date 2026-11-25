@@ -22,17 +22,41 @@ def _identifier(value: Any) -> bool:
     return isinstance(value, str) and bool(value) and value == value.strip()
 
 
+def _row_fields(row: Any, path: str, *, required: set[str], optional: tuple[str, ...] = ()) -> None:
+    if not isinstance(row, dict):
+        raise ValueError(f"{path} must be an object")
+    missing = required - row.keys()
+    unexpected = row.keys() - required - set(optional)
+    issues = []
+    if missing:
+        issues.append("missing fields: " + ", ".join(sorted(missing)))
+    if unexpected:
+        issues.append("unexpected fields: " + ", ".join(sorted(str(k) for k in unexpected)))
+    if issues:
+        raise ValueError(f"{path} " + ". ".join(issues))
+
+
 def integration_checks(spec: Mapping[str, Any]) -> dict[str, dict]:
     rows = spec.get("integration_checks", [])
     if not isinstance(rows, list):
         raise ValueError("Candidate integration_checks must be a list")
     checks = {}
-    for row in rows:
-        if (not isinstance(row, dict) or set(row) != {"check_id", "task_ids", "assertion"}
-                or not _identifier(row["check_id"]) or row["check_id"] in checks or not _identifier(row["assertion"])
-                or not isinstance(row["task_ids"], list) or not all(_identifier(t) for t in row["task_ids"])
-                or len(set(row["task_ids"])) != len(row["task_ids"]) or len(row["task_ids"]) < 2):
-            raise ValueError("Candidate integration check requires a distinct ID, assertion and at least two distinct tasks")
+    for index, row in enumerate(rows):
+        path = f"Candidate integration_checks[{index}]"
+        _row_fields(row, path, required={"check_id", "task_ids", "assertion"})
+        if not _identifier(row["check_id"]):
+            raise ValueError(f"{path}.check_id must be a nonempty trimmed string")
+        if row["check_id"] in checks:
+            raise ValueError(f"{path}.check_id is a duplicate check ID")
+        if not _identifier(row["assertion"]):
+            raise ValueError(f"{path}.assertion must be a nonempty trimmed string")
+        tasks = row["task_ids"]
+        if not isinstance(tasks, list) or not all(_identifier(t) for t in tasks):
+            raise ValueError(f"{path}.task_ids must be a list of nonempty trimmed task IDs")
+        if len(set(tasks)) != len(tasks):
+            raise ValueError(f"{path}.task_ids contains duplicate task IDs")
+        if len(tasks) < 2:
+            raise ValueError(f"{path}.task_ids requires at least two distinct tasks")
         checks[row["check_id"]] = row
     return checks
 
@@ -53,11 +77,16 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
     roles: set[str] = set()
     journeys: set[str] = set()
     allocated = set()
-    for row in rows:
-        if (not isinstance(row, dict) or set(row) - {"role_instance", "acceptance", "journey_ids", "plan_reads", "integration_check_ids"}
-                or not _identifier(row.get("role_instance")) or row["role_instance"] in roles):
-            raise ValueError("candidate_reader_assignments requires unique role instances")
-        roles.add(row["role_instance"])
+    for index, row in enumerate(rows):
+        path = f"candidate_reader_assignments[{index}]"
+        _row_fields(row, path, required={"role_instance", "acceptance", "journey_ids"},
+                    optional=("plan_reads", "integration_check_ids"))
+        role = row["role_instance"]
+        if not _identifier(role):
+            raise ValueError(f"{path}.role_instance must be a nonempty trimmed string")
+        if role in roles:
+            raise ValueError(f"{path}.role_instance is a duplicate role_instance {role!r}")
+        roles.add(role)
         check_ids = row.get("integration_check_ids", [])
         if (not isinstance(check_ids, list) or not all(_identifier(i) and i in checks for i in check_ids)
                 or len(set(check_ids)) != len(check_ids)):

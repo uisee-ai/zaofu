@@ -2,16 +2,42 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from zf.runtime.writer_task_materialization import (
+    TASK_PIPELINE_ENTRY_VERIFY_ONLY,
+    writer_task_evidence_contract,
+    writer_task_pipeline_entry_mode,
+)
+
+
+def read_only_verification_ids(tasks: list[dict[str, Any]]) -> set[str]:
+    """Exclude only verified read-only obligations from the writer topology."""
+    readonly = set()
+    for task in tasks:
+        if task.get("allowed_paths") != [] or task.get("exclusive_files") or task.get("scope"):
+            continue
+        try:
+            evidence = writer_task_evidence_contract(task)
+            if (evidence.get("write_free") is True
+                    and writer_task_pipeline_entry_mode(task, task) == TASK_PIPELINE_ENTRY_VERIFY_ONLY):
+                readonly.add(str(task.get("task_id") or task.get("id") or "").strip())
+        except ValueError:
+            # Invalid or contradictory evidence cannot remove a writer; admission reports it.
+            continue
+    return readonly
+
 
 def assembly_ownership_errors(
     *,
     assembly_owner_roles: dict[str, str],
     bundle_owner_roles: dict[str, str],
     task_dependencies: dict[str, list[str]],
+    read_only_task_ids: set[str],
 ) -> list[str]:
     """Reject parallel bundles without an independent assembly owner."""
 
-    bundle_tasks = list(bundle_owner_roles.items())
+    bundle_tasks = [(task, owner) for task, owner in bundle_owner_roles.items() if task not in read_only_task_ids]
     has_parallel_bundles = any(
         left_owner != right_owner
         and not _task_depends_on(

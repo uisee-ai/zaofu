@@ -184,3 +184,69 @@ def test_legacy_frozen_reader_contract_can_replay_its_pre_oa_optional_coverage()
         scope_reader_contract(dict(frozen), spec, role="reader-a", target="a"*40)
     scope = scope_reader_contract(frozen, spec, role="reader-a", target="a"*40, all_declared=False)
     assert scope["acceptance_ids"] == [candidate_acceptance_id("TASK-1", "AC-1")]
+
+
+@pytest.mark.parametrize(("update", "error_field"), [
+    ({"observable_assertion": "unexpected"}, "unexpected fields: observable_assertion"),
+    ({"assertion": None}, ".assertion"),
+    ({"check_id": " "}, ".check_id"),
+    ({"task_ids": ["T1"]}, "at least two distinct tasks"),
+    ({"task_ids": ["T1", "T1"]}, "duplicate task IDs"),
+    ({"task_ids": ["T1", 2]}, ".task_ids"),
+])
+def test_candidate_integration_errors_identify_the_actual_field(update, error_field):
+    from zf.runtime.candidate_reader_assignments import integration_checks
+
+    row = {"check_id": "C1", "assertion": "A consumer reads the created output.",
+           "task_ids": ["T1", "T2"], **update}
+    with pytest.raises(ValueError) as failure:
+        integration_checks({"integration_checks": [row]})
+    assert "integration_checks[0]" in str(failure.value)
+    assert error_field in str(failure.value)
+
+
+def test_candidate_integration_error_distinguishes_missing_fields_and_duplicate_checks():
+    from zf.runtime.candidate_reader_assignments import integration_checks
+
+    row = {"check_id": "C1", "assertion": "Read created output.", "task_ids": ["T1", "T2"]}
+    assert integration_checks({"integration_checks": [row]}) == {"C1": row}
+    with pytest.raises(ValueError, match="missing fields: assertion"):
+        integration_checks({"integration_checks": [{k:v for k,v in row.items() if k!="assertion"}]})
+    with pytest.raises(ValueError, match="duplicate check ID"):
+        integration_checks({"integration_checks": [row, row]})
+
+
+def test_wrong_reader_assignment_fields_do_not_report_duplicate_unique_roles():
+    rows = _assignments()
+    rows[1] = {
+        "assignment_id": "reader-b", "role_instance": "reader-b",
+        "task_qualified_acceptance_ids": ["AC-2"], "mandatory_journey_ids": [],
+        "required_plan_reads": ["task_map"], "integration_check_ids": [],
+    }
+    with pytest.raises(ValueError) as failure:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    message = str(failure.value)
+    assert "candidate_reader_assignments[1]" in message
+    assert "missing fields: acceptance, journey_ids" in message
+    assert "unexpected fields: assignment_id, mandatory_journey_ids, required_plan_reads, task_qualified_acceptance_ids" in message
+    assert "duplicate" not in message and "unique role" not in message
+
+
+@pytest.mark.parametrize(("change", "expected"), [
+    ("duplicate", "duplicate role_instance 'reader-a'"),
+    ("blank", ".role_instance must be a nonempty trimmed string"),
+    ("missing", "missing fields: role_instance"),
+    ("not_object", "must be an object"),
+])
+def test_reader_role_errors_name_only_the_failing_row(change, expected):
+    rows = _assignments()
+    if change == "not_object":
+        rows[1] = "reader-b"
+    elif change == "missing":
+        del rows[1]["role_instance"]
+    else:
+        rows[1]["role_instance"] = "reader-a" if change == "duplicate" else " "
+    with pytest.raises(ValueError) as failure:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    assert "candidate_reader_assignments[1]" in str(failure.value)
+    assert expected in str(failure.value)

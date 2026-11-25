@@ -159,7 +159,7 @@ _TASK_MAP_CONTRACT_INSTRUCTIONS = [
     "Plan handoff hard contract: produce source-index.v1 and expose source_index_ref or a source_index plan port; every task needs source_key, source_ref, and source_excerpt.",
     "Goal handoff hard contract: explicit mandatory goal_claims must be mapped through task goal_claim_ids to structured acceptance criteria and verification command ids; every command and acceptance criterion needs an owner and tier.",
     "Product planning contract: slice normal tasks by runnable user journey across the layers it needs, not by backend/frontend/test-only horizontal ownership; each slice owns its focused implementation and evidence.",
-    "Product planning contract: when multiple slices feed one product, declare one final assembly owner for shared wiring and the real entrypoint; the assembly task consumes prior evidence rather than recreating it.",
+    "Product planning contract: when distinct parallel writer bundles feed one product, declare one final assembly owner for shared wiring and the real entrypoint; an independently owned write-free Verify task does not create a writer bundle; the assembly task consumes prior evidence rather than recreating it.",
     "Product Acceptance contract: when `product_acceptance_spec` is a required plan port, return one `plan_ports[]` descriptor with schema `product_acceptance_spec.v1`; declare assembly_owner, runnable entrypoints/start/health, mandatory user journeys with observable assertions, and deterministic-vs-provider qualification policy. Runtime binds workflow_run_id, plan_revision, and task_map_generation.",
 ]
 
