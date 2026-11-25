@@ -10,7 +10,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[str, Any]) -> str:
+def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[str, Any], *, config=None) -> str:
     required = ("fanout_id", "fanout_child_id", "workflow_run_id",
                 "active_attempt_id", "source_event_id")
     if any(not payload.get(k) for k in required):
@@ -33,7 +33,13 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
     failed = children[-1]
     if not payload.get("target_operation_id"):
         from zf.runtime.reader_unprepared_wait import unprepared_wait_error
-        return unprepared_wait_error(events, payload)
+        error = unprepared_wait_error(events, payload)
+        if not error and config is not None:
+            from zf.runtime.recovery_authorization import reader_grant_error
+
+            return reader_grant_error(config, events, payload["workflow_run_id"], state_dir=state_dir,
+                                      operation=None, failed=failed)
+        return error
     operation = reduce_workflow_operations(events).get(payload["target_operation_id"], {})
     if (operation.get("operation_type") != "fanout_reader_child"
             or (operation.get("status") not in {"failed", "suspended", "requested"}
@@ -70,6 +76,17 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
     if (request.get("fanout_id") != payload["fanout_id"]
             or request.get("child_id") != payload["fanout_child_id"]):
         return "reader rebuild request targets another child"
+    if payload.get("reader_method_digest"):
+        from zf.runtime.candidate_reader_method import validate_resident_reader_method
+        try:
+            validate_resident_reader_method(state_dir, events, payload, consuming_recommendation=False)
+        except ValueError as exc:
+            return str(exc)
+    if config is not None:
+        from zf.runtime.recovery_authorization import reader_grant_error
+
+        return reader_grant_error(config, events, payload["workflow_run_id"], state_dir=state_dir,
+                                  operation=operation, failed=failed)
     return ""
 
 
@@ -150,11 +167,24 @@ def reader_rebuild_effect_matches(event: ZfEvent, action: dict[str, Any],
             preceding.append(item)
     if not preceding:
         return False
-    dispatch = preceding[-1].payload
+    dispatch = preceding[-1]
+    issued = dispatch.payload
+    return bool(reader_rebuild_dispatch_matches(dispatch, action)
+                and body.get("run_id") == issued["run_id"]
+                and (not body.get("operation_id") or body["operation_id"] == issued["operation_id"]))
+
+
+def reader_rebuild_dispatch_matches(dispatch: ZfEvent, action: dict[str, Any]) -> bool:
+    """A new dispatch for this exact failed call, not another child in its fanout."""
+    p = dispatch.payload
+    if (dispatch.type != "fanout.child.dispatched" or dispatch.origin != "kernel"
+            or not p.get("operation_id") or not p.get("run_id")
+            or p.get("fanout_id") != action.get("fanout_id")
+            or p.get("child_id") != action.get("fanout_child_id")
+            or p.get("workflow_run_id", dispatch.correlation_id) != action.get("workflow_run_id")):
+        return False
     if not action.get("target_operation_id"):
-        return bool(dispatch.get("operation_id") and body.get("run_id") == dispatch.get("run_id")
-                    and dispatch.get("retry_of_run_id") == action.get("active_attempt_id")
-                    and preceding[-1].causation_id == action.get("source_event_id"))
-    return bool(dispatch.get("run_id") and body.get("run_id") == dispatch["run_id"]
-                and dispatch.get("operation_id") != action.get("target_operation_id")
-                and (dispatch.get("payload") or {}).get("retry_of_operation_id") == action.get("target_operation_id"))
+        return (p.get("retry_of_run_id") == action.get("active_attempt_id")
+                and dispatch.causation_id == action.get("source_event_id"))
+    return (p["operation_id"] != action["target_operation_id"]
+            and (p.get("payload") or {}).get("retry_of_operation_id") == action["target_operation_id"])

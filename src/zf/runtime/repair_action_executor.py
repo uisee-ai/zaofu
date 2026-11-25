@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from zf.core.config.schema import RoleConfig
+from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -30,6 +30,8 @@ class RepairActionExecutor:
     respawn_worker: Callable[[RoleConfig], WorkflowRuntimeDecision]
     cancel_worker: Callable[[RoleConfig], WorkflowRuntimeDecision] | None = None
     rerun_fanout_child: Callable[[str, str], WorkflowRuntimeDecision] | None = None
+
+    config: ZfConfig | None = None
 
     def apply(self, event: ZfEvent) -> None:
         """Apply or reject one repair.action.requested event."""
@@ -334,7 +336,15 @@ class RepairActionExecutor:
             and "workflow_run_id" in event.payload
         ):
             from zf.runtime.reader_rebuild_admission import reader_rebuild_error
-            error = reader_rebuild_error(self.task_store.path.parent, self.event_log.read_all(), event.payload)
+            from zf.runtime.recovery_authorization import current_run_grant
+
+            events = self.event_log.read_all()
+            grant, error = current_run_grant(self.config, events, str(event.payload.get("workflow_run_id") or ""))
+            if grant and (event.origin != "kernel" or event.actor not in {"run-manager", "operator", "operator:cli", "web"}):
+                error = "reader_recovery_requires_controlled_owner_or_run_manager"
+            if not error:
+                error = reader_rebuild_error(self.task_store.path.parent, events, event.payload,
+                                             config=self.config if event.actor == "run-manager" else None)
             if error:
                 self._reject(event, action_id=action_id, kind="rerun_fanout_child",
                              task_id=task_id, reason=error,
@@ -370,7 +380,22 @@ class RepairActionExecutor:
                 reason="rerun_fanout_child_unavailable",
             )
             return
+        reservation = None
+        if self.config is not None and event.actor == "run-manager" and event.payload.get("recovery_action") == "child-rebuild":
+            from zf.runtime.recovery_authorization import reserve_reader_rebuild
+
+            reservation, error = reserve_reader_rebuild(self.config, self.task_store.path.parent, self.event_writer, event)
+            if error:
+                self._reject(event, action_id=action_id, kind="rerun_fanout_child", task_id=task_id, reason=error)
+                return
         decision = self.rerun_fanout_child(fanout_id, child_id)
+        if reservation:
+            self.event_writer.emit(
+                "runtime.action.attempt.completed" if decision.action == "rerun_fanout_child"
+                else "runtime.action.attempt.failed",
+                actor="run-manager", causation_id=reservation.id, correlation_id=event.correlation_id,
+                payload={**reservation.payload, "decision_action":decision.action, "reason":decision.reason},
+            )
         if decision.action == "rerun_fanout_child":
             self._terminal(
                 event,

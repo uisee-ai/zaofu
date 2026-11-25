@@ -1112,3 +1112,21 @@ Candidate 的派发说明从本 attempt 的签名输入提取已授权共享观�
 Reader 先判断本路验收是否允许使用同一冻结上的该次观察；要求新观察的约束仍需独立执行路径。普通 shell 缺库时，应区分 shell 自身的失败、签名容器已执行的命令和仍缺的独立探针，再提交有证据的判词。
 
 单路 Reader 受控重派后，内核接收结果时按当前派发的 operation、attempt、请求摘要或运行 ID 核对提交携带的标识。旧票重投沿用原票据，已签发的替代 Reader 保持在途。真实替代结果仍可实时消费或经启动补消费恢复。
+
+### 新一轮验证采用的运行时与技能版本
+
+从待验收的干净 ZaoFu 提交执行下列只读检查。项目的 profile 和技能源须指向本轮批准的版本。
+独立批准了某个技能的正文摘要时可重复传入 `--skill NAME=SHA256`。
+
+```sh
+zf doctor dispatch-baseline --path "$project/zf.yaml" --run-id "$run_id" --release "$release_sha"
+```
+
+检查只取此 Run 第一条已成功投递的任务，回查当时的控制面启动、编译后的配置、签发的 WRC、
+交付时的简报摘要和技能清单，再核对该 attempt 首次认证读取所用 CLI 的版本及实际装载函数。
+成功返回 `verified` 和启动、派发、请求、读取四个事件 ID。历史证据缺失、控制面换代、身份或
+摘要不符时返回 `unproven` 和非零退出码。技能清单证明该方法已随简报交付。模型执行质量、
+独立复核、Judge 和交付分别沿用各自的产物和门禁。
+
+单路恢复诊断、超时对账和运行前 Owner 授权见
+[恢复实施记录](199-worker-recovery-implementation.md)和[恢复执行与授权](autonomous-recovery-closeout.md)。

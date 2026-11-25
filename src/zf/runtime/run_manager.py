@@ -1228,9 +1228,11 @@ def build_run_manager_projection(
     from zf.runtime.repair_dispatch_recovery import pending_dispatch_diagnoses
     from zf.runtime.candidate_finding_partition import pending_obligation_diagnoses
     from zf.runtime.autoresearch_failure_handoff import pending_autoresearch_followups
+    from zf.runtime.candidate_reader_recheck import pending_reader_method_rechecks
 
+    refreshed = pending_reader_method_rechecks(state_dir, events, current_run_id)
     obligations = pending_obligation_diagnoses(events, state_dir=state_dir, run_id=current_run_id, config=config)
-    for diagnosis in [*pending_dispatch_diagnoses(events), *obligations, *pending_autoresearch_followups(events)]:
+    for diagnosis in [*refreshed, *pending_dispatch_diagnoses(events), *obligations, *pending_autoresearch_followups(events)]:
         if not _action_seen(events, diagnosis):
             diagnosis["preflight"] = preflight_action(action=diagnosis["action"], payload=diagnosis)
             diagnosis["policy_decision"] = decide_action_policy(action=diagnosis["action"], payload=diagnosis)
@@ -4894,6 +4896,9 @@ def _consume_agent_recommendations(
                     state_dir=state_dir, config=config, events=events, payload=payload,
                 )
             action = _action_from_agent_recommendation(event, payload)
+            if _recommendation_route(payload) == "controlled_action" and action.get("action") == "child-rebuild":
+                from zf.runtime.candidate_reader_method import validate_resident_reader_method
+                validate_resident_reader_method(state_dir, writer.event_log.read_all(), action)
             if (_recommendation_route(payload) == "controlled_action"
                     and action.get("action") in {"repair-closeout-validate", "repair-closeout-dispose"}):
                 from zf.runtime.repair_revalidation import prepare_revalidation
@@ -6138,6 +6143,7 @@ def _execute_controlled_run_action(
     if action_name == "repair-closeout-apply":
         return _execute_repair_closeout_apply(
             state_dir=state_dir,
+            config=config,
             writer=writer,
             project_root=project_root,
             action=action,
@@ -7186,6 +7192,7 @@ def _execute_repair_closeout_apply(
     writer: EventWriter,
     project_root: Path | None,
     action: dict[str, Any],
+    config: ZfConfig | None = None,
     causation_id: str,
 ) -> str:
     from zf.runtime.repair_dispatch import (
@@ -7204,6 +7211,15 @@ def _execute_repair_closeout_apply(
             **_action_payload(action),
         },
     )
+    from zf.runtime.recovery_authorization import checkpoint_grant_error, current_run_grant
+
+    events = writer.event_log.read_all()
+    grant_error = checkpoint_grant_error(config, events, action)
+    grant, _ = current_run_grant(config, events, str(action.get("workflow_run_id") or ""))
+    if grant_error:
+        writer.emit(RUN_MANAGER_ACTION_BLOCKED, actor="run-manager", causation_id=planned.id,
+                    payload={**_action_payload(action), "status": "blocked", "reason": grant_error})
+        return "blocked"
     if bool(action.get("repair_contract_required", False)):
         try:
             validate_repair_contract_action(state_dir, action)
@@ -7324,6 +7340,7 @@ def _execute_repair_closeout_apply(
         actuator_pid = _spawn_source_repair_restart_actuator(
             state_dir=state_dir,
             project_root=project_root,
+            **({"authorized_merge_event": merging.id} if grant else {}),
         )
     except Exception as exc:
         reason = f"control_plane_restart_actuator_failed: {exc}"
@@ -7409,6 +7426,7 @@ def _spawn_source_repair_restart_actuator(
     *,
     state_dir: Path,
     project_root: Path,
+    authorized_merge_event: str = "",
 ) -> int:
     import sys
     from zf.runtime import source_repair_restart_actuator
@@ -7427,6 +7445,7 @@ def _spawn_source_repair_restart_actuator(
                 str(Path(project_root).resolve()),
                 "--state-dir",
                 str(Path(state_dir).resolve()),
+                *(["--authorized-merge-event", authorized_merge_event] if authorized_merge_event else []),
             ],
             cwd=str(Path(project_root).resolve()),
             stdout=log_handle,
@@ -8005,8 +8024,8 @@ def _settle_pending_action_effects(
             and (
                 (payload.get("action") == "resident-agent-reprompt"
                  and payload.get("request_kind") == "recovery_diagnosis")
-                or (payload.get("action") == "orchestrator-rework-triage"
-                    and payload.get("request_id")
+                or ((payload.get("action") == "child-rebuild" or
+                     (payload.get("action") == "orchestrator-rework-triage" and payload.get("request_id")))
                     and previous.payload.get("effect_pending_event_id") == pending.id)
             )
         )
@@ -8119,7 +8138,12 @@ def _settle_pending_action_effects(
         from zf.runtime.pause_lifecycle import active_request_age_seconds
         timed_out = timeout > 0 and active_request_age_seconds(
             events, created_at=datetime.fromisoformat(pending.ts), now=datetime.now(timezone.utc),
+            run_id=str(payload.get("workflow_run_id") or "") if payload.get("action") == "child-rebuild" else "",
         ) >= timeout
+        if observed is None and timed_out and payload.get("action") == "child-rebuild":
+            from zf.runtime.reader_rebuild_progress import progressing_rebuilt_reader
+            if progressing_rebuilt_reader(writer.event_log.path.parent, events, payload, timeout):
+                continue
         if observed is None and not timed_out:
             continue
         passed = observed is not None and observed.type in expected
@@ -9307,12 +9331,23 @@ def _pending_repair_apply_actions(
             ),
             "route_registry": "run-manager-router.v1",
         }
+        from zf.runtime.recovery_authorization import current_run_grant, checkpoint_grant_error
+
+        run_id = str(continuation.get("workflow_run_id") or continuation.get("run_id") or "")
+        grant, grant_error = current_run_grant(config, events, run_id)
+        if grant:
+            action["workflow_run_id"] = run_id
+            action["approval_ref"] = grant["approval_ref"]
+            grant_error = checkpoint_grant_error(config, events, action)
         if _action_seen(events, action):
             continue
         action["preflight"] = preflight_action(
             action="repair-closeout-apply",
             payload=action,
         )
+        if grant_error:
+            action["preflight"]["failures"].append(grant_error)
+            action["preflight"]["status"] = "blocked"
         action["policy_decision"] = router_decide_action_policy(
             action="repair-closeout-apply",
             payload=action,

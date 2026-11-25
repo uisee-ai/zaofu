@@ -1,8 +1,6 @@
 """Evidence from the authenticated CLI process, not a controller's guess."""
 from __future__ import annotations
 
-import hashlib
-import marshal
 import os
 from pathlib import Path
 import sys
@@ -31,6 +29,7 @@ def record_worker_cli_load(state_dir: Path, log: EventLog, manifest: dict,
     """
     from zf.runtime.artifact_read_capability import authorize_artifact_read_from_environment
     from zf.runtime.runtime_version_projection import _source_revision
+    from zf.runtime.load_receipt import consumer_receipts
 
     if not identity.get("operation_id"):
         return
@@ -40,10 +39,7 @@ def record_worker_cli_load(state_dir: Path, log: EventLog, manifest: dict,
     binding.update(operation_id=identity["operation_id"], actor=identity["actor"],
                    manifest_digest=canonical_source_manifest_digest(manifest))
     functions = (consumer, authorize_artifact_read_from_environment, record_worker_cli_load)
-    code = {f"{fn.__module__}.{fn.__qualname__}": {
-        "file": fn.__code__.co_filename,
-        "loaded_code_sha256": hashlib.sha256(marshal.dumps(fn.__code__)).hexdigest(),
-    } for fn in functions}
+    code = consumer_receipts(functions)
     body = {
         "schema_version": "worker-load.v1", "scope": "authenticated_worker_cli",
         "identity": binding, "pid": os.getpid(), "python": sys.executable,

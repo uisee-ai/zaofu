@@ -681,6 +681,7 @@ class LifecycleManagerMixin(
             respawn_worker=self._respawn_instance,
             cancel_worker=self._cancel_instance,
             rerun_fanout_child=self._rerun_fanout_child,
+            config=self.config,
         ).apply(event)
 
 

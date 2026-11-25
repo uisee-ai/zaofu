@@ -20,11 +20,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--delay-seconds", type=float, default=1.0)
+    parser.add_argument("--authorized-merge-event")
     args = parser.parse_args(argv)
 
     project_root = Path(args.project_root).resolve()
     state_dir = Path(args.state_dir).resolve()
     time.sleep(max(float(args.delay_seconds), 0.1))
+    if args.authorized_merge_event:
+        from zf.runtime.recovery_authorization import authorize_restart_effect
+        if not authorize_restart_effect(project_root, state_dir, args.authorized_merge_event, os.getpid()):
+            return 1
     watcher_pid = _recorded_watcher_pid(state_dir)
     unit = os.environ.get("ZF_HOST_SUPERVISOR_UNIT", "")
     if unit:

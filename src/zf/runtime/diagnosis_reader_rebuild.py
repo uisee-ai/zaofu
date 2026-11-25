@@ -135,6 +135,14 @@ def diagnosis_reader_rebuild(
         {"event_id": gate["event_id"], "blocking_scope": gate["blocking_scope"],
          "checkpoint_id": gate["checkpoint_id"]} for gate in blockers
     ]
+    from zf.runtime.candidate_reader_method import PROOF, reader_method_change
+
+    change = reader_method_change(state_dir, dispatch, operation, failure_event_id=failure.id)
+    if change:
+        result["method_change"] = change
+        if change["status"] != "improved" or blockers:
+            return result
+        payload[PROOF] = change[PROOF]
     if not error:
         result["proposal_only"] = True
         result["recommendation"] = {"recommended_route": "controlled_action", "action": "child-rebuild",

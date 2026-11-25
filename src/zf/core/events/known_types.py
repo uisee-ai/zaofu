@@ -790,6 +790,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "run.manager.resident.restart_requested",
     "run.manager.resident.restarted",
     "run.manager.resident.restart_failed",
+    "run.manager.resident.restart_superseded",
     "run.manager.unhealthy",
     "run.manager.source_repair.dispatch_requested",
     "run.manager.agent.observation",

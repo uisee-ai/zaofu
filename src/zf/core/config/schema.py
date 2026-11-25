@@ -1449,6 +1449,14 @@ class RuntimeRunManagerSourceRepairConfig:
 
 
 @dataclass
+class RuntimeRecoveryAuthorization:
+    approval_ref: str
+    max_reader_rebuilds_per_run: int = 0
+    max_checkpoint_restarts_per_run: int = 0
+    safe_resume_actions: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RuntimeRunManagerConfig:
     backend: str = ""
     reflect: RuntimeRunManagerReflectConfig = field(
@@ -1460,6 +1468,7 @@ class RuntimeRunManagerConfig:
     source_repair: RuntimeRunManagerSourceRepairConfig = field(
         default_factory=RuntimeRunManagerSourceRepairConfig,
     )
+    recovery_authorization: RuntimeRecoveryAuthorization | None = None
 
 
 @dataclass

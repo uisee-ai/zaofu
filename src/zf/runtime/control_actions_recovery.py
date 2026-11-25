@@ -166,7 +166,8 @@ class RecoveryActionsMixin:
         if any(payload.get(k) for k in ("fanout_id", "fanout_child_id", "target_operation_id")):
             from zf.runtime.reader_rebuild_admission import reader_rebuild_error, reader_rebuild_key
             events = self.writer.event_log.read_all()
-            error = reader_rebuild_error(self.state_dir, events, payload)
+            error = reader_rebuild_error(self.state_dir, events, payload,
+                                         config=self.config if self.actor == "run-manager" else None)
             if error:
                 return self._recovery_failed(requested, action, requested_action, error, 409)
             try:
@@ -179,7 +180,7 @@ class RecoveryActionsMixin:
                 correlation_id=payload["workflow_run_id"], causation_id=requested.id,
                 payload={**{k: payload[k] for k in (
                     "fanout_id", "fanout_child_id", "workflow_run_id",
-                    "target_operation_id", "active_attempt_id", "source_event_id") if k in payload},
+                    "target_operation_id", "active_attempt_id", "source_event_id", "reader_method_digest") if k in payload},
                     "action_id": action_id, "kind": "rerun_fanout_child",
                     "recovery_action": action,
                     "idempotency_key": key,

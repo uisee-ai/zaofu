@@ -215,6 +215,8 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                     manifest = preview(service, operation_id=operation_id, kind='verify', command_id=command['command_id'])
                 except (ValueError, KeyError, OSError):
                     continue
+                if not _authorized_host_policy(service, manifest, events):
+                    continue
                 prior = [e for e in events if e.payload.get('manifest_digest') == manifest['manifest_digest']
                          and e.type.startswith('runtime.action.attempt.')]
                 if prior:
@@ -253,8 +255,25 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
     return 0
 
 
+def _authorized_host_policy(service, manifest, events) -> bool:
+    from zf.runtime.recovery_authorization import current_run_grant
+
+    grant, error = current_run_grant(service.config, events, manifest["identity"]["workflow_run_id"])
+    if grant:
+        from zf.runtime.run_continuation import blocking_decisions_for_action
+        from zf.runtime.run_manager import _pending_human_decisions
+
+        if blocking_decisions_for_action(_pending_human_decisions(events), manifest["identity"], events=events):
+            return False  # The outstanding owner gate already supplies the recovery route.
+    if error:
+        _escalate_once(service, events, manifest, error)
+    return not error
+
+
 def _try_recollect(service, manifest, events, policy) -> bool:
     from zf.runtime.host_probe_recollection import recollection_manifest
+    if not _authorized_host_policy(service, manifest, events):
+        return False
     try:
         recollected = recollection_manifest(service, manifest, events, policy)
         if recollected:

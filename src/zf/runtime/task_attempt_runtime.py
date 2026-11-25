@@ -258,7 +258,9 @@ def prepare_task_attempt(
     return PreparedTaskAttempt(context=enriched, attempt=claimed_attempt or attempt)
 
 
-def mark_task_attempt_sent(runtime: Any, prepared: PreparedTaskAttempt | None) -> None:
+def mark_task_attempt_sent(
+    runtime: Any, prepared: PreparedTaskAttempt | None, *, delivery_evidence: dict | None = None,
+) -> None:
     if prepared is None:
         return
     attempt_id = str(prepared.attempt.get("attempt_id") or "")
@@ -270,7 +272,7 @@ def mark_task_attempt_sent(runtime: Any, prepared: PreparedTaskAttempt | None) -
         "task.attempt.sent",
         attempt_id=attempt_id,
         task_id=str(row.get("task_id") or ""),
-        payload=_identity(row),
+        payload={**_identity(row), **(delivery_evidence or {})},
         correlation_id=str(row.get("run_id") or ""),
     )
 

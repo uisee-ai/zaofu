@@ -425,10 +425,12 @@ def admit_workflow_invoke(
             event.id,
         ):
             from zf.runtime.workflow_budget_guard import usage_meter_snapshot
+            from zf.runtime.recovery_authorization import run_grant_fields
 
             runtime.event_writer.append(ZfEvent(
                 type="run.admission.admitted",
                 actor="orchestrator",
+                origin="kernel",
                 task_id=event.task_id,
                 payload={
                     **_admission_payload(
@@ -439,6 +441,7 @@ def admit_workflow_invoke(
                     "policy_mode": policy["mode"],
                     "max_active_runs": policy["max_active_runs"],
                     "budget_snapshot": usage_meter_snapshot(runtime),
+                    **run_grant_fields(runtime.config),
                     "run_limits": _run_limits_payload(runtime),
                 },
                 causation_id=event.id,

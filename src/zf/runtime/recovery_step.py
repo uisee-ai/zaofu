@@ -23,6 +23,10 @@ def has_new_reader_diagnosis_input(
     from zf.runtime.reader_diagnosis_scope import has_retired_reader_diagnosis
 
     events = list(events)
+    if action.get("reader_method_predecessor"):
+        from zf.runtime.candidate_reader_recheck import bound_reader_method_followup
+
+        return bound_reader_method_followup(events, action, state)
     if has_retired_reader_diagnosis(events, action, state):
         return True
     if state.get("status") != "resolved" or not (

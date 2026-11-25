@@ -9,7 +9,7 @@ RECOVERY_FIELDS = (
     "task_id", "fanout_id", "fanout_child_id", "workflow_run_id",
     "target_operation_id", "active_attempt_id", "source_event_id",
     "reason", "approval_ref", "escalation_event_id",
-    "supplemental_input_refs",
+    "supplemental_input_refs", "reader_method_digest",
 )
 
 

@@ -5,6 +5,8 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     ProjectConfig,
     RoleConfig,
@@ -454,6 +456,52 @@ def test_apply_resident_restart_request_rebuilds_only_resident_agent(
     briefing = state_dir / "briefings" / "run-manager-resident.md"
     assert "First tick mode is observe-only" in briefing.read_text(encoding="utf-8")
     assert transport.sent and "observe-only" in transport.sent[0][2]
+
+
+def test_queued_restart_rechecks_liveness_and_cannot_terminate_a_recovered_slot(tmp_path, monkeypatch):
+    cfg = _resident_config(session_mode="dedicated")
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log, default_origin="kernel")
+    log.append(ZfEvent(type=RUN_MANAGER_RESIDENT_RESTART_REQUESTED, origin="worker", actor="run-manager-watchdog"))
+    transport = _RestartTransport()
+    monkeypatch.setattr(transport, "is_alive", lambda role: role == "run-manager", raising=False)
+    coordinator = _FakeCoordinator()
+    args = dict(config=cfg, event_log=log, state_dir=tmp_path, project_root=tmp_path,
+                writer=writer, transport=transport, coordinator=coordinator)
+    assert apply_pending_resident_restart_requests(**args) == 0
+    request = writer.emit(RUN_MANAGER_RESIDENT_RESTART_REQUESTED, actor="run-manager-watchdog",
+                          payload={"instance_id": "run-manager"})
+    assert apply_pending_resident_restart_requests(**args) == 1
+    assert apply_pending_resident_restart_requests(**args) == 0
+    result, = [e for e in log.read_all() if e.type == "run.manager.resident.restart_superseded"]
+    assert result.causation_id == request.id
+    assert not transport.terminated and not coordinator.spawned
+
+
+@pytest.mark.parametrize("failure", ["not_ready", "send_failed"])
+def test_resident_restart_requires_readiness_and_configured_delivery(tmp_path, monkeypatch, failure):
+    cfg = _resident_config(session_mode="dedicated")
+    log = EventLog(tmp_path / "events.jsonl")
+    writer = EventWriter(log)
+    request = writer.emit(RUN_MANAGER_RESIDENT_RESTART_REQUESTED, actor="run-manager-watchdog",
+                          payload={"instance_id": "run-manager"})
+    transport = _RestartTransport()
+    if failure == "not_ready":
+        monkeypatch.setattr(transport, "wait_ready", lambda *args, **kwargs: False)
+    else:
+        def reject_prompt(*args, **kwargs):
+            raise RuntimeError("send failed")
+        monkeypatch.setattr(transport, "send_task", reject_prompt)
+    args = dict(config=cfg, event_log=log, state_dir=tmp_path, project_root=tmp_path,
+                writer=writer, transport=transport, coordinator=_FakeCoordinator())
+    assert apply_pending_resident_restart_requests(**args) == 1
+    assert apply_pending_resident_restart_requests(**args) == 0
+    assert not any(e.type == RUN_MANAGER_RESIDENT_RESTARTED for e in log.read_all())
+    failure_event, = [e for e in log.read_all() if e.type == RUN_MANAGER_RESIDENT_RESTART_FAILED]
+    assert failure_event.causation_id == request.id
+    assert failure_event.payload["ready"] is (failure != "not_ready")
+    assert failure_event.payload["prompted"] is False
+    assert failure_event.payload["workflow_restart"] is False
 
 
 def test_pane_probe_observes_dedicated_resident_run_manager(

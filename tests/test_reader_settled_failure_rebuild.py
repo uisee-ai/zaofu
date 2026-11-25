@@ -11,12 +11,15 @@ from zf.runtime.result_submit import SemanticResultSubmitService, provision_role
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def failed_reader(tmp_path, *, pending_sibling=False, failure_class="reader_execution_failure"):
+def failed_reader(tmp_path, *, pending_sibling=False, failure_class="reader_execution_failure", frozen_inputs=None, before_start=None):
     from zf.core.config.schema import (ZfConfig, ProjectConfig, RoleConfig, WorkflowConfig,
         WorkflowStageConfig, FanoutChildConfig, FanoutAggregateConfig)
     from zf.runtime.orchestrator import Orchestrator
-    fixture = _runtime(tmp_path)
-    seeded = _seed_frozen_candidate(fixture)
+    if frozen_inputs:
+        fixture, seeded = frozen_inputs
+    else:
+        fixture = _runtime(tmp_path)
+        seeded = _seed_frozen_candidate(fixture)
     state, log = fixture.state_dir, fixture.event_log
     roles = ["verify-1", "verify-2"] if pending_sibling else ["verify-1"]
     config = ZfConfig(project=ProjectConfig(name="test", state_dir=str(state)),
@@ -27,9 +30,13 @@ def failed_reader(tmp_path, *, pending_sibling=False, failure_class="reader_exec
                     "output_profile_id":"candidate-verify"}) for name in roles],
                 aggregate=FanoutAggregateConfig(mode="wait_for_all", child_success_event="verify.child.completed",
                     child_failure_event="verify.child.failed", success_event="test.passed", failure_event="test.failed"))]))
+    if frozen_inputs:
+        config.runtime.host_verification = fixture.config.runtime.host_verification
     token = provision_role_submit_credential(state, "verify-1").read_text().strip()
     transport = _RecordingTransport()
     runtime = Orchestrator(state, config, transport, project_root=fixture.project_root)
+    if before_start:
+        before_start(runtime, seeded["run_id"])
     runtime.event_writer.emit("run.started", payload={"workflow_run_id":seeded["run_id"]})
     trigger = next(e for e in log.read_all() if e.type == "candidate.ready")
     runtime.run_once(events=[trigger])

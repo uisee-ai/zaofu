@@ -603,3 +603,23 @@ LS-v1 完成第54项任务后出现“5次重扫耗尽”，其中一次实际�
 交给 Run Manager 分诊。只读合同可用的本任务实现返工次数为零，回执另记配置的
 返工上限、实际拒绝原因、对应 operation 与已接收的结果引用。执行环境弃权继续走
 验证执行恢复路径；后续变更合同或修订计划仍由获授权的决策者处理。
+
+
+### Candidate Reader 重派与 resident 恢复的效果回执
+
+Run Manager 受理单路 Reader 重派后，等待关联的实际派发和终局。派发必须属于同一
+Run、fanout、child 并引用原 operation，或者精确指回尚未建立 operation 的原失败。
+新 WRC 的请求摘要、当前 attempt、角色以及未过期的传输租约均一致时，新派发享有一次
+响应窗口。超过窗口后，只有本 attempt 对签名必读材料新增的覆盖才可延长等待。
+心跳、相同页面重读及兄弟路的回执均不能延期。项目和本 Run 的显式暂停时间从响应
+期限扣除。等待本身始终不签发判词。已超时后，属于这次重派的成功终局仍可补正同一
+效果；历史超时事件保留。仅创建受控请求而没有派发仍会超时。
+
+标准 tick 使用实际 transport 的角色存活查询检查 resident。确认进程停止时，watchdog
+只重启配置的 resident，先以 observe-only 交付简报。如果执行前角色已恢复，
+`run.manager.resident.restart_superseded` 记录同一请求并保留现有进程。探测失败只记
+观测缺口。新进程未 ready 或配置要求的简报投递失败会留下
+`run.manager.resident.restart_failed`。Supervisor 将失败投影给既有诊断路由，保留
+目标实例、请求和失败事件；该 resident 真正输出后移除。一次故障中断续重启控制面、
+积累心跳或其他角色输出都不会反复杀进程。后续一次真实 resident 回应后再次死亡，
+watchdog 才重新开启本实例的恢复。

@@ -191,3 +191,21 @@ child observer 配置错误明确返回 observation unavailable，不能当作�
 本批新回归覆盖 controlled action → Critic dispatch → 独立拒绝、重放/重启、当前事实
 反例、独立诊断仲裁和 AR 后继。测试命令与结果记录于本批任务；此前 12142 等数字
 属于前轮验证。真实 8×8 的旧 closed_failed 和未交付状态不由本批单元测试改写。
+
+## 在 Run 准入时冻结无人恢复授权
+
+Owner 可在项目的 `zf.yaml` 开跑前声明单个 Run 的恢复额度。下面的例子允许对原候选的一条失败 Reader 进行一次重建，以及在已验证的控制面修复后从指定的安全断点重启一次。
+
+```yaml
+runtime:
+  run_manager:
+    recovery_authorization:
+      approval_ref: owner:unattended-policy-v1
+      max_reader_rebuilds_per_run: 1
+      max_checkpoint_restarts_per_run: 1
+      safe_resume_actions: [needs_stage_dispatch]
+```
+
+实际权限取交集。容器探针仍需在 `runtime.host_verification` 配好明确的命令、镜像及执行预算，单次独立补采另需 `recollect_commands`。控制面修复仍需 `source_repair` 开启候选发布、`verified_checkpoint_apply`、`operator_approved`、重启前回放和允许的文件范围。安全断点必须已注册为可自动执行，并绑定通过验证的不可变修复合同。Reader 重建必须复核原 Run、候选快照、失败调用、单路身份，以及该 Reader 获准读取的原执行收据和媒体。
+
+运行时从有效配置生成授权摘要，随 `run.admission.admitted` 记账。Run Manager 在执行上述动作前会对账事件、当前授权和原证据。额度耗尽、更换候选、变更批准的命令或预算以及尚未处置的 Owner 决策都会阻止自动执行。建议正文不能授予权限，运行中追加的配置不能追溯授权。没有声明该块的既有 Run 沿用原有审批和执行策略。
