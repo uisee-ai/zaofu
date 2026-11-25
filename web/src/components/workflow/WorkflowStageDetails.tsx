@@ -1,3 +1,4 @@
+import { WorkflowTeamRoster } from './WorkflowTeamRoster';
 import { asRecordArray } from '../../app/shared';
 import { statusLabels, type SdlcNode, type WorkflowGraphResult } from './sdlcGraphModel';
 import { observedWorkers, stageWorkers, unmappedRoleOperationIds, workerActivity } from './executionGraphModel';
@@ -12,6 +13,7 @@ export default function WorkflowStageDetails({ node, graph, partial, onSelect, o
   const workers = partial ? [] : roleNode ? observedWorkers(graph.nodes.filter(item => operationIds.has(item.id))) : stageWorkers(graph.nodes, stage);
   return <section className="sdlc-stage-details" aria-label="阶段执行摘要">
     <h4>阶段摘要</h4>
+    <WorkflowTeamRoster node={node} details onSelect={onSelect} />
     <p>{roles.length ? `已配置角色：${roles.join('、')}` : '角色配置未记录'}</p>
     {partial ? <><p>执行与 Task 详情尚未加载。</p><button type="button" onClick={onLoadFull}>加载阶段运行详情</button></> : <>
       <p>已观测：{new Set(workers.map(worker => worker.role)).size} 个角色 · {workers.reduce((sum, worker) => sum + worker.records.length, 0)} 条执行记录</p>

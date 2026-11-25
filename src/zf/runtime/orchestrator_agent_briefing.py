@@ -211,6 +211,29 @@ def build_orchestrator_agent_operation_briefing(
                 "manifest; previous source authority does not carry over automatically. "
                 "Repair invalid refs in the same scratch before resubmission."
             )
+            strategy = context.input_body.get("checkpoint_context") or {}
+            if strategy.get("candidate_reader_assignments_digest"):
+                output_rules.append("- Review the Plan product_acceptance_spec Candidate Reader assignments, scopes and "
+                                    "required journeys. To adopt, bind run_plan.candidate_reader_assignments_digest="
+                                    + strategy["candidate_reader_assignments_digest"] + ". Request revision if unsuitable.")
+            if strategy.get("verify_assignment_mode") == "oa_run_plan":
+                output_rules.append(
+                    "- For each Task Verify group declare stage_ids=['verify'], task_ids, independent "
+                    "Reader instance IDs in preferred_role_refs, and verification_scope with acceptance_ids "
+                    "(use ['*'] for all Task Verify criteria) and required_evidence. Only these seats may sign."
+                )
+                if strategy.get("verify_specialist_patterns"):
+                    output_rules.append("- For independent evidence add work_unit.specialists using the registered "
+                        "verify_specialist_patterns in checkpoint-input. Each member names obligation_id, role, pattern_id, "
+                        "question, expected_output, and input_refs (task-contract or contract:$.field). "
+                        "Keep the specialist independent of the signing verify_assignment_seats for that work unit.")
+                if strategy.get("verify_specialist_source_event_id"):
+                    output_rules.append("- Read the specialist-incident source, diagnose the failed obligation and return a "
+                                        "corrected assignment. You may explicitly reuse a still-applicable opinion by its "
+                                        "offered obligation_id and reuse_operation_id; read that opinion first.")
+                if strategy.get("verify_assignment_task"):
+                    output_rules.append(f"- Correct only {strategy['verify_assignment_task']} at contract revision "
+                                        f"{strategy['verify_assignment_revision']}; retain all other assignments.")
             if prepared.checkpoint == "pre_impl":
                 output_rules.append(
                     "- bind task_ids to existing Plan IDs. A stage label alone in "

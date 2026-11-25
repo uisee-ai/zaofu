@@ -919,6 +919,8 @@ def _emit(
     }
     writer.append(ZfEvent(
         type=event_type,
+        origin="kernel" if event_type in {"workflow.request.proposed", "workflow.request.approved",
+                                          "workflow.request.rejected"} else "",
         actor=actor,
         task_id="",
         causation_id=causation_id or None,

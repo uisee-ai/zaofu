@@ -146,3 +146,27 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
 审批和执行验收；机械检查先行，选读减量必须另满足运行时证据条件。未获得风险选择
 授权时维持现有配置，不自动切换默认方式。兼容既有 plan_critic_enabled 开关，不能
 与 plan_review.mode 给出矛盾设置。PrdFlow light 没有 Plan 阶段，不接收此策略。
+
+
+## PRD 阶段按需分工
+
+启用 OA 组队时，将分工写入同一需求修订的 `short_flow_spec.parameters.stage_teams`。
+选择来自当前配置或所选控制器的已注册 reader 实例，在 `requested_roles` 中逐一列出。
+根据尚待回答的问题说明 reason，保留已要求的独立评审、批准和验收。
+
+- `plan` 提供 `{reason, author, members}`。author 是本代唯一正式 Planner。每位专家填写
+  `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。输入引用限定
+  在已有授权范围，每项交付给 author；可直接规划时给空 members。OA 亲自汇总时以本次 author 身份签署。
+  默认成员必需。可选 Plan 专家声明 `required:false` 和 `coverage_owner`（本次 author），仍有正式回执。
+  如果要改由 Planner 接手，在后继 Proposal 保留原成员和义务，添加 `disposition`，其 status 为
+  `reassigned`，填写 reason、previous_proposal_digest 和 previous_run_id。核验原批准分工后再审批新版本。
+  未核实的失败或取消仍是未交付。外部来源应引用授权后已落地的资料，输入中使用项目相对路径或证据标识。
+- `task_verify` 提供 `{reason, mode: "oa_run_plan"}`，选择阻塞 pre_impl 检查点。等待已绑定的
+  Task Map 和任务合同，再由 OA 在 Run Plan 中委派独立验证者。
+- `candidate_verify` 提供 `{reason, width}`，选用已注册的并行 Reader 容量。冻结前将验收、
+  用户旅程与跨任务检查全部分配到具体 Reader。
+- `judge` 使用同样的 author/members 结构，author 从 `authorized_judges` 选择。专项审查者
+  各自声明 `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。默认意见必需，
+  正式 Judge 等待这些签署。咨询意见设置 `required:false`，可与必需意见并行取证；正式 Judge
+  可引用在 Discovery 发布前已准入的咨询意见。咨询缺席时仍可签署。覆盖移交字段
+  `coverage_owner` 和 `disposition` 仅用于 Plan。复用有效的获准分工，变更时提交新版本审批。

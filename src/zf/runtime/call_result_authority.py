@@ -481,7 +481,7 @@ class CallResultAuthorityMixin:
                 break
         batch = current.get("judge_batch_admissions") if current else None
         if batch:
-            selected_ids = set(batch["readers"] + batch["discovery"] + batch["supporting"])
+            selected_ids = set(batch["readers"] + batch["discovery"] + batch["supporting"] + batch.get("advisory", []))
             selected_refs = set(current["input_result_refs"])
         task_source_commits = candidate_task_source_commits(
             events,

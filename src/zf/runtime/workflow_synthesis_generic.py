@@ -26,6 +26,7 @@ FLOW_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "scoper_role",
     "strictness",
     "task_pipeline",
+    "stage_teams",
     "synthesizer_role",
     "verifier_role",
     "executor_role",
@@ -48,6 +49,7 @@ _CONTROLLER_PARAMETER_KEYS = CONTROLLER_PARAMETERS | frozenset({
     "plan_critic_enabled",
     "plan_review",
     "task_pipeline",
+    "stage_teams",
 })
 
 

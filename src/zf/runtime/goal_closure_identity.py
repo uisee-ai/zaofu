@@ -29,6 +29,8 @@ def build_closure_identity(
     payload: Mapping[str, Any],
     state_dir: Path,
     flow_kind: str,
+    required_specialists: tuple[dict, ...] = (),
+    advisory_specialists: tuple[dict, ...] = (),
 ) -> dict[str, Any]:
     raw_workflow_run_id = str(
         payload.get("workflow_run_id")
@@ -78,7 +80,8 @@ def build_closure_identity(
 
     batch = current_judge_admissions(events, source_event, run=workflow_run_id,
         candidate_ref=_resolve_candidate_ref(events, workflow_run_id=workflow_run_id,
-            target_commit=candidate_head, payload=payload), target=candidate_head, generation=generation)
+            target_commit=candidate_head, payload=payload), target=candidate_head, generation=generation,
+        required_specialists=required_specialists, advisory_specialists=advisory_specialists)
     product_acceptance_identity = _current_product_acceptance_identity(
         events,
         state_dir=state_dir,

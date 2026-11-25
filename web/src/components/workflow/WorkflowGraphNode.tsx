@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Check, Circle, CircleAlert, LoaderCircle } from "lucide-react";
+import { WorkflowTaskMembers } from "./WorkflowTeamRoster";
 import { asRecord } from "../../app/shared";
 import { activeStatus, statusLabels, workflowNodeLabel, type SdlcNode } from "./sdlcGraphModel";
 
@@ -23,6 +24,7 @@ function WorkflowGraphNode({ data }: NodeProps<GraphNode>) {
     {!gate && !stage && <div className="sdlc-card-kind">{goal ? "Goal" : node.kind}</div>}
     <strong title={node.label}>{workflowNodeLabel(node)}</strong>
     {stage && Array.isArray(node.data.roles) && node.data.roles.length > 0 && <small className="sdlc-card-summary">{node.data.roles.length} 个配置角色</small>}
+    {node.kind === "task" && <WorkflowTaskMembers node={node} />}
     <div className="sdlc-card-meta">
       <span className="sdlc-provider" title={provider ? binding.source === "provider_usage" ? "Observed provider" : "Configured provider" : "No provider observation"}>
         {provider || node.data.role_instance ? <><i />{provider || String(node.data.role_instance)}</> : null}

@@ -410,6 +410,11 @@ class FanoutBriefingMixin:
             if stage is not None else []
         )
         stage_instruction_lines: list[str] = []
+        if child_payload.get("judge_specialist_obligation"):
+            stage_instruction_values = [
+                "Submit the assigned independent opinion, supporting evidence refs, and any dissent to the formal Judge.",
+                "Completing the opinion and accepting the reviewed subject are separate fields in your report.",
+            ]
         if stage_instruction_values:
             stage_instruction_lines.extend([
                 "## Stage Intent",
@@ -425,6 +430,33 @@ class FanoutBriefingMixin:
                 if str(item).strip()
             )
             stage_instruction_lines.append("")
+        if stage is not None:
+            from zf.core.config.stage_teams import briefing_obligation_lines
+            stage_instruction_lines.extend(briefing_obligation_lines(stage, role.instance_id))
+            if stage.id == "prd-plan" and stage.children and stage.children[0].role_instance == role.instance_id:
+                for member in stage.children[0].payload.get("transferred_obligations", []):
+                    stage_instruction_lines.append(
+                        f"- You own the reassigned coverage of {member['obligation_id']}: {member['question']} "
+                        f"Deliver {member['expected_output']} using {', '.join(member['input_refs'])}. "
+                        f"Reason: {member['disposition']['reason']}"
+                    )
+            if (stage.id == "prd-plan" and stage.trigger == "prd.scan.completed" and stage.children
+                    and stage.children[0].payload.get("stage_obligation", {}).get("obligation_id") == "plan-author"):
+                for result in trigger_payload.get("stage_member_results") or []:
+                    stage_instruction_lines.append(
+                        f"- {result['obligation_id']} from {result['role_instance']}: "
+                        f"receipt {result['result_event_id']}. Read the corresponding bound report through your artifact input index."
+                    )
+        specialist = trigger_payload.get("verify_specialist_obligation")
+        if specialist and specialist.get("role") == role.instance_id:
+            stage_instruction_lines.extend([
+                "## Task Verify specialist evidence",
+                f"Task: {specialist['task_id']} at {specialist['target_commit']}",
+                f"Obligation: {specialist['obligation_id']} — {specialist['question']}",
+                "Input scope: " + ", ".join(specialist["input_refs"]),
+                "Expected evidence: " + specialist["expected_output"],
+                "Submit the independent specialist evidence to the task verifier.", "",
+            ])
         from zf.runtime.research_adaptive_contract import apply_child_contract
 
         apply_child_contract(

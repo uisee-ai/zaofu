@@ -32,16 +32,26 @@ def materialize_controller_candidate(
         return _write_candidate(base_path, request_id, documents)
     if ("plan_critic_enabled" in parameters or "plan_review" in parameters) and "lanes" not in parameters:
         raise ValueError("plan_critic_enabled requires explicit existing lanes")
-    if family not in {"IssueFlow", "PrdFlow", "RefactorFlow"} or "lanes" not in parameters:
+    if "stage_teams" in parameters and family != "PrdFlow":
+        raise ValueError("stage_teams requires PrdFlow")
+    if family not in {"IssueFlow", "PrdFlow", "RefactorFlow"} or not ({"lanes", "stage_teams"} & parameters.keys()):
         return base_path
-    lanes = parameters["lanes"]
-    if isinstance(lanes, bool) or not isinstance(lanes, int) or not 1 <= lanes <= 64:
-        raise ValueError("controller lanes must be an integer between 1 and 64")
     documents = list(yaml.safe_load_all(base_path.read_text(encoding="utf-8")))
     matches = [d for d in documents if isinstance(d, dict) and d.get("kind") == family]
     if len(matches) != 1 or not isinstance(matches[0].get("spec"), dict):
         raise ValueError("controller synthesis requires exactly one existing selected Flow")
     spec = matches[0]["spec"]
+    if "stage_teams" in parameters:
+        from zf.core.config.stage_teams import normalize_stage_teams
+        spec["stageTeams"] = normalize_stage_teams(parameters["stage_teams"])
+        spec.pop("stage_teams", None)
+        if "lanes" not in parameters:
+            if "task_pipeline" in parameters:
+                raise ValueError("task_pipeline requires explicit lanes")
+            return _write_candidate(base_path, request_id, documents)
+    lanes = parameters["lanes"]
+    if isinstance(lanes, bool) or not isinstance(lanes, int) or not 1 <= lanes <= 64:
+        raise ValueError("controller lanes must be an integer between 1 and 64")
     critic_enabled = parameters.get("plan_critic_enabled")
     if "plan_critic_enabled" in parameters and (family != "PrdFlow" or type(critic_enabled) is not bool):
         raise ValueError("plan_critic_enabled requires PrdFlow and a boolean")
@@ -85,7 +95,7 @@ def materialize_controller_candidate(
         raise ValueError("controller Flow has ambiguous lane aliases")
     key = lane_keys[0] if lane_keys else "lanes"
     if spec.get(key) == lanes and pipeline is None:
-        return _write_candidate(base_path, request_id, documents) if critic_changed else base_path
+        return _write_candidate(base_path, request_id, documents) if critic_changed or "stage_teams" in parameters else base_path
     if spec.get("taskPipeline") or spec.get("task_pipeline"):
         raise ValueError("Task Pipeline resizing requires an explicit pool/config revision, not lanes alone")
     spec[key] = lanes

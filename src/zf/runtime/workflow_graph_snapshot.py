@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 
+from zf.core.workflow.flow_metadata import flow_metadata_for
 from zf.core.workflow.graph import WorkflowGraphCompiler
 
 
@@ -18,6 +19,15 @@ def compile_proposal_graph(config, family: str) -> dict:
         scoped.workflow.rework_routing = {event: role for event, role in scoped.workflow.rework_routing.items()
                                           if role in role_ids}
     graph = WorkflowGraphCompiler().compile(scoped).to_dict()
+    teams = flow_metadata_for(scoped, kind).get("stage_teams")
+    if teams:
+        graph["stage_teams"] = deepcopy(teams)
+        by_id = {node["node_id"]: node for node in graph["nodes"]}
+        for stage in scoped.workflow.stages:
+            members = [dict(child.payload["stage_obligation"]) for child in stage.children
+                       if isinstance(child.payload.get("stage_obligation"), dict)]
+            if members:
+                by_id["stage:" + stage.id]["metadata"]["team_obligations"] = members
     known = {node["node_id"] for node in graph["nodes"]}
     for edge in graph["edges"]:
         for key in ("from_node", "to_node"):

@@ -114,6 +114,7 @@ _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "prdRef", "prd_ref",
     "targetRef", "target_ref",
     "scanRoles", "scan_roles",
+    "stageTeams", "stage_teams",
     "planRole", "plan_role",
     "implRolePattern", "impl_role_pattern",
     "verifyRolePattern", "verify_role_pattern",
@@ -1579,7 +1580,11 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         raise WorkflowProfileError(
             "prd-flow-v4-task-pipeline requires topology: fanout"
         )
+    if "stageTeams" in params and "stage_teams" in params:
+        raise WorkflowProfileError("PrdFlow stageTeams aliases are ambiguous")
     if topology == "light":
+        if "stageTeams" in params or "stage_teams" in params:
+            raise WorkflowProfileError("stage_teams requires PrdFlow fanout")
         if "planReview" in params or "plan_review" in params:
             raise WorkflowProfileError("planReview requires fanout topology with a Plan stage")
         return _expand_prd_flow_light(
@@ -1769,7 +1774,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         ]
         semantic_profiles.setdefault("implementation", "blocking")
         semantic_profiles.setdefault("task-verify", "blocking")
-    return {
+    expansion = {
         "roles": roles,
         "stages": stages,
         "pipelines": [pipeline],
@@ -1777,6 +1782,19 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         "schema_profile": "canonical-dag/v8",
         "metadata": metadata,
     }
+    if "stageTeams" in params or "stage_teams" in params:
+        from zf.core.config.stage_teams import compile_plan_team, normalize_stage_teams
+        try:
+            teams = normalize_stage_teams(_pick(params, "stageTeams", "stage_teams"))
+            metadata["stage_teams"] = teams
+            if "plan" in teams:
+                compile_plan_team(expansion, teams["plan"], entry)
+            if teams.keys() - {"plan"}:
+                from zf.core.config.verification_stage_teams import apply_validation_teams
+                apply_validation_teams(expansion, teams)
+        except ValueError as exc:
+            raise WorkflowProfileError(str(exc)) from exc
+    return expansion
 
 
 def expand_refactor_flow_v4_task_pipeline(params: dict) -> dict[str, Any]:
@@ -1868,6 +1886,12 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
 
     workflow = body.setdefault("workflow", {})
     stages = workflow.setdefault("stages", [])
+    if expansion.get("entry_stage_id") == "prd-plan":
+        # Old registered PRD controllers explicitly route to the scan stage.
+        for kind in ("prd", "feat"):
+            route = (workflow.get("kind_routes") or {}).get(kind)
+            if isinstance(route, dict) and route.get("pattern_id") == "prd-scan":
+                route["pattern_id"] = "prd-plan"
     hand_triggers = {
         (
             str(s.get("trigger") or ""),
@@ -1875,12 +1899,14 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
         )
         for s in stages if isinstance(s, dict)
     }
+    emitted_triggers = set(hand_triggers)
     for stage in expansion["stages"]:
         stage_key = (
             str(stage.get("trigger") or ""),
             str(stage.get("flow_kind") or "").strip().lower(),
         )
-        if stage_key in hand_triggers or (stage_key[0], "") in hand_triggers:
+        triggers = hand_triggers if stage["id"] == "prd-judge-advisory" else emitted_triggers
+        if stage_key in triggers or (stage_key[0], "") in triggers:
             print(
                 f"Warning: flowProfile stage {stage['id']!r} skipped; "
                 f"hand-written stage already covers trigger "
@@ -1889,7 +1915,7 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
             )
             continue
         stages.append(stage)
-        hand_triggers.add(stage_key)
+        emitted_triggers.add(stage_key)
 
     workflow.setdefault("pipelines", []).extend(expansion["pipelines"])
     admission_replan = expansion.get("admission_replan")

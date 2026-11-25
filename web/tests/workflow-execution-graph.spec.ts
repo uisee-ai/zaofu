@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const scope = { request_id: 'A', revision: 1, run_id: 'run-A', proposal_digest: 'A', source_seq: 10, head_seq: 10, historical: false, execution_started: true };
 const stage = (id: string) => ({ id: `workflow:stage:${id}`, kind: 'workflow', label: id, status: 'running', views: ['workflow'], data: { stage_id: id, roles: [{ name: 'configured-only' }] } });
@@ -555,4 +555,102 @@ for (const stageStatus of ['running', 'aggregating', 'blocked']) test(`initial v
   await expect.poll(isFullyVisible).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(isFullyVisible).toBe(true);
+});
+
+test('approved stage team is visible before the first worker or business Task', async ({page}, info) => {
+  const member = (role: string) => ({role, obligation_id: role, status: 'ready', instance: '', task_ids: [],
+    history: [], attempt_ids: [], messages: [], operation_ids: [], stage: 'plan', source_event_id: 'approval', owner: 'kernel'});
+  const plan = stage('plan');
+  const first = {...plan, data: {...plan.data, team: {authority: 'approved', required_total: 3, admitted_count: 0,
+    members: ['product-scan', 'tech-scan', 'planner'].map(member), unbound_operation_ids: []}}};
+  const pre = {schema_version:'sdlc-workbench-structure.v1', partial:true, generation:'approved', scope:{...scope, execution_started:false},
+    nodes:[first], edges:[], diagnostics:[]};
+  let full = 0;
+  await page.route('**/api/projects/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const request = {request_id:'A', objective:'A', status:'approved', revision:1, proposal_digest:'A'};
+    if (path.endsWith('/workflow-requests')) return route.fulfill({json:{items:[request]}});
+    if (path.endsWith('/graph/structure')) return route.fulfill({json:pre});
+    if (path.endsWith('/graph/node')) return route.fulfill({json:{node:first, scope:pre.scope}});
+    if (path.endsWith('/graph')) { full++; return route.fulfill({json:graph}); }
+    if (path.includes('/workflow-requests/')) return route.fulfill({json:{result:request, requirement:{}, proposal:{}, artifacts:{}, lifecycle:{}, links:{}}});
+    return route.fulfill({json:{ok:true}});
+  });
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
+  const card = page.locator('.react-flow__node[data-id="workflow:stage:plan"]');
+  await expect(card).toContainText('已准入 0/3 项义务');
+  for (const role of ['product-scan','tech-scan','planner']) await expect(card.getByText(role,{exact:true})).toBeVisible();
+  await expect(card.getByText(/获准待派发 · 实例待绑定/)).toHaveCount(3);
+  expect(full).toBe(0);
+  await page.screenshot({path:info.outputPath('approved-before-dispatch.png')});
+});
+
+async function showTeam(page: Page, node: ReturnType<typeof stage>) {
+  const snapshot = {...graph, generation:'team', nodes:[node], edges:[]};
+  const request = {request_id:'A', objective:'A', status:'approved', revision:1, proposal_digest:'A'};
+  await page.route('**/api/projects/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/workflow-requests')) return route.fulfill({json:{items:[request]}});
+    if (path.endsWith('/graph/structure')) return route.fulfill({json:{...snapshot, schema_version:'sdlc-workbench-structure.v1', partial:true}});
+    if (path.endsWith('/graph/execution')) return route.fulfill({json:{...executionSummary, ...snapshot}});
+    if (path.endsWith('/graph/node')) return route.fulfill({json:{node, scope}});
+    if (path.endsWith('/graph')) return route.fulfill({json:snapshot});
+    if (path.includes('/workflow-requests/')) return route.fulfill({json:{result:request, requirement:{}, proposal:{}, artifacts:{}, lifecycle:{}, links:{}}});
+    return route.fulfill({json:{ok:true}});
+  });
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
+}
+
+test('corrected Verify work shows the reused opinion and its original attempt', async ({page}, info) => {
+  const shared = {task_ids:['T-1'], stage:'verify', messages:[], history:[], attempt_ids:[],
+    owner:'signer', source_event_id:'new-choice', operation_ids:[]};
+  const members = [
+    {...shared, role:'reviewer', obligation_id:'coverage', status:'admitted', instance:'reviewer',
+      source_event_id:'reuse-receipt', reused:true, original_work_unit_id:'original-unit',
+      source_operation_id:'original-parent', source_result_event_id:'original-admission',
+      attempt_ids:['original-attempt'], evidence_ref:{ref:'opinion.json', sha256:'old-digest'}},
+    {...shared, role:'signer', obligation_id:'formal', status:'ready', instance:''},
+  ];
+  const verify = stage('verify');
+  const node = {...verify, data:{...verify.data, team:{members, admitted_count:1, required_total:2,
+    authority:'approved', task_progress:{verify:{admitted:0,total:1}}}}};
+  await showTeam(page, node);
+  const card = page.locator('.react-flow__node[data-id="workflow:stage:verify"]');
+  await expect(card).toContainText('已准入 1/2 项义务');
+  await expect(card).toContainText('verify · 业务任务 0/1');
+  await expect(card).toContainText('复用原意见');
+  await card.click();
+  const detail = page.getByRole('complementary', {name:'图节点详情'});
+  await detail.getByText('coverage · T-1 · 查看交接').click();
+  for (const text of ['来源：reuse-receipt', '原工作单元：original-unit', '原调用：original-parent',
+    '原准入回执：original-admission', '尝试：original-attempt', '准入产物：opinion.json']) {
+    await expect(detail.getByText(text, {exact:false})).toBeVisible();
+  }
+  await page.screenshot({path:info.outputPath('reused-specialist.png')});
+});
+
+test('Judge shows advisory opinions separately and waits only for required specialists', async ({page}, info) => {
+  const shared = {stage:'prd-post-verify-discovery', task_ids:[], messages:[], history:[], attempt_ids:[],
+    operation_ids:[], owner:'kernel', instance:'', source_event_id:'proposal'};
+  const members = [
+    {...shared, role:'completeness', obligation_id:'coverage', status:'ready'},
+    {...shared, role:'consultant', obligation_id:'timing', required:false, status:'admitted', instance:'consultant',
+      stage:'prd-judge-advisory', verdict:'rejected'},
+    {...shared, role:'judge', obligation_id:'judge-author', status:'waiting_inputs', waiting_for:['coverage'],
+      stage:'prd-lanes-final'},
+  ];
+  const final = stage('prd-lanes-final');
+  const node = {...final, data:{...final.data, team:{members, admitted_count:0, required_total:2,
+    authority:'approved', optional_count:1, optional_admitted_count:1, optional_verdicts:{rejected:1},
+    unbound_deliveries:[{event_id:'prior-shipment', event_type:'ship.completed', ts:'2026-11-25'}]}}};
+  await showTeam(page, node);
+  const card = page.locator('.react-flow__node[data-id="workflow:stage:prd-lanes-final"]');
+  await expect(card).toContainText('已准入 0/2 项义务');
+  await expect(card).toContainText('可选意见：1/1 已准入 · rejected × 1');
+  await expect(card).toContainText('其他或待核实版本的交付：ship.completed · 2026-11-25 · prior-shipment');
+  await card.click();
+  const detail = page.getByRole('complementary', {name:'图节点详情'});
+  await detail.getByText('judge-author · prd-lanes-final · 查看交接').click();
+  await expect(detail.getByText('等待义务：coverage', {exact:true})).toBeVisible();
+  await page.screenshot({path:info.outputPath('advisory-judge.png')});
 });

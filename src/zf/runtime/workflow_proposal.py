@@ -180,6 +180,15 @@ def build_workflow_proposal(
     from zf.runtime.workflow_approval_requirements import load_approval_bound_config
     config = load_approval_bound_config(candidate_path, short_spec.get("parameters") or {})
     from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    plan_team = (flow_metadata_for(config, "prd").get("stage_teams") or {}).get("plan", {})
+    if any(member.get("disposition") for member in plan_team.get("members", [])):
+        from zf.runtime.plan_team_transfer import validate_predecessors
+        try:
+            validate_predecessors(Path(state_dir), plan_team, request_id=request_id,
+                                  revision=request_revision, requirement=requirement_digest)
+        except (ValueError, KeyError, OSError) as exc:
+            raise WorkflowProposalError(str(exc)) from exc
     rendered = redact_config(renderable_config_to_primitive(config))
     source_docs = _flow_documents(candidate_path)
     if not short_spec_ref:

@@ -444,9 +444,15 @@ def bind_product_acceptance_report(
         and operation.get("output_profile_id") == "workflow-read"
         and operation.get("canonical_success_event") == "flow.discovery.child.completed"
     )
+    result = dict(getattr(adapted, "payload", {}) or {})
+    if schema == "workflow-read-result.v1" and operation.get("judge_specialist_obligation"):
+        if result.get("verdict") == "passed" and not (result.get("evidence_refs") or result.get("artifact_refs")):
+            return replace(adapted, issues=(*adapted.issues, {"field": "control_result.evidence_refs",
+                                  "code": "missing_required", "message": "Judge specialist must cite its supporting evidence"}))
+        if not any(result.get(k) for k in ("product_acceptance_report", "product_acceptance_report_ref")):
+            return adapted
     if schema != "verification-result.v1" and not is_discovery:
         return adapted
-    result = dict(getattr(adapted, "payload", {}) or {})
     # An execution failure makes no product judgment. Admit its abstention
     # without inventing a full evaluation; supplied reports still get checked.
     if (

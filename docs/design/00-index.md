@@ -5,7 +5,7 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 214；201–205 已在本地设计工作中占用，不复用。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 215；201–205 已在本地设计工作中占用，不复用。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
 
@@ -31,5 +31,6 @@
 | 212 | [Workflow artifact 读取与 Agent session 恢复规格](212-workflow-artifact-reading-and-session-resume.md) | candidate | 规定冻结输入的工作区读取、严格交付证据、断点选择和会话续行，以同合同三组对照及 8×8 中断场景验收。 |
 | 213 | [里程碑交接、独立验收与定时唤醒](specs/213-zaofu-antigravity-borrowings.md) | candidate | 根据 [Antigravity 调研](specs/antigravity-orchestration-review.zh-CN.md)，定义里程碑接手、验收缺口、事件与超时竞争，以及持久作业的重试和去重。 |
 | 214 | [Workflow Skill 任务评估与按需加载优化](../spec/214-workflow-skill-evaluation-and-optimization.md) | implemented（Task Verify 与 Planner 试点） | 项目决策表、客户端兼容性、加载与交互试验已接入。[8×8 与 Loshu FMS 复盘](../impl/214-workflow-skill-field-audit.md)覆盖 39 项当前方法及长契约读取对照。 |
+| 215 | [OA 按需组队与阶段执行工作台](specs/215-oa-stage-teams-and-execution-workbench.md) | partial | OA 按需组队与独立验收、阶段工作台和按需诊断已接入。固定与按需 Plan、两组真实 8×8 的对照待验。[实施与验收](../impl/215-oa-stage-team-implementation.md)。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

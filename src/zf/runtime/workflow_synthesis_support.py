@@ -94,8 +94,11 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
             permission_mode=role.permission_mode,
             native_delegation=getattr(role.provider_session, "native_delegation", None),
         )
+    from zf.core.config.stage_teams import authorized_judges
     return {
         "roles": roles,
+        "authorized_judges": authorized_judges(config),
+        "reader_roles": {str(r.instance_id or r.name) for r in (getattr(config, "roles", []) or []) if r.role_kind == "reader"},
         "skills": skills,
         "profiles": set(execution_profile_catalog(config)),
         "templates": set(REGISTERED_TEMPLATES),
@@ -119,6 +122,8 @@ def admission_contract(catalog: Mapping[str, Any]) -> dict[str, Any]:
         "template_contracts": catalog["template_contracts"],
         "allowed_flow_families": sorted(ALLOWED_FLOW_FAMILIES),
         "allowed_roles": sorted(catalog["roles"]),
+        "authorized_judges": sorted(catalog.get("authorized_judges", [])),
+        "registered_readers": sorted(catalog.get("reader_roles", [])),
         "allowed_skills": sorted(catalog["skills"]),
         "allowed_profiles": sorted(catalog["profiles"]),
         "allowed_generic_templates": sorted(catalog["templates"]),
@@ -178,6 +183,21 @@ def synthesis_prompt(
         "verify_capacity and max_active_task_pipelines, plus lanes large enough for "
         "both pools. Preserve requested capacities. Ask when the mode or a decision-critical "
         "limit is unknown; shadow is observation, not actual scheduling. "
+        "When tasked to select a PRD team, use parameters.stage_teams.plan={reason,author,members}. "
+        "Select the unique Plan author and specialists from the selected registered reader instances; "
+        "include them in requested_roles. Each member has obligation_id, role, question, input_refs "
+        "(source labels or references within the existing authorized scope) and expected_output. "
+        "Use an empty members array when the author can plan directly. Never select its independent reviewers. "
+        "Optional Plan members add required:false and coverage_owner equal to author. To transfer an existing "
+        "optional assignment, retain the whole obligation and add disposition with status reassigned, reason, "
+        "previous_proposal_digest and previous_run_id, for a newly approved successor Proposal. "
+
+        "Optional stage_teams.task_verify={mode:'oa_run_plan',reason} assigns independent verification "
+        "at pre_impl; candidate_verify={width,reason} assigns bounded Reader seats and requires "
+        "complete freeze-bound coverage. judge={reason,author,members} chooses a named authorized_judges instance as formal "
+        "Judge and distinct read-only specialists. Each member declares obligation_id, role, question, input_refs "
+        "and expected_output. Judge opinions are required by default. Set required:false for advisory input; it "
+        "can inform the Judge if admitted on time and never blocks signing. coverage_owner and disposition are Plan-only. "
         "When the owner authorizes risk-based review selection, select parameters.plan_review "
         "with mode none|targeted|full, a decision reason, and focus (non-empty review questions for targeted). "
         "Use existing requirement and risk evidence, not task-count thresholds; targeted checks include "

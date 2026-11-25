@@ -3300,6 +3300,13 @@ def load_config(path: Path) -> ZfConfig:
         raise ConfigError(str(exc)) from exc
     _validate_orchestration_blocking_pilot_tiers(cfg)
     _validate_orchestration_oa_profile(cfg)
+    for metadata in flow_metadata_values:
+        if (metadata or {}).get("stage_teams"):
+            from zf.core.config.stage_teams import validate_effective_teams
+            try:
+                validate_effective_teams(cfg, metadata, path.parent)
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 

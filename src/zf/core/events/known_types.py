@@ -180,6 +180,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "workflow.normal_frontier.wrc.reconciled",
     "task.pipeline.external_gate.satisfied",
     "task.pipeline.verify.completed",
+    "task.verify.specialist.reused",
     "task.pipeline.verify.failed",
     "task.pipeline.semantic_rework.exhausted",
     "task.pipeline.acceptance.completed",

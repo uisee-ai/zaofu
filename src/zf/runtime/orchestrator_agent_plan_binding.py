@@ -32,7 +32,9 @@ def current_checkpoint_plan_package(
     return package
 
 
-def semantic_failure_target_task_id(state_dir: Path, request: Mapping[str, Any]) -> str:
+def checkpoint_target_task_id(state_dir: Path, request: Mapping[str, Any]) -> str:
+    if request.get("checkpoint") == "pre_impl":
+        return str(request.get("verify_assignment_task") or "")
     if request.get("checkpoint") != "semantic_failure":
         return ""
     checkpoint_input = hydrate_sidecar_ref(state_dir, request["checkpoint_input_ref"]).payload
@@ -47,7 +49,7 @@ def operation_checkpoint_plan_package(
         return None
     stored = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload
     request = stored["request"]
-    task_id = semantic_failure_target_task_id(state_dir, request)
+    task_id = checkpoint_target_task_id(state_dir, request)
     if not task_id:
         return None
     return current_checkpoint_plan_package(

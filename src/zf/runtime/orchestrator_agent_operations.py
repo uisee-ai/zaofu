@@ -133,6 +133,10 @@ def request_orchestrator_agent_checkpoint(
                 should_dispatch=prepared.status == "requested",
                 replay_hit=True,
             )
+    if checkpoint == "pre_impl" and payload.get("verify_assignment_mode") == "oa_run_plan":
+        from zf.runtime.task_verify_specialists import specialist_catalog
+
+        payload = {**payload, "verify_specialist_patterns": specialist_catalog(runtime.config)}
     context = build_orchestrator_agent_context(
         runtime,
         checkpoint=checkpoint,
@@ -243,6 +247,10 @@ def request_orchestrator_agent_checkpoint(
         "result_scratch_ref": result_scratch_ref,
         "result_identity": result_identity,
     }
+    if checkpoint == "pre_impl":
+        request.update({k: payload[k] for k in ("verify_assignment_mode", "verify_assignment_task",
+                                                "verify_assignment_seats", "verify_specialist_patterns", "verify_assignment_acceptance", "verify_specialist_incident",
+                                                "verify_assignment_revision", "candidate_reader_assignments_digest") if k in payload})
     service = workflow_operation_service(runtime)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
@@ -399,6 +407,14 @@ def orchestrator_agent_checkpoint_revision(
             return candidate_key
         return ":".join((revision, source_event_id))
     if checkpoint == "pre_impl":
+        if payload.get("verify_assignment_task"):
+            from zf.runtime.call_result_envelope import canonical_json_sha256
+            key = [payload.get("task_map_generation"), payload.get("plan_artifact_package_digest"),
+                   payload["verify_assignment_task"], payload["verify_assignment_revision"]]
+            incident = payload.get("verify_specialist_incident")
+            if incident:
+                key.extend((incident["source_event_id"], incident["operation_id"]))
+            return canonical_json_sha256(key)
         return str(
             payload.get("task_map_generation")
             or payload.get("plan_artifact_package_digest")

@@ -86,6 +86,27 @@ def assigned_spec(state: Path, freeze: Mapping[str, Any]) -> dict:
     return spec
 
 
+def approved_roster_ref(state_dir: Path, events, freeze: Mapping[str, Any], spec: Mapping[str, Any]) -> dict:
+    from zf.runtime.orchestrator_agent_run_plan import current_run_plan_admission
+
+    admitted = current_run_plan_admission(events, require_kernel=True, **{k: str(freeze.get(k) or "") for k in
+        ("workflow_run_id", "task_map_generation", "plan_artifact_package_ref", "plan_artifact_package_digest")})
+    digest = canonical_json_sha256(spec.get("candidate_reader_assignments", []))
+    ref = admitted.get("execution_plan_ref") or {}
+    if not ref.get("sha256") or not ref.get("ref") or admitted.get("candidate_reader_assignments_digest") != digest:
+        raise ValueError("frozen Candidate Reader roster lacks the current OA decision")
+    from zf.runtime.orchestrator_agent_run_plan import EXECUTION_PLAN_SCHEMA
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    frozen_plan = hydrate_sidecar_ref(state_dir, ref).payload
+    identity = frozen_plan.get("identity", {}) if isinstance(frozen_plan, dict) else {}
+    if (not identity or frozen_plan.get("schema_version") != EXECUTION_PLAN_SCHEMA
+            or frozen_plan.get("candidate_reader_assignments_digest") != digest
+            or any(identity.get(k) != freeze.get(k) for k in ("workflow_run_id", "task_map_generation",
+                                                               "plan_artifact_package_ref", "plan_artifact_package_digest"))):
+        raise ValueError("immutable OA execution plan differs from its Candidate Reader approval")
+    return {"candidate_reader_assignments_digest": digest, "execution_plan_ref": ref}
+
+
 def validate_acceptance_coverage(rows: list[dict], criteria: list[dict]) -> None:
     assigned = {(ac["task_id"], ac["acceptance_id"]) for row in rows for ac in row["acceptance"]}
     known = {(r["source_task_id"], r["source_acceptance_id"]) for r in criteria}

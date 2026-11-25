@@ -212,6 +212,7 @@ class ReflectionResult:
     risk: str                  # low | medium | high
     rec_for_next_iter: str
     raw_response: str
+    selected_reader_recovery: str = ""
 
 
 @dataclass(frozen=True)

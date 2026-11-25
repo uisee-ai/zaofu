@@ -152,6 +152,8 @@ class WriterFanoutDataMixin:
         success_event: str,
         child_success_event: str = "",
     ) -> bool:
+        if stage_id == "prd-scan":
+            return False
         haystack = " ".join([
             stage_id,
             success_event,
@@ -247,19 +249,16 @@ class WriterFanoutDataMixin:
                 or payload.get("verification_owner") == "candidate_verify"
             ):
                 payload["candidate_currentness_required"] = True
+        if success_event == "prd.scan.completed":
+            from zf.runtime.plan_team_handoff import plan_member_results
+            if results := plan_member_results(manifest):
+                payload["stage_member_results"] = results
         if str(payload.get("flow_kind") or "") == "workflow":
-            admitted_input_refs: list[str] = []
-            for child in manifest.get("children", []) or []:
-                if not isinstance(child, dict):
-                    continue
-                ref = call_result_envelope_ref(
-                    child.get("admitted_call_result_ref")
-                )
-                if ref:
-                    admitted_input_refs.append(ref)
-            payload["input_result_refs"] = self._dedupe_strings(
-                admitted_input_refs
-            )
+            admitted_inputs = [
+                call_result_envelope_ref(child.get("admitted_call_result_ref"))
+                for child in manifest.get("children", []) or [] if isinstance(child, dict)
+            ]
+            payload["input_result_refs"] = self._dedupe_strings([ref for ref in admitted_inputs if ref])
         plan_ports = first_normalized_plan_ports(payloads)
         if plan_ports:
             payload["plan_ports"] = plan_ports

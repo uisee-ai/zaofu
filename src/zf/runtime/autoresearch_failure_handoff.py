@@ -1,36 +1,161 @@
-"""Turn incomplete diagnosis into one bound resident decision, not blind retry."""
+"""Return incomplete diagnosis to the existing Run Manager decision owner."""
 from hashlib import sha256
 
 from zf.core.events.model import ZfEvent
 
 
-def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
-    from zf.runtime.run_manager import _autoresearch_request_id, _autoresearch_result_request_id
-    requests = {_autoresearch_request_id(e, e.payload): e
-                for e in events if e.type == 'run.manager.autoresearch.requested'}
-    terminal = {_autoresearch_result_request_id(e, e.payload): e for e in events
-                if e.type in {'autoresearch.loop.failed', 'autoresearch.loop.completed'}}
-    out = []
-    for request_id, event in terminal.items():
-        if event.type != 'autoresearch.loop.failed':
-            continue
-        request = requests.get(request_id)
-        if not request_id or request is None:
-            continue
-        diagnosis = event.payload.get('diagnosis') or {}
-        if diagnosis.get('status') == 'waiting' and diagnosis.get('diagnosis_owner') == 'owner':
-            continue  # An explicit owner decision retains its authorized path.
-        checkpoint = 'ar-outcome-' + sha256(request_id.encode()).hexdigest()[:16]
+REQUEST = 'run.manager.autoresearch.requested'
+RESULTS = {'autoresearch.loop.failed', 'autoresearch.loop.completed'}
+
+
+def diagnosis_request_for_receipt(receipt: ZfEvent, requests: list[ZfEvent]) -> ZfEvent | None:
+    """Match an earlier request only when identity and any supplied scopes agree."""
+    from zf.runtime.run_manager import _autoresearch_request_id
+
+    if receipt.origin not in {'kernel', ''} or not isinstance(receipt.payload, dict):
+        return None
+    p = receipt.payload
+    explicit_id = next((p[k] for k in ('run_manager_request_id', 'request_id', 'loop_request_id',
+                                        'source_request_id') if p.get(k)), '')
+    run = p.get('workflow_run_id') or p.get('run_id')
+    causal = next((r for r in requests if receipt.causation_id == r.id), None)
+    candidates = []
+    for request in [causal] if causal else requests:
         original = request.payload
+        request_id = _autoresearch_request_id(request, original)
+        request_run = original.get('workflow_run_id') or original.get('run_id')
+        if ((explicit_id and explicit_id != request_id) or (run and request_run and run != request_run)
+                or (p.get('request_event_id') and p['request_event_id'] != request.id)
+                or any(p.get(k) and original.get(k) and p[k] != original[k]
+                       for k in ('checkpoint_id', 'recovery_case_id', 'task_map_generation', 'task_id'))):
+            continue
+        if (explicit_id or p.get('request_event_id') == request.id or receipt.causation_id == request.id
+                or receipt.correlation_id == request_id
+                or (p.get('checkpoint_id') and p['checkpoint_id'] == original.get('checkpoint_id'))):
+            candidates.append(request)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _unresolved_reader(events: list[ZfEvent], index: int, request: ZfEvent, result: ZfEvent) -> ZfEvent | None:
+    """A runner exit needs another owner only for its still-open, evidenced Reader fault."""
+    from zf.autoresearch.repair_preparation import build_repair_preparation
+    from zf.runtime.diagnosis_reader_rebuild import _diagnosed_child
+    from zf.runtime.run_continuation import blocking_decisions_for_action
+    from zf.runtime.run_manager import _pending_human_decisions
+    from zf.runtime.run_scope import events_for_run
+    from zf.runtime.terminal_events import terminal_after_event
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    original = request.payload
+    run = original.get('workflow_run_id') or original.get('run_id')
+    sources = set(original.get('source_event_ids') or [])
+    if not run or not sources or terminal_after_event(events, request):
+        return None
+    prior = events[:index]
+    failure = _diagnosed_child(prior, sources, run)
+    if not failure:
+        return None
+    child = failure.payload
+    fanout, child_id, attempt = (child.get(k) for k in ('fanout_id', 'child_id', 'run_id'))
+    dispatch = next((e for e in reversed(prior) if e.origin == 'kernel' and e.type == 'fanout.child.dispatched'
+                     and e.payload.get('workflow_run_id') == run and e.payload.get('fanout_id') == fanout
+                     and e.payload.get('child_id') == child_id and e.payload.get('run_id') == attempt), None)
+    if not dispatch:
+        return None
+    operation_id = dispatch.payload.get('operation_id')
+    operation = reduce_workflow_operations(prior).get(operation_id, {})
+    if (operation.get('operation_type') != 'fanout_reader_child' or operation.get('workflow_run_id') != run
+            or (original.get('task_id') and original['task_id'] != operation.get('task_id'))):
+        return None
+
+    if any(e.type == 'human.escalate' for e in events):
+        scoped = events_for_run(events, run_id=run)
+        action = {'action': 'diagnose-attention', 'workflow_run_id': run, 'task_id': operation.get('task_id')}
+        if blocking_decisions_for_action(_pending_human_decisions(scoped), action, events=scoped):
+            return None
+
+    # A successor actually dispatched for this failed call owns the next outcome.
+    # A sibling, a stale call's receipt or a proposed retry cannot transfer ownership.
+    for event in events[events.index(failure) + 1:]:
+        p = event.payload
+        if event.origin != 'kernel':
+            continue
+        if (event.type == 'fanout.child.dispatched' and p.get('workflow_run_id') == run
+                and p.get('fanout_id') == fanout and p.get('child_id') == child_id
+                and (p.get('payload') or {}).get('retry_of_operation_id') == operation_id
+                and p.get('operation_id') and p['operation_id'] != operation_id):
+            return None
+        if (event.type == 'autoresearch.bug_candidate.confirmed' and event.actor == 'run-manager'
+                and event.causation_id == result.id and build_repair_preparation(p) is not None
+                and p.get('recovery_case_id') == original.get('recovery_case_id')):
+            return None
+    return failure
+
+
+def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
+    from zf.runtime.run_manager import _autoresearch_request_id
+
+    requests = []
+    first_requests = {}
+    indexes = {}
+    terminal = {}
+    for index, event in enumerate(events):
+        if event.type == REQUEST and event.origin in {'kernel', ''}:
+            requests.append(event)
+            indexes[event.id] = index
+            first_requests.setdefault(_autoresearch_request_id(event, event.payload), event)
+        elif event.type in RESULTS:
+            source = diagnosis_request_for_receipt(event, requests)
+            if source:
+                previous = terminal.get(source.id)
+                if not previous or previous[1].type != 'autoresearch.loop.completed':
+                    terminal[source.id] = (source, event)
+        elif (event.type == 'run.manager.action.failed' and event.actor == 'run-manager'
+              and event.origin in {'', 'kernel'} and event.payload.get('failure_class') == 'diagnosis_consumer_timeout'):
+            source = diagnosis_request_for_receipt(event, requests)
+            if (source and source.id == event.causation_id and source.actor == 'run-manager'
+                    and source.origin in {'', 'kernel'}):
+                terminal.setdefault(source.id, (source, event))
+    out = []
+    for request, event in terminal.values():
+        request_id = _autoresearch_request_id(request, request.payload)
+        diagnosis = event.payload.get('diagnosis')
+        diagnosis = diagnosis if isinstance(diagnosis, dict) else {}
+        original = request.payload
+        failure = None
+        if event.type == 'autoresearch.loop.completed':
+            failure = _unresolved_reader(events, indexes[request.id], request, event)
+            if not failure:
+                continue
+            if not diagnosis:
+                diagnosis = {'status': 'unknown', 'failure_class': 'diagnosis_missing',
+                             'missing_evidence': 'actionable diagnosis of the bound Reader failure'}
+        if event.type == 'run.manager.action.failed':
+            diagnosis = {'status': 'unknown', 'failure_class': 'diagnosis_consumer_timeout',
+                         'missing_evidence': 'bound diagnosis result'}
+        if (diagnosis.get('status') == 'waiting' and diagnosis.get('diagnosis_owner') == 'owner'
+                and (event.type != 'autoresearch.loop.completed'
+                     or (diagnosis.get('pending_decisions') and diagnosis.get('resume_condition')))):
+            continue  # An explicit owner decision retains its authorized path.
+        run_id = original.get('workflow_run_id') or original.get('run_id') or ''
+        # The original occurrence retains its legacy checkpoint after an upgrade.
+        # A later same-name incident cannot consume that historical owner's decision.
+        key = request_id if first_requests[request_id].id == request.id else request.id
+        checkpoint = 'ar-outcome-' + sha256(key.encode()).hexdigest()[:16]
+        sources = [failure.id] if failure else []
+        sources.extend(e.id for e in events[:indexes[request.id]] if e.origin == 'kernel'
+                       and e.id in (original.get('source_event_ids') or [])
+                       and (not run_id or (e.payload.get('workflow_run_id') or e.correlation_id) == run_id))
         out.append({
             'schema_version': 'run-manager.pending-action.v1',
             'action': 'diagnose-attention', 'safe_resume_action': 'diagnose_attention',
             'checkpoint_id': checkpoint, 'fingerprint': checkpoint,
             'recovery_case_id': 'rcase-' + checkpoint,
             'parent_recovery_case_id': original.get('recovery_case_id', ''),
-            'workflow_run_id': original.get('workflow_run_id', ''),
+            'workflow_run_id': run_id,
+            **{k: original[k] for k in ('task_map_generation', 'fanout_id', 'stage_id') if original.get(k)},
             'task_id': original.get('task_id', ''),
-            'source_event_ids': [request.id, event.id],
+            'source_event_ids': list(dict.fromkeys([*sources, request.id, event.id])),
             'failure_class': 'autoresearch_diagnosis_incomplete',
             'recovery_phase': 'diagnosis_result', 'diagnosis': diagnosis,
             'checkpoint_ref': event.payload.get('checkpoint_ref', {}),
@@ -41,7 +166,8 @@ def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
             'owner_route': 'run_manager', 'suggested_route': 'run_manager_recovery',
             'action_policy': 'needs_diagnosis', 'intervention_class': 'diagnose',
             'expected_output': ['run.manager.agent.recommendation'],
-            'expected_downstream_events': ['run.manager.resident.prompted'],
+            'expected_downstream_events': ['run.manager.resident.prompted', 'run.manager.reflect.requested',
+                                           'human.escalate'],
             'reason': 'Diagnosis did not complete. Inspect the bound phase, partial reports and '
                       'cleanup separately. Choose an authorized bounded continuation or explicit '
                       'owner request; do not repeat the whole experiment, infer a product defect, '

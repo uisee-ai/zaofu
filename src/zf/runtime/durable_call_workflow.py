@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
@@ -52,6 +50,7 @@ _WORKFLOW_IDENTITY_KEYS = tuple(dict.fromkeys((
     "reservation_id",
     *GENERIC_WORKFLOW_HANDOFF_KEYS,
     "input_result_refs",
+    "verify_specialist_obligation",
 )))
 
 
@@ -81,112 +80,6 @@ def _target_ref(payload: dict[str, Any], stage_target_ref: str) -> str:
     if kind in {"prd", "issue"} and source_ref:
         return source_ref
     return str(stage_target_ref or "").strip()
-
-
-def _workflow_proposal_binding_error(
-    state_dir: Path,
-    payload: dict[str, Any],
-) -> str:
-    proposal_ref = payload.get("workflow_proposal_ref")
-    proposal_digest = str(
-        payload.get("workflow_proposal_digest") or ""
-    )
-    if not isinstance(proposal_ref, dict) and not proposal_digest:
-        return ""
-    effective_ref = payload.get("effective_config_ref")
-    effective_digest = str(payload.get("effective_config_digest") or "")
-    run_contract_ref = str(payload.get("run_contract_ref") or "")
-    run_contract_digest = str(payload.get("run_contract_digest") or "")
-    request_id = str(payload.get("request_id") or "")
-    if (
-        not isinstance(proposal_ref, dict)
-        or not proposal_digest
-        or not isinstance(effective_ref, dict)
-        or not effective_digest
-        or not run_contract_ref
-        or not run_contract_digest
-        or not request_id
-    ):
-        return "approved proposal binding is incomplete"
-    try:
-        from zf.runtime.run_contract import load_run_contract_snapshot
-        from zf.runtime.sidecar_refs import sidecar_path
-        from zf.runtime.workflow_proposal import load_workflow_proposal
-        from zf.runtime.workflow_requests import load_workflow_request
-
-        request = load_workflow_request(state_dir, request_id)
-        if (
-            str(request.get("status") or "")
-            not in {"submitted", "running"}
-            or str(request.get("proposal_digest") or "")
-            != proposal_digest
-            or not _same_ref(
-                request.get("proposal_ref"),
-                proposal_ref,
-            )
-        ):
-            return "workflow proposal is not approved for the current request"
-        proposal = load_workflow_proposal(state_dir, proposal_ref)
-        if (
-            str(proposal.get("proposal_digest") or "")
-            != proposal_digest
-            or not _same_ref(
-                proposal.get("effective_config_ref"),
-                effective_ref,
-            )
-            or str(effective_ref.get("sha256") or "")
-            != effective_digest
-        ):
-            return "workflow proposal effective config binding is invalid"
-        snapshot_path = sidecar_path(state_dir, run_contract_ref)
-        if snapshot_path.is_symlink():
-            return "run contract snapshot is unsafe"
-        raw = snapshot_path.read_bytes()
-        snapshot = load_run_contract_snapshot(
-            state_dir,
-            {
-                "ref": run_contract_ref,
-                "sha256": hashlib.sha256(raw).hexdigest(),
-                "byte_count": len(raw),
-            },
-        )
-        contract = snapshot["contract"]
-        workflow = (
-            contract.get("workflow")
-            if isinstance(contract.get("workflow"), dict)
-            else {}
-        )
-        config = (
-            contract.get("config")
-            if isinstance(contract.get("config"), dict)
-            else {}
-        )
-        if (
-            str(snapshot.get("contract_digest") or "")
-            != run_contract_digest
-            or str(workflow.get("proposal_digest") or "")
-            != proposal_digest
-            or not _same_ref(workflow.get("proposal_ref"), proposal_ref)
-            or str(config.get("effective_snapshot_digest") or "")
-            != effective_digest
-            or not _same_ref(
-                config.get("effective_snapshot_ref"),
-                effective_ref,
-            )
-        ):
-            return "run contract does not pin the approved proposal"
-    except Exception:
-        return "approved proposal binding cannot be verified"
-    return ""
-
-
-def _same_ref(left: Any, right: Any) -> bool:
-    if not isinstance(left, dict) or not isinstance(right, dict):
-        return False
-    return (
-        str(left.get("ref") or "") == str(right.get("ref") or "")
-        and str(left.get("sha256") or "") == str(right.get("sha256") or "")
-    )
 
 
 class DurableCallWorkflowMixin:
@@ -260,13 +153,13 @@ class DurableCallWorkflowMixin:
                         f"{generation_error}"
                     ),
                 )
-        proposal_binding_error = _workflow_proposal_binding_error(
+        from zf.runtime.workflow_config_consumer import approved_config_consumer_error, workflow_proposal_binding_error
+
+        proposal_binding_error = workflow_proposal_binding_error(
             self.state_dir,
             payload,
         )
         if not proposal_binding_error:
-            from zf.runtime.workflow_config_consumer import approved_config_consumer_error
-
             proposal_binding_error = approved_config_consumer_error(
                 self.state_dir, self.config, payload,
             )
@@ -324,6 +217,10 @@ class DurableCallWorkflowMixin:
         from zf.runtime.stage_definition_binding import bound_stage
 
         try:
+            if "verify_specialist_obligation" in payload:
+                from zf.runtime.task_verify_specialists import validate_invocation
+
+                specialist_input = validate_invocation(self, event)
             stage = bound_stage(self, payload) or self._workflow_stage_by_id(pattern_id)
         except ValueError as exc:
             self._emit_workflow_invoke_rejected(event, str(exc), task_id=task_id, pattern_id=pattern_id)
@@ -647,6 +544,11 @@ class DurableCallWorkflowMixin:
             value = payload.get(key)
             if value not in (None, ""):
                 fanout_request.payload[key] = value
+        if payload.get("verify_specialist_obligation"):
+            fanout_request.payload.update(result_protocol_mode="blocking", durable_operation=True,
+                input_refs=[specialist_input], required_reads=[{"source_id": specialist_input["source_id"],
+                    "artifact_id": specialist_input["artifact_id"], "json_path": "$",
+                    "artifact_sha256": specialist_input["sha256"], "min_returned_bytes": 1}])
         fanout_request.payload["workflow_invoke_admitted"] = True
         accepted_event.payload["fanout_request_event_id"] = fanout_request.id
         try:

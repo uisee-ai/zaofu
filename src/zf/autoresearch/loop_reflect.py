@@ -211,6 +211,8 @@ def parse_reflection_response(raw: str) -> ReflectionResult:
         alternatives=alternatives,
         risk=risk,
         rec_for_next_iter=str(parsed.get("rec_for_next_iter", "")),
+        selected_reader_recovery=(parsed["selected_reader_recovery"]
+                                  if isinstance(parsed.get("selected_reader_recovery"), str) else ""),
         raw_response=raw,
     )
 

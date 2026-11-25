@@ -1,3 +1,4 @@
+import { WorkflowTeamRoster } from './WorkflowTeamRoster';
 import { useState } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { statusLabels, workflowNodeLabel, type SdlcNode } from './sdlcGraphModel';
@@ -19,6 +20,7 @@ export function WorkflowExecutionStageNode({ data }: NodeProps<StageNode>) {
   return <div className="execution-graph-stage">
     <Handle type="target" position={Position.Left} />
     <header><div><small>{roleNode ? '角色执行' : unassigned ? '执行归属' : '阶段'}</small><strong title={node.label}>{workflowNodeLabel(node)}</strong></div><span>{roleNode || unassigned ? '已观测' : statusLabels[node.status] || node.status}</span></header>
+    <WorkflowTeamRoster node={node} />
     <p className="execution-graph-count">{partial ? '执行记录未加载' : `${roles} 个已观测角色 · ${records} 条执行记录`}</p>
     <div className={`execution-graph-worker-list${expanded ? ' is-expanded nowheel' : ''}`}>{visible.map(worker => {
       const activity = workerActivity(worker.latest);

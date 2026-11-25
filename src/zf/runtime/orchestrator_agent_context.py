@@ -80,8 +80,18 @@ def build_orchestrator_agent_context(
         payload=payload,
         effective_config_ref=effective_config_ref,
         effective_config_summary_ref=effective_config_summary_ref,
-        expand_package=checkpoint != "candidate_reader_observation",
+        expand_package=checkpoint != "candidate_reader_observation" and not payload.get("verify_assignment_task"),
     )
+    if checkpoint == "pre_impl" and payload.get("verify_assignment_contract_ref"):
+        _append_descriptor(sources, source_id="current-task-contract", kind="verify_contract",
+                           descriptor=payload["verify_assignment_contract_ref"])
+    incident = payload.get("verify_specialist_incident") or {}
+    if checkpoint == "pre_impl" and incident:
+        _append_descriptor(sources, source_id="specialist-incident", kind="verify_specialist_incident",
+                           descriptor=payload["verify_specialist_incident_ref"])
+        for row in incident["available_opinions"]:
+            _append_descriptor(sources, source_id="prior-opinion-" + row["obligation_id"],
+                               kind="verify_specialist_result", descriptor=row["result_ref"])
     from zf.runtime.milestone_successor import successor_context
 
     successor = successor_context(runtime, checkpoint=checkpoint, run=workflow_run_id,
@@ -154,6 +164,10 @@ def build_orchestrator_agent_context(
                 "candidate_operation_id",
                 "candidate_failure_scope",
                 "target_task_id",
+                "candidate_reader_assignments_digest",
+                "verify_assignment_mode",
+                "verify_assignment_task",
+                "verify_assignment_revision",
                 "target_stage_id",
                 "target_attempt_id",
                 "target_role_instance",
@@ -193,6 +207,11 @@ def build_orchestrator_agent_context(
             "terminal_self_approval": False,
         },
     }
+    if "verify_specialist_patterns" in payload:
+        input_body["checkpoint_context"]["verify_specialist_patterns"] = payload["verify_specialist_patterns"]
+        input_body["checkpoint_context"]["verify_assignment_seats"] = payload.get("verify_assignment_seats", [])
+    if incident:
+        input_body["checkpoint_context"]["verify_specialist_source_event_id"] = incident["source_event_id"]
     if execution_ref:
         input_body["execution_context_ref"] = execution_ref
     input_ref = write_immutable_json_sidecar(
@@ -276,6 +295,10 @@ def build_orchestrator_agent_context(
         and ("yaml" in config_body or "compiled_graph" in config_body)
         and isinstance(config_body.get("config"), Mapping) else "$"
     )
+    execution_sources = {"checkpoint-input", "execution-context", "effective-config", "semantic-failure-input",
+                         "task-recovery-context", "milestone-successor", "current-task-contract", "specialist-incident"}
+    if payload.get("candidate_reader_assignments_digest"):
+        execution_sources.add("plan-port-product_acceptance_spec")
     required_reads = [
         {
             "source_id": str(source["source_id"]),
@@ -291,10 +314,7 @@ def build_orchestrator_agent_context(
         if not (checkpoint == "semantic_failure" and source["source_id"].startswith("candidate-prior-repair-"))
         and (checkpoint != "candidate_reader_observation" or source["source_id"] in {
             "checkpoint-input", "candidate-reader-counterexample",
-        }) and (input_mode != "execution" or source["source_id"] in {
-            "checkpoint-input", "execution-context", "effective-config",
-            "semantic-failure-input", "task-recovery-context", "milestone-successor",
-        })
+        }) and (input_mode != "execution" or source["source_id"] in execution_sources)
     ]
     from zf.runtime.artifact_read_snapshot import pin_read_selections
     from zf.runtime.artifact_source_versions import pin_source_versions

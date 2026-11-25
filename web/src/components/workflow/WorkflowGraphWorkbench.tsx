@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Controls, MiniMap, MarkerType, ReactFlow, Panel, useNodesInitialized, useReactFlow, useStore, type Node, type Edge, type NodeChange, applyNodeChanges } from "@xyflow/react";
+import { Controls, MiniMap, MarkerType, ReactFlow, Panel, useNodesInitialized, useUpdateNodeInternals, useReactFlow, useStore, type Node, type Edge, type NodeChange, applyNodeChanges } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./workflowGraph.css";
 import type { RecentEvent } from "../../api/types";
@@ -11,6 +11,7 @@ import { workflowNodeTypes } from "./WorkflowGraphNode";
 import WorkflowExecutionTimeline from "./WorkflowExecutionTimeline";
 import WorkflowStageDetails from "./WorkflowStageDetails";
 import WorkflowOperationDetails from "./WorkflowOperationDetails";
+import { WorkflowTaskMembers } from "./WorkflowTeamRoster";
 import WorkflowTaskDetails from "./WorkflowTaskDetails";
 import { operationStage, unmappedRoleOperationIds } from "./executionGraphModel";
 import { executionContext, unassignedExecutionGroup } from "./executionContextModel";
@@ -57,7 +58,8 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const executionSummary = Boolean(graph && "partial" in graph && graph.execution_summary);
   const structureOnly = partial && !executionSummary;
   const structureNodeExists = Boolean(graph?.nodes.some(node => node.id === selected));
-  const selectedStructure = structureOnly && structureNodeExists ? baseStructure : null;
+  const stageSummarySelected = Boolean(execution.summary?.nodes.some(n => n.id === selected && (n.data.team as {partial?:boolean} | undefined)?.partial));
+  const selectedStructure = structureOnly && structureNodeExists ? baseStructure : stageSummarySelected ? execution.summary : null;
   const structureNode = useWorkflowStructureNode(projectId, requestId, asOf, selectedStructure, selected, refresh);
   const loadFull = requireFull;
   const error = readError || execution.error;
@@ -93,7 +95,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     }
     const needle = search.trim().toLowerCase();
     if (summary && !needle && !status && direction === "all") {
-      for (const node of graph.nodes) if (node.id !== selected && isWaitingAuxiliaryStage(node) && !graph.nodes.some(item => item.kind === "operation" && item.data.role_instance && operationStage(item) === node.data.stage_id && item.data.workflow_run_id === graph.scope.run_id)) summary.delete(node.id);
+      for (const node of graph.nodes) if (node.id !== selected && isWaitingAuxiliaryStage(node) && !(node.data.team as {members?: unknown[]} | undefined)?.members?.length && !graph.nodes.some(item => item.kind === "operation" && item.data.role_instance && operationStage(item) === node.data.stage_id && item.data.workflow_run_id === graph.scope.run_id)) summary.delete(node.id);
     }
     const candidates = graph.nodes.filter(n => (n.views.includes(view) || n.id === selected) && (view !== "modules" || (taskMode === "dependencies" ? n.kind === "task" : ["requirement", "goal", "claim", "task"].includes(n.kind))) && expanded.has(n.id) && (!reachable || reachable.has(n.id)) && (!focused || focused.has(n.id))
       && (!summary || needle || summary.has(n.id) || (n.id === selected && n.kind !== "operation"))
@@ -178,7 +180,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     setCanvasNodes(nodes => applyNodeChanges(changes, nodes));
   }, [view]);
   const selectedNode = graph?.nodes.find(n => n.id === selected) || filtered.nodes.find(n => n.id === selected);
-  const inspectedNode = structureOnly ? structureNode.node : selectedNode;
+  const inspectedNode = selectedStructure ? structureNode.node : selectedNode;
   const taskOperations = inspectedNode?.kind === "task" && inspectedNode.data.task_id ? (graph?.nodes.filter(n => n.kind === "operation" && n.data.task_id === inspectedNode.data.task_id && n.data.role_instance) || []).sort((a, b) => {
     const time = (node: typeof a) => { const value = Date.parse(String(node.data.last_event_at || "")); return Number.isNaN(value) ? -Infinity : value; };
     return (time(b) - time(a)) || a.id.localeCompare(b.id);
@@ -229,13 +231,13 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           <button type="button" onClick={() => { setAsOf(0); setCursor(""); }}>回到实时</button>
         </div>}
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
-          {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : singleTask ? <section className="sdlc-single-task" aria-label="单任务概览"><h3>当前仅有一个任务</h3><p>没有其他任务可展示依赖关系。</p><button type="button" onClick={() => pick(singleTask.id)}>{singleTask.label} · {statusLabels[singleTask.status] || singleTask.status}</button><details><summary>关联 Claim · {singleClaims.length}</summary>{singleClaims.length ? singleClaims.map(claim => <p key={claim.id}>{claim.label} · {statusLabels[claim.status] || claim.status}</p>) : <p>尚无已声明的 Claim 关联。</p>}<p>任务映射不代表验收通过。</p></details></section> : view === "timeline" && "timeline" in graph ? <WorkflowExecutionTimeline graph={graph} onSelect={pick} /> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
+          {partial && (view !== "workflow" || Boolean(search.trim())) ? <p role="status">正在读取完整运行关系…</p> : singleTask ? <section className="sdlc-single-task" aria-label="单任务概览"><h3>当前仅有一个任务</h3><WorkflowTaskMembers node={singleTask} /><p>没有其他任务可展示依赖关系。</p><button type="button" onClick={() => pick(singleTask.id)}>{singleTask.label} · {statusLabels[singleTask.status] || singleTask.status}</button><details><summary>关联 Claim · {singleClaims.length}</summary>{singleClaims.length ? singleClaims.map(claim => <p key={claim.id}>{claim.label} · {statusLabels[claim.status] || claim.status}</p>) : <p>尚无已声明的 Claim 关联。</p>}<p>任务映射不代表验收通过。</p></details></section> : view === "timeline" && "timeline" in graph ? <WorkflowExecutionTimeline graph={graph} onSelect={pick} /> : <div className="sdlc-canvas" data-testid="workflow-graph-canvas">
             <ReactFlow key={canvasScope} nodes={canvasNodes} edges={canvasEdges} nodeTypes={workflowNodeTypes} onNodesChange={onNodesChange} onNodeClick={(_, node) => { const item = node.data.node as typeof filtered.nodes[number] | undefined; if (!item?.data.unassigned_execution) pick(String(item?.data.context_target || node.id)); }} fitView fitViewOptions={{ ...graphFitOptions, ...(focusIds.length ? { nodes: focusIds.map(id => ({ id })) } : {}) }} minZoom={0} onlyRenderVisibleElements={filtered.nodes.length > 40} nodesConnectable={false} deleteKeyCode={null} aria-label="Workflow 关系图">
               <FitResizedCanvas focusIds={focusIds} focusKey={structureOnly ? "structure" : executionSummary ? "execution" : "full"} />{view === "workflow" && !fullStructure && <FitAllButton resultId={`ui:run-result:${requestId}`} currentStageId={currentStage?.id} />}<Controls showInteractive={false} fitViewOptions={{ ...graphFitOptions, minZoom: 0 }} /><MiniMap pannable zoomable maskColor="var(--surface)" nodeColor="var(--text-tertiary)" style={{ width: 130, height: 85 }} />
             </ReactFlow>
             {!filtered.nodes.length && <p className="sdlc-empty">{graph.nodes.length ? "No nodes match these filters." : "The graph will appear as this workflow is prepared."}</p>}
           </div>}
-          {selectedNode && structureOnly && !inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
+          {selectedNode && selectedStructure && !inspectedNode && <aside className="sdlc-inspector" aria-label="图节点详情">
             <button className="sdlc-close" type="button" aria-label="Close node details" onClick={() => { setSelected(""); const url = new URL(location.href); url.searchParams.delete("node"); history.replaceState(null, "", url); }}><X size={16} /></button>
             <p role={structureNode.error ? "alert" : "status"}>{structureNode.error || "正在读取节点详情…"}</p>
             {structureNode.error && <><button type="button" onClick={structureNode.retry}>重试节点详情</button>
@@ -269,6 +271,15 @@ function FitResizedCanvas({ focusIds, focusKey }: { focusIds: string[]; focusKey
   const width = useStore(state => state.width);
   const height = useStore(state => state.height);
   const initialized = useNodesInitialized();
+  const updateHandles = useUpdateNodeInternals();
+  // Live replacement can retain a measured node size but lose the internal
+  // handle bounds. No ResizeObserver callback fires for an unchanged size.
+  const missingHandles = useStore(state => JSON.stringify(Array.from(state.nodeLookup.values())
+    .filter(n => n.measured.width && n.measured.height && !n.internals.handleBounds).map(n => n.id)));
+  useEffect(() => {
+    const ids: string[] = JSON.parse(missingHandles);
+    if (ids.length) updateHandles(ids);
+  }, [missingHandles, updateHandles]);
   const nodes = useStore(state => state.nodes);
   const { fitView } = useReactFlow();
   const previous = useRef("");

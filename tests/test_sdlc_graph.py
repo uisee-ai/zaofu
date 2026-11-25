@@ -430,3 +430,32 @@ def test_runtime_fanout_anchor_is_not_counted_as_product_work():
     node = next(n for n in graph['nodes'] if n['id'] == 'task:ANCHOR')
     assert node['kind'] == 'run_anchor'
     assert 'modules' not in node['views'] and 'lifecycle' not in node['views']
+
+
+def test_partial_generation_preserves_completion_only_for_the_unchanged_task_contract():
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+    tasks = {t: Task(id=t, title=t, status="done") for t in ["A","B"]}
+    revisions = {t: effective_contract_revision(task) for t, task in tasks.items()}
+    def event(kind, task=None, **payload):
+        return ZfEvent(type=kind, task_id=task, origin="kernel", correlation_id="run-a", payload=payload)
+    def gen(ids, generation):
+        return event("task.pipeline.generation.admitted", schema_version="task-pipeline-generation.v1",
+                     workflow_run_id="run-a",task_ids=ids,task_map_generation=generation,
+                     task_contract_revisions={t: revisions[t] for t in ids})
+    def status(receipts):
+        graph = build_sdlc_graph(sources(tasks=tasks, events=list(enumerate(receipts,1))))
+        return {n["id"]:(n["status"],n["data"]["accepted_event_ids"]) for n in graph["nodes"] if n["kind"]=="task"}
+    good = event("task.done.accepted","A")  # Completion audit's Task + Run + immutable admission window.
+    stale = event("task.done.accepted","B",task_map_generation="G1")
+    before = [gen(["A","B"],"G1"),good,stale]
+    assert status(before) == {"task:A":("done",[good.id]),"task:B":("done",[stale.id])}
+    late = event("task.done.accepted","B",task_map_generation="G1")
+    current = [*before,gen(["B"],"G2"),late]
+    assert status(current) == {"task:A":("done",[good.id]),"task:B":("evidence_missing",[])}
+    settled = event("run.goal.completed", workflow_run_id="run-a", task_map_generation="G1",
+                    completed_task_ids=["A","B"])
+    settled_only = [before[0],settled,current[-2]]
+    assert status(settled_only) == {"task:A":("done",[settled.id]),"task:B":("evidence_missing",[])}
+    tasks["A"].contract.behavior = "new acceptance obligation"
+    assert status(settled_only)["task:A"] == ("evidence_missing",[])
+    assert status(current)["task:A"] == ("evidence_missing",[])

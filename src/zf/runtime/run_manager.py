@@ -358,6 +358,10 @@ def _run_manager_tick_unlocked(
         ),
     )
     events = _read_events(state_dir, event_log=event_log)
+    if auto_execute and config.runtime.run_manager.reflect.enabled and not config.runtime.run_manager.resident_agent.enabled:
+        from zf.runtime.on_demand_reader_diagnosis import publish_selected_options
+        if publish_selected_options(state_dir, writer, events):
+            events = _read_events(state_dir, event_log=event_log)
     if _settle_pending_action_effects(events, writer):
         events = _read_events(state_dir, event_log=event_log)
     from zf.runtime.worker_assistance import reconcile_assistance
@@ -713,11 +717,12 @@ def _run_manager_tick_unlocked(
                     actions_failed += 1
                 events = _read_events(state_dir, event_log=event_log)
             elif decision.get("decision") == "needs_diagnosis":
-                if _diagnosis_action_request_stalled(events, action):
+                stalled_request = _stalled_diagnosis_request(events, action)
+                if stalled_request is not None:
                     _emit_failed_action(
                         writer,
-                        action,
-                        causation_id=started.id,
+                        {**action, "failure_class": "diagnosis_consumer_timeout"},
+                        causation_id=stalled_request.id,
                         reason=(
                             "run manager autoresearch request became stale without "
                             "autoresearch.loop.completed or autoresearch.loop.failed"
@@ -787,7 +792,7 @@ def _run_manager_tick_unlocked(
 
                 diagnosis_satisfied = diagnosis_satisfied or reflection_pending(
                     _read_events(state_dir, event_log=event_log),
-                    _run_manager_reflect_request_id(action),
+                    _run_manager_reflect_request_id(action, events),
                 )
                 if not diagnosis_satisfied and action.get('failure_class') == 'autoresearch_diagnosis_incomplete':
                     _emit_blocked_action(writer, action, causation_id=started.id,
@@ -5658,7 +5663,7 @@ def _maybe_invoke_run_manager_reflect(
 ) -> bool:
     if not force and not _run_manager_reflect_enabled(config, reflect_fn):
         return False
-    request_id = _run_manager_reflect_request_id(action)
+    request_id = _run_manager_reflect_request_id(action, writer.event_log.read_all())
     if _request_id_seen(writer.event_log, RUN_MANAGER_REFLECT_COMPLETED, request_id):
         return False
     try:
@@ -5684,9 +5689,19 @@ def _maybe_invoke_run_manager_reflect(
     prompt = _build_run_manager_reflect_prompt(
         state_dir=state_dir, project_root=project_root, action=action, projection=projection,
     )
+    option = {}
+    if config.runtime.run_manager.reflect.enabled and not config.runtime.run_manager.resident_agent.enabled:
+        from zf.runtime.on_demand_reader_diagnosis import reader_option
+
+        option = reader_option(state_dir, writer.event_log.read_all(), action)
+        if option:
+            prompt += ("\n已核对的 Reader 恢复选项如下。如证据支持重新执行这一专项，请在上述 JSON 中附加 "
+                       "selected_reader_recovery 为精确 option_id，并在 rec_for_next_iter 说明依据。"
+                       "如需更多证据或其他策略，省略该字段。\n" + json.dumps(option, ensure_ascii=False))
     return submit_reflection(
         state_dir=state_dir, writer=writer, request_id=request_id, prompt=prompt,
         metadata={
+            **({"reader_recovery_option": option} if option else {}),
             "checkpoint_id": str(action.get("checkpoint_id") or ""),
             "recovery_case_id": recovery_case_id_from_payload(action),
             "fingerprint": _fingerprint(action, fallback=request_id),
@@ -5772,7 +5787,10 @@ def _reflection_payload(result: Any) -> dict[str, Any]:
         recommendation = str(getattr(result, "rec_for_next_iter", "") or "")
         raw_response = str(getattr(result, "raw_response", "") or "")
         route = ""
+    selected = (result.get("selected_reader_recovery") if isinstance(result, dict)
+                else getattr(result, "selected_reader_recovery", ""))
     return {
+        **({"selected_reader_recovery": selected} if isinstance(selected, str) and selected else {}),
         "verdict": verdict,
         "risk": risk,
         "alternatives": alternatives,
@@ -5790,13 +5808,25 @@ def _reflection_recommended_route(verdict: str, risk: str) -> str:
     return "wait"
 
 
-def _run_manager_reflect_request_id(action: dict[str, Any]) -> str:
+def _run_manager_reflect_request_id(action: dict[str, Any], events: list[ZfEvent]) -> str:
     raw = "|".join([
         str(action.get("checkpoint_id") or ""),
         str(action.get("safe_resume_action") or ""),
         _fingerprint(action, fallback=""),
     ])
-    return "rmrf-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    legacy = "rmrf-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    run = str(action.get("workflow_run_id") or action.get("run_id") or "")
+    sources = sorted(set(_string_list(action.get("source_event_ids"))))
+    if not run:
+        return legacy
+    # An existing, exactly bound pre-upgrade request retains its original identity.
+    for event in events:
+        if (event.type == RUN_MANAGER_REFLECT_REQUESTED and event.payload.get("request_id") == legacy
+                and event.payload.get("workflow_run_id") == run
+                and sorted(set(_string_list(event.payload.get("source_event_ids")))) == sources):
+            return legacy
+    identity = json.dumps([raw, run, sources], ensure_ascii=False)
+    return "rmrf-" + hashlib.sha256(identity.encode()).hexdigest()[:20]
 
 
 def _build_run_manager_reflect_prompt(
@@ -8467,44 +8497,54 @@ def _consume_autoresearch_results(
     events: list[ZfEvent],
     writer: EventWriter,
 ) -> int:
-    requests: dict[str, ZfEvent] = {}
-    for event in events:
-        if event.type != RUN_MANAGER_AUTORESEARCH_REQUESTED:
-            continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        request_id = _autoresearch_request_id(event, payload)
-        requests[request_id] = event
-    if not requests:
-        return 0
+    from zf.runtime.autoresearch_failure_handoff import RESULTS, diagnosis_request_for_receipt
 
-    consumed_event_ids = {
-        str((event.payload or {}).get("source_event_id") or "")
-        for event in events
-        if event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED
-        and isinstance(event.payload, dict)
-    }
-    consumed_request_ids = {
-        str((event.payload or {}).get("request_id") or "")
-        for event in events
-        if event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED
-        and isinstance(event.payload, dict)
-    }
-    count = 0
+    requests = []
+    replies = {}
+    consumed = {}
     for event in events:
-        if event.type not in {"autoresearch.loop.completed", "autoresearch.loop.failed"}:
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED and event.origin in {"kernel", ""}:
+            requests.append(event)
+        elif event.type in RESULTS:
+            source = diagnosis_request_for_receipt(event, requests)
+            if source:
+                replies[event.id] = (source, event)
+        elif event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED and event.origin in {"kernel", ""}:
+            reply = replies.get(event.payload.get("source_event_id"))
+            if not reply:
+                continue
+            source, result = reply
+            # Historical consumed records lack request_event_id and run scope.
+            # The cited result must belong to the same request as the receipt.
+            if diagnosis_request_for_receipt(event, [source]) is source:
+                if result.type == "autoresearch.loop.completed" or source.id not in consumed:
+                    consumed[source.id] = result.type
+
+    count = 0
+    for source, event in replies.values():
+        previous = consumed.get(source.id)
+        if previous == "autoresearch.loop.completed" or previous == event.type:
             continue
-        if event.id in consumed_event_ids:
-            continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        request_id = _autoresearch_result_request_id(event, payload)
-        if not request_id or request_id not in requests or request_id in consumed_request_ids:
-            continue
+        payload = event.payload
+        request_id = _autoresearch_request_id(source, source.payload)
         status = "failed" if event.type.endswith(".failed") else "completed"
+        case_id = source.payload.get("recovery_case_id")
+        shared_id = any(r.id != source.id and _autoresearch_request_id(r, r.payload) == request_id
+                        for r in requests)
+        # Legacy candidates can fall back to loop_request_id. With a shared name
+        # only the exact case's created candidate may enter source repair.
+        candidate_events = events
+        if shared_id:
+            unique_case = case_id and sum(r.payload.get("recovery_case_id") == case_id for r in requests) == 1
+            candidate_events = [
+                e for e in events if e.type != "autoresearch.bug_candidate.created"
+                or (unique_case and (e.payload.get("candidate") or {}).get("recovery_case_id") == case_id)
+            ]
         count += _consume_autoresearch_candidate_result(
             state_dir=state_dir,
-            events=events,
+            events=candidate_events,
             writer=writer,
-            request_event=requests[request_id],
+            request_event=source,
             result_event=event,
             request_id=request_id,
             status=status,
@@ -8512,12 +8552,15 @@ def _consume_autoresearch_results(
         writer.emit(
             RUN_MANAGER_AUTORESEARCH_CONSUMED,
             actor="run-manager",
-            task_id=event.task_id,
+            task_id=event.task_id or source.task_id,
             causation_id=event.id,
             correlation_id=event.correlation_id,
             payload={
                 "schema_version": "run-manager.autoresearch-consumed.v1",
                 "request_id": request_id,
+                "request_event_id": source.id,
+                "workflow_run_id": source.payload.get("workflow_run_id") or source.payload.get("run_id") or "",
+                "recovery_case_id": case_id or "",
                 "source_event_id": event.id,
                 "source_event_type": event.type,
                 "status": status,
@@ -8526,7 +8569,7 @@ def _consume_autoresearch_results(
                 "next_route": _autoresearch_next_route(status, payload),
             },
         )
-        consumed_request_ids.add(request_id)
+        consumed[source.id] = event.type
         count += 1
     return count
 
@@ -12667,7 +12710,7 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
         ):
             if (
                 event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
-                and _diagnosis_action_request_stalled(events, action)
+                and _stalled_diagnosis_request(events, action)
             ):
                 continue
             return True
@@ -12679,7 +12722,7 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
         ) == checkpoint_id:
             if not _is_diagnosis_action(action):
                 continue
-            if _diagnosis_action_request_stalled(events, action):
+            if _stalled_diagnosis_request(events, action):
                 continue
             return True
         if event.type in {
@@ -12743,38 +12786,47 @@ def _operation_precondition_holds(
     return not bool(current.get("terminal"))
 
 
-def _diagnosis_action_request_stalled(
+def _stalled_diagnosis_request(
     events: list[ZfEvent],
     action: dict[str, Any],
     *,
     stale_seconds: int = _DIAGNOSIS_REQUEST_STALE_SECONDS,
     anchored_stale_seconds: int = _DIAGNOSIS_ANCHORED_STALE_SECONDS,
-) -> bool:
+) -> ZfEvent | None:
     if not _is_diagnosis_action(action):
-        return False
+        return None
     checkpoint_id = str(action.get("checkpoint_id") or "").strip()
     if not checkpoint_id:
-        return False
+        return None
     fingerprint = _fingerprint(action, fallback=checkpoint_id)
     request_index = -1
     request_event: ZfEvent | None = None
-    request_id = ""
+    matched_runs = set()
+    expected_run = action.get("workflow_run_id") or action.get("run_id")
     for index, event in enumerate(events):
-        if event.type != RUN_MANAGER_AUTORESEARCH_REQUESTED:
+        if event.type != RUN_MANAGER_AUTORESEARCH_REQUESTED or event.origin not in {"kernel", ""}:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if expected_run and (payload.get("workflow_run_id") or payload.get("run_id")) != expected_run:
+            continue
         if str(payload.get("checkpoint_id") or "") != checkpoint_id and (
             fingerprint
             and str(payload.get("fingerprint") or "") != fingerprint
         ):
             continue
+        if any(action.get(k) and payload.get(k) and action[k] != payload[k]
+               for k in ("recovery_case_id", "task_map_generation", "task_id")):
+            continue
+        matched_runs.add(payload.get("workflow_run_id") or payload.get("run_id") or "")
         request_index = index
         request_event = event
-        request_id = _autoresearch_request_id(event, payload)
-    if request_event is None:
-        return False
-    if _current_terminal_signal(events) is not None:
-        return False
+    if request_event is None or (not expected_run and len(matched_runs) > 1):
+        return None
+    from zf.runtime.autoresearch_failure_handoff import diagnosis_request_for_receipt
+
+    run_id = request_event.payload.get("workflow_run_id") or request_event.payload.get("run_id") or ""
+    if latest_quiescent_run_terminal(events, run_id=run_id) is not None:
+        return None
     # 2026-07-10 E2E retest: anchor staleness age to the latest matching loop
     # lifecycle event, not the request. A loop legitimately running past the
     # 300s window (codex/claude agents inside) was declared stale mid-flight,
@@ -12782,46 +12834,29 @@ def _diagnosis_action_request_stalled(
     # here, so skipped requests always burned the full window before failing
     # (PRD: 8 stale action.failed with 1 real loop run).
     liveness_event = request_event
+    by_id = {event.id: event for event in events}
+    anchors = {"autoresearch.loop.requested", "autoresearch.loop.accepted", "autoresearch.loop.started"}
+    outcomes = {RUN_MANAGER_ACTION_APPLIED, RUN_MANAGER_ACTION_BLOCKED, RUN_MANAGER_ACTION_FAILED,
+                RUN_MANAGER_AUTORESEARCH_CONSUMED, "autoresearch.loop.completed",
+                "autoresearch.loop.failed", "autoresearch.loop.skipped"}
+    requests = [e for e in events[:request_index + 1] if e.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+                and e.origin in {"kernel", ""}]
     for event in events[request_index + 1:]:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        if event.type in {
-            RUN_MANAGER_ACTION_APPLIED,
-            RUN_MANAGER_ACTION_BLOCKED,
-            RUN_MANAGER_ACTION_FAILED,
-        } and str(payload.get("checkpoint_id") or "") == checkpoint_id:
-            return False
-        if event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED and (
-            str(payload.get("request_id") or "") == request_id
-            or str(payload.get("checkpoint_id") or "") == checkpoint_id
-        ):
-            return False
-        if event.type in {
-            "autoresearch.loop.completed",
-            "autoresearch.loop.failed",
-            "autoresearch.loop.skipped",
-        }:
-            result_request_id = _autoresearch_result_request_id(event, payload)
-            if result_request_id and result_request_id == request_id:
-                return False
-            if str(payload.get("checkpoint_id") or "") == checkpoint_id:
-                return False
-        if event.type in {
-            # Three anchor grades, all under the wide anchored window:
-            # requested = the reactor forwarded it into the loop queue (R6:
-            # requests arriving while the resident is synchronously inside a
-            # bounded loop get no ack until that loop ends — the forward is
-            # the only timely receipt), accepted = resident queued it,
-            # started = executing. Only a request with NO trace at all runs
-            # on the tight window.
-            "autoresearch.loop.requested",
-            "autoresearch.loop.accepted",
-            "autoresearch.loop.started",
-        }:
-            result_request_id = _autoresearch_result_request_id(event, payload)
-            if (result_request_id and result_request_id == request_id) or (
-                str(payload.get("checkpoint_id") or "") == checkpoint_id
-            ):
-                liveness_event = event
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED and event.origin in {"kernel", ""}:
+            requests.append(event)
+            continue
+        if event.type not in anchors and event.type not in outcomes:
+            continue
+        if diagnosis_request_for_receipt(event, requests) is not request_event:
+            continue
+        if event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED and event.payload.get("source_event_id"):
+            source = by_id.get(event.payload["source_event_id"])
+            if (not source or source.type not in {"autoresearch.loop.completed", "autoresearch.loop.failed"}
+                    or diagnosis_request_for_receipt(source, requests) is not request_event):
+                continue
+        if event.type in outcomes:
+            return None
+        liveness_event = event
     # Two staleness windows (2026-07-10 R5): an unacknowledged request stales
     # at the tight window, but once the resident has anchored it (accepted =
     # queued, started = executing) the terminal answer is guaranteed by the
@@ -12830,7 +12865,7 @@ def _diagnosis_action_request_stalled(
     # for a resident that died after anchoring.
     window = stale_seconds if liveness_event is request_event else anchored_stale_seconds
     age_seconds = _event_age_seconds(liveness_event, datetime.now(timezone.utc))
-    return age_seconds is not None and age_seconds >= window
+    return request_event if age_seconds is not None and age_seconds >= window else None
 
 
 def _is_diagnosis_action(action: dict[str, Any]) -> bool:

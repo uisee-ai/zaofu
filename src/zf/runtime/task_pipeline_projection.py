@@ -84,7 +84,7 @@ def read_task_pipeline_projection(
     from zf.runtime.task_pipeline_affinity import task_pipeline_preferred_roles
 
     reader = SimpleNamespace(
-        state_dir=state_dir, project_root=project_root, config=config,
+        state_dir=state_dir, project_root=project_root, config=config, task_store=task_store,
         event_log=SimpleNamespace(read_all=lambda: events),
     )
     delegations = {}

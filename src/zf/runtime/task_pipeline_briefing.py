@@ -269,6 +269,17 @@ def write_task_pipeline_briefing(
         "```",
         "",
     ]
+    assignment = payload.get("orchestration_assignment") or {}
+    if stage == "verify" and assignment.get("verification_scope"):
+        scope = assignment["verification_scope"]
+        lines.extend(["## OA Verification Assignment", f"Work unit: {assignment['work_unit_id']}",
+                      "Acceptance: " + ", ".join(scope["acceptance_ids"]),
+                      "Required evidence: " + ", ".join(scope["required_evidence"]), ""])
+    if stage == "verify" and assignment.get("specialists"):
+        lines.extend(["## Independent specialist results",
+                      "Read these admitted task inputs before signing your own verdict:",
+                      *["- specialist-" + entry["obligation_id"] + ": " + entry["question"]
+                        for entry in assignment["specialists"]], ""])
     if controlled_inputs:
         lines.extend([controlled_inputs, ""])
     if payload.get("candidate_repair_feedback_ref"):

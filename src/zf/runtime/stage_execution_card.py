@@ -515,7 +515,7 @@ def prepare_profiled_stage_result(
     }
     is_discovery = (profile_id == "workflow-read"
                     and child_payload.get("canonical_success_event") == "flow.discovery.child.completed")
-    if is_discovery:
+    if is_discovery and not child_payload.get("judge_specialist_obligation"):
         from zf.runtime.product_acceptance import product_acceptance_binding_from_package, product_acceptance_report_template
 
         package_ref = child_payload.get("plan_artifact_package_ref")

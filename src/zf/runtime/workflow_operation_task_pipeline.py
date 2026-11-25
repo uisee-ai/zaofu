@@ -101,6 +101,9 @@ def task_pipeline_request_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
         ):
             continue
         result[key] = _int_value(value) if key in _INTEGER_REQUEST_KEYS else str(value)
+    assignment = payload.get("orchestration_assignment")
+    if isinstance(assignment, Mapping) and assignment:
+        result["orchestration_assignment"] = dict(assignment)
     return result
 
 

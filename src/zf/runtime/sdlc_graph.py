@@ -37,7 +37,55 @@ def activity_event(event) -> dict:
     return result
 
 
-def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) -> dict[str, Any]:
+def _task_acceptance_receipts(event_rows, tasks, scope, latest_generation):
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
+    from zf.runtime.task_pipeline_contexts import (
+        TASK_PIPELINE_GENERATION_ADMITTED, TASK_PIPELINE_GENERATION_SCHEMA, task_pipeline_generation_contexts,
+    )
+
+    kinds = {"task.done.accepted", "run.goal.completed"}
+    if not any(e.type in kinds and e.origin == "kernel" for _, e in event_rows):
+        return {}
+    owners = task_pipeline_generation_contexts(e for _, e in event_rows if e.origin == "kernel")
+    active, revisions, accepted = {}, {}, {}
+    for seq, e in event_rows:
+        if e.origin != "kernel":
+            continue
+        p = e.payload
+        task = str(e.task_id or p.get("task_id") or "")
+        if e.type == TASK_PIPELINE_GENERATION_ADMITTED and p.get("schema_version") == TASK_PIPELINE_GENERATION_SCHEMA:
+            active.update(dict.fromkeys(p.get("task_ids") or [], e.id))
+            continue
+        if e.type == "task.done.accepted" and task and (not p.get("task_id") or p["task_id"] == task):
+            completed = [task]
+        elif (e.type == "run.goal.completed" and seq < latest_generation and p.get("task_map_generation")
+              and p.get("workflow_run_id") == scope["run_id"]):
+            # The Run-level settlement is historical, but can still prove a named Task's unchanged contract.
+            completed = dict.fromkeys(str(t) for t in p.get("completed_task_ids", []) if t)
+        else:
+            continue
+        for task in completed:
+            owner = owners.get(task)
+            if owner:
+                if (owner.get("workflow_run_id") != scope["run_id"]
+                        or active.get(task) != owner["generation_admitted_event_id"]
+                        or (p.get("workflow_run_id") or e.correlation_id or scope["run_id"]) != scope["run_id"]
+                        or (p.get("task_map_generation") and not same_task_map_generation(
+                            p["task_map_generation"], owner.get("task_map_generation", "")))):
+                    continue
+                pin = p.get("contract_revision") or (owner.get("task_contract_revisions") or {}).get(task)
+                if pin and task in tasks and not scope["historical"]:
+                    if task not in revisions:
+                        revisions[task] = effective_contract_revision(tasks[task])
+                    if revisions[task] != pin:
+                        continue
+            elif seq < latest_generation:
+                continue  # Legacy receipts have no narrower proven Task ownership.
+            accepted.setdefault(task, []).append(e.id)
+    return accepted
+
+
+def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False, team_detail_node: str = "*") -> dict[str, Any]:
     nodes: dict[str, dict] = {}
     edges: dict[tuple, dict] = {}
     diagnostics = list(source["diagnostics"])
@@ -88,14 +136,11 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
     planned = {str(t.get("task_id") or t.get("id")): t for t in task_map.get("tasks", []) if isinstance(t, dict)}
     tasks = source["tasks"]
     event_rows = source["events"]
-    accepted: dict[str, list[str]] = {}
     latest_generation = max((seq for seq, e in event_rows if e.type in {
         "task.pipeline.generation.admitted", "task_map.materialization.committed", "task_map.admitted",
     }), default=0)
+    accepted = _task_acceptance_receipts(event_rows, tasks, scope, latest_generation)
     for seq, event in event_rows:
-        # Legacy or worker declarations remain visible, but never turn a Task green.
-        if seq >= latest_generation and event.origin == "kernel" and event.type == "task.done.accepted":
-            accepted.setdefault(str(event.task_id or event.payload.get("task_id") or ""), []).append(event.id)
         if (seq >= latest_generation and event.origin == "kernel" and event.type == "run.goal.completed"
                 and event.payload.get("workflow_run_id") == scope["run_id"]
                 and version.get("task_map_generation")
@@ -280,6 +325,9 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
 
     project_structure_states(nodes, operations, event_rows)
     project_pipeline_container_states(nodes, event_rows, scope["run_id"])
+    from zf.runtime.stage_team_projection import project_stage_teams, team_summary
+
+    project_stage_teams(nodes, source, operations, detail_node="" if execution_only else team_detail_node)
     if execution_only:
         # The execution overview needs observed Operations, not event/attempt
         # nodes, Plan bodies, coverage analysis or the full timeline.
@@ -309,6 +357,8 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False) ->
             if item["kind"] in {"task", "run_anchor"}:
                 item["data"] = {"task_id": item["data"].get("task_id", "")}
                 item["status"] = "unknown"
+            elif item["kind"] == "workflow" and "team" in item["data"]:
+                item["data"]["team"] = team_summary(item["data"]["team"])
             elif item["kind"] == "requirement":
                 item["data"] = {"revision": scope["revision"]}
         links = [edge for edge in edges.values() if edge["source"] in selected and edge["target"] in selected]

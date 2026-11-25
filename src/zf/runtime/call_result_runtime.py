@@ -491,7 +491,17 @@ def prepare_call_operation(
     context_envelope_descriptor: dict[str, Any] = {}
     provider_session_id = ""
 
+    specialist = None
+    if stage_id in {"prd-post-verify-discovery", "prd-judge-advisory"} and output_profile_id == "workflow-read":
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+        judge = (flow_metadata_for(runtime.config, flow_kind="prd").get("stage_teams") or {}).get("judge") or {}
+        specialist = next((member for member in judge.get("members", []) if member["role"] == role_instance
+                           and member.get("required", True) == (stage_id == "prd-post-verify-discovery")), None)
+    payload.pop("judge_specialist_obligation", None)
+    if specialist:
+        payload["judge_specialist_obligation"] = specialist
     request = {
+        **({"judge_specialist_obligation": specialist} if specialist else {}),
         "workflow_run_id": workflow_run_id,
         "operation_type": operation_type,
         "stage_id": stage_id,
@@ -996,6 +1006,7 @@ def admit_runtime_call_result(
             "canonical_success_event": str(operation_request.get("canonical_success_event") or ""),
             "fanout_id": operation_request.get("fanout_id"),
             "candidate_reader_scope": operation_request.get("candidate_reader_scope"),
+            "judge_specialist_obligation": operation_request.get("judge_specialist_obligation"),
             "handoff_authority_contract": dict(operation_request.get("handoff_authority_contract") or {}),
         },
         require_semantic_submit=require_semantic_submit,

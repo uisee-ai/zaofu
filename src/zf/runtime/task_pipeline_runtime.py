@@ -252,6 +252,11 @@ def admit_task_pipeline_generation(
         if str(payload.get("generation_id") or "") == prepared.generation_id:
             return existing
 
+    revisions = {}
+    if policy.get("verify_assignment_mode") == "oa_run_plan":
+        from zf.runtime.task_contract_snapshot import effective_contract_revision
+        revisions = {task_id: effective_contract_revision(task) for task_id in prepared.task_ids
+                     if (task := runtime.task_store.get(task_id)) is not None}
     event = ZfEvent(
         type=TASK_PIPELINE_GENERATION_ADMITTED,
         actor="zf-cli",
@@ -292,6 +297,7 @@ def admit_task_pipeline_generation(
             "profile_id": prepared.profile_id,
             "profile_digest": prepared.profile_digest,
             "task_ids": list(prepared.task_ids),
+            **({"task_contract_revisions": revisions} if revisions else {}),
         },
         causation_id=task_map_admitted_event.id,
         correlation_id=prepared.workflow_run_id,
@@ -592,6 +598,9 @@ def reconcile_task_pipeline_runtime(
                 generation_contexts=group_contexts,
             ),
         )
+        if policy.get("verify_assignment_mode") == "oa_run_plan":
+            from zf.runtime.oa_task_verify_assignment import request_verification_corrections
+            request_verification_corrections(runtime, projection, group_contexts, events)
         from zf.runtime.task_pipeline_semantic_exhaustion import (
             reconcile_task_pipeline_semantic_exhaustion,
         )

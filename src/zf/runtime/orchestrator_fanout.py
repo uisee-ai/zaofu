@@ -168,6 +168,7 @@ _HANDOFF_REF_FIELDS = (
 )
 
 _CONTRACT_HANDOFF_KEYS = (
+    "verify_specialist_obligation",
     "contract_authority_revision",
     "execution_owner",
     "workflow_request_id",
@@ -240,6 +241,7 @@ def _lane_child_scope(affinity_tag: str, task_id: str) -> str:
 
 
 _DURABLE_CALL_TRIGGER_KEYS = tuple(dict.fromkeys((
+    "verify_specialist_obligation",
     "task_id",
     "workflow_run_id",
     "workflow_input_manifest_ref",
@@ -2386,10 +2388,14 @@ class FanoutCoordinationMixin(
             return False
         from zf.runtime.fanout import FanoutChild, FanoutContext
 
+        from zf.runtime.plan_team_handoff import plan_member_inputs_admitted, plan_team_generation_started
+        from zf.runtime.plan_team_transfer import approved_current_transfers
         started_any = False
         for stage in stages:
-            if self._fanout_started(stage.id, event.id):
+            if self._fanout_started(stage.id, event.id) or plan_team_generation_started(self, stage, event):
                 started_any = True
+                continue
+            if not approved_current_transfers(self, stage, event) or not plan_member_inputs_admitted(self, stage, event):
                 continue
             if suppress_handled_stall_trigger(self, trigger_event=event, stage_id=stage.id):
                 continue

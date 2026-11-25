@@ -38,13 +38,14 @@ def read_structure_sources(context, detail: dict, *, as_of: int, all_events: lis
 
 def build_structure(source: dict, *, generation: str) -> dict:
     """Only compiled nodes are displayed; other graph views require the full graph."""
-    graph = build_sdlc_graph(source)
+    graph = build_sdlc_graph(source, execution_only=True)
     nodes = []
     for item in graph["nodes"]:
         if item["kind"] != "workflow":
             continue
         definition = item["data"].get("definition") or {}
-        nodes.append({**item, "data": {"definition": {"type": definition.get("type", "")}}})
+        nodes.append({**item, "data": {"definition": {"type": definition.get("type", "")},
+                                     **({"team": item["data"]["team"]} if "team" in item["data"] else {})}})
     ids = {node["id"] for node in nodes}
     edges = [edge for edge in graph["edges"] if edge["source"] in ids and edge["target"] in ids]
     return {"schema_version": "sdlc-workbench-structure.v1", "partial": True,
@@ -54,7 +55,7 @@ def build_structure(source: dict, *, generation: str) -> dict:
 
 def build_structure_node(source: dict, *, node_id: str) -> dict | None:
     """A selected compiled node's exact details, without loading any Plans."""
-    graph = build_sdlc_graph(source)
+    graph = build_sdlc_graph(source, team_detail_node=node_id)
     node = next((item for item in graph["nodes"] if item["id"] == node_id and item["kind"] == "workflow"), None)
     if node is None:
         return None
