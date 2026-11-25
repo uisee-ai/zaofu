@@ -263,3 +263,42 @@ def pending_autoresearch_followups(events: list[ZfEvent]) -> list[dict]:
                       'expand caps, or claim the original task recovered from this receipt.',
         })
     return out
+
+def failed_diagnosis_belongs_to_gate(decision: dict, action: dict, events) -> bool:
+    """An unresolved gate admits only the read-only result of its own requested diagnosis."""
+    if (not events or action.get("action") != "diagnose-attention"
+            or action.get("failure_class") != "autoresearch_diagnosis_incomplete"
+            or action.get("recovery_phase") != "diagnosis_result" or not action.get("workflow_run_id")):
+        return False
+    run = action["workflow_run_id"]
+    sources = action.get("source_event_ids") or []
+    if len(sources) < 2:
+        return False
+    chain = [decision.get("event_id"), *sources[-2:]]
+    evidence = [e for e in events if e.id in chain]
+    if [e.id for e in evidence] != chain:
+        return False
+    alert, request, receipt = evidence
+    if (alert.type != "human.escalate" or alert.origin not in {"kernel", ""}
+            or alert.correlation_id not in {run, "", None}
+            or request.type != REQUEST or request.origin != "kernel" or request.actor != "run-manager"
+            or receipt.type != "autoresearch.loop.failed" or receipt.origin not in {"kernel", ""}
+            or receipt.actor != "zf-autoresearch-resident" or alert.id not in (request.payload.get("source_event_ids") or [])
+            or (request.payload.get("workflow_run_id") or request.payload.get("run_id")) != run):
+        return False
+    request_id = request.payload.get("request_id")
+    if (not request_id or receipt.payload.get("loop_request_id") != request_id
+            or receipt.correlation_id not in {run, request_id, "", None}
+            or any(p.get(k) not in {run, "", None} for p in (alert.payload, receipt.payload)
+                   for k in ("workflow_run_id", "run_id"))):
+        return False
+    diagnosis = receipt.payload.get("diagnosis") or {}
+    if not isinstance(diagnosis, dict) or diagnosis.get("status") not in {"incomplete", "unknown"}:
+        return False
+    from zf.autoresearch.diagnosis_disposition import parent_disposition
+    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+    from zf.runtime.terminal_events import latest_quiescent_run_terminal
+
+    return (not is_run_dispatch_paused(events, run)
+            and not latest_quiescent_run_terminal(events, run_id=run)
+            and not parent_disposition(events, run_id=run, request_id=request_id, policy="preserve"))

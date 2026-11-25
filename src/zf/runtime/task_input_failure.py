@@ -4,6 +4,19 @@ from pathlib import Path
 from typing import Any
 
 
+def permits_incomplete_input(schema: str, result: Mapping[str, Any]) -> bool:
+    """Whether the normalized result reports an input failure without a semantic conclusion."""
+    return (
+        result.get("execution_status") == "failed"
+        and (
+            (schema == "workflow-read-result.v1" and result.get("verdict") == "abstained")
+            or (schema == "plan-synthesis-result.v1"
+                and result.get("failure_class") == "reader_execution_failure"
+                and result.get("verdict") == "rejected")
+        )
+    ) or incomplete_task_input_failure(schema, result)
+
+
 def incomplete_task_input_failure(schema: str, result: Mapping[str, Any]) -> bool:
     if schema not in {"implementation-result.v1", "verification-result.v1"}:
         return False

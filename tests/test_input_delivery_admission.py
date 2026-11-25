@@ -175,13 +175,16 @@ def test_task_stage_uses_kernel_delivery_policy_and_rejects_worker_override(tmp_
     assert "required_input_delivery_missing" in json.dumps(repair[-1].payload)
 
 
-def test_truthful_reader_failure_remains_reportable_without_reads(tmp_path):
-    runtime, _, prepared, service, token = _operation(tmp_path)
-    result = service.submit(operation_id=prepared.operation_id,
+@pytest.mark.parametrize("observed", [False, True])
+def test_truthful_reader_failure_remains_reportable_without_reads(tmp_path, observed):
+    runtime, _, prepared, service, token = _operation(tmp_path, observed=observed)
+    kwargs = dict(operation_id=prepared.operation_id, role_instance="dev-1", credential=token,
         semantic_result={"verdict": "blocked", "execution_status": "failed",
             "target_commit": "abc123",
             "failure_class": "reader_execution_failure", "summary": "Input delivery unavailable",
-            "evidence_refs": ["receipt:reader-error"]}, role_instance="dev-1", credential=token)
+            "evidence_refs": ["receipt:reader-error"]})
+    assert service.validate_plan_candidate(**kwargs)["status"] == "passed"
+    result = service.submit(**kwargs)
     assert result.admitted_event_id
     admitted = next(e for e in runtime.event_log.read_all() if e.id == result.admitted_event_id)
     assert admitted.payload["semantic_verdict"] == "blocked"
@@ -218,3 +221,42 @@ def test_runtime_terminal_cannot_supply_weaker_policy_than_frozen_request(tmp_pa
     result = admit_runtime_call_result(runtime, event, dispatch_correction=False)
     assert not result.admitted
     assert "required_input_delivery_missing" in {i["code"] for i in result.issues}
+
+
+@pytest.mark.parametrize("pipeline", [False, True], ids=["request", "current-kernel-dispatch"])
+def test_produced_reads_preflight_and_final_admission_agree(tmp_path, pipeline):
+    from zf.cli.result import _validation_summary
+    from zf.runtime.artifact_read_ledger import read_attempt_artifact
+
+    runtime, payload, prepared, service, token = _operation(tmp_path, observed=False, pipeline=pipeline)
+    kwargs = dict(operation_id=prepared.operation_id, semantic_result=_semantic(),
+                  role_instance="dev-1", credential=token)
+    manifest = hydrate_sidecar_ref(runtime.state_dir, payload["attempt_source_manifest"]).payload
+    source = manifest["sources"][0]
+    # Even a complete read of the same SHA under another attempt cannot fulfill this one.
+    read_attempt_artifact(runtime.state_dir, manifest={**manifest, "attempt_id": "previous-attempt"},
+                          source_id=source["source_id"], artifact_id=source["artifact_id"])
+    events = runtime.event_log.read_all()
+    proof_paths = list((runtime.state_dir / "artifacts/attempts/attempt-1").glob("read-ledger*"))
+    summary = _validation_summary(service.validate_plan_candidate(**kwargs))
+    assert summary["status"] == "failed" and summary["error_count"] == 1
+    assert summary["errors"][0]["code"] == "required_read_missing"
+    assert "contract/contract.json $" in summary["errors"][0]["message"]
+    assert "artifact read --attempt attempt-1 --required" in summary["errors"][0]["message"]
+    assert runtime.event_log.read_all() == events
+    assert list((runtime.state_dir / "artifacts/attempts/attempt-1").glob("read-ledger*")) == proof_paths
+    with pytest.raises(ResultSubmitError, match="required_read_missing"):
+        service.submit(**kwargs)
+
+    _deliver(runtime, payload, prepared)
+    validated = service.validate_plan_candidate(**kwargs)
+    if pipeline:
+        # This fixture lacks a task verification contract. Satisfying the reads must
+        # leave that independent gate intact.
+        assert {issue["code"] for issue in validated["errors"]} == {"schema_invalid"}
+        with pytest.raises(ResultSubmitError, match="schema_invalid") as error:
+            service.submit(**kwargs)
+        assert "required_read_missing" not in {issue["code"] for issue in error.value.details["issues"]}
+    else:
+        assert validated["status"] == "passed"
+        assert service.submit(**kwargs).admitted_event_id

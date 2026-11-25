@@ -69,3 +69,6 @@ Web 从 Task 打开成员时，按当前 Run、代次和事件游标获取详情
 最小 PRD 实跑曾在实施交接遇到托管 Codex hook 出现在写入工作树的问题。linked writer 现从角色私有 `CODEX_HOME` 加载 hooks；Git 回归覆盖干净目录、用户未跟踪 hook 和用户修改过的已跟踪 hook。宿主 Codex 0.172.0 的 `hooks/list` 返回五个已启用且已受信的 hook，worker 的 `git status` 保持干净。[运行时与交接说明](oa-wrc-task-pipeline-delegation.md)
 
 确定性回放检查派发、恢复、结果准入、交接和拒绝路径。Docker Playwright 检查真实只读 API 与浏览器界面。无监工运行的业务覆盖、真实模型质量、审批后实际人工介入和哪一组恢复更快，需要新的批准窗口及独立证据。两组真实试点完成前，当前项目默认角色配置继续生效。
+
+
+父 Run 已因待处理决定进入静默时，原 Run Manager 请求关联的 Autoresearch 超时仍可把部分诊断送回该决定的负责人。运行时验证原告警、同一 Run 的诊断请求及终止回执，并检查其他待决事项、暂停与终态。已消费的交接保留原回执。单次反思建议继续等待时，新的恢复动作仍需独立授权。[静默与准入回归](../../tests/test_quiescent_autoresearch_handoff.py)

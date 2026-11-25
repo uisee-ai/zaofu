@@ -32,7 +32,7 @@ def reconcile_call_result_repairs(runtime: Any) -> int:
     operations = reduce_workflow_operations(events)
     pending = {}
     dispatched = set()
-    exhausted = set()
+    terminal_results = set()
     for event in events:
         payload = event.payload
         key = (payload.get("operation_id"), payload.get("request_hash"))
@@ -40,8 +40,8 @@ def reconcile_call_result_repairs(runtime: Any) -> int:
             pending[key] = event
         elif event.type == "workflow.call.result.repair.dispatched":
             dispatched.add((*key, (payload.get("correction_ref") or {}).get("sha256")))
-        elif event.type == "workflow.call.result.invalid":
-            exhausted.add(key)
+        elif event.type in {"workflow.call.result.invalid", "workflow.call.result.admitted"}:
+            terminal_results.add(key)
     aliases = run_aliases(events)
     cancelled = {event_run_id(e, aliases=aliases) for e in events if e.type == "run.cancelled"}
     paused_runs = {}
@@ -51,7 +51,11 @@ def reconcile_call_result_repairs(runtime: Any) -> int:
     count = 0
     for (operation_id, request_hash), event in pending.items():
         payload = event.payload
-        if (operation_id, request_hash) in exhausted:
+        if (operation_id, request_hash) in terminal_results:
+            continue
+        cap = payload.get("repair_cap")
+        if cap is not None and (type(cap) is not int or type(payload.get("repair_round")) is not int
+                                or not 1 <= payload["repair_round"] <= cap):
             continue
         correction_ref = payload.get("correction_ref") or {}
         if (operation_id, request_hash, correction_ref.get("sha256")) in dispatched:

@@ -54,6 +54,8 @@ TaskAttempt / operation / 事件 / 已批准输入与冻结快照
 2. 只对该调用实际返回且能无损还原的选中正文累计覆盖。包装、行号与多字节字符须能映射回字符区间。只补可定位的缺段，无法确认边界的部分保持缺失。空选中值同样需要绑定到该调用。适配器保存调用与公开返回的不可变见证及摘要，按原生工具的证据类型核验，`stdout_flushed` 专用于 CLI。已返回但未持久见证的内容待核验。
 3. `artifact recover`、结果预检、正式准入和封存后重放对同一绑定使用同一覆盖判定，支持原生读一部分、CLI 补齐。重试读取原请求冻结的 `produced` 或 `observed` 策略，旧请求未声明时沿用既有 `produced` 默认。普通探索、搜索和媒体索引可直接打开。工具或 briefing 直投缺少合格见证时，给出同合同的 CLI 取回入口。仍无法核验时，列出确切缺口和诊断责任人。媒体内容、验收条款及产品判词由 Verify/Judge 按对应证据评判。[已有输出观察](../../src/zf/runtime/artifact_output_delivery.py)
 
+`zf result validate --scratch --summary` 会只读检查当前 attempt 已冻结的必读选择。未补齐的 `produced` 选择逐项显示来源和路径，并给出该 attempt 的 `artifact read --required` 命令。读完返回的每一页后沿游标继续，重新预检即可。正式提交仍独立封存并核验回执。
+
 ## 4. 角色与材料选择
 
 | 角色或阶段 | 默认向 Agent 交付 | 可按需展开或由 Runtime 消费 |

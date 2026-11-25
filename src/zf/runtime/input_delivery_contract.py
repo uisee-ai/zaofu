@@ -29,7 +29,30 @@ def operation_delivery_mode(runtime: Any, operation_id: str, payload: dict) -> s
     return delivery_mode(protocol.get("input_delivery_mode"))
 
 
-def pinned_delivery_policy(state_dir: Path, events: list, operation: Mapping[str, Any], fallback: dict) -> dict:
+def current_task_input_delivery(events: list, operation: Mapping[str, Any]) -> dict:
+    operation_id = operation.get("operation_id")
+    attempt_id = operation.get("active_attempt_id")
+    dispatch_id = operation.get("dispatch_id")
+    if not operation_id or not attempt_id:
+        return {}
+    return next((event.payload for event in reversed(events)
+                 if event.type == "task.pipeline.stage.dispatched" and event.origin == "kernel"
+                 and isinstance(event.payload, dict)
+                 and event.payload.get("operation_id") == operation_id
+                 and event.payload.get("attempt_id") == attempt_id
+                 and (not dispatch_id or event.payload.get("dispatch_id") == dispatch_id)), {})
+
+
+def submitted_input_policy(state_dir: Path, carrier: Mapping[str, Any]) -> dict:
+    descriptor = carrier.get("input_consumption_policy_ref")
+    if not isinstance(descriptor, Mapping) or not str(descriptor.get("ref") or ""):
+        return {}
+    policy = hydrate_sidecar_ref(state_dir, dict(descriptor)).payload
+    return dict(policy) if isinstance(policy, Mapping) else {}
+
+
+def pinned_delivery_policy(state_dir: Path, events: list, operation: Mapping[str, Any], fallback: dict | None) -> dict:
+    """Resolve the observed contract; a None fallback also resolves produced reads from their carrier."""
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
     # Runtime terminal adapters carry a reduced operation, not its trusted
@@ -41,16 +64,22 @@ def pinned_delivery_policy(state_dir: Path, events: list, operation: Mapping[str
         operation = canonical
     descriptor = operation.get("request_ref")
     if not descriptor:
-        return fallback
+        return fallback or {}
     request = hydrate_sidecar_ref(state_dir, descriptor).payload["request"]
-    if delivery_mode(request.get("input_delivery_mode")) != "observed":
+    observed = delivery_mode(request.get("input_delivery_mode")) == "observed"
+    if not observed and fallback is not None:
         return fallback
-    carrier = request
-    if request.get("task_pipeline_stage"):
-        carrier = next((e.payload for e in reversed(events)
-            if e.type == "task.pipeline.stage.dispatched" and e.origin == "kernel"
-            and all(e.payload.get(key) == operation.get(key) for key in ("operation_id", "dispatch_id"))
-            and e.payload.get("attempt_id") == operation.get("active_attempt_id")), {})
+    carrier = current_task_input_delivery(events, operation) if request.get("task_pipeline_stage") else request
+    if not observed:
+        # The validation caller resolves produced reads from the same frozen
+        # request or current task dispatch as the independent submit gate.
+        policy = submitted_input_policy(state_dir, carrier)
+        if policy and (policy.get("attempt_id") != operation.get("active_attempt_id")
+                       or policy.get("workflow_run_id") != operation.get("workflow_run_id")):
+            raise ValueError("input consumption policy does not match the active attempt/run")
+        return policy
+    if request.get("task_pipeline_stage") and carrier.get("dispatch_id") != operation.get("dispatch_id"):
+        raise ValueError("input delivery requires the exact kernel dispatch")
     policy = hydrate_sidecar_ref(state_dir, carrier["input_consumption_policy_ref"]).payload
     binding = policy.get("delivery_evidence") or {}
     if (binding.get("mode") != "observed"

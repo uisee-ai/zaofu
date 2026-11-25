@@ -344,9 +344,11 @@ class SemanticResultSubmitService:
                 credential=credential,
             )
         )
-        from zf.runtime.input_delivery_preflight import input_delivery_preflight
+        from zf.runtime.input_delivery_preflight import result_readiness_preflight
 
-        delivery_errors = input_delivery_preflight(self.state_dir, self.event_log, _operation, semantic)
+        delivery_errors = result_readiness_preflight(
+            self.state_dir, self.event_log, _operation, request, semantic, self.registry,
+        )
         if delivery_errors:
             return {"schema_version": "semantic-result-preflight.v1", "status": "failed",
                     "profile_id": profile_id, "profile_revision": _revision, "errors": delivery_errors}
@@ -811,28 +813,8 @@ class SemanticResultSubmitService:
     ) -> dict[str, Any]:
         if not str(request.get("task_pipeline_stage") or "").strip():
             return {}
-        operation_id = str(operation.get("operation_id") or "").strip()
-        attempt_id = str(operation.get("active_attempt_id") or "").strip()
-        dispatch_id = str(operation.get("dispatch_id") or "").strip()
-        if not operation_id or not attempt_id:
-            return {}
-        for event in reversed(self.event_log.read_all()):
-            if (
-                event.type != "task.pipeline.stage.dispatched"
-                or str(event.origin or "") != "kernel"
-            ):
-                continue
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if (
-                str(payload.get("operation_id") or "") == operation_id
-                and str(payload.get("attempt_id") or "") == attempt_id
-                and (
-                    not dispatch_id
-                    or str(payload.get("dispatch_id") or "") == dispatch_id
-                )
-            ):
-                return dict(payload)
-        return {}
+        from zf.runtime.input_delivery_contract import current_task_input_delivery
+        return current_task_input_delivery(self.event_log.read_all(), operation)
 
     def _input_policy(
         self,
@@ -840,15 +822,9 @@ class SemanticResultSubmitService:
         *,
         task_pipeline_delivery: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        delivery = task_pipeline_delivery or {}
-        if str(request.get("task_pipeline_stage") or "").strip():
-            descriptor = delivery.get("input_consumption_policy_ref")
-        else:
-            descriptor = request.get("input_consumption_policy_ref")
-        if not isinstance(descriptor, Mapping) or not str(descriptor.get("ref") or ""):
-            return {}
-        hydrated = hydrate_sidecar_ref(self.state_dir, dict(descriptor)).payload
-        return dict(hydrated) if isinstance(hydrated, Mapping) else {}
+        from zf.runtime.input_delivery_contract import submitted_input_policy
+        carrier = (task_pipeline_delivery or {}) if request.get("task_pipeline_stage") else request
+        return submitted_input_policy(self.state_dir, carrier)
 
     def _mark_used(self, operation_id: str) -> None:
         path = _binding_path(self.state_dir, operation_id)
