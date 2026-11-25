@@ -68,6 +68,9 @@ DEFAULT_CONTROLLER_TEMPLATE = Path(
 DEFAULT_FLOW_SOURCE_REF = "docs/prd/autoresearch.md"
 
 
+RESIDENT_PROVIDER_KEY = "runtime.run_manager.resident_agent"
+
+
 @dataclass(frozen=True)
 class AutoresearchRunConfig:
     scenario_name: str = "self-eval-backlog"
@@ -242,6 +245,14 @@ def _apply_autoresearch_controller_overrides(
             role["provider_session"] = {
                 **(role.get("provider_session") or {}), "sandbox": "workspace-write",
             }
+
+    manager = data.get("runtime", {}).get("run_manager", {})
+    resident = manager.get("resident_agent")
+    selected = cfg.role_provider_settings.get(RESIDENT_PROVIDER_KEY)
+    if isinstance(resident, dict) and selected and selected.get("backend") == manager.get("backend"):
+        for key in ("model", "model_reasoning_effort"):
+            if selected.get(key):
+                resident[key] = selected[key]
 
     # The outer Autoresearch process owns diagnosis and consumption. Starting
     # another executing resident inside an experiment can recursively create

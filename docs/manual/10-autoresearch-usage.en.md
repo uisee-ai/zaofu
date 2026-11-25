@@ -206,8 +206,11 @@ uv run zf autoresearch loop \
   --fix-wait-strategy head_change
 ```
 
-The reflection backend may be `claude-code` or `codex`; an explicit option wins,
-then `ZF_AUTORESEARCH_REFLECT_BACKEND`, then `claude-code`. Output includes
+An explicit `--reflect-backend` wins. A loop owned by a parent project then uses
+its enabled `runtime.run_manager.reflect.backend`, followed by its Run Manager
+backend. A matching backend inherits the Run Manager model and reasoning effort.
+The enabled reflection policy supplies its timeout for the selected backend.
+Standalone loops use `ZF_AUTORESEARCH_REFLECT_BACKEND`, defaulting to `claude-code`. Output includes
 `journal.jsonl`, `iter-NNN.md`, and `report.md`.
 
 For a real project's YAML and custom seed, use bypass mode:

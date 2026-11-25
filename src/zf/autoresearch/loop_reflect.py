@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from typing import Any
 
 from zf.autoresearch.loop_types import EvalDelta, IterationRecord, ReflectionResult
+from zf.core.config.schema import RuntimeRunManagerConfig
 
 
 DEFAULT_REFLECT_BACKEND = "claude-code"
@@ -247,11 +249,34 @@ def normalize_reflect_backend(backend: str | None) -> str:
     return normalized or DEFAULT_REFLECT_BACKEND
 
 
-def _reflect_command(backend: str) -> list[str]:
+def reflection_provider_options(
+    requested: str | None, parent: RuntimeRunManagerConfig | None,
+) -> tuple[str, dict[str, Any]]:
+    """Select the provider for an existing loop reflection; never enable another action."""
+    reflect = parent.reflect if parent and parent.reflect.enabled else None
+    backend = normalize_reflect_backend(requested or (reflect and reflect.backend)
+        or (parent and parent.backend) or os.environ.get(REFLECT_BACKEND_ENV))
+    options: dict[str, Any] = {}
+    if parent and parent.backend and normalize_reflect_backend(parent.backend) == backend:
+        resident = parent.resident_agent
+        if resident.model:
+            options["model"] = resident.model
+        if resident.model_reasoning_effort:
+            options["reasoning_effort"] = resident.model_reasoning_effort
+    if reflect and normalize_reflect_backend(reflect.backend or parent.backend) == backend:
+        options["timeout_seconds"] = reflect.timeout_seconds
+    return backend, options
+
+
+def _reflect_command(backend: str, *, model: str = "", reasoning_effort: str = "") -> list[str]:
+    model_args = ["--model", model] if model else []
+
     if backend == "claude-code":
         return [
             "claude",
             "-p",                                # non-interactive print mode
+            *model_args,
+            *(["--effort", reasoning_effort] if reasoning_effort else []),
             "--dangerously-skip-permissions",
             # NOTE: previously passed --bare to strip hooks/memory, but --bare
             # disables OAuth credential reads -> "Not logged in" exit 0 in our
@@ -265,6 +290,8 @@ def _reflect_command(backend: str) -> list[str]:
             "never",
             "exec",
             "--ephemeral",
+            *model_args,
+            *(["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"] if reasoning_effort else []),
             "-s",
             "danger-full-access",
             "-",
@@ -276,6 +303,8 @@ def invoke_reflection_llm(
     prompt: str,
     *,
     backend: str = DEFAULT_REFLECT_BACKEND,
+    model: str = "",
+    reasoning_effort: str = "",
     timeout_seconds: int = _DEFAULT_REFLECT_TIMEOUT_SECONDS,
 ) -> ReflectionResult:
     """Invoke the reflection LLM and parse its response.
@@ -302,11 +331,11 @@ def invoke_reflection_llm(
             f"unsupported backend {backend!r} (supported: {sorted(SUPPORTED_REFLECT_BACKENDS)})"
         )
 
-    cmd = _reflect_command(backend)
+    cmd = _reflect_command(backend, model=model, reasoning_effort=reasoning_effort)
     try:
         from zf.integrations.controller.helper import run_provider
         proc = run_provider(
-            cmd, backend=backend, plain_output=True,
+            cmd, backend=backend, model=model, plain_output=True,
             input=prompt,
             capture_output=True,
             text=True,

@@ -7,10 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from tests.test_control_actions_workflow_request import _service, _execute
-from tests.test_web_workflow_proposals import _client, _write_config
+from tests.test_web_workflow_proposals import _client, _prd_client, _write_config
 from tests.e2e.test_intake_semantic_handoff_mock_e2e import candidate
 from zf.cli.main import main
 from zf.core.config.loader import load_config
+from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.workflow_requests import (
     load_workflow_request,
@@ -145,6 +146,33 @@ def test_channel_task_prepares_with_canonical_prd(tmp_path, monkeypatch):
     assert not any(
         e.type == "workflow.invoke.requested" for e in writer.event_log.read_all()
     )
+
+
+def test_cli_explicit_prd_prepares_from_task_contract(tmp_path, monkeypatch, capsys):
+    _, state = _prd_client(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    task = Task(
+        title="Preserve active sessions",
+        contract=TaskContract(
+            behavior="Keep active sessions valid after deployment",
+            acceptance_criteria=["Active sessions remain valid"],
+        ),
+    )
+    TaskStore(state / "kanban.json").add(task)
+    rc = main([
+        "workflow", "prepare", "--task", task.id, "--kind", "prd",
+        "--target-root", str(tmp_path), "--backend", "mock", "--format", "json",
+    ])
+    prepared = json.loads(capsys.readouterr().out)
+    assert rc == 0, prepared.get("blockers")
+    request = load_workflow_request(state, prepared["request_id"])
+    requirement = hydrate_workflow_requirement(state, request)
+    manifest = json.loads(Path(request["workflow_input_manifest_ref"]).read_text())
+    assert requirement["objective"] == task.contract.behavior
+    assert requirement["acceptance"] == task.contract.acceptance_criteria
+    assert request["kind"] == "prd"
+    assert manifest["task_input_binding"]["task_id"] == task.id
+    assert not prepared["operation"]
 
 
 def test_cli_questions_answers_and_full_yaml_preview(tmp_path, monkeypatch, capsys):

@@ -4,9 +4,30 @@ from __future__ import annotations
 
 from zf.autoresearch.loop_types import LoopConfig
 from zf.autoresearch.orchestrator import (
-    AutoresearchRunConfig, cleanup_autoresearch_run, run_autoresearch,
+    AutoresearchRunConfig, RESIDENT_PROVIDER_KEY, cleanup_autoresearch_run, run_autoresearch,
 )
 from zf.core.config.loader import load_config
+from zf.core.config.schema import ZfConfig
+
+
+def parent_role_provider_settings(parent: ZfConfig | None) -> dict[str, dict[str, str]]:
+    if parent is None:
+        return {}
+    settings = {
+        role.name: {"backend": role.backend, "model": role.model,
+                    "model_reasoning_effort": role.model_reasoning_effort,
+                    **({"sandbox": role.provider_session.sandbox}
+                       if role.provider_session and role.provider_session.sandbox else {})}
+        for role in parent.roles
+    }
+    manager = parent.runtime.run_manager
+    resident = manager.resident_agent
+    if resident.model or resident.model_reasoning_effort:
+        settings[RESIDENT_PROVIDER_KEY] = {
+            "backend": manager.backend, "model": resident.model,
+            "model_reasoning_effort": resident.model_reasoning_effort,
+        }
+    return settings
 
 
 def run_iteration(*, scenario: str, run_id: str, cfg: LoopConfig) -> dict:

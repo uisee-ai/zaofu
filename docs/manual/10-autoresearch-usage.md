@@ -322,8 +322,11 @@ uv run zf autoresearch loop \
 | `--screenshot-url URL` | 每轮用 Docker Playwright 截图 Web |
 | `--bypass-autoresearch` | 不用内置 scenario scaffold,直接驱动自定义 yaml/seed |
 
-`--reflect-backend` 显式传参优先；未传时读取
-`ZF_AUTORESEARCH_REFLECT_BACKEND`，仍未设置则默认 `claude-code`。例如:
+`--reflect-backend` 优先。由父项目派发的循环随后采用已启用的
+`runtime.run_manager.reflect.backend`，再回退到父 Run Manager 的 backend。
+后端一致时，现有反思调用沿用父 Run Manager 配置的模型和推理强度。相应的
+reflect 策略启用时也沿用其超时。独立循环使用 `ZF_AUTORESEARCH_REFLECT_BACKEND`，
+未设置时使用 `claude-code`。
 
 ```bash
 ZF_AUTORESEARCH_REFLECT_BACKEND=codex \

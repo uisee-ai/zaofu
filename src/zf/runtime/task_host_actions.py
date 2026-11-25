@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 
+from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
 from zf.runtime.environment_exec import resource_locks
 from zf.runtime.environment_resources import environment_lock_plan
@@ -133,8 +134,10 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
                               original_manifest_digest=manifest['original_manifest_digest'])
                 if manifest.get('recollection_of_receipt_id'):
                     fields['recollection_of_receipt_id'] = manifest['recollection_of_receipt_id']
-            start = service.writer.emit("runtime.action.attempt.started", actor=service.actor,
-                task_id=fields["task_id"], correlation_id=fields["workflow_run_id"], payload=fields)
+            start = service.writer.append(ZfEvent(
+                type="runtime.action.attempt.started", origin="kernel", actor=service.actor,
+                task_id=fields["task_id"], correlation_id=fields["workflow_run_id"], payload=fields,
+            ))
             prefix = f"artifacts/task-host-actions/{reviewed_digest}"
             try:
                 log_ref = None
@@ -153,14 +156,18 @@ def apply(service, manifest: dict, *, approval_ref: str, reviewed_digest: str, v
                 descriptor = write_sidecar_json(state, prefix + "/receipt.json", receipt,
                     kind="task_host_receipt", schema_version="task-host-receipt.v1",
                     created_by=service.actor, source_event_id=start.id, required=True)
-                service.writer.emit("runtime.action.attempt.completed", actor=service.actor,
+                service.writer.append(ZfEvent(
+                    type="runtime.action.attempt.completed", origin="kernel", actor=service.actor,
                     task_id=fields["task_id"], correlation_id=fields["workflow_run_id"], causation_id=start.id,
-                    payload={**fields, "status": result["status"], "receipt_ref": descriptor})
+                    payload={**fields, "status": result["status"], "receipt_ref": descriptor},
+                ))
                 return {"status": result["status"], "receipt_ref": descriptor, "result": receipt}
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                service.writer.emit("runtime.action.attempt.failed", actor=service.actor,
+                service.writer.append(ZfEvent(
+                    type="runtime.action.attempt.failed", origin="kernel", actor=service.actor,
                     task_id=fields["task_id"], causation_id=start.id, correlation_id=fields["workflow_run_id"],
-                    payload={**fields, "reason": str(exc), "effect_status": "inspect_before_retry"})
+                    payload={**fields, "reason": str(exc), "effect_status": "inspect_before_retry"},
+                ))
                 raise ValueError(f"host effect requires inspection before retry: {exc}") from exc
 
 

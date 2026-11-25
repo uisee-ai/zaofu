@@ -22,6 +22,8 @@ Task Verify 的专项 pattern 在项目配置中声明为一个可调用的 `fan
 
 显式选择的 Plan 成员须从自己本次操作的输入索引读取已分配的证据，再通过受控入口签署。项目的观察模式仍需满足这份显式成员合同。章节引用使用 `path.md#unique-anchor`；章节缺失或歧义、文件变更、权限不符时，记录对应义务、输入和纠正原因。正式作者逐份读取本次扫描中获准的专家报告。[输入与签署回归](../../tests/test_plan_team_inputs.py)
 
+Plan 成员声明的 `requirement` 绑定到该 Run 准入的需求版本。生产入口会传入快照的绝对路径；读取前核对内核的 `workflow.invoke.accepted`、请求 ID、修订、规范快照路径及 SHA-256。校验通过后，调度器将快照作为此 attempt 的必读输入。真实入口和拒绝用例见[规划输入测试](../../tests/test_plan_team_inputs.py)。
+
 ### 同一 Run 的规划增员
 
 在 Proposal 的 `stage_teams.plan.reserve_roles` 声明备用的独立 Reader 席位。只有正在执行的 `prd-scan` 能使用这些席位。已有成员提交的报告获准入后，OA 或授权操作者通过原有的 `request-fanout` 动作提交以下字段：
@@ -63,5 +65,7 @@ Web 从 Task 打开成员时，按当前 Run、代次和事件游标获取详情
 - **P2 关系和回放。** 按成员或任务追踪依赖、活动、交接和重试历史；返回当前快照能看到后续记录。在没有有效历史分母、当前冻结判词或证据的视图，保留已知事实与缺失原因。[阶段图和回放断言](../../web/tests/workflow-execution-graph.spec.ts) · [工作台读模型](../../src/zf/runtime/stage_team_projection.py)
 
 ## 验收边界
+
+最小 PRD 实跑曾在实施交接遇到托管 Codex hook 出现在写入工作树的问题。linked writer 现从角色私有 `CODEX_HOME` 加载 hooks；Git 回归覆盖干净目录、用户未跟踪 hook 和用户修改过的已跟踪 hook。宿主 Codex 0.172.0 的 `hooks/list` 返回五个已启用且已受信的 hook，worker 的 `git status` 保持干净。[运行时与交接说明](oa-wrc-task-pipeline-delegation.md)
 
 确定性回放检查派发、恢复、结果准入、交接和拒绝路径。Docker Playwright 检查真实只读 API 与浏览器界面。无监工运行的业务覆盖、真实模型质量、审批后实际人工介入和哪一组恢复更快，需要新的批准窗口及独立证据。两组真实试点完成前，当前项目默认角色配置继续生效。

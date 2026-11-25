@@ -235,7 +235,10 @@ def run_prepare(args: argparse.Namespace) -> int:
                     "request_id": args.request,
                 }
         else:
-            payload.update(task_id=args.task or "", objective=args.objective or "")
+            if args.task:
+                payload.update(task_id=args.task, prepare_workflow=True)
+            else:
+                payload["objective"] = args.objective
             requested = writer.append(
                 ZfEvent(
                     type="control.action.requested",

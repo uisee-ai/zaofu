@@ -5,6 +5,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from zf.runtime.codex_hooks import write_codex_hook_settings
 from zf.runtime.codex_worktree_hooks import configure_linked_worktree_hooks
 
@@ -27,7 +29,6 @@ def test_linked_home_hooks_and_trust_are_private_and_repeatable(tmp_path: Path) 
     home = state / "workdirs/dev/codex-home"
     home.mkdir(parents=True)
     (home / "config.toml").write_text('model = "test-model"\n')
-    write_codex_hook_settings(state, project_root=linked)
     for _ in range(2):
         configure_linked_worktree_hooks(state, project_root=linked, worker_root=linked, codex_home=home)
     config = tomllib.loads((home / "config.toml").read_text())
@@ -50,7 +51,6 @@ def test_inherited_bridge_disabled_only_in_private_home(tmp_path: Path) -> None:
     home = linked / "private-home"
     home.mkdir()
     (home / "config.toml").write_text("")
-    write_codex_hook_settings(linked / ".state", project_root=linked)
     configure_linked_worktree_hooks(linked / ".state", project_root=linked, worker_root=linked, codex_home=home)
     states = tomllib.loads((home / "config.toml").read_text())["hooks"]["state"]
     assert sum(v.get("enabled") is False for v in states.values()) == 5
@@ -59,14 +59,63 @@ def test_inherited_bridge_disabled_only_in_private_home(tmp_path: Path) -> None:
 
 
 def test_actual_spawn_preparation_wires_linked_home(tmp_path: Path, monkeypatch) -> None:
+    from zf.cli.start import _write_codex_hook_settings
     from zf.core.config.schema import RoleConfig
     from zf.core.state.role_sessions import RoleSessionRegistry
     from zf.runtime.spawn_coordinator import SpawnCoordinator
     shared, linked = _repo(tmp_path)
     state = linked / "custom-state"
     state.mkdir()
+    _write_codex_hook_settings(state, project_root=linked)
     coordinator = SpawnCoordinator(state_dir=state, registry=RoleSessionRegistry(state / "role_sessions.yaml", project_root=str(linked)),
                                    transport=None, project_root=str(linked))
     home = coordinator._prepare_codex_home(RoleConfig(name="reader", backend="codex"), hook_project_root=linked)
     assert (home / "hooks.json").is_file()
+    assert not (linked / ".codex/hooks.json").exists()
     assert not (shared / ".codex").exists()
+
+
+@pytest.mark.parametrize("user_hook", ["absent", "untracked", "modified"])
+def test_linked_writer_preserves_exact_git_status(tmp_path: Path, monkeypatch, user_hook: str) -> None:
+    from zf.core.config.schema import RoleConfig
+    from zf.core.state.role_sessions import RoleSessionRegistry
+    from zf.runtime.spawn_coordinator import SpawnCoordinator
+
+    shared, worker = _repo(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "empty-home"))
+    hook_path = worker / ".codex/hooks.json"
+    user_content = '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo user-hook"}]}]}}'
+    if user_hook != "absent":
+        hook_path.parent.mkdir()
+        if user_hook == "modified":
+            hook_path.write_text('{"hooks":{}}')
+            subprocess.run(["git", "add", ".codex/hooks.json"], cwd=worker, check=True)
+            subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                            "commit", "-qm", "Project hooks"], cwd=worker, check=True)
+        hook_path.write_text(user_content)
+
+    def status():
+        return subprocess.check_output(["git", "status", "--porcelain", "-uall"], cwd=worker)
+
+    original = status()
+    assert original == {"absent": b"", "untracked": b"?? .codex/hooks.json\n",
+                        "modified": b" M .codex/hooks.json\n"}[user_hook]
+    state = tmp_path / "state"
+    state.mkdir()
+    coordinator = SpawnCoordinator(
+        state_dir=state, registry=RoleSessionRegistry(state / "role_sessions.yaml", project_root=str(shared)),
+        transport=None, project_root=str(shared),
+    )
+    role = RoleConfig(name="dev", backend="codex", role_kind="writer")
+    for _ in range(2):
+        home = coordinator._prepare_codex_home(role, hook_project_root=worker)
+    assert status() == original
+    if user_hook != "absent":
+        assert hook_path.read_text() == user_content
+    hooks = json.loads((home / "hooks.json").read_text())["hooks"]
+    assert len(hooks) == 5
+    assert all(str(state) in groups[0]["hooks"][0]["command"] for groups in hooks.values())
+    config = tomllib.loads((home / "config.toml").read_text())
+    assert config["projects"][str(worker)]["trust_level"] == "trusted"
+    assert set(config["hooks"]["state"]) >= {f"{home}/hooks.json:stop:0:0"}
+    assert f"{hook_path}:stop:0:0" not in config["hooks"]["state"]

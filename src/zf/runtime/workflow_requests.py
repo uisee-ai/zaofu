@@ -787,6 +787,16 @@ def _projection(
     }
 
 
+def workflow_requirement_path(state_dir: Path, request_id: str, revision: int, digest: str) -> Path:
+    return (
+        Path(state_dir)
+        / "workflow-requests"
+        / _safe_id(request_id)
+        / "requirements"
+        / f"revision-{revision:04d}-{digest[:16]}.json"
+    )
+
+
 def _write_requirement_spec(
     state_dir: Path,
     spec: dict[str, Any],
@@ -797,13 +807,7 @@ def _write_requirement_spec(
     revision = int(spec.get("revision") or 1)
     text = json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    path = (
-        Path(state_dir)
-        / "workflow-requests"
-        / _safe_id(request_id)
-        / "requirements"
-        / f"revision-{revision:04d}-{digest[:16]}.json"
-    )
+    path = workflow_requirement_path(state_dir, request_id, revision, digest)
     atomic_write_text(path, text)
     return str(path), digest
 

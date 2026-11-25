@@ -81,7 +81,10 @@ def write_codex_hook_settings(
     project_root = (project_root or state_dir.parent).resolve()
     codex_dir = project_root / ".codex"
     codex_dir.mkdir(parents=True, exist_ok=True)
+    (codex_dir / "hooks.json").write_text(render_codex_hook_settings(state_dir), encoding="utf-8")
 
+
+def render_codex_hook_settings(state_dir: Path) -> str:
     hooks: dict[str, list[dict]] = {}
     for engine_name, zf_event in CODEX_HOOK_EVENTS:
         hooks[engine_name] = [{
@@ -92,10 +95,7 @@ def write_codex_hook_settings(
             }],
         }]
 
-    (codex_dir / "hooks.json").write_text(
-        json.dumps({"hooks": hooks}, indent=2),
-        encoding="utf-8",
-    )
+    return json.dumps({"hooks": hooks}, indent=2)
 
 
 def _codex_event_label(zf_event: str) -> str:

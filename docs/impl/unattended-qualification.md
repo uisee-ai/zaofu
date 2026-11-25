@@ -316,6 +316,10 @@ task_map_generation；冲突的 task/correlation、缺失代际、实际失败�
 迟到对账验证：初版tick反例1RED/12保护通过；现场事件回放发现Task ID仅在事件信封，补齐此真实形状与缺失/冲突保护后61项定向通过。389文件影响闭包5123 passed / 7 skipped，sentinel53、flow-smoke10通过；闭包启动后调整了上述信封兼容，最终版本另跑67项定向闭包全部通过。原始三事件隔离回放：冻结旧源码不结算，修正源码追加1条绑定evt-2089615b0b49的passed，未写运行中账本。无人资格仍未完成。
 
 
+### 目标关闭重建的迟到事件
+
+若 `fanout-aggregate-rebuild` 因等待 `flow.goal.closed` 超时，Run Manager 可在正常 tick 对账同一次 `goal.closure.identity.invalid`。同一 Run、Goal、任务图代际和 Plan 包的内核关闭事件必须绑定原目标。若原任务提交经集成后产生了新的候选 SHA，原集成回执还必须列在该冻结候选的任务名单及回执清单中。Run Manager 追加引用原 pending 和实际关闭事件的效果回执，超时保留在原时间线。后续 Judge、目标完成和交付各自按原门禁核验。
+
 ## R15：独立视觉验收的证据交付
 
 R15 两Task完成，F1–F6触发且源码修复独立验证/应用/加载后，原候选构建、单测、浏览器均成功。但截图仅嵌入container-evidence.json，Reader无授权解码写入路径，图片查看器拒绝/proc内存路径。监工看过截图不能替代独立Reader；11:13 UTC保留FAILED并受控停止本轮，成果与失败证据保留。

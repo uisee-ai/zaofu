@@ -251,3 +251,45 @@ def test_undeclared_plan_team_keeps_original_shadow_dispatch(assembly, tmp_path)
     for dispatch in log.query(type="fanout.child.dispatched"):
         payload = dispatch.payload["payload"]
         assert "stage_obligation" not in payload and payload.get("result_protocol_mode") != "blocking"
+
+
+@pytest.mark.parametrize("problem", ["valid", "digest", "self_declared", "foreign_revision", "wrong_path", "restricted"])
+def test_plan_author_reads_only_its_admitted_workflow_requirement(assembly, tmp_path, problem):
+    from pathlib import Path
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.workflow_requests import _write_requirement_spec
+
+    _, state, log, transport, runtime = _team(assembly, tmp_path, {})
+    request_id = "prepare-TASK-1-contract"
+    spec = {"schema_version": "requirement.v1", "request_id": request_id, "revision": 2,
+            "confirmed": True, "objective": "Return exactly hello."}
+    ref, digest = _write_requirement_spec(state, spec)
+    if problem == "wrong_path":
+        copy = state / "workflow-requests" / "unrelated.json"
+        copy.write_bytes(Path(ref).read_bytes())
+        ref = str(copy)
+    binding = {"workflow_run_id": request_id, "request_id": request_id, "request_revision": 2,
+               "requirement_spec_ref": ref, "requirement_spec_digest": digest,
+               "artifact_refs": [{"path": ref}]}
+    runtime.event_writer.append(ZfEvent(type="workflow.invoke.accepted", origin="kernel", correlation_id=request_id,
+        payload={**binding, "workflow_run_id": "other" if problem == "self_declared" else request_id}))
+    if problem == "digest":
+        Path(ref).write_text('{"new":"unapproved"}')
+    elif problem == "foreign_revision":
+        binding["request_revision"] = 1
+    elif problem == "restricted":
+        binding["artifact_refs"] = [{"path": ref, "access_scope": {"roles": ["other"]}}]
+    trigger = runtime.event_writer.append(ZfEvent(type="prd.requested", origin="kernel", correlation_id=request_id,
+        payload={**binding, "flow_kind": "prd", "pdd_id": "F-plan"}))
+    runtime.run_once(events=[trigger])
+    if problem != "valid":
+        assert not transport.sent
+        failure, = log.query(type="fanout.child.failed")
+        assert "Plan obligation plan-author" in failure.payload["reason"]
+        return
+    dispatched, = log.query(type="fanout.child.dispatched")
+    view = _files(state, dispatched)
+    sources = [(name, row) for name, (row, _) in view.files.items() if row["source_id"].startswith("plan-input-")]
+    (name, row), = sources
+    assert row["artifact_sha256"] == digest
+    assert json.loads(view.read(name)[0]) == spec

@@ -187,6 +187,7 @@ Kanban/Channel 的交付建单提案使用 prepare_workflow=true，由批准后�
 Task，再调用同一个受控 workflow-request。完整合同、验收、来源和 Channel 授权从
 canonical Task 继承；仅跟踪省略标记，旧显式 route Plan 保留兼容。
 已有 Task 通过 `zf workflow prepare --task TASK-ID` 或 workflow-request(kind=auto) 准备。
+显式准备 PRD 时，`zf workflow prepare --task TASK-ID --kind prd` 同样从 Task 合同继承目标、验收和来源，并直接准备该类型的提案。希望由 Workflow Synthesis 选路和组队时使用 `--kind auto`。
 
 Web AskUserQuestion 展示 Request 当前问题，答案持久化为新的 Requirement revision，
 按原操作上下文/Provider 重新合成。CLI 用 --request、--revision 和可重复的

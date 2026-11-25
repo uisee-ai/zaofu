@@ -51,7 +51,33 @@ def _retry_inputs(runtime, charter, refs, payload, predecessor):
     return sources
 
 
-def _slice(runtime, charter: dict, ref: str, trigger: dict) -> dict:
+def _admitted_requirement(runtime, trigger: dict, run: str, obligation: str, ref: str) -> dict:
+    from zf.runtime.workflow_requests import hydrate_workflow_requirement, workflow_requirement_path
+
+    keys = ("request_id", "request_revision", "requirement_spec_ref", "requirement_spec_digest")
+    admission = next((
+        event for event in runtime.event_log.query(type="workflow.invoke.accepted")
+        if event.origin == "kernel"
+        and run and event.payload.get("workflow_run_id") == run == trigger.get("workflow_run_id")
+        and all(trigger.get(key) and event.payload.get(key) == trigger[key] for key in keys)
+    ), None)
+    if not admission:
+        raise _unavailable(obligation, ref, "does not match the admitted Workflow requirement")
+    binding = admission.payload
+    try:
+        revision = int(binding["request_revision"])
+        state = runtime.state_dir.resolve()
+        expected = workflow_requirement_path(state, binding["request_id"], revision, binding["requirement_spec_digest"])
+        path = state / binding["requirement_spec_ref"]
+        if path != expected or path.resolve() != expected:
+            raise ValueError("noncanonical Workflow requirement path")
+        hydrate_workflow_requirement(state, {**binding, "revision": revision})
+    except (OSError, TypeError, ValueError) as exc:
+        raise _unavailable(obligation, ref, str(exc)) from exc
+    return binding
+
+
+def _slice(runtime, charter: dict, ref: str, trigger: dict, run: str) -> dict:
     original, sep, fragment = ref.partition("#")
     obligation = charter["obligation_id"]
     descriptors = [s for field in ("artifact_refs", "input_refs") for s in trigger.get(field) or []
@@ -59,12 +85,20 @@ def _slice(runtime, charter: dict, ref: str, trigger: dict) -> dict:
     labeled = [s for s in descriptors if original in (s.get("source_id"), s.get("artifact_id"))]
     if len(labeled) > 1 and len({(s.get("ref") or s.get("path"), s.get("sha256")) for s in labeled}) > 1:
         raise _unavailable(obligation, ref, "identifies several distinct authorized inputs")
-    if labeled:
+    bound_requirement = {}
+    if original == "requirement" and trigger.get("requirement_spec_digest") and trigger.get("requirement_spec_ref"):
+        bound_requirement = _admitted_requirement(runtime, trigger, run, obligation, ref)
+        original = bound_requirement["requirement_spec_ref"]
+        if labeled and (labeled[0].get("ref") or labeled[0].get("path")) != original:
+            raise _unavailable(obligation, ref, "conflicts with the admitted Workflow requirement")
+        descriptors.extend(s for field in ("artifact_refs", "input_refs")
+                           for s in bound_requirement.get(field) or [] if isinstance(s, dict))
+    elif labeled:
         original = labeled[0].get("ref") or labeled[0].get("path") or ""
     elif original == "requirement":
         original = next((trigger[k] for k in ("requirement_spec_ref", "requirement_ref", "prd_ref", "source_ref")
                          if trigger.get(k)), "")
-    if not original or Path(original).is_absolute() or ".." in Path(original).parts:
+    if not original or (Path(original).is_absolute() and not bound_requirement) or ".." in Path(original).parts:
         raise _unavailable(obligation, ref, "is not a bound project input")
     root = runtime.project_root.resolve()
     state = runtime.state_dir.resolve()
@@ -75,8 +109,10 @@ def _slice(runtime, charter: dict, ref: str, trigger: dict) -> dict:
     candidate = (state / scoped_ref).resolve()
     is_bound_artifact = bool(matches or (ref.partition("#")[0] == "requirement" and
                              trigger.get("requirement_spec_ref") == original))
-    if (is_bound_artifact and scoped_ref.startswith("artifacts/") and candidate.is_relative_to(state)
-            and candidate.is_file()):
+    if bound_requirement:
+        path = state / original
+    elif (is_bound_artifact and scoped_ref.startswith("artifacts/") and candidate.is_relative_to(state)
+          and candidate.is_file()):
         path = candidate
     else:
         path = (root / original).resolve()
@@ -105,6 +141,8 @@ def _slice(runtime, charter: dict, ref: str, trigger: dict) -> dict:
             raise _unavailable(obligation, ref, "is not authorized for this member")
     key = _input_id(ref)
     digests = {s["sha256"] for s in matches if s.get("sha256")}
+    if bound_requirement:
+        digests.add(bound_requirement["requirement_spec_digest"])
     if not sep:
         source = materialize_attempt_source_ref(state_dir=state, project_root=root, ref=str(path), source_id=key)
         if not source or (digests and digests != {source["sha256"]}):
@@ -145,7 +183,7 @@ def bind_plan_team_inputs(runtime, child, stage_id: str, run: str, *, predecesso
     expected = {r["obligation_id"] for r in reports} if author else set()
     refs = [ref for ref in dict.fromkeys(assigned) if ref not in expected]
     sources = (_retry_inputs(runtime, charter, refs, payload, predecessor) if predecessor else
-               [_slice(runtime, charter, ref, trigger) for ref in refs])
+               [_slice(runtime, charter, ref, trigger, run) for ref in refs])
     extension = payload.get("plan_extension_evidence") if not author else None
     if (author and reports) or extension:
         events = runtime.event_log.read_all()

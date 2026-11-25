@@ -8049,7 +8049,7 @@ def _settle_pending_action_effects(
         payload = pending.payload if isinstance(pending.payload, dict) else {}
         effect_id = str(payload.get("effect_id") or "")
         previous = terminal_events.get(effect_id)
-        correctable_timeout = bool(
+        bound_timeout = bool(
             previous and previous.origin == "kernel"
             and pending.origin == "kernel"
             and previous.type == RUN_MANAGER_ACTION_EFFECT_FAILED
@@ -8057,13 +8057,18 @@ def _settle_pending_action_effects(
             and not previous.payload.get("observed_event_id")
             and previous.payload.get("effect_pending_event_id", pending.id) == pending.id
             and previous.payload.get("request_id") == payload.get("request_id")
-            and (
-                (payload.get("action") == "resident-agent-reprompt"
-                 and payload.get("request_kind") == "recovery_diagnosis")
-                or ((payload.get("action") == "child-rebuild" or
-                     (payload.get("action") == "orchestrator-rework-triage" and payload.get("request_id")))
-                    and previous.payload.get("effect_pending_event_id") == pending.id)
-            )
+        )
+        late_goal = None
+        if bound_timeout and payload.get("action") == "fanout-aggregate-rebuild":
+            from zf.runtime.goal_closure_rebuild_effect import late_goal_rebuild_closure
+            late_goal = late_goal_rebuild_closure(events, index, previous)
+        correctable_timeout = bound_timeout and (
+            late_goal is not None
+            or (payload.get("action") == "resident-agent-reprompt"
+                and payload.get("request_kind") == "recovery_diagnosis")
+            or ((payload.get("action") == "child-rebuild" or
+                 (payload.get("action") == "orchestrator-rework-triage" and payload.get("request_id")))
+                and previous.payload.get("effect_pending_event_id") == pending.id)
         )
         if not effect_id or (effect_id in terminal_by_id and not correctable_timeout):
             continue
@@ -8100,7 +8105,7 @@ def _settle_pending_action_effects(
             str(payload.get("action") or "") == "fanout-aggregate-rebuild"
             and recovery_event_type
         ):
-            observed = next(
+            observed = late_goal or next(
                 (
                     candidate
                     for candidate in events[index + 1:]

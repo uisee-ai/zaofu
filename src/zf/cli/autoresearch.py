@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 from zf.autoresearch.bug_candidates import (
@@ -39,6 +40,8 @@ from zf.autoresearch.loop import (
     invoke_reflection_llm,
     run_loop,
 )
+from zf.autoresearch.loop_iteration import parent_role_provider_settings
+from zf.autoresearch.loop_reflect import reflection_provider_options
 from zf.autoresearch.orchestrator import (
     AutoresearchRunConfig, cleanup_autoresearch_run,
     default_run_id,
@@ -359,10 +362,10 @@ def register(subparsers) -> None:
     )
     loop.add_argument(
         "--reflect-backend",
-        default=os.environ.get(REFLECT_BACKEND_ENV, DEFAULT_REFLECT_BACKEND),
+        default=None,
         help=(
             "LLM backend for the reflection step "
-            f"(default: ${REFLECT_BACKEND_ENV} or {DEFAULT_REFLECT_BACKEND})"
+            f"(default: parent Run Manager policy, then ${REFLECT_BACKEND_ENV} or {DEFAULT_REFLECT_BACKEND})"
         ),
     )
     loop.add_argument(
@@ -916,6 +919,10 @@ def _run_loop(args) -> int:
         if args.output_dir is not None
         else parent_state_dir / "autoresearch" / "loop"
     )
+    parent = context.config if parent_limits is not None else None
+    reflect_backend, reflect_options = reflection_provider_options(
+        args.reflect_backend, parent.runtime.run_manager if parent else None,
+    )
     cfg = LoopConfig(
         scenarios=list(args.scenarios),
         worktree=args.worktree,
@@ -928,15 +935,9 @@ def _run_loop(args) -> int:
             ) if cap is not None and cap > 0]
         ),
         token_budget=parent_limits.token_budget if parent_limits is not None else None,
-        role_provider_settings={
-            role.name: {"backend": role.backend, "model": role.model,
-                        "model_reasoning_effort": role.model_reasoning_effort,
-                        **({"sandbox": role.provider_session.sandbox}
-                           if role.provider_session and role.provider_session.sandbox else {})}
-            for role in (context.config.roles if parent_limits is not None else [])
-        },
+        role_provider_settings=parent_role_provider_settings(parent),
         output_dir=output_dir,
-        reflect_backend=args.reflect_backend,
+        reflect_backend=reflect_backend,
         fix_wait_strategy=args.fix_wait_strategy,
         fix_wait_timeout=args.fix_wait_timeout,
         config_template=args.config_template,
@@ -956,7 +957,7 @@ def _run_loop(args) -> int:
         cfg,
         autoresearch_fn=inner_fn,
         eval_collector_fn=_real_eval_collector,
-        reflect_fn=invoke_reflection_llm,
+        reflect_fn=partial(invoke_reflection_llm, **reflect_options),
         git_head_fn=_real_git_head,
         git_diff_fn=_real_git_diff,
         backlog_fn=_real_backlog_reader,

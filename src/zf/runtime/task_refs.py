@@ -34,19 +34,9 @@ from zf.runtime.task_contract_snapshot import (
 )
 
 
-_IGNORABLE_HANDOFF_DIRTY_PATHS = frozenset({
-    ".codex/hooks.json",
-})
-
-# Backend runtime dirs the harness materializes INTO each worker worktree
-# (claude-code skills + local settings under .claude/, codex hooks/runtime
-# under .codex/). They are never task deliverables but show up as untracked at
-# handoff. The ledger e2e (2026-06-20) hit integration.failed because dev-api /
-# dev-web committed their real work yet the untracked .claude/ skills dir
-# tripped "uncommitted changes; commit or clean before handoff" — and the
-# worker-declared ignorable path does not apply unless the worker itself
-# reports worktree_dirty. These prefixes are always excluded from the handoff
-# dirty-check, independent of that flag.
+# Provider skills and local settings may appear in worker checkouts. Linked
+# Codex workers keep telemetry in CODEX_HOME, so a checkout's hooks.json may
+# contain user changes and must participate in the ordinary Git handoff.
 _RUNTIME_MATERIALIZED_DIRTY_PREFIXES = (".claude/", ".codex/")
 _RUNTIME_MATERIALIZED_DIR_NAMES = frozenset({
     ".vite",
@@ -244,17 +234,12 @@ class TaskRefManager:
         if not source_commit:
             return self._reject(event, "missing source_commit", payload)
         handoff_diagnostics: dict[str, Any] = {}
-        allow_ignorable_workdir_dirty = False
         if self._requires_git_handoff() and payload.get("worktree_dirty") is True:
-            dirty_payload = self._ignorable_handoff_dirty_payload(payload)
-            if dirty_payload is None:
-                return self._reject(
-                    event,
-                    "worktree_dirty handoff is not allowed in worktree mode",
-                    payload,
-                )
-            handoff_diagnostics.update(dirty_payload)
-            allow_ignorable_workdir_dirty = True
+            return self._reject(
+                event,
+                "worktree_dirty handoff is not allowed in worktree mode",
+                payload,
+            )
 
         branch_head_mismatch = False
         branch_head = ""
@@ -299,7 +284,6 @@ class TaskRefManager:
                 workdir_diagnostics = self._validate_workdir(
                     workdir,
                     full_commit,
-                    allow_ignorable_dirty=allow_ignorable_workdir_dirty,
                     allow_head_mismatch=branch_head_mismatch,
                 )
                 handoff_diagnostics.update(workdir_diagnostics)
@@ -1220,7 +1204,6 @@ class TaskRefManager:
         workdir: str,
         full_commit: str,
         *,
-        allow_ignorable_dirty: bool = False,
         allow_head_mismatch: bool = False,
     ) -> dict[str, Any]:
         diagnostics: dict[str, Any] = {}
@@ -1250,27 +1233,9 @@ class TaskRefManager:
                 diagnostics["ignored_runtime_dirty_files"] = runtime_dirty
                 dirty_files = [f for f in dirty_files if f not in runtime_dirty]
             if dirty_files:
-                ignored = _ignorable_handoff_dirty_files(dirty_files)
-                if allow_ignorable_dirty and len(ignored) == len(dirty_files):
-                    diagnostics["ignored_dirty_files"] = ignored
-                    return diagnostics
                 raise RuntimeError(
                     f"workdir {path} has uncommitted changes; commit or clean before handoff"
                 )
-        return diagnostics
-
-    def _ignorable_handoff_dirty_payload(
-        self,
-        payload: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        dirty_files = _dirty_files_from_payload(payload.get("dirty_files"))
-        ignored = _ignorable_handoff_dirty_files(dirty_files)
-        if not dirty_files or len(ignored) != len(dirty_files):
-            return None
-        diagnostics: dict[str, Any] = {"ignored_dirty_files": ignored}
-        note = str(payload.get("dirty_scope_note") or "").strip()
-        if note:
-            diagnostics["dirty_scope_note"] = note
         return diagnostics
 
     def _accepts_rewound_branch_handoff(
@@ -1686,21 +1651,6 @@ def _reported_files_mismatch(
     }
 
 
-def _dirty_files_from_payload(value: Any) -> list[str]:
-    if isinstance(value, str):
-        raw_items: list[Any] = [value]
-    elif isinstance(value, list):
-        raw_items = value
-    else:
-        raw_items = []
-    out: list[str] = []
-    for item in raw_items:
-        normalized = TaskRefManager._normalize_artifact_path(item)
-        if normalized and normalized not in out:
-            out.append(normalized)
-    return out
-
-
 def _dirty_files_from_git_status(status: str) -> list[str]:
     out: list[str] = []
     for raw_line in status.splitlines():
@@ -1719,18 +1669,11 @@ def _dirty_files_from_git_status(status: str) -> list[str]:
     return out
 
 
-def _ignorable_handoff_dirty_files(paths: list[str]) -> list[str]:
-    return [
-        path for path in paths
-        if path in _IGNORABLE_HANDOFF_DIRTY_PATHS
-    ]
-
-
 def runtime_materialized_dirty_files(paths: list[str]) -> list[str]:
     return [
         path for path in paths
         if path in _RUNTIME_MATERIALIZED_DIRTY_PATHS
-        or path.startswith(_RUNTIME_MATERIALIZED_DIRTY_PREFIXES)
+        or (path.startswith(_RUNTIME_MATERIALIZED_DIRTY_PREFIXES) and path != ".codex/hooks.json")
         or any(part in _RUNTIME_MATERIALIZED_DIR_NAMES for part in Path(path).parts)
     ]
 
