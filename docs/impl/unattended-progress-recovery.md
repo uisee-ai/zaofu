@@ -3,6 +3,10 @@
 2026-11-20 GitHub 集成的兼容边界与验证方法见
 [本地恢复能力与 GitHub dev 的集成核查](github-dev-integration-20261120.md)。
 
+## Run Manager 空闲刷新与健康判断
+
+标准 tick 先执行 Supervisor 检查与 watchdog，再决定是否刷新空闲 Run Manager。投影过期和 Supervisor 消息的恢复责任人使用相同的健康窗口，取 600 秒与「空闲刷新周期 + 一次 Supervisor 检查周期」的较大值。默认周期为 900 秒和 300 秒。超过窗口才按时间判过期；已记录的不健康事件、在途 tick 超时、连续失败和 resident 探测仍有各自的判断入口。
+
 ## Goal 空闲检查与在途恢复诊断
 
 目标处于活动状态且没有 Worker Operation 时，心跳仍会核查本 Run 的恢复案例。若受控

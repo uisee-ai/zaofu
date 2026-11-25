@@ -148,6 +148,7 @@ from zf.core.workspace import (
     stable_project_id,
 )
 from zf.runtime.workdirs import WorkdirManager
+from zf.runtime.worker_reply_binding import reply_operation_fields
 from zf.web.operator_contract import (
     CANONICAL_ACTIONS,
     KANBAN_AGENT_ALLOWED_ACTIONS,
@@ -6844,6 +6845,7 @@ def _handle_worker_runtime_action(
             "request": redact_obj(payload),
             **(
                 {
+                    **reply_operation_fields(payload),
                     "message": str(
                         payload.get("message") or payload.get("text") or ""
                     )

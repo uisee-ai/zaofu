@@ -50,6 +50,10 @@ def failure_kind_from_payload(payload: object) -> str:
     if (
         payload.get("control_result_schema") == "verification-result.v1"
         and payload.get("semantic_verdict") in {"blocked", "abstain", "abstained"}
+    ) or (
+        payload.get("control_result_schema") == "workflow-read-result.v1"
+        and payload.get("semantic_verdict") == "blocked"
+        and payload.get("failure_class") == "dependency_blocked"
     ) or payload.get("failure_class") in {
         "worker_noop_or_terminal_missing", "reader_execution_failure",
     }:

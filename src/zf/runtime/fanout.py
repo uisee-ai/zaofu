@@ -604,7 +604,7 @@ class FanoutManifestProjector:
                     "last_event_id": event.id,
                 })
                 _apply_child_metadata(child, payload)
-                _apply_report_payload(child, payload)
+                _apply_report_payload(child, event)
             elif event.type == "fanout.child.failed":
                 child = _child(children, payload)
                 child.update({
@@ -615,7 +615,7 @@ class FanoutManifestProjector:
                     "last_event_id": event.id,
                 })
                 _apply_child_metadata(child, payload)
-                _apply_report_payload(child, payload)
+                _apply_report_payload(child, event)
             elif event.type == "fanout.aggregate.started":
                 prior_aggregate = manifest.get("aggregate") or {}
                 if (event.origin == "kernel" and event.actor == "zf-cli"

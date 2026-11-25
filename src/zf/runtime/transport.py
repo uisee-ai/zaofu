@@ -85,6 +85,8 @@ class DispatchContext:
     reader_recovery_dispatch: str = ""
     continuation: bool = False
     continuation_id: str | None = None
+    # In-process binding for operator guidance addressed to an existing operation.
+    worker_reply_request_hash: str | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}

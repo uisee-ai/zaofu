@@ -91,7 +91,17 @@ class RuntimeAuthorityMixin:
             if dispatch is None or role is None or context.operation_id != dispatch.payload.get("operation_id"):
                 raise RuntimeError("original reader dispatch is unavailable")
             current_reader_input(self, role, {**dispatch.payload, "event_id": dispatch.id})
-        if context is not None and context.continuation:
+        if context is not None and context.worker_reply_request_hash is not None:
+            from zf.runtime.worker_reply_binding import resolve_reply_operation
+
+            self._assert_run_dispatch_allowed(role_name, context)
+            resolve_reply_operation(self, role_name, {
+                "operation_id": context.operation_id, "task_id": context.task_id,
+                "workflow_run_id": context.run_id, "request_hash": context.worker_reply_request_hash,
+                "attempt_id": context.attempt_id, "dispatch_id": context.dispatch_id, "lease_id": context.lease_id,
+            }, exact=True)
+            prepared = None
+        elif context is not None and context.continuation:
             from zf.runtime.task_attempt_continuation import validate_task_continuation
 
             validate_task_continuation(self, role_name, context)

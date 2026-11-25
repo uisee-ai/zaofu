@@ -1,11 +1,15 @@
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from zf.core.config.loader import load_config
+
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.runtime.workflow_resume import (
     _reader_stage_replan_checkpoints,
+    apply_workflow_resume,
     build_workflow_batch_resume_checkpoints,
 )
 from zf.runtime.workflow_resume_apply import _apply_batch_checkpoint, _apply_stage_replan
@@ -82,6 +86,160 @@ def test_apply_rechecks_native_freeze_after_planning(tmp_path):
     assert not stage_result.applied and current.id in stage_result.reason
     assert not batch_result.applied and current.id in batch_result.reason
     assert [event for event in log.read_all()[len(rows) + 1:] if event.type == "candidate.ready"] == []
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("candidate_ref", "refs/heads/candidate/other"),
+    ("candidate_base_commit", "b" * 40),
+    ("candidate_snapshot_event_id", "missing-snapshot"),
+    ("task_map_ref", "other/task-map.json"),
+    ("task_map_ref", "frozen/task-map.json"),
+])
+def test_batch_resume_checks_frozen_identity_before_dispatch(tmp_path, field, value):
+    _, rows = _history()
+    rows[0].payload["task_map_ref"] = "frozen/task-map.json"
+    rows[3].payload[field] = value
+    log = EventLog(tmp_path / "events.jsonl")
+    for event in rows:
+        log.append(event)
+    checkpoint, = build_workflow_batch_resume_checkpoints(tmp_path)
+    dispatched = []
+    result = apply_workflow_resume(
+        tmp_path, load_config(Path("examples/prod/controller/prd-fanout-v3.yaml")),
+        checkpoint_id=checkpoint.checkpoint_id, gate_dispatcher=dispatched.append,
+    )
+    emitted = [event for event in log.read_all()[len(rows):] if event.type == "candidate.ready"]
+    if value == rows[0].payload.get(field):
+        assert result["applied"] == 1
+        assert len(emitted) == 1 and dispatched == emitted
+        assert emitted[0].payload["candidate_snapshot_event_id"] == rows[0].id
+    else:
+        assert result["rejected"] == 1
+        assert field in result["batch_results"][0]["reason"]
+        assert not emitted and not dispatched
+
+
+@pytest.mark.parametrize(("route", "allowed"), [
+    ("kernel_retry", True),
+    ("stall_retry", True),
+    ("foreign_retry", False),
+    ("other_receipt", False),
+])
+def test_batch_snapshot_reference_tracks_the_original_receipt(tmp_path, route, allowed):
+    _, rows = _history()
+    current, retry = rows[:2]
+    checkpoint, = build_workflow_batch_resume_checkpoints(tmp_path, events=rows)
+    if route == "stall_retry":
+        retry = _stall_copy(current)
+    elif route == "foreign_retry":
+        retry = replace(retry, origin="worker")
+    elif route == "other_receipt":
+        retry = _freeze("old")
+        rows.insert(0, retry)
+    if route != "other_receipt":
+        rows[1] = retry
+    checkpoint = replace(checkpoint, candidate_snapshot_event_id=retry.id)
+    log = EventLog(tmp_path / "events.jsonl")
+    for event in rows:
+        log.append(event)
+
+    result = _apply_batch_checkpoint(EventWriter(log), checkpoint, state_dir=tmp_path, events=rows)
+    assert result.applied is allowed
+    if not allowed:
+        assert "candidate_snapshot_event_id" in result.reason
+
+
+@pytest.mark.parametrize(("legacy_missing", "tasks", "allowed"), [
+    ("", ["B", "A"], True),
+    ("", ["A", "C"], False),
+    ("freeze_id", ["A", "B"], False),
+    ("candidate_base_commit", ["A", "B"], False),
+    ("completed_task_ids", ["A", "B"], False),
+])
+def test_batch_rechecks_legacy_receipt_and_task_membership(tmp_path, legacy_missing, tasks, allowed):
+    _, rows = _history()
+    rows[0] = replace(rows[0], origin="")
+    rows[0].payload["completed_task_ids"] = ["A", "B"]
+    checkpoint, = build_workflow_batch_resume_checkpoints(tmp_path, events=rows)
+    checkpoint = replace(checkpoint, completed_task_ids=tasks)
+    if legacy_missing:
+        del rows[0].payload[legacy_missing]
+    log = EventLog(tmp_path / "events.jsonl")
+    for event in rows:
+        log.append(event)
+
+    result = _apply_batch_checkpoint(EventWriter(log), checkpoint, state_dir=tmp_path, events=rows)
+    assert result.applied is allowed
+    if legacy_missing:
+        assert legacy_missing in result.reason
+    emitted = [event for event in log.read_all()[len(rows):] if event.type == "candidate.ready"]
+    assert len(emitted) == int(allowed)
+
+
+@pytest.mark.parametrize("receipt_kind", ["incomplete_native", "incomplete_originless", "pre_freeze"])
+def test_batch_resume_checks_history_when_freeze_id_is_absent(tmp_path, receipt_kind):
+    _, rows = _history()
+    native, retry = rows[:2]
+    for event in (native, retry):
+        del event.payload["freeze_id"]
+    if receipt_kind == "pre_freeze":
+        del native.payload["schema_version"]
+        rows.insert(0, _freeze("unrelated", run="another-run"))
+    else:
+        if receipt_kind == "incomplete_originless":
+            rows[0] = replace(native, origin="")
+        rows[3].payload["candidate_base_commit"] = "b" * 40
+    log = EventLog(tmp_path / "events.jsonl")
+    for event in rows:
+        log.append(event)
+    checkpoint, = build_workflow_batch_resume_checkpoints(tmp_path)
+    assert not checkpoint.freeze_id and checkpoint.candidate_snapshot_event_id == native.id
+    dispatched = []
+    result = apply_workflow_resume(
+        tmp_path, load_config(Path("examples/prod/controller/prd-fanout-v3.yaml")),
+        checkpoint_id=checkpoint.checkpoint_id, gate_dispatcher=dispatched.append,
+    )
+    if receipt_kind == "pre_freeze":
+        assert result["applied"] == 1 and len(dispatched) == 1
+    else:
+        assert result["rejected"] == 1 and "freeze_id" in result["batch_results"][0]["reason"]
+        assert not dispatched
+        assert not any(e.type == "candidate.ready" for e in log.read_all()[len(rows):])
+
+
+@pytest.mark.parametrize("route", ["kernel", "worker", "originless", "other_run", "wrong_head", "wrong_tasks"])
+def test_batch_resume_traces_kernel_retries_to_exact_originless_freeze(tmp_path, route):
+    _, rows = _history()
+    original, retry = rows[:2]
+    rows[0] = replace(original, origin="")
+    if route in {"worker", "originless"}:
+        rows[1] = replace(retry, origin="worker" if route == "worker" else "")
+    elif route == "other_run":
+        retry.payload["workflow_run_id"] = "other"
+    elif route == "wrong_head":
+        retry.payload["candidate_head_commit"] = "b" * 40
+    elif route == "wrong_tasks":
+        retry.payload["completed_task_ids"] = ["other"]
+    wrapper = ZfEvent(type="candidate.ready", origin="kernel", correlation_id="run",
+                      payload={"workflow_run_id": "run", "candidate_snapshot_event_id": retry.id})
+    rows[3].payload["candidate_snapshot_event_id"] = wrapper.id
+    rows.insert(2, wrapper)
+    log = EventLog(tmp_path / "events.jsonl")
+    for event in rows:
+        log.append(event)
+    checkpoint, = build_workflow_batch_resume_checkpoints(tmp_path)
+    assert checkpoint.candidate_snapshot_event_id == wrapper.id
+    dispatched = []
+    result = apply_workflow_resume(
+        tmp_path, load_config(Path("examples/prod/controller/prd-fanout-v3.yaml")),
+        checkpoint_id=checkpoint.checkpoint_id, gate_dispatcher=dispatched.append,
+    )
+    if route == "kernel":
+        assert result["applied"] == 1 and len(dispatched) == 1
+    else:
+        assert result["rejected"] == 1
+        assert "candidate_snapshot_event_id" in result["batch_results"][0]["reason"]
+        assert not dispatched
 
 
 def _stall_copy(source, **changes):

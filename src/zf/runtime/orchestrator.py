@@ -781,7 +781,7 @@ class WorkflowRuntimeCoordinator(
         shape only) and restart reconciliation all skipped it. Rolling back at
         the primitive covers every caller, current and future.
         """
-        if getattr(context, "continuation", False):
+        if getattr(context, "continuation", False) or getattr(context, "worker_reply_request_hash", None) is not None:
             # A follow-up send failure does not revoke the original task lease.
             return
         task_id = getattr(context, "task_id", None)

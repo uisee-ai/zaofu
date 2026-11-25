@@ -19,6 +19,8 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.terminal_events import latest_quiescent_run_terminal
 
+DEFAULT_PROJECTION_STALE_SECONDS = 600
+
 RUN_MANAGER_UNHEALTHY = "run.manager.unhealthy"
 RUN_MANAGER_RESIDENT_RESTART_REQUESTED = "run.manager.resident.restart_requested"
 RUN_MANAGER_SOURCE_REPAIR_DISPATCH_REQUESTED = "run.manager.source_repair.dispatch_requested"
@@ -50,7 +52,7 @@ def run_manager_watchdog_tick(
     event_log: EventLog | None = None,
     now: datetime | None = None,
     max_tick_seconds: int = 300,
-    max_projection_stale_seconds: int = 600,
+    max_projection_stale_seconds: float = DEFAULT_PROJECTION_STALE_SECONDS,
     tick_failure_threshold: int = 3,
     resident_probe: Callable[[], dict[str, Any]] | None = None,
 ) -> RunManagerWatchdogResult:
@@ -150,7 +152,7 @@ def _health_findings(
     events: list[ZfEvent],
     now: datetime,
     max_tick_seconds: int,
-    max_projection_stale_seconds: int,
+    max_projection_stale_seconds: float,
     tick_failure_threshold: int,
     resident_probe: Callable[[], dict[str, Any]] | None,
 ) -> list[tuple[str, dict[str, Any]]]:

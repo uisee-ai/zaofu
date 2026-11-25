@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from zf.core.events.model import ZfEvent
 from zf.runtime.task_contract_snapshot import TASK_CONTRACT_AUTHORITY_FIELDS
 
 
@@ -80,9 +81,21 @@ def apply_child_metadata(child: dict, payload: dict) -> None:
         child["verification_result"] = dict(verification_result)
 
 
-def apply_report_payload(child: dict, payload: dict) -> None:
+def apply_report_payload(child: dict, event: ZfEvent) -> None:
+    payload = event.payload
     report = payload.get("report")
     if isinstance(report, dict):
+        from zf.runtime.workflow_read_result import (
+            WORKFLOW_READ_RESULT_SCHEMA, project_admitted_workflow_read_vote, project_workflow_read_vote,
+        )
+
+        if report.get("schema_version") == WORKFLOW_READ_RESULT_SCHEMA:
+            if (event.origin in {"kernel", ""}
+                    and payload.get("control_result_schema") == WORKFLOW_READ_RESULT_SCHEMA
+                    and payload.get("admitted_call_result_ref") and payload.get("control_result_ref")):
+                report = project_admitted_workflow_read_vote(report)
+            else:
+                report = project_workflow_read_vote(report)
         child["report"] = report
         child["report_status"] = str(report.get("status") or "")
         child["recommendation"] = str(report.get("recommendation") or "")

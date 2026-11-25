@@ -230,6 +230,7 @@ def build_supervisor_control_loop_events(
     projection_ref: dict[str, str],
     contract: Any | None = None,
     now: float | None = None,
+    run_manager_stale_after_s: float | None = None,
 ) -> list[ZfEvent]:
     """Create idempotent decision/message events for actionable attention.
 
@@ -249,7 +250,7 @@ def build_supervisor_control_loop_events(
     # demonstrably unavailable — seeing [ZaoFu Supervisor·兜底] is itself the
     # anomaly signal. Phase 2 (minting moves into the RM path) is tracked in
     # the same task.
-    rm_fallback = _run_manager_unavailable(events, now=now)
+    rm_fallback = _run_manager_unavailable(events, now=now, stale_after_s=run_manager_stale_after_s)
     out: list[ZfEvent] = []
     for item in snapshot.get("attention_items") or []:
         if not isinstance(item, dict):
@@ -635,13 +636,8 @@ def _suppress_owner_message_for_triage(item: dict[str, Any], decision: dict[str,
     return _run_manager_triage_first(item, decision)
 
 
-# Aligned with run_manager_watchdog's max_projection_stale_seconds default: a
-# Run Manager whose last completed tick is older than this is not a live owner.
-_RM_TICK_STALE_S = 600.0
-
-
 def _run_manager_unavailable(
-    events: list[ZfEvent], *, now: float | None = None,
+    events: list[ZfEvent], *, now: float | None = None, stale_after_s: float | None = None,
 ) -> bool:
     """True when the Run Manager is demonstrably not a live recovery owner.
 
@@ -674,7 +670,11 @@ def _run_manager_unavailable(
         return True
     if last_tick:
         current = _time.time() if now is None else float(now)
-        if current - last_tick > _RM_TICK_STALE_S:
+        if stale_after_s is None:
+            from zf.runtime.tick_services import TickServiceIntervals
+
+            stale_after_s = TickServiceIntervals().run_manager_stale_after_s
+        if current - last_tick > stale_after_s:
             return True
     return False
 

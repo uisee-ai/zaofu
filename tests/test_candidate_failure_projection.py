@@ -25,13 +25,15 @@ def test_live_child_projection_keeps_typed_failure_for_aggregate(tmp_path, verdi
     ('verification-result.v1', '', 'infra'),
     ('workflow-read-result.v1', 'reader_execution_failure', 'infra'),
     ('workflow-read-result.v1', 'reader_abstained', ''),
+    ('workflow-read-result.v1', 'dependency_blocked', 'infra'),
 ])
 def test_settled_replay_keeps_same_failure_routing(tmp_path, monkeypatch, schema, failure_class, expected):
     import zf.runtime.call_result_envelope as envelopes
     import zf.runtime.call_result_runtime as results
     monkeypatch.setattr(envelopes, 'hydrate_call_result_envelope', lambda *_: {})
     monkeypatch.setattr(results, 'hydrate_admitted_control_result', lambda *_: {
-        'schema_version': schema, 'verdict': 'abstained', 'failure_class': failure_class})
+        'schema_version': schema, 'verdict': 'blocked' if failure_class == 'dependency_blocked' else 'abstained',
+        'failure_class': failure_class})
     writer = EventWriter(EventLog(tmp_path / 'events.jsonl'))
     context = FanoutContext.create(stage_id='verify', topology='fanout_reader', trace_id='run',
         trigger_event_id='candidate', target_ref='sha', role_instances=['reader'])
@@ -104,3 +106,37 @@ def test_live_admitted_reader_execution_failure_reaches_stage_event(tmp_path, mo
                                 'summary': 'Probe unavailable', 'findings': []}})])
     outcome = next(e for e in log.read_all() if e.type == 'review.rejected')
     assert outcome.payload['failure_kind'] == 'infra'
+
+
+@pytest.mark.parametrize("second,expected_class,expected_kind", [
+    ("blocked", "dependency_blocked", "infra"),
+    ("rejected", None, "mixed"),
+])
+def test_reader_aggregate_preserves_legacy_blocked_outcome(tmp_path, second, expected_class, expected_kind):
+    from tests.test_reader_fanout_runtime import _state
+
+    state, log, _, runtime = _state(tmp_path)
+    writer = EventWriter(log)
+    context = FanoutContext.create(stage_id="review-candidate", topology="fanout_reader", trace_id="run",
+        trigger_event_id="candidate", target_ref="sha", role_instances=["review-a", "review-b"])
+    started = context.started_event()
+    started.payload["aggregate"] = asdict(runtime.config.workflow.stages[0].aggregate)
+    writer.append(started)
+    for child, verdict in zip(context.expected_children, ["blocked", second]):
+        failure_class = "dependency_blocked" if verdict == "blocked" else "semantic_rejection"
+        legacy_vote = "block" if verdict == "blocked" else "reject"
+        writer.emit("fanout.child.failed", payload={"fanout_id": context.fanout_id,
+            "stage_id": context.stage_id, "trace_id": "run", "child_id": child.child_id,
+            "control_result_schema": "workflow-read-result.v1", "semantic_verdict": verdict,
+            "failure_class": failure_class, "report": {"schema_version": "workflow-read-result.v1",
+                "verdict": verdict, "status": "failed", "recommendation": legacy_vote,
+                "failure_class": failure_class, "summary": "Reader outcome"}})
+    manifest = FanoutManifestProjector(state).rebuild(context.fanout_id, log.read_all())
+    assert manifest["children"][0]["report"]["recommendation"] == "abstain"
+    runtime._evaluate_reader_fanout(context.fanout_id)
+    events = log.read_all()
+    assert next(e for e in events if e.type == "fanout.child.failed").payload["report"]["recommendation"] == "block"
+    for event_type in ("fanout.aggregate.completed", "review.rejected"):
+        outcome = next(e for e in events if e.type == event_type)
+        assert outcome.payload["failure_kind"] == expected_kind
+        assert outcome.payload.get("failure_class") == expected_class

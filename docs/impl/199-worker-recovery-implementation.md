@@ -499,6 +499,14 @@ lease/run 与当前操作一致。未知、终态、旧身份拒绝为有因果�
 “请求先发生、目标后终止、回复再投递”，并覆盖错误身份、正常投递与重放、
 resident 兼容。任务见 `tasks/2026-11-08-2040-worker-reply-binding.md`。
 
+Web 操作入口 `POST /api/actions/worker-reply` 将调用方提供的 `operation_id`、
+`attempt_id`、`request_hash`、`dispatch_id`、`lease_id`、`workflow_run_id` 或
+`run_id` 连同 worker 实例和任务写入请求事件。HTTP 202 表示已入队。实际投递以同一
+请求的 `worker.reply.sent` 或 `worker.reply.failed` 为准。升级前已排队的 Web
+请求从原请求副本恢复绑定。新旧字段冲突，或指定 attempt、dispatch、lease、run 或请求
+摘要却缺少 operation 时，消费端拒绝投递。指定 operation 时，现有 Run 派发门核验该
+operation 所属的 Run。Worker 等待就绪期间也可能换代。实际发送前，通用定向回复再次核对 Run 派发门和首次消费时观察到的 operation、任务、摘要、attempt、dispatch 及 lease。其间发生暂停、终态、结果准入或身份变化时，回复记录失败。只指定实例、或仅附任务上下文的 resident 消息仍可投递。
+
 
 ### 2026-11-08：操作请求扫描的正文复制按事件类型选择
 
