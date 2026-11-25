@@ -1048,3 +1048,12 @@ authority 仍经过既有身份与摘要检查，不因恢复而扩大授权。
 该边界由 [stage recovery](../../src/zf/runtime/stage_failure_replan.py) 实施，
 [因果输入及 Kernel caller 回归](../../tests/test_plan_admission_replan_lineage.py)
 覆盖历史污染、缺源／跨 Run、当前显式授权和重放；真实交付恢复仍需独立验证。
+
+
+### Task ref 更正如何结清原交接
+
+对于已由操作员恢复的任务，原 Impl 可能已提交通过的结果，但发布 task ref 时被内核拒绝。
+重放保留原结果、错误提交号和拒绝事件。原派单须明确引用同一重试请求，更正派单须引用这次拒绝及原结果。
+原 Impl、更正 Impl、独立 Task Verify 须各有正式准入，并绑定同一任务合同与修复反馈。
+独立 Verify 必须验证内核实际发布的更正提交。待包含该任务及提交的冻结候选获得正式验证成功后，
+反馈与交接才一同结清。投影保留更正及验证事件 ID，可从完成门禁反查完整链路。
