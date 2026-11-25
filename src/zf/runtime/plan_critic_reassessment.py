@@ -145,17 +145,18 @@ def reconcile_reassessments(runtime, events) -> None:
     """Durable aggregate requests use the existing fanout dispatch/restart path."""
     for event in events:
         if (event.type != 'fanout.aggregate.started' or event.origin != 'kernel'
-                or event.payload.get('recovery_kind') != KIND):
+                or event.payload.get('recovery_kind') not in {KIND, 'diagnosis_critic_handoff_retry'}):
             continue
         current = runtime._fanout_manifest(event.payload['fanout_id'])
-        if current.get('review_request_event_id') == event.id and (
+        field = 'review_request_event_id' if event.payload['recovery_kind'] == KIND else 'critic_handoff_retry_event_id'
+        if current.get(field) == event.id and (
                 runtime._fanout_synth_dispatched(current)
                 or (current.get('aggregate') or {}).get('status') in {'completed', 'failed', 'timed_out', 'cancelled'}):
             continue
         from zf.runtime.fanout import FanoutManifestProjector
         manifest = FanoutManifestProjector(runtime.state_dir).write_manifest(
             event.payload['fanout_id'], runtime.event_log.read_all())
-        if manifest and manifest.get('review_request_event_id') == event.id:
+        if manifest and manifest.get(field) == event.id:
             runtime._evaluate_reader_fanout(event.payload['fanout_id'])
 
 

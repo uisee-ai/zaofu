@@ -77,3 +77,13 @@ fail-closed 拒绝，不能仅验证新控制面能读取配置。升级时需�
 
 实现及验收见 [局部 Plan P0](local-plan-p0-20261109.md)。补充原生分区的精确比较、
 Impl/Verify 未读完输入时的技术失败收敛、Planner 提交前成本观察及字符分页口径。
+
+### 首次独立 Critic 派发前的交接修复
+
+零 Writer 诊断的 Planner 已准入、Critic 尚未签发 WRC 时，操作员可通过
+`stage-replan-new-generation` 提交 `retry_critic_handoff_event_id`、`workflow_run_id`、
+`candidate_event_id`、`planner_admitted_event_id`、`planner_control_sha256` 和
+`approval_ref`。控制面绑定当前冻结、原始签名结果和失败的 fanout。
+若通用 replan 已产生一个因果上直接相连的后继，只有它以基础设施失败终止且未签发任何
+Reader WRC 时才能收回。恢复沿用原 Planner、原 trigger 和证据，由已有 fanout
+调度器第一次签发 Critic。重复执行同一授权会返回原回执。业务裁定仍等待独立 Critic 的正式结果。

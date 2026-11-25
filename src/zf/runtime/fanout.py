@@ -618,6 +618,11 @@ class FanoutManifestProjector:
                 _apply_report_payload(child, payload)
             elif event.type == "fanout.aggregate.started":
                 prior_aggregate = manifest.get("aggregate") or {}
+                if (event.origin == "kernel" and event.actor == "zf-cli"
+                        and payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"
+                        and (manifest.get("synth") or {}).get("last_event_id") == payload.get("retry_critic_handoff_event_id")):
+                    manifest.pop("synth", None)
+                    manifest.update(status="running", critic_handoff_retry_event_id=event.id)
                 if (event.origin == 'kernel' and payload.get('recovery_kind') == 'plan_critic_reassessment'
                         and payload.get('review_checkpoint_ref')):
                     manifest.pop('synth', None)
