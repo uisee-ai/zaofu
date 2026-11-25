@@ -188,7 +188,7 @@ class CanonicalHandoffResolver:
                 state_dir=self.state_dir,
                 project_root=self.project_root,
                 payload=mutable,
-                source_event_id=source_event_id,
+                source_event_id=source_event_id, read_events=self.query._events,
             )
             if plan_inputs and profile in {"workflow-read", "plan-synth"} and mutable.get("operation_id"):
                 from zf.runtime.previous_preflight_delivery import previous_preflight_sources

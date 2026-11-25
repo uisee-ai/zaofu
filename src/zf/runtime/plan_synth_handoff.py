@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
 from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
@@ -230,20 +231,25 @@ def build_plan_handoff_input_refs(
     project_root: Path,
     payload: Mapping[str, Any],
     source_event_id: str = "",
+    read_events: Callable[[], list[ZfEvent]] | None = None,
 ) -> list[dict[str, Any]]:
     """Materialize canonical requirement and rework inputs for a plan attempt."""
 
     state_dir = Path(state_dir)
     project_root = Path(project_root)
     from zf.runtime.plan_requirement_amendment import amendment_binding
+    from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
     trigger = (
         payload.get("trigger_payload")
         if isinstance(payload.get("trigger_payload"), Mapping)
         else {}
     )
+    diagnosis_events = None
+    if (payload.get("resume_scope") or trigger.get("resume_scope")) == "candidate_diagnosis_only":
+        diagnosis_events = frozen_diagnosis_events(state_dir, project_root, read_events)
     binding = amendment_binding(state_dir, str(payload.get("workflow_run_id")
         or trigger.get("workflow_run_id") or payload.get("trace_id")
-        or trigger.get("trace_id") or ""))
+        or trigger.get("trace_id") or ""), events=diagnosis_events)
     payload = {**payload, **binding}
     source_refs = {
         **(trigger.get("source_refs") if isinstance(trigger.get("source_refs"), Mapping) else {}),
@@ -296,7 +302,7 @@ def build_plan_handoff_input_refs(
         prior_review = rejected_review_source(
             state_dir, trigger_id=source_event_id,
             run=str(payload.get('workflow_run_id') or trigger.get('workflow_run_id') or ''),
-            rework_of=str(rework_context.get('rework_of') or ''),
+            rework_of=str(rework_context.get('rework_of') or ''), events=diagnosis_events,
         )
         if prior_review:
             input_refs.append(prior_review)
@@ -305,12 +311,12 @@ def build_plan_handoff_input_refs(
             state_dir=state_dir, project_root=project_root,
             payload={**trigger, **{key: value for key, value in payload.items()
                                    if value not in (None, "", [], {})}},
-            context=rework_context, handoff_source_id=source_event_id,
+            context=rework_context, handoff_source_id=source_event_id, diagnosis_events=diagnosis_events,
         ))
         canonical_snapshot = _canonical_rework_task_snapshot(
             state_dir=state_dir,
             payload=payload,
-            trigger=trigger,
+            trigger=trigger, events=diagnosis_events,
         )
         if canonical_snapshot:
             from zf.runtime.plan_rework_snapshot import bind_scoped_snapshot
@@ -409,6 +415,7 @@ def _canonical_rework_task_snapshot(
     state_dir: Path,
     payload: Mapping[str, Any],
     trigger: Mapping[str, Any],
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any]:
     """Bind current TaskStore truth to a replan instead of an obsolete task map."""
 
@@ -444,7 +451,8 @@ def _canonical_rework_task_snapshot(
     latest_delivery: dict[str, dict[str, Any]] = {}
     latest_blocker: dict[str, dict[str, Any]] = {}
     try:
-        events = EventLog(state_dir / "events.jsonl").read_all()
+        if events is None:
+            events = EventLog(state_dir / "events.jsonl").read_all()
     except (OSError, ValueError, TypeError):
         events = []
     for event in events:
@@ -654,6 +662,7 @@ def build_plan_synth_call_payload(
     reports: list[Mapping[str, Any]],
     run_id: str,
     role_instance: str,
+    event_log: EventLog | None = None,
 ) -> dict[str, Any]:
     """Build the immutable input set pinned before a plan synth dispatch."""
 
@@ -678,11 +687,18 @@ def build_plan_synth_call_payload(
         (str(item.get("source_id") or ""), str(item.get("sha256") or ""))
         for item in input_refs
     }
+    diagnosis_events = None
+    from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
+
+    read_events = event_log.read_all if event_log is not None else None
+    if (manifest.get("trigger_payload") or {}).get("resume_scope") == "candidate_diagnosis_only":
+        diagnosis_events = frozen_diagnosis_events(state_dir, project_root, read_events)
     for source in build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
         payload=manifest,
         source_event_id=trigger_event_id,
+        read_events=(lambda: diagnosis_events) if diagnosis_events is not None else read_events,
     ):
         identity = (
             str(source.get("source_id") or ""),
@@ -713,7 +729,7 @@ def build_plan_synth_call_payload(
     }
     from zf.runtime.candidate_diagnosis_review import diagnosis_review_scope
 
-    scope = diagnosis_review_scope(state_dir, manifest, reports, input_refs, child_bindings)
+    scope = diagnosis_review_scope(state_dir, manifest, reports, input_refs, child_bindings, events=diagnosis_events)
     if scope:
         revision_basis["diagnosis_review"] = scope
     plan_revision = f"plan-r{canonical_json_sha256(revision_basis)[:12]}"
