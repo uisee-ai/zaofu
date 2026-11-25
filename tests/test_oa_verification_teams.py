@@ -191,6 +191,7 @@ def test_required_judge_specialists_dispatch_parallel_separately_from_formal_jud
     members = [{"obligation_id": "check-" + role, "role": role, "question": "Review " + role,
                 "input_refs": ["candidate-evidence"], "expected_output": "Signed finding"}
                for role in ("product-scan", "tech-scan")]
+    members[0].update(selection_reason="Review the business risk.", completion_condition="Cover each open dispute.")
     if optional:
         members[-1]["required"] = False
     spec = assembly[3]
@@ -231,6 +232,9 @@ def test_required_judge_specialists_dispatch_parallel_separately_from_formal_jud
         assert by_role[member["role"]]["payload"]["result_semantics"] == "artifact_production"
         assert by_role[member["role"]]["payload"]["stage_obligation"] == {**member, "recipient": "judge-prd"}
         text = next(row[1] for row in transport.sent if row[0] == member["role"]).read_text()
+        for key in ("selection_reason", "completion_condition"):
+            if key in member:
+                assert member[key] in text
         assert member["question"] in text and member["expected_output"] in text
 
 

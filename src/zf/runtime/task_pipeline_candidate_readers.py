@@ -86,7 +86,7 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
                       and s.aggregate.child_success_event == "flow.discovery.child.completed"
                       and s.aggregate.success_event == "flow.discovery.completed"), None)
     discovery_roles = runtime._fanout_roles(discovery.roles) if discovery else []
-    specialists = (teams.get("judge") or {}).get("members", [])
+    specialists = [m for m in (teams.get("judge") or {}).get("members", []) if not m.get("disposition")]
     required_roles = {row["role"] for row in specialists if row.get("required", True)}
     discovery_ids = {r.instance_id for r in discovery_roles}
     if (kind not in {"prd", "issue"} or metadata.get("flow_kind") != kind

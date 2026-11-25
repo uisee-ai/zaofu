@@ -174,5 +174,24 @@ def _redact_dict_value(key: object, value: Any, *, redact=redact_obj) -> Any:
     return "[REDACTED_SECRET]"
 
 
+# Worker telemetry can contain the full conversation even when it contains no secret.
+# Public Web event surfaces expose routing and progress; disclosure is a separate read.
+SESSION_CONTENT_EVENTS = frozenset({"agent.text", "agent.thinking", "agent.tool.use", "agent.tool.result"})
+
+
+def public_event_metadata(event_type: str, payload: dict) -> dict:
+    if event_type not in SESSION_CONTENT_EVENTS:
+        return payload
+    public = {"content_visibility": "restricted"}
+    for key in ("run_id", "workflow_run_id", "task_id", "operation_id", "attempt_id", "dispatch_id",
+                "role_name", "instance_id", "backend", "task_pipeline_stage", "task_map_generation"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            public[key] = redact_text(value)
+    if isinstance(payload.get("is_error"), bool):
+        public["is_error"] = payload["is_error"]
+    return public
+
+
 def redact_event(event: ZfEvent) -> ZfEvent:
-    return replace(event, payload=redact_obj(event.payload))
+    return replace(event, payload=redact_obj(public_event_metadata(event.type, event.payload)))

@@ -349,6 +349,11 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         prepared_call = None
         from zf.runtime.call_result_admission import result_protocol_mode
 
+        if context.stage_id in {"prd-scan", "prd-plan"} and child.payload.get("stage_obligation"):
+            from zf.runtime.plan_team_inputs import bind_plan_team_inputs
+
+            bind_plan_team_inputs(self, child, context.stage_id, str(child.payload.get("workflow_run_id") or context.trace_id),
+                                  predecessor=child.payload.get("retry_of_operation_id", "") if retry_attempt else "")
         call_mode = result_protocol_mode(self.config, child.payload)
         if call_mode != "shadow" or bool(child.payload.get("durable_operation")):
             from zf.runtime.call_result_runtime import prepare_call_operation

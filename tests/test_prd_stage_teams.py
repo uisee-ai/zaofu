@@ -44,10 +44,15 @@ def test_plan_dispatches_only_the_selected_readers_and_one_author(assembly, expe
     from zf.core.config.schema import RoleConfig
     root = path.parent / "runtime"
     root.mkdir()
+    (root / "prd.md").write_text("Confirmed requirement.\n")
     state_dir, log, transport, runtime = _state(root)
     runtime.config.workflow.stages = [s for s in config.workflow.stages if s.id in {"prd-scan", "prd-plan"}]
     runtime.config.roles = [RoleConfig(name=r, instance_id=r, backend="mock", role_kind="reader")
                             for r in [*experts, "planner", "plan-critic"]]
+    from tests.test_plan_team_inputs import submit_plan_expert
+    from zf.runtime.result_submit import provision_role_submit_credential
+    for role in runtime.config.roles:
+        provision_role_submit_credential(runtime.state_dir, role.instance_id)
     trigger = EventWriter(log).append(ZfEvent(type="prd.requested", correlation_id="run-plan",
         payload={"workflow_run_id": "run-plan", "flow_kind": "prd", "pdd_id": "F-plan", "prd_ref": "prd.md"}))
     runtime.run_once(events=[trigger])
@@ -69,13 +74,9 @@ def test_plan_dispatches_only_the_selected_readers_and_one_author(assembly, expe
         start = next(e for e in log.read_all() if e.type == "fanout.started")
         for child in _manifest(state_dir, start.payload["fanout_id"])["children"]:
             role = child["role_instance"]
-            result = EventWriter(log).append(ZfEvent(type="prd.scan.child.completed", actor=role,
-                correlation_id="run-plan", payload={
-                    "fanout_id": start.payload["fanout_id"], "child_id": child["child_id"],
-                    "role_instance": role, "run_id": child["run_id"], "status": "completed",
-                    "report": {"child_id": child["child_id"], "status": "passed", "summary": f"{role} findings",
-                               "findings": [], "recommendation": "approve"}}))
-            runtime.run_once(events=[result])
+            dispatch = next(e for e in log.query(type="fanout.child.dispatched") if e.payload["role_instance"] == role)
+            submit_plan_expert(runtime, dispatch, {"child_id": child["child_id"], "status": "passed",
+                "summary": f"{role} findings", "findings": [], "recommendation": "approve"})
         handoff = next(e for e in log.read_all() if e.type == "prd.scan.completed")
         runtime.run_once(events=[handoff])
         assert [r for r, *_ in transport.sent].count("planner") == 1
@@ -172,21 +173,31 @@ def test_proposal_freezes_assignments_before_dispatch_and_rejects_new_config(ass
     assert "consumer_config_stale" in approved_config_consumer_error(state, load_config(base), bound)
 
 
-def test_optional_coverage_transfer_requires_an_approved_predecessor_and_new_admission(assembly):
+@pytest.mark.parametrize("team", ["plan", "judge"])
+def test_optional_coverage_transfer_requires_an_approved_predecessor_and_new_admission(assembly, team):
     import json
     from zf.runtime.workflow_requests import revise_workflow_request
     from zf.runtime.workflow_proposal import WorkflowProposalError, build_workflow_proposal
 
     base, state, _, _, writer = assembly
-    plan = select(assembly, ["tech-scan"])
-    plan["members"][0].update(required=False, coverage_owner="planner")
+    if team == "plan":
+        plan = select(assembly, ["tech-scan"])
+        plan["members"][0].update(required=False, coverage_owner="planner")
+    else:
+        assembly[3]["short_flow_spec"]["parameters"]["stage_teams"] = {"judge": {
+            "author": "judge-prd", "reason": "Review the disputed interface",
+            "objectives": ["Assess the current release"], "questions": [{"question_id": "Q1", "question": "Resolve interface evidence"}],
+            "members": [{**member("tech-scan"), "required": False}]}}
+        assembly[3]["requested_roles"] = ["judge-prd", "tech-scan"]
     outcome, request, old_path = _candidate(assembly)
     docs = list(yaml.safe_load_all(old_path.read_text()))
     original, old_ref = build_workflow_proposal(state, request=request, base_config_path=base,
         candidate_config_path=old_path, synthesis_result_ref=outcome.result_ref, flow_kind="prd",
         writer=writer, preflight={"status": "GO", "blockers": []})
     flow = next(doc["spec"] for doc in docs if doc["kind"] == "PrdFlow")
-    transferred = flow["stageTeams"]["plan"]["members"][0]
+    transferred = flow["stageTeams"][team]["members"][0]
+    if team == "judge":
+        transferred["coverage_owner"] = "judge-prd"
     transferred["disposition"] = {"status": "reassigned", "reason": "Planner covers the documented interface.",
         "previous_run_id": "prior-run", "previous_proposal_digest": original["proposal_digest"]}
     successor = base.parent / "next.yaml"
@@ -212,19 +223,27 @@ def test_optional_coverage_transfer_requires_an_approved_predecessor_and_new_adm
     assert proposal["approval_status"] == "approvable", proposal["blockers"]
     config = load_config(successor)
     stages = {s.id: s for s in config.workflow.stages}
-    assert "prd-scan" not in stages
-    assert stages["prd-plan"].children[0].payload["transferred_obligations"] == [transferred]
+    if team == "plan":
+        assert "prd-scan" not in stages
+        stage = stages["prd-plan"]
+        assert stage.children[0].payload["transferred_obligations"] == [transferred]
+    else:
+        assert "prd-judge-advisory" not in stages
+        stage = next(s for s in stages.values() if s.trigger == "flow.goal.closed")
+        declared = config.workflow.flow_metadata["stage_teams"]["judge"]
+        assert declared["members"] == [transferred]
+        assert declared["questions"][0]["question_id"] == "Q1" and declared["objectives"] == ["Assess the current release"]
     from types import SimpleNamespace
     from zf.runtime.plan_team_transfer import approved_current_transfers
     runtime = SimpleNamespace(state_dir=state, config=config, event_log=writer.event_log, event_writer=writer)
     trigger = ZfEvent(type="prd.requested", correlation_id="successor", payload={"workflow_run_id": "successor"})
-    assert not approved_current_transfers(runtime, stages["prd-plan"], trigger)
+    assert not approved_current_transfers(runtime, stage, trigger)
     new_invoke = writer.append(ZfEvent(type="workflow.invoke.requested", origin="kernel", actor="zf-cli",
         correlation_id="successor", payload={"workflow_run_id": "successor", "workflow_proposal_ref": new_ref,
             "workflow_proposal_digest": proposal["proposal_digest"], "effective_config_ref": proposal["effective_config_ref"]}))
     writer.append(ZfEvent(type="workflow.invoke.accepted", origin="kernel", actor="zf-cli", causation_id=new_invoke.id,
         correlation_id="successor", payload={"workflow_run_id": "successor"}))
-    assert approved_current_transfers(runtime, stages["prd-plan"], trigger)
+    assert approved_current_transfers(runtime, stage, trigger)
 
 
 @pytest.mark.parametrize("ref", ["../../outside", "/etc/example", "https://example.test/x", "file:secret"])
@@ -255,10 +274,16 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     config = load_config(path)
     root = path.parent / "team-replan"
     root.mkdir()
+    (root / "prd.md").write_text("Confirmed requirement.\n")
+    (root / "other-prd.md").write_text("Changed requirement.\n")
     state, log, transport, runtime = _state(root)
     runtime.config.workflow.stages = [s for s in config.workflow.stages if s.id in {"prd-scan", "prd-plan"}]
     runtime.config.roles = [RoleConfig(name=r, instance_id=r, backend="mock", role_kind="reader")
                             for r in ["tech-scan", "planner", "plan-critic"]]
+    from tests.test_plan_team_inputs import submit_plan_expert
+    from zf.runtime.result_submit import provision_role_submit_credential
+    for role in runtime.config.roles:
+        provision_role_submit_credential(state, role.instance_id)
     writer = runtime.event_writer
     run = "team-replan"
     identity = {"workflow_run_id": run, "flow_kind": "prd", "pdd_id": "F-plan",
@@ -269,12 +294,10 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     def deliver_scan():
         scan = log.query(type="fanout.started")[-1]
         child, = _manifest(state, scan.payload["fanout_id"])["children"]
-        result = writer.emit("prd.scan.child.completed", actor="tech-scan", correlation_id=run, payload={
-            "fanout_id": scan.payload["fanout_id"], "child_id": child["child_id"], "role_instance": "tech-scan",
-            "run_id": child["run_id"], "status": "completed",
-            "report": {"child_id": child["child_id"], "status": "passed", "summary": "checked contract",
-                       "findings": [], "recommendation": "approve"}})
-        runtime.run_once(events=[result])
+        dispatch = next(e for e in reversed(log.query(type="fanout.child.dispatched"))
+                        if e.payload["fanout_id"] == scan.payload["fanout_id"])
+        submit_plan_expert(runtime, dispatch, {"child_id": child["child_id"], "status": "passed",
+            "summary": "checked contract", "findings": [], "recommendation": "approve"})
         handoff = log.query(type="prd.scan.completed")[-1]
         runtime.run_once(events=[handoff])
         return handoff

@@ -17,6 +17,7 @@ def explicit_retry_reads(runtime, payload: dict, predecessor: str) -> list[dict]
     """
     operations = reduce_workflow_operations(runtime.event_log.read_all())
     remaining = list(payload['required_reads'])
+    task_id = payload.get('task_id') or ''
     visited = set()
     while predecessor:
         if predecessor in visited:
@@ -24,8 +25,8 @@ def explicit_retry_reads(runtime, payload: dict, predecessor: str) -> list[dict]
         visited.add(predecessor)
         operation = operations.get(predecessor, {})
         if (operation.get('operation_type') != 'fanout_reader_child'
-                or any(operation.get(k) != payload.get(k) for k in
-                       ('workflow_run_id', 'task_id', 'role_instance'))):
+                or any(operation.get(k) != payload.get(k) for k in ('workflow_run_id', 'role_instance'))
+                or (operation.get('task_id') or '') != task_id):
             raise ValueError('Reader retry input lineage scope changed')
         request = hydrate_sidecar_ref(runtime.state_dir, operation['request_ref']).payload['request']
         manifest = load_attempt_source_manifest(runtime.state_dir, operation['active_attempt_id'])
@@ -41,6 +42,7 @@ def explicit_retry_reads(runtime, payload: dict, predecessor: str) -> list[dict]
         # earlier Reader attempts own consumer-specific read obligations.
         if (parent.get('operation_type') == 'workflow'
                 and not request.get('retry_of_operation_id')
-                and all(parent.get(k) == payload.get(k) for k in ('workflow_run_id', 'task_id'))):
+                and parent.get('workflow_run_id') == payload.get('workflow_run_id')
+                and (parent.get('task_id') or '') == task_id):
             break
     return remaining

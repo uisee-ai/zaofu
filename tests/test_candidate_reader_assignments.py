@@ -170,3 +170,17 @@ def test_scoped_readers_require_blocking_discovery_admission(tmp_path, monkeypat
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"]["workflow-read"] = "shadow"
     assert candidate_reader_stages(runtime, runtime.event_log.read_all()[-1]) == []
     assert "blocking" in runtime.event_log.read_all()[-1].payload["error"]
+
+def test_legacy_frozen_reader_contract_can_replay_its_pre_oa_optional_coverage():
+    from zf.runtime.candidate_reader_assignments import scope_reader_contract
+
+    spec = {"candidate_reader_assignments": _assignments()}
+    criteria = [{"source_task_id": "TASK-1", "source_acceptance_id": ac,
+                 "acceptance_id": candidate_acceptance_id("TASK-1", ac), "mandatory": ac != "legacy-optional"}
+                for ac in ("AC-1", "AC-2", "legacy-optional")]
+    frozen = {"acceptance_criteria": criteria, "candidate_event_id": "freeze", "plan_artifact_package_digest": "a"*64,
+              "contract_revision": "legacy", "verification_commands": []}
+    with pytest.raises(ValueError, match="coverage mismatch"):
+        scope_reader_contract(dict(frozen), spec, role="reader-a", target="a"*40)
+    scope = scope_reader_contract(frozen, spec, role="reader-a", target="a"*40, all_declared=False)
+    assert scope["acceptance_ids"] == [candidate_acceptance_id("TASK-1", "AC-1")]

@@ -46,7 +46,10 @@ def plan_member_results(manifest: dict) -> list[dict]:
 
 def _plan_inputs_match(author: dict, manifest: dict, receipt: dict) -> bool:
     results = plan_member_results(manifest)
-    return bool(results and {r["obligation_id"] for r in results} == set(author["input_refs"][1:])
+    expected = set(author["input_refs"][1:])
+    expected.update(c["payload"]["stage_obligation"]["obligation_id"] for c in manifest.get("children", [])
+                    if c.get("extension_event_id"))
+    return bool(results and {r["obligation_id"] for r in results} == expected
                 and all(r["result_event_id"] and r["recipient"] == author["role"] for r in results)
                 and results == receipt.get("stage_member_results"))
 

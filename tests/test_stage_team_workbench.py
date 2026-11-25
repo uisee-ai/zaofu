@@ -131,6 +131,7 @@ def test_first_real_dispatch_only_updates_bound_plan_member(assembly, tmp_path):
     config = load_config(_candidate(assembly)[2])
     root = tmp_path / "worker"
     root.mkdir()
+    (root / "prd.md").write_text("Confirmed requirement.\n")
     _, log, _, runtime = _state(root)
     runtime.config.workflow.stages = [s for s in config.workflow.stages if s.id in {"prd-scan", "prd-plan"}]
     runtime.config.roles = [RoleConfig(name=r, instance_id=r, backend="mock", role_kind="reader")
@@ -148,9 +149,12 @@ def test_first_real_dispatch_only_updates_bound_plan_member(assembly, tmp_path):
     graph = build_sdlc_graph(source, execution_only=True)
     members = get_team(graph)["members"]
     assert [(m["role"], m["instance"], m["status"]) for m in members] == [
-        ("product-scan","product-scan","dispatched"),("planner","","waiting_inputs")]
-    assert members[0]["source_event_id"] == next(e.id for e in scoped if e.type == "fanout.child.dispatched")
-    assert not members[0].get("operation_ids")
+        ("product-scan","product-scan","running"),("planner","","waiting_inputs")]
+    receipt = next(e for e in scoped if e.type == "workflow.operation.started")
+    assert members[0]["source_event_id"] == receipt.id and members[0]["attempt_count"] == 1
+    full = get_team(build_sdlc_graph(source))
+    assert full["members"][0]["operation_ids"] == [receipt.payload["operation_id"]]
+    assert full["members"][0]["attempt_ids"] == [receipt.payload["active_attempt_id"]]
 
 
 def test_frozen_readers_are_visible_before_dispatch_and_keep_task_slices(tmp_path, monkeypatch):

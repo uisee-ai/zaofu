@@ -10,7 +10,7 @@ from zf.runtime.call_result_envelope import normalize_call_result_envelope, writ
 from zf.runtime.goal_closure_bridge import GoalClosureBridgeMixin
 
 
-def closure(tmp_path, fault="", *, judge_members=(), advisory_state=""):
+def closure(tmp_path, fault="", *, judge_members=(), advisory_state="", judge_mandate=None):
     bridge = GoalClosureBridgeMixin()
     bridge.state_dir = bridge.project_root = tmp_path
     bridge.config = ZfConfig()
@@ -52,8 +52,8 @@ def closure(tmp_path, fault="", *, judge_members=(), advisory_state=""):
     source = event("flow.discovery.completed", "disc-source", cause=agg.id, fanout_id=fan,
                    candidate_head_commit=TARGET, candidate_ref=REF, task_map_generation=GEN)
     events += [request, start, vote, disc, terminal, agg, source]
-    if judge_members:
-        bridge.config.workflow.flow_metadata = {"stage_teams": {"judge": {"author": "judge", "members": list(judge_members)}}}
+    if judge_members or judge_mandate:
+        bridge.config.workflow.flow_metadata = {"stage_teams": {"judge": {"author": "judge", "members": list(judge_members), **(judge_mandate or {})}}}
         prior = []
         late = []
         for member in judge_members:
@@ -196,3 +196,14 @@ def test_formal_judge_only_waits_for_required_opinions_and_freezes_advisory_at_p
     other.mkdir()
     blocked, ledger, _ = closure(other, "missing-specialist", judge_members=members, advisory_state=state)
     assert blocked is None and ledger[-1].type == "goal.closure.identity.invalid"
+
+def test_formal_judge_has_immutable_oa_objectives_and_disputes_without_specialists(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    mandate = {"reason": "Decide release criteria", "objectives": ["Assess the frozen CLI delivery"],
+               "questions": [{"question_id": "CLI-1", "question": "Does the offline evidence justify delivery?"}]}
+    closed, _, _ = closure(tmp_path, judge_mandate=mandate)
+    desc = next(r for r in closed.payload["input_refs"] if r["source_id"] == "closure-fact")
+    fact = hydrate_sidecar_ref(tmp_path, desc).payload
+    assert fact["judge_mandate"] == {**mandate, "author": "judge", "transferred_obligations": []}
+    assert any(r["artifact_sha256"] == desc["sha256"] for r in closed.payload["required_reads"])

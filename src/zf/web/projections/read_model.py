@@ -30,7 +30,7 @@ from zf.core.events.segments import (
     iter_event_records_from_cursor,
     write_event_manifest,
 )
-from zf.core.security.redaction import redact_obj
+from zf.core.security.redaction import SESSION_CONTENT_EVENTS, public_event_metadata, redact_obj
 from zf.core.state.locks import locked_path
 from zf.web.projections.sqlite_reader import connect_readonly
 from zf.web.projections.event_index_cursor import active_identity, can_resume
@@ -753,7 +753,7 @@ def _event_from_index_row(row: sqlite3.Row) -> ZfEvent:
         task_id=row["task_id"],
         correlation_id=row["correlation_id"],
         causation_id=row["causation_id"],
-        payload=payload,
+        payload=public_event_metadata(str(row["type"] or ""), payload),
     )
 
 
@@ -1603,17 +1603,23 @@ def _row_event_dict(row: sqlite3.Row) -> dict[str, Any]:
         payload = json.loads(str(value("payload_slim") or "{}"))
     except json.JSONDecodeError:
         payload = {}
+    event_type = str(value("type") or "")
+    # Older SQLite projections may still contain a full excerpt in both columns.
+    payload = public_event_metadata(event_type, payload)
+    restricted = event_type in SESSION_CONTENT_EVENTS
+    summary = "" if restricted else str(value("summary") or "")
+    status = _event_status(event_type) if restricted else str(value("status") or "")
     return {
         "seq": int(value("seq") or 0),
         "id": str(value("event_id") or ""),
         "ts": str(value("ts") or ""),
-        "type": str(value("type") or ""),
+        "type": event_type,
         "actor": value("actor"),
         "task_id": value("task_id"),
         "payload": payload,
         "payload_slim": True,
-        "summary": str(value("summary") or ""),
-        "status": str(value("status") or ""),
+        "summary": summary,
+        "status": status,
         "causation_id": value("causation_id"),
         "correlation_id": value("correlation_id") or value("trace_id"),
         "event_ref": {

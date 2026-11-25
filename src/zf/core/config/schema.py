@@ -2043,6 +2043,7 @@ class ObservabilityConfig:
     alerts: ObservabilityAlertConfig = field(
         default_factory=ObservabilityAlertConfig
     )
+    workflow_session_excerpts: bool = False
 
 
 @dataclass

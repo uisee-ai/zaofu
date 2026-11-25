@@ -311,7 +311,9 @@ def prepare_candidate_verification_authority(
     spec = assigned_spec(Path(runtime.state_dir), body)
     if spec:
         scope = scope_reader_contract(aggregate, spec, role=str(payload.get("role_instance") or ""),
-                                      target=candidate_head)
+                                      target=candidate_head,
+                                      # Before OA roster approval, old immutable freezes only guaranteed mandatory ACs.
+                                      all_declared=bool(body.get("candidate_reader_approval") or spec.get("integration_checks")))
         payload["candidate_reader_scope"] = scope
         contract_revision = aggregate["contract_revision"]
     contract_descriptor = write_task_contract_snapshot(

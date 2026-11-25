@@ -50,7 +50,7 @@ class GoalClosureBridgeMixin:
         metadata = flow_metadata_for(self.config, flow_kind=flow_kind)
         judge_team = (metadata.get("stage_teams") or {}).get("judge") or {}
         members = tuple({**member, "recipient": judge_team["author"]}
-                                     for member in judge_team.get("members", []))
+                                     for member in judge_team.get("members", []) if not member.get("disposition"))
         try:
             identity = build_closure_identity(
                 events,
@@ -59,6 +59,9 @@ class GoalClosureBridgeMixin:
                 state_dir=self.state_dir,
                 flow_kind=flow_kind, required_specialists=tuple(m for m in members if m.get("required", True)),
                 advisory_specialists=tuple(m for m in members if not m.get("required", True)),
+                judge_mandate=({**{k: judge_team[k] for k in ("author", "reason", "objectives", "questions") if k in judge_team},
+                               "transferred_obligations": [m for m in judge_team["members"] if m.get("disposition")]}
+                              if judge_team else None),
             )
         except JudgeAdmissionError as exc:
             self._emit_goal_closure_identity_invalid(source_event, identity=dict(payload), reason=str(exc))

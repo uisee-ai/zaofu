@@ -618,6 +618,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "fanout.slot.assigned", "fanout.slot.released",
     "fanout.assignment.override", "fanout.aggregate.started",
     "fanout.aggregate.completed", "fanout.aggregate.rebuild.requested",
+    "fanout.plan.extension.requested", "fanout.plan.member.admitted", "fanout.plan.extension.rejected",
     "fanout.synth.dispatched",
     "fanout.synth.completed", "fanout.timed_out", "fanout.cancelled",
     "zaofu.refactor.review.requested", "zaofu.refactor.review.ready",

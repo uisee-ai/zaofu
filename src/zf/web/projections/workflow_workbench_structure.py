@@ -56,7 +56,19 @@ def build_structure(source: dict, *, generation: str) -> dict:
 def build_structure_node(source: dict, *, node_id: str) -> dict | None:
     """A selected compiled node's exact details, without loading any Plans."""
     graph = build_sdlc_graph(source, team_detail_node=node_id)
-    node = next((item for item in graph["nodes"] if item["id"] == node_id and item["kind"] == "workflow"), None)
+    node = next((item for item in graph["nodes"] if item["id"] == node_id and item["kind"] in {"workflow", "task"}), None)
     if node is None:
         return None
+    if node["kind"] == "task":
+        from zf.runtime.stage_team_observations import scoped_team
+        task = node["data"]["task_id"]
+        stages = []
+        for stage in graph["nodes"]:
+            team = stage["data"].get("team")
+            if team:
+                members = [m for m in team["members"] if task in m["task_ids"]]
+                if members:
+                    stages.append({**stage, "data": {"stage_id": stage["data"]["stage_id"],
+                                                     "team": scoped_team(team, members, task=task)}})
+        node["data"]["team_stages"] = stages
     return {"schema_version": "sdlc-workbench-structure-node.v1", "scope": graph["scope"], "node": node}

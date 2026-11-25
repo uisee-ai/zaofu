@@ -62,6 +62,12 @@
 PYTHONPATH=src uv run python scripts/compare-stage-team-pilot.py /path/to/capture/pair.json > /path/to/capture/comparison.json
 ```
 
+两组保持相同的冻结有效配置和编译图，包括实际阶段、Reader 容量、验证门、RM runtime、看门狗和权限。比较器仅排除可区分两组的消费开关（常驻 RM、按需 reflect、Autoresearch 的启用及诊断消费）和项目名称/状态目录。两个组若放在不同目录中，公共工作流和授权资料应使用相同的项目相对配置。
+
+正式 Judge 以 `goal.closure.synthesized` 的准入结果计入。比较器核对同一运行先前的签署结果准入、不可变引用与判词，或采用已核实的完整终局凭证；缺少相应依据的事件 ID 单列待核实。相同判词派生的兼容事件列在其下，独立的 `goal.closure.synthesis.failed` 归入尝试失败。交付以 `run.delivery.settled` 归集有确切因果关系的 ship 回执。没有直接 freeze 编号时，完整终局验收凭证可以证明具体 Judge 或交付事件属于该冻结；只见相同 Git HEAD 时保留未核实。不同 freeze、代次、目标 ref 或提交互相冲突时一律单列。
+
 比较器读取每个 Run 的事件和绑定配置，检查配对字段与配置，输出批准后介入、模型交接、每段无主等待秒数、首个满足判据的恢复动作及时长、Task、Judge 和交付回执。Judge 与交付回执标明冻结身份已核对、属于其他版本或尚缺目标绑定。它复用现有 Run 隔离、恢复效果和自治信号投影。哈希校验保证归档内容一致；外部操作、业务覆盖结论、观察是否完整及归档来源仍由独立评估者核实。确定性测试使用 `deterministic_replay`，真实试点保留实际 provider/host 运行证据。任一关键项未知、尚未终止或有未核实 Owner 信号时，保持原默认配置。即使两组达标，变更默认策略也需 Owner 审核。
 
 可复现的比较器回归覆盖正常来源、历史窗口重标、模式不符、越 Run 的回执、篡改摘要及控制条件不同。[比较器](../../scripts/compare-stage-team-pilot.py) · [确定性回归](../../tests/test_stage_team_qualification.py)
+
+公开 Web 的事件详情、历史索引、Task 时间线、Trace 和 SSE 对 Worker 的 `agent.text`、`agent.thinking`、`agent.tool.use`、`agent.tool.result` 只展示活动类型、绑定标识与可验证的错误标记。原文保存在内部账本；已获准公开的回复由工作台会话入口按当前身份和目标单独读取。

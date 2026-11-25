@@ -5,6 +5,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from zf.core.events.segments import EventRecord
+from zf.core.security.redaction import SESSION_CONTENT_EVENTS, public_event_metadata
 
 
 def prepare_rows(records: Iterable[EventRecord]) -> tuple[list[tuple], list[tuple], list[tuple], tuple | None]:
@@ -17,9 +18,11 @@ def prepare_rows(records: Iterable[EventRecord]) -> tuple[list[tuple], list[tupl
         trace = m._first_nonempty(event.correlation_id, m._payload_ref(payload, "trace_id"), m._payload_ref(payload, "correlation_id"))
         feature = m._first_nonempty(m._payload_ref(payload, "feature_id"), m._feature_from_task_id(event.task_id))
         channel = m._first_nonempty(m._payload_ref(payload, "channel_id"), m._payload_ref(payload, "channel"))
-        status = m._first_nonempty(m._payload_ref(payload, "status"), m._event_status(event.type))
-        summary = m._event_summary(event.type, payload)
-        slim = json.dumps(m._payload_slim(payload), ensure_ascii=False, default=str)
+        public = public_event_metadata(event.type, payload)
+        status = m._first_nonempty(m._payload_ref(public, "status"), m._event_status(event.type))
+        summary = m._event_summary(event.type, public)
+        slim_payload = public if event.type in SESSION_CONTENT_EVENTS else m._payload_slim(payload)
+        slim = json.dumps(slim_payload, ensure_ascii=False, default=str)
         events.append((record.seq, event.id, event.ts, event.type, event.actor, event.task_id,
                        event.correlation_id, event.causation_id, feature, trace, channel, status,
                        summary, m._payload_digest(payload), slim, record.raw_segment, record.raw_offset, record.raw_length))

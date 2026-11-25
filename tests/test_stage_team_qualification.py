@@ -142,3 +142,112 @@ def test_late_old_judge_and_owner_restart_are_counted_separately(pilot):
     capture(path, pair)
     b = module().compare(path)["arms"][1]
     assert b["post_approval_interventions"] == 1 and b["owner_events_for_review"] == []
+
+
+@pytest.mark.parametrize("change", ["stage_gate", "capacity", "runtime_recovery", "watchdog", "graph", "tool_permissions"])
+def test_mismatched_frozen_common_control_prevents_pair_comparison(pilot, change):
+    from copy import deepcopy
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    path, pair = pilot
+    arm = pair["arms"][1]
+    state = path.parent / arm["state_dir"]
+    log = EventLog(state / "events.jsonl")
+    events = log.read_all()
+    invoke = next(e for e in events if e.id == "invoke")
+    body = deepcopy(hydrate_sidecar_ref(state, invoke.payload["effective_config_ref"]).payload)
+    config = body["config"]
+    if change == "stage_gate":
+        config["workflow"]["stages"] = [{"id": "verify", "success": "skip-independent-check"}]
+    elif change == "capacity":
+        config["workflow"]["flow_metadata"] = {"task_pipeline": {"pools": {"verify": {"capacity": 1}}}}
+    elif change == "runtime_recovery":
+        config["runtime"]["run_manager"]["source_repair"] = {"enabled": True}
+    elif change == "watchdog":
+        config["runtime"]["host_watchdog_seconds"] = 120
+    elif change == "graph":
+        body["compiled_graph"] = {"stage_teams": {"judge": {"author": "different-reader"}}}
+    else:
+        config["runtime"]["autoresearch_resident"]["self_repair_spawn"] = True
+    invoke.payload["effective_config_ref"] = write_immutable_json_sidecar(state, body, root="workflow/proposals",
+        kind="effective_config_snapshot", schema_version=body["schema_version"], created_by="test")
+    (state / "events.jsonl").unlink()
+    for event in events:
+        log.append(event)
+    capture(path, pair)
+    with pytest.raises(ValueError, match="identical experimental controls"):
+        module().compare(path)
+
+
+def test_canonical_signed_judge_and_ship_are_counted_once_with_compatibility_projections(pilot):
+    path, pair = pilot
+    arm = pair["arms"][1]
+    audit_path = path.parent / arm["audit"]["path"]
+    audit = json.loads(audit_path.read_text())
+    log = EventLog(path.parent / arm["state_dir"] / "events.jsonl")
+    head = "1"*40
+
+    def add(eid, kind, cause=None, **body):
+        log.append(ZfEvent(id=eid, type=kind, origin="kernel", correlation_id=arm["run_id"], causation_id=cause,
+            ts="2026-11-21T10:30:00+00:00", payload={"workflow_run_id": arm["run_id"], **body}))
+
+    add("current-freeze", "candidate.ready", schema_version="candidate-freeze-receipt.v1", freeze_id="current",
+        task_map_generation="G-2", candidate_head_commit=head)
+    freeze = log.read_all()[-1]
+    from tests.test_goal_closure_result import _result
+
+    envelope = {"ref": "control/judge", "sha256": "c"*64}
+    result = {**_result(), "workflow_run_id": arm["run_id"], "target_commit": head, "task_map_generation": "G-2"}
+    add("admission", "workflow.call.result.admitted", admission_status="admitted", envelope_ref=envelope,
+        control_result_schema="goal-closure-result.v1", semantic_verdict="passed")
+    add("actual", "goal.closure.synthesized", admitted_call_result_ref=envelope,
+        goal_closure_result=result, candidate_event_id=freeze.id)
+    add("unadmitted", "goal.closure.synthesized", admitted_call_result_ref={**envelope, "sha256": "d"*64},
+        goal_closure_result=result, candidate_event_id=freeze.id)
+    add("unadmitted-compat", "judge.passed", "unadmitted", source_event_id="unadmitted")
+    add("other-run-result", "goal.closure.synthesized", admitted_call_result_ref=envelope,
+        goal_closure_result={**result, "workflow_run_id": "previous-run"}, candidate_event_id=freeze.id)
+    add("compat", "judge.passed", "actual", source_event_id="actual", target_commit=head)
+    add("synth-failed", "goal.closure.synthesis.failed", status="failed")
+    add("unsigned", "goal.closure.synthesized", candidate_event_id=freeze.id)
+    add("wrong", "judge.failed", candidate_snapshot_event_id="previous-freeze", freeze_id=freeze.payload["freeze_id"])
+    add("stale", "judge.failed", candidate_event_id=freeze.id, target_commit="other-head")
+    add("ambiguous-request", "run.delivery.requested", target_commit=head)
+    add("ship-1", "ship.completed", "ambiguous-request", source_commit=head, final_commit="other")
+    add("ship-2", "ship.completed", "ambiguous-request", source_commit=head, final_commit="other")
+    add("ambiguous-settlement", "run.delivery.settled", "ambiguous-request", target_commit=head)
+    add("ship-request", "run.delivery.requested", target_commit=head)
+    add("ship-side-effect", "ship.completed", "ship-request", source_commit=head, final_commit="landed")
+    add("settled", "run.delivery.settled", "ship-request", target_commit=head)
+    audit["window_end"] = "settled"
+    arm["audit"] = capture(audit_path, audit)
+    capture(path, pair)
+    output = module().compare(path)["arms"][1]
+    judges = {r["id"]: r for r in output["judge_receipts"]}
+    assert judges["actual"]["compatibility_event_ids"] == ["compat"] and judges["actual"]["status"] == "passed"
+    assert judges["actual"]["binding"] == "current_freeze" and judges["actual"]["admission_evidence"] == "admission"
+    assert output["unconfirmed_judge_event_ids"] == ["unadmitted", "unadmitted-compat", "other-run-result", "unsigned"]
+    assert not {"unsigned", "compat", "synth-failed"}.intersection(judges)
+    assert judges["wrong"]["binding"] == judges["stale"]["binding"] == "older_or_different_target"
+    assert [r["id"] for r in output["judge_attempt_failures"]] == ["synth-failed"]
+    delivered = {r["id"]: r for r in output["delivery_receipts"]}
+    assert delivered["settled"]["ship_event_ids"] == ["ship-side-effect"] and "ship-side-effect" not in delivered
+    assert delivered["settled"]["binding"] == "observed_unbound"
+    assert {"ambiguous-settlement", "ship-1", "ship-2"} <= delivered.keys()
+
+
+def test_real_completion_gate_proves_actual_judge_and_delivery_even_without_direct_freeze_id():
+    from tests.test_goal_completion_receipt import completion_events, RUN_ID
+    from dataclasses import replace
+
+    events = [replace(e, origin="kernel") for e in completion_events()]
+    freeze = next(e for e in events if e.type == "candidate.ready")
+    end = next(e for e in events if e.type == "run.goal.completed")
+    delivery = ZfEvent(type="run.delivery.settled", id="delivery-real", origin="kernel", correlation_id=RUN_ID,
+        payload={"workflow_run_id": RUN_ID, "claim_id": end.payload["claim_id"], "target_commit": end.payload["target_commit"]})
+    end.payload.update(delivery_policy="ship", delivery_status="settled", delivery_event_id=delivery.id)
+    events.insert(events.index(end), delivery)
+    assert module().terminal_bound_receipts(events, RUN_ID, end, freeze) == {"evt-closure", delivery.id}
+    assert not module().terminal_bound_receipts(events, RUN_ID, end, replace(freeze, id="later-same-head"))
+    delivery.payload["claim_id"] = "unrelated"
+    assert not module().terminal_bound_receipts(events, RUN_ID, end, freeze)

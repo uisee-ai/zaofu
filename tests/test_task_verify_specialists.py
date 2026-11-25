@@ -46,6 +46,8 @@ def fixture(tmp_path):
 
 def test_specialists_dispatch_both_once_before_formal_signer(tmp_path):
     runtime, assignment, args = fixture(tmp_path)
+    reasons = {"selection_reason": "Inspect formatting compatibility.", "completion_condition": "List every incompatible field."}
+    assignment["specialists"][0].update(reasons)
     for _ in range(2):
         with pytest.raises(TaskPipelineWaiting, match="researcher.*inspector"):
             specialist_inputs(runtime, assignment, **args)
@@ -67,7 +69,13 @@ def test_specialists_dispatch_both_once_before_formal_signer(tmp_path):
     assert {o["role_instance"] for o in ops.values() if o["parent_operation_id"]} == {"researcher", "inspector"}
     for dispatch in sent:
         assert dispatch.payload["verify_specialist_obligation"]["role"] == dispatch.payload["role_instance"]
-        assert "Task Verify specialist evidence" in Path(dispatch.payload["briefing_path"]).read_text()
+        briefing = Path(dispatch.payload["briefing_path"]).read_text()
+        assert "Task Verify specialist evidence" in briefing
+        for key, value in reasons.items():
+            if dispatch.payload["role_instance"] == "researcher":
+                assert dispatch.payload["verify_specialist_obligation"][key] == value and value in briefing
+            else:
+                assert key not in dispatch.payload["verify_specialist_obligation"] and value not in briefing
     assert all(ops[r.payload["workflow_operation_id"]]["status"] == "running" for r in requests)
     from tests.e2e.test_agent_owned_verification_mock_e2e import _record_required_reads, _success_payload
 
@@ -100,6 +108,12 @@ def test_specialists_dispatch_both_once_before_formal_signer(tmp_path):
     reused = runtime.event_log.query(type="task.verify.specialist.reused")
     assert len(reused) == 2 and all(e.payload["execution_plan_ref"] == successor["execution_plan_ref"] for e in reused)
     assert len(runtime.event_log.query(type="workflow.invoke.requested")) == 2
+    args["context"].update(plan_artifact_package_ref="", plan_artifact_package_digest="")
+    weaker = {**successor, "specialists": [dict(m) for m in successor["specialists"]]}
+    weaker["specialists"][0].pop("completion_condition")
+    with pytest.raises(TaskPipelineWaiting):
+        specialist_inputs(runtime, weaker, **args)
+    assert len(runtime.event_log.query(type="task.verify.specialist.reused")) == 2
     with pytest.raises(TaskPipelineWaiting):
         specialist_inputs(runtime, assignment, **{**args, "target_commit": "b" * 40})
     assert len(runtime.event_log.query(type="workflow.invoke.requested")) == 4

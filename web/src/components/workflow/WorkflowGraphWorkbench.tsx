@@ -11,7 +11,7 @@ import { workflowNodeTypes } from "./WorkflowGraphNode";
 import WorkflowExecutionTimeline from "./WorkflowExecutionTimeline";
 import WorkflowStageDetails from "./WorkflowStageDetails";
 import WorkflowOperationDetails from "./WorkflowOperationDetails";
-import { WorkflowTaskMembers } from "./WorkflowTeamRoster";
+import { TeamViewContext, WorkflowTaskMembers } from "./WorkflowTeamRoster";
 import WorkflowTaskDetails from "./WorkflowTaskDetails";
 import { operationStage, unmappedRoleOperationIds } from "./executionGraphModel";
 import { executionContext, unassignedExecutionGroup } from "./executionContextModel";
@@ -42,7 +42,16 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const [asOf, setAsOf] = useState(0);
+  const [memberReplay, setMemberReplay] = useState(false);
   const [cursor, setCursor] = useState("");
+  const [teamFilters, setTeamFilters] = useState<Record<string,string>>({});
+  const [clock, setClock] = useState(Date.now);
+  useEffect(() => { setTeamFilters({}); }, [projectId, requestId, revision]);
+  useEffect(() => {
+    if (asOf) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, [asOf]);
   const [showTools, setShowTools] = useState(false);
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const positionScope = useRef("");
@@ -58,13 +67,14 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   const executionSummary = Boolean(graph && "partial" in graph && graph.execution_summary);
   const structureOnly = partial && !executionSummary;
   const structureNodeExists = Boolean(graph?.nodes.some(node => node.id === selected));
-  const stageSummarySelected = Boolean(execution.summary?.nodes.some(n => n.id === selected && (n.data.team as {partial?:boolean} | undefined)?.partial));
-  const selectedStructure = structureOnly && structureNodeExists ? baseStructure : stageSummarySelected ? execution.summary : null;
+  const detailSummarySelected = Boolean(execution.summary?.nodes.some(n => n.id === selected && (n.kind === "task" || (n.data.team as {partial?:boolean} | undefined)?.partial)));
+  const selectedStructure = structureOnly && structureNodeExists ? baseStructure : detailSummarySelected ? execution.summary : null;
   const structureNode = useWorkflowStructureNode(projectId, requestId, asOf, selectedStructure, selected, refresh);
+  const replay = (seq: number) => { setMemberReplay(Boolean(seq)); setCursor(seq ? String(seq) : ""); setAsOf(seq); };
   const loadFull = requireFull;
   const error = readError || execution.error;
   useEffect(() => {
-    positions.current.clear(); setAsOf(0); setCollapsed(new Set()); setSearch(""); setStatus(""); setTaskFocus(false); setTaskMode("dependencies"); setExecutionMode("aggregate");
+    positions.current.clear(); setMemberReplay(false); setAsOf(0); setCollapsed(new Set()); setSearch(""); setStatus(""); setTaskFocus(false); setTaskMode("dependencies"); setExecutionMode("aggregate");
     const query = new URLSearchParams(location.search);
     if (["lifecycle", "trace", "delivery"].includes(query.get("graph") || "")) {
       const url = new URL(location.href); url.searchParams.set("graph", "workflow"); history.replaceState(null, "", url);
@@ -73,8 +83,8 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
   }, [projectId, requestId]);
   useEffect(() => {
     const waitingForExecution = Boolean(baseStructure?.scope.execution_started && view === "workflow" && !execution.unsupported && !execution.summary);
-    if (partial && !readError && (execution.unsupported || view !== "workflow" || fullStructure || (selected && !structureNodeExists && !waitingForExecution) || asOf)) loadFull();
-  }, [graph, partial, view, selected, structureNodeExists, asOf, loadFull, readError, execution.unsupported, execution.summary, fullStructure, baseStructure]);
+    if (partial && !readError && (execution.unsupported || view !== "workflow" || fullStructure || (selected && !structureNodeExists && !waitingForExecution) || (asOf && !memberReplay))) loadFull();
+  }, [graph, partial, view, selected, structureNodeExists, asOf, memberReplay, loadFull, readError, execution.unsupported, execution.summary, fullStructure, baseStructure]);
   const pick = useCallback((id: string) => {
     setSelected(id); const url = new URL(location.href);
     url.searchParams.set("request", requestId); url.searchParams.set("graph", view); url.searchParams.set("node", id);
@@ -202,7 +212,11 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     url.searchParams.set("request", requestId); url.searchParams.set("graph", targetView); url.searchParams.set("node", id);
     history.replaceState(null, "", url);
   }
-  return <section className={`sdlc-workbench${expanded ? " sdlc-expanded" : ""}`} aria-label="Workflow 图工作台">
+  return <TeamViewContext.Provider value={{clock, historical:Boolean(asOf), filters:teamFilters,
+    session: !asOf && graph?.scope.historical === false && graph.scope.execution_started === true
+      && graph.scope.project_id === projectId && graph.scope.request_id === requestId && graph.generation
+      ? {scope:graph.scope,generation:graph.generation} : null,
+    setFilter:(key,value) => setTeamFilters(prior => ({...prior,[key]:value}))}}><section className={`sdlc-workbench${expanded ? " sdlc-expanded" : ""}`} aria-label="Workflow 图工作台">
     <div className="sdlc-main">
       <header className="sdlc-heading">
         <nav className="sdlc-views" aria-label="Workflow graph views">{graphViews.map(([id, label]) =>
@@ -227,7 +241,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
           <label>Status <select aria-label="图节点状态" value={status} onChange={e => setStatus(e.target.value)}><option value="">All</option>{[...new Set(graph.nodes.map(n => n.status))].sort().map(s => <option key={s} value={s}>{statusLabels[s] || s}</option>)}</select></label>
           <label>Relations <select aria-label="图关系范围" value={direction} onChange={e => setDirection(e.target.value as typeof direction)}><option value="all">All</option><option value="upstream">Upstream</option><option value="downstream">Downstream</option></select></label></>}
           <label>History <input aria-label="回放事件序号" type="number" min="1" max={graph.scope.head_seq} value={cursor} onChange={e => setCursor(e.target.value)} /></label>
-          <button type="button" onClick={() => setAsOf(Math.min(graph.scope.head_seq, Math.max(0, Number(cursor) || 0)))}>回放</button>
+          <button type="button" onClick={() => { setMemberReplay(false); setAsOf(Math.min(graph.scope.head_seq, Math.max(0, Number(cursor) || 0))); }}>回放</button>
           <button type="button" onClick={() => { setAsOf(0); setCursor(""); }}>回到实时</button>
         </div>}
         <div className={`sdlc-body${selectedNode ? " has-inspector" : ""}`}>
@@ -250,9 +264,9 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
               <strong>需要关注</strong><p>{String(inspectedNode.data.reason || asRecord(inspectedNode.data.failure).reason || "具体原因尚未观测；请查看关联记录与证据。")}</p>
             </div>}
             {graph.scope.run_id && !asOf && <p><a href={`/?${new URLSearchParams({ project: projectId, page: "behavior-loop", request: requestId, expected_run: graph.scope.run_id, workflow_node: selected, ...(inspectedNode.data.task_id ? { task: String(inspectedNode.data.task_id) } : {}) })}`}>在 Loop Timeline 中查看</a></p>}
-            {(inspectedNode.id.startsWith("workflow:stage:") || inspectedNode.id.startsWith("workflow:role:")) && <WorkflowStageDetails node={inspectedNode} graph={graph} partial={structureOnly} onSelect={pick} onLoadFull={loadFull} />}
+            {(inspectedNode.id.startsWith("workflow:stage:") || inspectedNode.id.startsWith("workflow:role:")) && <WorkflowStageDetails node={inspectedNode} graph={graph} partial={structureOnly} onReplay={replay} onSelect={pick} onLoadFull={loadFull} />}
             {inspectedNode.kind === "operation" && <WorkflowOperationDetails node={inspectedNode} projectId={projectId} nodes={graph.nodes} edges={graph.edges} taskNode={inspectedNode.data.task_id ? graph.nodes.find(n => n.kind === "task" && n.data.task_id === inspectedNode.data.task_id) : undefined} onTask={id => navigateNode(id, "modules")} onOperation={pick} />}
-            {inspectedNode.kind === "task" && <WorkflowTaskDetails task={inspectedNode} nodes={graph.nodes} edges={graph.edges} operations={taskOperations} onTask={id => navigateNode(id, "modules")} onOperation={id => navigateNode(id, "workflow")} onFocus={() => { setTaskMode("dependencies"); setTaskFocus(true); if (view !== "modules") navigateNode(inspectedNode.id, "modules"); }} />}
+            {inspectedNode.kind === "task" && <WorkflowTaskDetails task={inspectedNode} onReplay={replay} nodes={graph.nodes} edges={graph.edges} operations={taskOperations} onTask={id => navigateNode(id, "modules")} onOperation={id => navigateNode(id, "workflow")} onFocus={() => { setTaskMode("dependencies"); setTaskFocus(true); if (view !== "modules") navigateNode(inspectedNode.id, "modules"); }} />}
             <button type="button" onClick={() => setCollapsed(current => { const next = new Set(current); if (next.has(selected)) next.delete(selected); else next.add(selected); return next; })}>{collapsed.has(selected) ? "展开节点" : "收起节点"}</button>
             <details><summary>关联</summary>{graph.edges.filter(e => e.source === selected || e.target === selected).map(e => {
               const target = e.source === selected ? e.target : e.source; return <button type="button" key={e.id} onClick={() => pick(target)}>{e.source === selected ? "→" : "←"} {e.relation} · {graph.nodes.find(n => n.id === target)?.label || target}</button>;
@@ -264,7 +278,7 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
         {showTools && view !== "timeline" && <details className="sdlc-directory"><summary>Node directory</summary><div aria-label="图节点目录">{filtered.nodes.map(n => <button key={n.id} type="button" aria-pressed={selected === n.id} onClick={() => pick(String(n.data.context_target || n.id))} title={n.id}>{n.label}<small>{statusLabels[n.status] || n.status}</small></button>)}</div></details>}
       </>}
     </div>
-  </section>;
+  </section></TeamViewContext.Provider>;
 }
 
 function FitResizedCanvas({ focusIds, focusKey }: { focusIds: string[]; focusKey: string }) {

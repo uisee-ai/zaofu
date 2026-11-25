@@ -146,7 +146,7 @@ def validate_product_acceptance_spec(
                 "required provider qualification must declare ttl_seconds"
             )
 
-    if "candidate_reader_assignments" in spec:
+    if "candidate_reader_assignments" in spec or "integration_checks" in spec:
         from zf.runtime.candidate_reader_assignments import validate_reader_assignments
 
         try:

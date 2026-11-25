@@ -2,6 +2,7 @@
 """Compare two captured §8 windows. Reads evidence only; never starts a Run."""
 
 import argparse
+from copy import deepcopy
 from datetime import datetime
 import hashlib
 import json
@@ -38,7 +39,97 @@ def snapshot(state, event):
     loaded = hydrate_sidecar_ref(state, ref)
     if not loaded.ok or loaded.payload.get("schema_version") != "effective-config-snapshot.v1":
         raise ValueError("invalid effective config snapshot")
-    return loaded.payload["config"]
+    return loaded.payload
+
+
+def common_policy_digest(snapshot_body):
+    """Only the experimental consumer switches and capture-local project identity may differ."""
+    config = deepcopy(snapshot_body["config"])
+    project = config.get("project", {})
+    for name in ("name", "state_dir"):
+        project.pop(name, None)
+    runtime = config["runtime"]
+    manager = runtime["run_manager"]
+    for owner, name, switches in ((manager, "resident_agent", ("enabled",)),
+                                  (manager, "reflect", ("enabled",)),
+                                  (runtime, "autoresearch_resident", ("enabled", "self_repair_consumer"))):
+        model = owner.get(name, {})
+        for switch in switches:
+            model.pop(switch, None)
+        if not model:
+            owner.pop(name, None)
+    controls = {"config": config, "compiled_graph": snapshot_body.get("compiled_graph")}
+    return hashlib.sha256(json.dumps(controls, sort_keys=True).encode()).hexdigest()
+
+
+def receipt_binding(body, freeze, *, terminal_bound=False):
+    if not freeze:
+        return "observed_unbound"
+    ids = [body[key] for key in ("candidate_event_id", "candidate_snapshot_event_id") if body.get(key)]
+    scope = freeze.payload
+    head = scope.get("candidate_head_commit") or scope.get("target_commit")
+    if (any(value != freeze.id for value in ids)
+            or any(body.get(k) and head and body[k] != head for k in
+                   ("target_commit", "verified_target_commit", "candidate_head_commit"))
+            or any(body.get(k) and scope.get(k) and body[k] != scope[k] for k in
+                   ("freeze_id", "task_map_generation", "candidate_ref"))):
+        return "older_or_different_target"
+    if terminal_bound or ids or (body.get("freeze_id") and body["freeze_id"] == scope.get("freeze_id")):
+        return "current_freeze"
+    return "observed_unbound"
+
+
+def terminal_bound_receipts(events, run, end, freeze):
+    """The production delivery receipt may only carry claim/target; require the full existing completion proof."""
+    from zf.runtime.goal_completion_receipt import build_goal_completion_receipt, GoalCompletionReceiptError
+
+    if not freeze or not any(e.type == "run.goal.completed" and e.origin == "kernel" for e in events):
+        return set()
+    try:
+        proof = build_goal_completion_receipt(events, run_id=run, generated_at=end.ts)
+    except GoalCompletionReceiptError:
+        return set()
+    if proof["candidate"]["event_id"] != freeze.id:
+        return set()
+    return {proof["goal_closure"]["source_event_id"], proof["delivery"]["event_id"]} - {""}
+
+
+def signed_judge_sources(events, run, proven):
+    from zf.runtime.goal_closure_result import GoalClosureResultError, validate_goal_closure_result
+
+    admissions = {}
+    signed = {}
+    completion = next((e.id for e in reversed(events) if e.type == "run.goal.completed" and e.origin == "kernel"), None)
+    for event in events:
+        if event.origin != "kernel":
+            continue
+        body = event.payload
+        if (event.type == "workflow.call.result.admitted" and body.get("admission_status") == "admitted"
+                and body.get("control_result_schema") == "goal-closure-result.v1"):
+            ref = body.get("envelope_ref") or {}
+            if isinstance(ref, dict) and ref.get("ref") and ref.get("sha256"):
+                admissions[(ref["ref"], ref["sha256"])] = event
+        if event.type != "goal.closure.synthesized":
+            continue
+        if event.id in proven:
+            signed[event.id] = completion
+            continue
+        result = body.get("goal_closure_result")
+        if (not isinstance(result, dict) or result.get("workflow_run_id") != run
+                or body.get("goal_closure_result_error")):
+            continue
+        try:
+            validate_goal_closure_result(result)
+        except GoalClosureResultError:
+            continue
+        ref = body.get("admitted_call_result_ref") or {}
+        if not isinstance(ref, dict):
+            continue
+        admission = admissions.get((ref.get("ref"), ref.get("sha256")))
+        if (admission and admission.payload.get("semantic_verdict") == result["verdict"]
+                and (not body.get("operation_id") or body["operation_id"] == admission.payload.get("operation_id"))):
+            signed[event.id] = admission.id
+    return signed
 
 
 def compare_arm(root, arm, controls, protocol, mode, authorized_at):
@@ -78,20 +169,13 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
             if (body.get("run_id") != run or not body.get("provider") or not body.get("trace_ref")
                     or not body.get("model") or not body.get("host_capture_ref")):
                 raise ValueError("incomplete real provider/host provenance")
-    config = snapshot(state, invoke)
+    snapshot_body = snapshot(state, invoke)
+    config = snapshot_body["config"]
     oa = config["workflow"]["orchestration"]
-    rm = config["runtime"]["run_manager"]["resident_agent"]
-    diagnosis = config["runtime"].get("autoresearch_resident", {})
     runtime = config["runtime"]
-    compared = {key: config.get(key) for key in ("roles", "safety", "security", "quality_gates",
-                "providers", "constraints", "verification", "global_budget_usd", "budget_enforcement_enabled")}
-    compared["workflow"] = {key: config["workflow"].get(key) for key in
-                            ("orchestration", "execution_profiles", "pipelines", "run_limits")}
-    compared["runtime_policy"] = {key: runtime.get(key) for key in
-                                  ("execution_routing", "host_verification", "task_publication")}
-    # Protected cardinality, roles, models, gates and execution permissions are
-    # compared separately from the experimenter's captured input attestations.
-    frozen_controls = hashlib.sha256(json.dumps(compared, sort_keys=True).encode()).hexdigest()
+    rm = runtime["run_manager"]["resident_agent"]
+    diagnosis = runtime.get("autoresearch_resident", {})
+    frozen_controls = common_policy_digest(snapshot_body)
     if not oa.get("oa_profile") or oa.get("normal_frontier_owner") != "wrc":
         raise ValueError("both arms require configured OA and WRC")
     if rm["enabled"] != (arm["group"] == "A"):
@@ -149,22 +233,64 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
     freeze = next((e for e in reversed(window) if e.type == "candidate.ready" and e.origin == "kernel"
                    and e.payload.get("schema_version") == "candidate-freeze-receipt.v1"), None)
 
+    proven = terminal_bound_receipts(events[:events.index(end)+1], run, end, freeze)
+
     def receipts(*types):
-        result = []
+        rows = []
         for e in window:
             if e.origin != "kernel" or e.type not in types:
                 continue
-            binding = "observed_unbound"
-            if freeze:
-                keys = ("freeze_id", "task_map_generation", "candidate_head_commit")
-                if any(e.payload.get(k) and freeze.payload.get(k) and e.payload[k] != freeze.payload[k] for k in keys):
-                    binding = "older_or_different_target"
-                elif (e.payload.get("candidate_snapshot_event_id") == freeze.id or
-                      e.payload.get("freeze_id") and e.payload["freeze_id"] == freeze.payload.get("freeze_id")):
-                    binding = "current_freeze"
-            result.append({"id": e.id, "type": e.type, "status": e.payload.get("status"), "binding": binding,
-                           "task_id": e.task_id or e.payload.get("task_id")})
-        return result
+            body = e.payload
+            projection = body.get("goal_closure_result") or {}
+            bindings = {receipt_binding(p, freeze, terminal_bound=e.id in proven) for p in (body, projection)}
+            binding = ("older_or_different_target" if "older_or_different_target" in bindings else
+                       "current_freeze" if "current_freeze" in bindings else "observed_unbound")
+            rows.append({"id": e.id, "type": e.type,
+                         "status": projection.get("verdict") or body.get("status"), "binding": binding,
+                         "task_id": e.task_id or body.get("task_id")})
+        return rows
+
+    judge = receipts("goal.closure.synthesized", "judge.passed", "judge.failed")
+    sources = signed_judge_sources(events[:events.index(end)+1], run, proven)
+    signed = {r["id"]: r for r in judge if r["id"] in sources}
+    judge_receipts = []
+    unconfirmed_judge_events = []
+    for row in judge:
+        e = by_id[row["id"]]
+        if e.type == "goal.closure.synthesized":
+            if e.id not in signed:
+                unconfirmed_judge_events.append(e.id)
+                continue
+            row["admission_evidence"] = sources[e.id]
+        elif (e.causation_id and e.causation_id == e.payload.get("source_event_id")
+                and by_id.get(e.causation_id) and by_id[e.causation_id].type == "goal.closure.synthesized"):
+            if e.causation_id in signed:
+                signed[e.causation_id].setdefault("compatibility_event_ids", []).append(e.id)
+            else:
+                unconfirmed_judge_events.append(e.id)
+            continue
+        judge_receipts.append(row)
+    delivery = receipts("run.delivery.settled", "ship.completed")
+    settled = {r["id"]: r for r in delivery if r["type"] == "run.delivery.settled"}
+    ship_counts = {}
+    for row in delivery:
+        if row["type"] == "ship.completed":
+            ship = by_id[row["id"]]
+            key = (ship.causation_id, ship.payload.get("source_commit"))
+            ship_counts[key] = ship_counts.get(key, 0) + 1
+    delivery_receipts = []
+    for row in delivery:
+        ship = by_id[row["id"]]
+        matches = [v for eid, v in settled.items() if ship.type == "ship.completed" and (
+            by_id[eid].payload.get("ship_event_id") == ship.id or (
+                not by_id[eid].payload.get("ship_event_id") and ship.causation_id and by_id[eid].causation_id == ship.causation_id
+                and ship_counts[(ship.causation_id, ship.payload.get("source_commit"))] == 1
+                and ship.payload.get("source_commit") and ship.payload["source_commit"] == by_id[eid].payload.get("target_commit")
+                and (by_id.get(ship.causation_id) and by_id[ship.causation_id].type == "run.delivery.requested")))]
+        if len(matches) == 1:
+            matches[0].setdefault("ship_event_ids", []).append(ship.id)
+        else:
+            delivery_receipts.append(row)
 
     coverage = audit.get("coverage")
     if coverage:
@@ -187,8 +313,9 @@ def compare_arm(root, arm, controls, protocol, mode, authorized_at):
             "oa": oa["oa_profile"], "resident_rm_enabled": rm["enabled"], "configured_consumers": consumers,
             "observed_consumer_receipts": consumer_receipts,
             "task_completion_events": receipts("task.done.accepted"), "coverage": coverage,
-            "judge_receipts": receipts("judge.passed", "judge.failed"),
-            "delivery_receipts": receipts("run.delivery.settled", "ship.completed"),
+            "judge_receipts": judge_receipts, "unconfirmed_judge_event_ids": unconfirmed_judge_events,
+            "judge_attempt_failures": receipts("goal.closure.synthesis.failed"),
+            "delivery_receipts": delivery_receipts,
             "terminal_receipts": receipts("run.goal.completed", "run.goal.blocked", "run.failed"),
             "owner_events_for_review": unseen_owner, "recorded_interventions": len(manual) if manual is not None else None,
             "post_approval_interventions": len(manual) if manual is not None and not unseen_owner else None,

@@ -140,3 +140,54 @@ def test_only_full_current_scoped_group_reaches_discovery_report(tmp_path: Path,
         refs = report["candidate_reader_result_refs"]
         assert {ref["role_instance"] for ref in refs} == {"behavior", "boundary"}
         assert all(hydrate_sidecar_ref(tmp_path, ref).payload["verdict"] == "passed" for ref in refs)
+
+@pytest.mark.parametrize("fault", ["missing_optional_ac", "missing_roster", "unassigned_check", "unknown_task", "missing_receipt", "missing_integration_evidence", "success"])
+def test_frozen_cross_task_check_requires_reader_assignment_and_own_receipt(tmp_path, monkeypatch, fault):
+    from zf.runtime.candidate_reader_assignments import (integration_acceptance_id, scope_reader_contract,
+                                                        validate_plan_assignment_coverage, validate_reader_assignments)
+    spec = product._spec()
+    spec["integration_checks"] = [{"check_id": "I-1", "task_ids": ["T1", "T2"], "assertion": "An item created by the CLI is readable by the API."}]
+    spec["candidate_reader_assignments"] = rows = [
+        {"role_instance": "behavior", "acceptance": [{"task_id": "T1", "acceptance_id": "AC-1"}],
+         "journey_ids": ["journey-create"]},
+        {"role_instance": "boundary", "acceptance": [{"task_id": "T2", "acceptance_id": "AC-2"}],
+         "journey_ids": [], "integration_check_ids": ["I-1"]}]
+    tasks = {"tasks": [{"task_id": "T1", "acceptance_criteria": [{"id": "AC-1"}]},
+                       {"task_id": "T2", "acceptance_criteria": [{"id": "AC-2", "mandatory": False}]}]}
+    if fault == "missing_roster":
+        from zf.runtime.product_acceptance import validate_product_acceptance_spec
+        del spec["candidate_reader_assignments"]
+        with pytest.raises(ValueError, match="integration checks lack"):
+            validate_product_acceptance_spec(spec)
+        return
+    if fault == "missing_optional_ac":
+        rows[1]["acceptance"] = []
+    elif fault == "unassigned_check":
+        rows[1]["integration_check_ids"] = []
+    elif fault == "unknown_task":
+        spec["integration_checks"][0]["task_ids"][1] = "other"
+    if fault in {"unassigned_check", "unknown_task", "missing_optional_ac"}:
+        with pytest.raises(ValueError, match="integration|coverage"):
+            validate_reader_assignments(spec)
+            validate_plan_assignment_coverage(spec, tasks)
+        return
+    validate_reader_assignments(spec)
+    validate_plan_assignment_coverage(spec, tasks)
+    monkeypatch.setattr(product, "_spec", lambda **_: spec)
+    package, descriptor = product._package(tmp_path)
+    aggregate = {"contract_revision": "rv", "candidate_event_id": "freeze", "plan_artifact_package_digest": package["sha256"],
+        "verification_commands": [], "acceptance_criteria": [{"acceptance_id": candidate_acceptance_id(t, a),
+        "source_task_id": t, "source_acceptance_id": a} for t, a in [("T1", "AC-1"), ("T2", "AC-2")]]}
+    scope = scope_reader_contract(aggregate, spec, role="boundary", target=product.TARGET)
+    assert scope["integration_check_ids"] == ["I-1"] and scope["task_ids"] == ["T1", "T2"]
+    assert aggregate["acceptance_criteria"][-1]["text"] == spec["integration_checks"][0]["assertion"]
+    result, op = _reader((spec, package, descriptor), "boundary", "freeze")
+    op["candidate_reader_scope"] = scope
+    result.payload["requirement_results"] = [{"acceptance_id": candidate_acceptance_id("T2", "AC-2"), "status": "passed", "evidence_refs": ["T2-proof"]}]
+    if fault in {"success", "missing_integration_evidence"}:
+        result.payload["requirement_results"].append({"acceptance_id": integration_acceptance_id("I-1"), "status": "passed",
+                                                     "evidence_refs": ["integration-proof"] if fault == "success" else []})
+    bound = bind_product_acceptance_report(result, state_dir=tmp_path, operation=op, source_event_id="vote")
+    assert bool(bound.issues) == (fault != "success")
+    if fault == "success":
+        assert bound.payload["candidate_reader_scope"] == scope

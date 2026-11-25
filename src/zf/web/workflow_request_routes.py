@@ -86,6 +86,7 @@ def build_workflow_request_router(
     default_project_root: Path,
     mutation_auth_error: Callable[..., dict | None],
     session_cookie: Callable[[Request], str | None],
+    read_only: bool = False,
 ) -> APIRouter:
     router = APIRouter()
     from zf.web.workflow_preparation_worker import WorkflowPreparationWorker
@@ -745,6 +746,8 @@ def build_workflow_request_router(
     router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
     from zf.web.workflow_workbench_routes import build_workbench_router
     router.include_router(build_workbench_router(resolve=resolve, detail=read_workflow_request_detail))
+    from zf.web.workflow_session_routes import member_session_router
+    router.include_router(member_session_router(resolve, read_workflow_request_detail, auth_response, read_only))
     from zf.web.plan_artifact_review_routes import build_plan_artifact_review_router
     router.include_router(build_plan_artifact_review_router(resolve=resolve, auth_response=auth_response))
     return router

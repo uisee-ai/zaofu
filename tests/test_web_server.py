@@ -3499,7 +3499,7 @@ class TestApiRecent:
     def test_recent_events_redact_obvious_secrets(self, state_dir, client):
         EventLog(state_dir / "events.jsonl").append(
             ZfEvent(
-                type="agent.tool.result",
+                type="dev.build.done",
                 actor="dev",
                 payload={"output": "TOKEN=secret-value"},
             )

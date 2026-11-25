@@ -332,7 +332,9 @@ class FanoutManifestProjector:
         self.state_dir = state_dir
 
     def project_event(self, event_log: EventLog, event: ZfEvent) -> dict | None:
-        if not event.type.startswith("fanout."):
+        if (not event.type.startswith("fanout.")
+                or event.type in {"fanout.plan.extension.requested", "fanout.plan.extension.rejected"}
+                or event.type == "fanout.plan.member.admitted" and event.origin != "kernel"):
             return None
         fanout_id = _payload_str(event.payload, "fanout_id")
         if not fanout_id:
@@ -536,6 +538,14 @@ class FanoutManifestProjector:
                             children[child_id],
                             children[child_id]["payload"],
                         )
+            elif event.type == "fanout.plan.member.admitted" and event.origin == "kernel":
+                child_id = payload.get("child_id")
+                if (manifest["stage_id"] == "prd-scan" and child_id and child_id not in children
+                        and (manifest["workflow_run_id"] or manifest["trace_id"]) == payload.get("workflow_run_id")
+                        and payload.get("child_payload")):
+                    children[child_id] = {"child_id": child_id, "role_instance": payload["role_instance"],
+                        "target_ref": manifest["target_ref"], "payload": dict(payload["child_payload"]),
+                        "status": "pending", "run_id": "", "extension_event_id": event.id}
             elif event.type == "fanout.child.queued":
                 child = _child(children, payload)
                 child.update({

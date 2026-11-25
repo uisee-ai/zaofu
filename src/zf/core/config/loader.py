@@ -5127,7 +5127,7 @@ _KNOWN_GOAL_KEYS = frozenset({
     "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
 })
 _KNOWN_OBSERVABILITY_KEYS = frozenset({
-    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller",
+    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller", "workflow_session_excerpts",
 })
 _KNOWN_PROVIDER_TELEMETRY_KEYS = frozenset({
     "mode", "profile_id", "endpoint_env", "enable_traces",
@@ -5273,8 +5273,12 @@ def _build_observability(data: object) -> ObservabilityConfig:
         raise ConfigError(
             "observability.alerts.cooldown_seconds must be 30..86400"
         )
+    excerpts = data.get("workflow_session_excerpts", False)
+    if type(excerpts) is not bool:
+        raise ConfigError("observability.workflow_session_excerpts must be a boolean")
     return ObservabilityConfig(
         controller=controller,
+        workflow_session_excerpts=excerpts,
         provider_telemetry=ProviderTelemetryConfig(
             mode=mode,
             profile_id=str(

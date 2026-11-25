@@ -105,6 +105,7 @@ export function useWorkflowGraph(projectId: string, requestId: string, revision:
             } else {
               // Once installed, the complete graph and all its details share
               // its own generation; future updates need no partial binding.
+              if (structureGeneration && structureScope) graph.generation = structureGeneration;
               fullRequested = true; structureGeneration = ""; structureScope = null;
               replacementScope = null;
               generationConflicts = 0;

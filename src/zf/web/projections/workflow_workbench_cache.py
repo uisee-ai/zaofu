@@ -23,7 +23,7 @@ from zf.web.projections.workflow_workbench_snapshot import capture_snapshot, sna
 
 # Change when cached graph or Plan projection semantics change.  The version
 # participates in the storage key and ETag, isolating older running servers.
-CACHE_VERSION = "workflow-workbench.v8-team"
+CACHE_VERSION = "workflow-workbench.v9-team-observations"
 
 
 class WorkbenchSourceChanged(RuntimeError):

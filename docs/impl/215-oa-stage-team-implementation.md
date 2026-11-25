@@ -20,6 +20,33 @@
 
 Task Verify 的专项 pattern 在项目配置中声明为一个可调用的 `fanout_reader`。使用专属 Reader、通用的 `workflow.child.completed/failed`、`wait_for_all` 和 `workflow.invoke.requested` 触发器。这样角色能提交专项证据，正式阶段签署权仍属于对应的 Verifier 或 Judge。对于更正方案，`reuse_operation_id` 必须来自该次 OA 检查点提供的有效意见。规格第 8 节的真实样本、指标和放行判据见[配对验证手册](spec215-qualification.md)。
 
+显式选择的 Plan 成员须从自己本次操作的输入索引读取已分配的证据，再通过受控入口签署。项目的观察模式仍需满足这份显式成员合同。章节引用使用 `path.md#unique-anchor`；章节缺失或歧义、文件变更、权限不符时，记录对应义务、输入和纠正原因。正式作者逐份读取本次扫描中获准的专家报告。[输入与签署回归](../../tests/test_plan_team_inputs.py)
+
+### 同一 Run 的规划增员
+
+在 Proposal 的 `stage_teams.plan.reserve_roles` 声明备用的独立 Reader 席位。只有正在执行的 `prd-scan` 能使用这些席位。已有成员提交的报告获准入后，OA 或授权操作者通过原有的 `request-fanout` 动作提交以下字段：
+
+| 字段 | 绑定内容 |
+|---|---|
+| `stage_id`、`fanout_id`、`workflow_run_id` | 当前 Run 的 `prd-scan` 及其精确批次 |
+| `workflow_proposal_digest` | 本 Run 已获准并实际使用的 Proposal |
+| `evidence_event_id` | 同一批次的内核 `fanout.child.completed`，可定位本次追加调查的原始报告 |
+| `plan_member` | 新义务 ID、备用角色、调查问题、选择理由、完成条件、批准范围内的输入和预期交付 |
+
+Kernel 校验席位和输入范围，写入 `fanout.plan.member.admitted`，再沿正常 Reader 调度路径派工。原有成员继续执行。重启时从账本重建名单，缺派的成员可以补派。正式 Planner 等待本批次全部有效报告，通过自己的工作目录读取每份正文。当前扫描已关闭时，后续变更使用既有的授权代次入口。[增员与恢复回归](../../tests/test_plan_team_extension.py) · [实际工作目录与签署](../../tests/test_plan_team_inputs.py)
+
+### Candidate、Judge 和工作台
+
+Candidate 分工覆盖所有已声明的 AC。跨任务检查拥有独立的检查 ID、涉及任务、验收断言和负责 Reader。Reader 必须为分到的检查交回对应证据；沿旧冻结恢复时按原已批准的合同核验。正式 Judge 从本代必读的 `closure-fact` 取得裁决目标、具名分歧和接手义务。撤回可选复核者须关联前次正式批准的成员及其覆盖去向。[Candidate 合同](../../tests/test_candidate_reader_assignments.py) · [正式 Judge 输入](../../tests/test_goal_judge_admissions.py)
+
+Web 从 Task 打开成员时，按当前 Run、代次和事件游标获取详情。Web 与 CLI 都支持按成员实例或任务筛选 Board 元数据，历史视图保留当时的来源事件、等待与接手事实。[读模型](../../tests/test_stage_team_workbench.py) · [浏览器验收](../../web/tests/workflow-team-live.spec.ts)
+
+### 成员会话的查看权限
+
+对需要开放会话的项目，在 `zf.yaml` 设置 `observability.workflow_session_excerpts: true`。Stream JSON transport 在本次调用结束时可发布经过脱敏的最终答复。工作台展开成员后按需检查权限；每次读取都重新核对项目、Run、当前快照、义务、实际实例、operation、attempt 和 provider turn。只读部署、历史快照、已换绑的实例，或缺少可验证发布凭证时均不开放正文。Codex/tmux 的角色级会话路径和 pane 历史不能证明消息归属，不作为查看凭证。[读取入口](../../src/zf/web/workflow_session_routes.py) · [绑定校验](../../src/zf/runtime/workflow_session_excerpt.py)
+
+通用事件详情、列表、Trace、SSE 与 Worker 摘要只投影会话活动的路由和状态。旧 SQLite 索引与缓存中的正文也受此规则约束，底层事件账本仍保留内部证据。[公开投影与历史回归](../../tests/test_event_read_model.py) · [实时 SSE 回归](../../tests/test_web_sse.py)
+
 ## 常驻 RM 试点的交接清单
 
 | 本轮需要谁决定 | 可核验的接手与权限 | 逾期或仍未解决时 |

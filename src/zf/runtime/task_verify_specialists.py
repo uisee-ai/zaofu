@@ -181,8 +181,8 @@ def _reuse_opinion(runtime, events, op, obligation, signer, run):
         raise ValueError("specialist reuse source is not a bound operation of this Run")
     prior = hydrate_sidecar_ref(runtime.state_dir, op["request_ref"]).payload["request"]
     previous = prior["verify_specialist_obligation"]
-    if any(previous.get(key) != value for key, value in obligation.items()
-           if key not in {"work_unit_id", "execution_plan_ref", "reuse_operation_id"}):
+    rebinding_keys = {"work_unit_id", "execution_plan_ref", "reuse_operation_id"}
+    if any(previous.get(key) != obligation.get(key) for key in (previous.keys() | obligation.keys()) - rebinding_keys):
         raise ValueError("specialist reuse differs in its contract, scope, role or target")
     restore_stage_definition(runtime.state_dir, runtime.config, prior["stage_definition_ref"])
     receipt = _opinion(runtime.state_dir, events, op, previous, signer)

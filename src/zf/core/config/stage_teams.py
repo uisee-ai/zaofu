@@ -16,10 +16,15 @@ def _text(value: Any, name: str) -> str:
 def team_member(raw: Any, *, stage: str = "") -> dict:
     """Read the shared, non-executable contract of a stage specialist."""
     fields = {"obligation_id", "role", "question", "input_refs", "expected_output"}
-    extra = {"required", "coverage_owner", "disposition"} if stage == "plan" else {"required"} if stage == "judge" else set()
+    extra = {"required", "coverage_owner", "disposition"} if stage in {"plan", "judge"} else set()
+    if stage in {"plan", "judge", "task_verify"}:
+        extra |= {"selection_reason", "completion_condition"}
     if not isinstance(raw, dict) or not fields <= raw.keys() or set(raw) - fields - extra:
         raise ValueError("stage_teams member requires exactly " + ", ".join(sorted(fields)))
     result = {key: _text(raw[key], key) for key in ("obligation_id", "role", "question", "expected_output")}
+    for key in ("selection_reason", "completion_condition"):
+        if key in raw:
+            result[key] = _text(raw[key], key)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", result["obligation_id"]):
         raise ValueError("stage_teams obligation_id must be a stable identifier")
     refs = raw["input_refs"]
@@ -38,10 +43,10 @@ def team_member(raw: Any, *, stage: str = "") -> dict:
             raise ValueError("only optional Plan members may transfer coverage")
         if "required" in raw:
             result["required"] = True
-    elif stage == "judge":
-        result["required"] = False
     else:
-        result.update(required=False, coverage_owner=_text(raw.get("coverage_owner"), "coverage_owner"))
+        result["required"] = False
+        if stage == "plan" or "disposition" in raw or "coverage_owner" in raw:
+            result["coverage_owner"] = _text(raw.get("coverage_owner"), "coverage_owner")
         if "disposition" in raw:
             d = raw["disposition"]
             keys = {"status", "reason", "previous_proposal_digest", "previous_run_id"}
@@ -54,19 +59,44 @@ def team_member(raw: Any, *, stage: str = "") -> dict:
 
 
 def author_team(raw: Any, *, stage: str) -> dict:
-    if not isinstance(raw, dict) or set(raw) != {"reason", "author", "members"}:
+    base = {"reason", "author", "members"}
+    if not isinstance(raw, dict) or not base <= raw.keys() or set(raw) - base - ({"objectives", "questions"} if stage == "judge" else {"reserve_roles"}):
         raise ValueError(f"stage_teams.{stage} requires reason, author and members")
     if not isinstance(raw["members"], list):
         raise ValueError(f"stage_teams.{stage}.members must be a list")
     author = _text(raw["author"], "author")
     members = [team_member(member, stage=stage) for member in raw["members"]]
     if any(m.get("coverage_owner", author) != author for m in members):
-        raise ValueError("optional Plan coverage must transfer to the formal author")
+        raise ValueError(f"optional {stage} coverage must transfer to the formal author")
     roles = [member["role"] for member in members] + [author]
     ids = [member["obligation_id"] for member in members] + [f"{stage}-author"]
     if len(set(roles)) != len(roles) or len(set(ids)) != len(ids):
         raise ValueError(f"stage_teams.{stage} requires distinct member identities and one author")
-    return {"reason": _text(raw["reason"], "reason"), "author": author, "members": members}
+    team = {"reason": _text(raw["reason"], "reason"), "author": author, "members": members}
+    if "reserve_roles" in raw:
+        reserves = raw["reserve_roles"]
+        if not isinstance(reserves, list) or (reserves and not active_members({"members": members})):
+            raise ValueError("Plan reserve_roles require an active research stage and a list of readers")
+        reserves = [_text(role, "reserve role") for role in reserves]
+        if len(set(reserves)) != len(reserves) or set(reserves).intersection(roles):
+            raise ValueError("Plan reserve roles require distinct independent seats")
+        team["reserve_roles"] = reserves
+    if "objectives" in raw:
+        if not isinstance(raw["objectives"], list) or not raw["objectives"]:
+            raise ValueError("Judge objectives must be a nonempty list of goals")
+        team["objectives"] = [_text(goal, "objective") for goal in raw["objectives"]]
+    if "questions" in raw:
+        if not isinstance(raw["questions"], list):
+            raise ValueError("Judge questions must be a list")
+        questions = []
+        for question in raw["questions"]:
+            if not isinstance(question, dict) or set(question) != {"question_id", "question"}:
+                raise ValueError("Judge question requires question_id and question")
+            questions.append({k: _text(question[k], k) for k in ("question_id", "question")})
+        if len({q["question_id"] for q in questions}) != len(questions):
+            raise ValueError("Judge question IDs must be unique")
+        team["questions"] = questions
+    return team
 
 
 def normalize_stage_teams(raw: Any) -> dict:
@@ -86,6 +116,7 @@ def team_roles(teams: dict) -> set[str]:
     for stage in teams.values():
         if stage.get("author"):
             selected.add(stage["author"])
+        selected.update(stage.get("reserve_roles", []))
         selected.update(member["role"] for member in stage.get("members", []) if not member.get("disposition"))
     return selected
 
@@ -107,6 +138,8 @@ def scope_team_roles(expansion: dict, role_map: dict[str, str]) -> None:
     bind(metadata, "registered_judge_role")
     for team in teams.values():
         bind(team, "author")
+        if "reserve_roles" in team:
+            team["reserve_roles"] = [role_map[name] for name in team["reserve_roles"]]
         for item in team.get("members", []):
             bind(item, "role", "coverage_owner")
     for stage in expansion["stages"]:
@@ -250,12 +283,13 @@ def validate_effective_teams(config: Any, metadata: dict, project_root: Path) ->
             raise ValueError("OA verification requires a registered blocking pre_impl OA delegation")
 
 
-def briefing_obligation_lines(stage: Any, instance: str) -> list[str]:
+def briefing_obligation_lines(stage: Any, instance: str, *, assigned: dict | None = None) -> list[str]:
     if stage.id not in {"prd-scan", "prd-plan", "prd-post-verify-discovery", "prd-judge-advisory"}:
         return []
-    for child in getattr(stage, "children", ()):
-        obligation = child.payload.get("stage_obligation")
-        if not isinstance(obligation, dict) or child.role_instance != instance:
+    obligations = [assigned] if assigned else [
+        child.payload.get("stage_obligation") for child in stage.children if child.role_instance == instance]
+    for obligation in obligations:
+        if not isinstance(obligation, dict) or obligation.get("role") != instance:
             continue
         if not {"obligation_id", "question", "input_refs", "expected_output", "recipient"} <= obligation.keys():
             continue
@@ -263,6 +297,8 @@ def briefing_obligation_lines(stage: Any, instance: str) -> list[str]:
             "## Assigned stage obligation", "",
             f"- Obligation: {obligation['obligation_id']}",
             f"- Question: {obligation['question']}",
+            *([f"- Selected because: {obligation['selection_reason']}"] if obligation.get("selection_reason") else []),
+            *([f"- Completion condition: {obligation['completion_condition']}"] if obligation.get("completion_condition") else []),
             f"- Inputs within the authorized scope: {', '.join(obligation['input_refs'])}",
             f"- Deliver {obligation['expected_output']} to {obligation['recipient']}.", "",
         ]

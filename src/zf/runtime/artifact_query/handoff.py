@@ -136,6 +136,11 @@ class CanonicalHandoffResolver:
             admitted_context_route_sources,
         )
 
+        plan_expert = (authority_contract.get("stage_id") == "prd-scan"
+                       and bool(mutable.get("stage_obligation")))
+        if plan_expert:
+            mutable.pop("workflow_input_manifest_ref", None)
+            mutable["artifact_refs"] = []
         route_sources = admitted_context_route_sources(
             state_dir=self.state_dir,
             workflow_run_id=workflow_run_id,
@@ -179,7 +184,7 @@ class CanonicalHandoffResolver:
                 else []
             )
             mutable["input_refs"] = [*input_refs, *reader_inputs]
-        if str(mutable.get("attempt_domain") or "") == "plan":
+        if not plan_expert and str(mutable.get("attempt_domain") or "") == "plan":
             from zf.runtime.plan_synth_handoff import (
                 build_plan_handoff_input_refs,
             )

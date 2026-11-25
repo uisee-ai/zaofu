@@ -181,12 +181,12 @@ def build_workflow_proposal(
     config = load_approval_bound_config(candidate_path, short_spec.get("parameters") or {})
     from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
     from zf.core.workflow.flow_metadata import flow_metadata_for
-    plan_team = (flow_metadata_for(config, "prd").get("stage_teams") or {}).get("plan", {})
-    if any(member.get("disposition") for member in plan_team.get("members", [])):
-        from zf.runtime.plan_team_transfer import validate_predecessors
+    teams = flow_metadata_for(config, "prd").get("stage_teams") or {}
+    from zf.runtime.plan_team_transfer import validate_predecessors
+    for team_name in ("plan", "judge"):
         try:
-            validate_predecessors(Path(state_dir), plan_team, request_id=request_id,
-                                  revision=request_revision, requirement=requirement_digest)
+            validate_predecessors(Path(state_dir), teams.get(team_name, {}), request_id=request_id,
+                                  revision=request_revision, requirement=requirement_digest, team_name=team_name)
         except (ValueError, KeyError, OSError) as exc:
             raise WorkflowProposalError(str(exc)) from exc
     rendered = redact_config(renderable_config_to_primitive(config))

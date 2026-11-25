@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zf.core.config.stage_teams import _text, author_team, member_child
+from zf.core.config.stage_teams import _text, active_members, author_team, member_child
 from zf.core.config.task_pipeline_profile import profile_digest
 
 
@@ -47,8 +47,8 @@ def apply_validation_teams(expansion: dict, teams: dict) -> None:
             planner["criteria"]["instructions"] = [*planner["criteria"]["instructions"],
                 f"Declare exactly {width} candidate_reader_assignments in product_acceptance_spec. "
                 "Select independent registered verify seats and assign each its task-qualified acceptance IDs, "
-                "mandatory journeys and cross-task integration checks. Bind every integration check to a named "
-                "acceptance criterion or journey, and declare each Reader's needed Plan reads. "
+                "mandatory journeys and cross-task integration checks. Declare integration_checks as check_id, task_ids "
+                "and observable assertion; assign every check ID via integration_check_ids and declare the needed Plan reads. "
                 "The OA will review the exact assignment on this Plan revision."]
         policy["profile_digest"] = profile_digest(policy)
     judge = teams.get("judge")
@@ -59,19 +59,20 @@ def apply_validation_teams(expansion: dict, teams: dict) -> None:
         if judge["author"] in plan_stage["roles"]:
             raise ValueError("formal Judge must be independent of the Plan author")
         discovery = next((s for s in expansion["stages"] if s["id"] == "prd-post-verify-discovery"), None)
-        if judge["members"]:
+        members = active_members(judge)
+        if members:
             if not discovery or meta.get("post_verify_discovery") != "product_completeness":
                 raise ValueError("required Judge specialists need a bound product discovery stage")
             primary, = discovery["roles"]
-            roles = [member["role"] for member in judge["members"]]
+            roles = [member["role"] for member in members]
             if primary in roles:
                 raise ValueError("Judge specialists must be independent of product discovery")
-            required = [m for m in judge["members"] if m.get("required", True)]
+            required = [m for m in members if m.get("required", True)]
             if required:
                 discovery["roles"] = [primary, *[m["role"] for m in required]]
                 discovery["fanout"] = {"children": [{"role_instance": primary},
                     *[member_child(m, judge["author"]) for m in required]]}
-            advisory = [m for m in judge["members"] if not m.get("required", True)]
+            advisory = [m for m in members if not m.get("required", True)]
             if advisory:
                 expansion["stages"].append({
                     "id": "prd-judge-advisory", "trigger": discovery["trigger"], "topology": "fanout_reader",

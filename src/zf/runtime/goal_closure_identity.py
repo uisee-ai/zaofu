@@ -31,6 +31,7 @@ def build_closure_identity(
     flow_kind: str,
     required_specialists: tuple[dict, ...] = (),
     advisory_specialists: tuple[dict, ...] = (),
+    judge_mandate: dict | None = None,
 ) -> dict[str, Any]:
     raw_workflow_run_id = str(
         payload.get("workflow_run_id")
@@ -104,6 +105,7 @@ def build_closure_identity(
         **product_acceptance_identity,
         "source_event_type": source_event.type,
         "source_payload": _stable_source_payload(payload),
+        **({"judge_mandate": judge_mandate} if judge_mandate else {}),
         **({"owner_requirement_amendment": amendment} if amendment else {}),
         "workflow_lifecycle_evidence": workflow_lifecycle_evidence(
             events, workflow_run_id=workflow_run_id,
@@ -155,6 +157,7 @@ def build_closure_identity(
     return {
         **identity_fields,
         **({"judge_batch_admissions": batch} if batch else {}),
+        **({"has_judge_mandate": True} if judge_mandate else {}),
         **({"candidate_lifecycle_input": {
             "ref": lifecycles["lifecycle_ref"], "sha256": lifecycles["lifecycle_digest"],
             "task_count": len(lifecycles["summary"]["task_ids"]),

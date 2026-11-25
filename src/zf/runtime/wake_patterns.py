@@ -92,6 +92,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "workflow.fragment.proposed",
     "workflow.reconcile.requested",
     "fanout.aggregate.rebuild.requested",
+    "fanout.plan.extension.requested",
     # Provider terminals may be emitted after the transport callback cycle.
     # Wake fanout reconciliation so a failed reader cannot strand its child.
     "workflow.operation.failed",

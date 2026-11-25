@@ -875,6 +875,7 @@ def make_transport(config: ZfConfig, *, dry_run: bool = False) -> TransportAdapt
                     telemetry=telemetry,
                     operations_metrics=operations_metrics,
                     runtime_logs_enabled=runtime_logs_enabled,
+                    workflow_session_excerpts=getattr(observability, "workflow_session_excerpts", False),
                 )
             sj_transport.register_role(role)
             by_role[role.instance_id] = sj_transport

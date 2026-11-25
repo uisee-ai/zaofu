@@ -410,6 +410,8 @@ class FanoutBriefingMixin:
             if stage is not None else []
         )
         stage_instruction_lines: list[str] = []
+        if is_goal_closure and trigger_payload.get("has_judge_mandate"):
+            stage_instruction_lines.append("Read judge_mandate in the required closure-fact. Resolve its objectives, named questions and transferred coverage against the current evidence in your signed judgment.")
         if child_payload.get("judge_specialist_obligation"):
             stage_instruction_values = [
                 "Submit the assigned independent opinion, supporting evidence refs, and any dissent to the formal Judge.",
@@ -432,7 +434,8 @@ class FanoutBriefingMixin:
             stage_instruction_lines.append("")
         if stage is not None:
             from zf.core.config.stage_teams import briefing_obligation_lines
-            stage_instruction_lines.extend(briefing_obligation_lines(stage, role.instance_id))
+            stage_instruction_lines.extend(briefing_obligation_lines(
+                stage, role.instance_id, assigned=child_payload.get("stage_obligation")))
             if stage.id == "prd-plan" and stage.children and stage.children[0].role_instance == role.instance_id:
                 for member in stage.children[0].payload.get("transferred_obligations", []):
                     stage_instruction_lines.append(
@@ -453,6 +456,8 @@ class FanoutBriefingMixin:
                 "## Task Verify specialist evidence",
                 f"Task: {specialist['task_id']} at {specialist['target_commit']}",
                 f"Obligation: {specialist['obligation_id']} — {specialist['question']}",
+                *([f"Selected because: {specialist['selection_reason']}"] if specialist.get("selection_reason") else []),
+                *([f"Completion condition: {specialist['completion_condition']}"] if specialist.get("completion_condition") else []),
                 "Input scope: " + ", ".join(specialist["input_refs"]),
                 "Expected evidence: " + specialist["expected_output"],
                 "Submit the independent specialist evidence to the task verifier.", "",

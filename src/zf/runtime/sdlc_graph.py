@@ -328,6 +328,8 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False, te
     from zf.runtime.stage_team_projection import project_stage_teams, team_summary
 
     project_stage_teams(nodes, source, operations, detail_node="" if execution_only else team_detail_node)
+    if not execution_only and team_detail_node != "*":
+        return {"scope": scope, "nodes": list(nodes.values())}
     if execution_only:
         # The execution overview needs observed Operations, not event/attempt
         # nodes, Plan bodies, coverage analysis or the full timeline.
@@ -351,11 +353,10 @@ def build_sdlc_graph(source: dict[str, Any], *, execution_only: bool = False, te
         selected = {identity: item for identity, item in nodes.items() if item["kind"] in {
             "workflow", "operation", "task", "run_anchor", "run", "preparation", "requirement",
         }}
-        # Task state/contract needs the admitted Plan; keep only its label and id
-        # in this projection and read the full graph before opening Task detail.
+        # Keep the initial canvas compact. The selected Task opens its own bound detail.
         for item in selected.values():
             if item["kind"] in {"task", "run_anchor"}:
-                item["data"] = {"task_id": item["data"].get("task_id", "")}
+                item["data"] = {k: item["data"][k] for k in ("task_id", "team_members") if k in item["data"]}
                 item["status"] = "unknown"
             elif item["kind"] == "workflow" and "team" in item["data"]:
                 item["data"]["team"] = team_summary(item["data"]["team"])

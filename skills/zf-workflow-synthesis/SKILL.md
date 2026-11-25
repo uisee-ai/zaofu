@@ -152,11 +152,13 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
 
 启用 OA 组队时，将分工写入同一需求修订的 `short_flow_spec.parameters.stage_teams`。
 选择来自当前配置或所选控制器的已注册 reader 实例，在 `requested_roles` 中逐一列出。
-根据尚待回答的问题说明 reason，保留已要求的独立评审、批准和验收。
+根据尚待回答的问题说明 reason，保留已要求的独立评审、批准和验收。分别在 Plan、Task Verify 和 Judge 专项成员的委派合同中记录 `selection_reason` 和 `completion_condition`。
 
 - `plan` 提供 `{reason, author, members}`。author 是本代唯一正式 Planner。每位专家填写
   `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。输入引用限定
   在已有授权范围，每项交付给 author；可直接规划时给空 members。OA 亲自汇总时以本次 author 身份签署。
+  对可能需要追加调查的在途扫描，可在 Proposal 的 `reserve_roles` 中预留独立 Reader，并纳入 `requested_roles`。只有已有成员提供新证据且通过 `request-fanout` 的增员准入后，才使用相应席位。
+  指定章节时使用项目相对路径加唯一的 Markdown 标题锚点，例如 `docs/design.md#authentication`。
   默认成员必需。可选 Plan 专家声明 `required:false` 和 `coverage_owner`（本次 author），仍有正式回执。
   如果要改由 Planner 接手，在后继 Proposal 保留原成员和义务，添加 `disposition`，其 status 为
   `reassigned`，填写 reason、previous_proposal_digest 和 previous_run_id。核验原批准分工后再审批新版本。
@@ -164,9 +166,13 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
 - `task_verify` 提供 `{reason, mode: "oa_run_plan"}`，选择阻塞 pre_impl 检查点。等待已绑定的
   Task Map 和任务合同，再由 OA 在 Run Plan 中委派独立验证者。
 - `candidate_verify` 提供 `{reason, width}`，选用已注册的并行 Reader 容量。冻结前将验收、
-  用户旅程与跨任务检查全部分配到具体 Reader。
+  必需用户旅程与全部已声明验收项分给具体 Reader。逐项列出跨任务检查 `integration_checks`，包含
+  `check_id`、至少两个 `task_ids` 和可观察的 `assertion`，再用各 Reader 的 `integration_check_ids` 分派。
 - `judge` 使用同样的 author/members 结构，author 从 `authorized_judges` 选择。专项审查者
   各自声明 `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。默认意见必需，
   正式 Judge 等待这些签署。咨询意见设置 `required:false`，可与必需意见并行取证；正式 Judge
-  可引用在 Discovery 发布前已准入的咨询意见。咨询缺席时仍可签署。覆盖移交字段
-  `coverage_owner` 和 `disposition` 仅用于 Plan。复用有效的获准分工，变更时提交新版本审批。
+  可引用在 Discovery 发布前已准入的咨询意见。用 `objectives` 列明正式目标，用
+  `questions: [{question_id, question}]` 逐条记录主审须裁决的分歧；无专项成员时同样适用。
+  咨询缺席时仍可签署。主动撤回已获准的咨询义务时，后继 Proposal 保留原成员合同，
+  用 `coverage_owner` 指向正式主审，`disposition` 记录 reassigned、原因与先前获批 Run/Proposal。
+  主审从必读的 closure-fact 中取得本代目标、分歧与接手义务。

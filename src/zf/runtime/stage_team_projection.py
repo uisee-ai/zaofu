@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 
 from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
 from zf.runtime.task_pipeline_contexts import latest_task_pipeline_generation_context
+from zf.runtime.stage_team_observations import receipt_observations
 
 
 def _proposal_receipt(scope, events):
@@ -34,7 +35,7 @@ def _member(declaration, authority, receipt):
 
 def team_summary(team):
     """First paint carries the roster. Member evidence and handoffs stay in node detail."""
-    fields = {"obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
+    fields = {"question", "expected_output", "attempt_count", "instances", "source_seq", "last_activity", "wait", "waiting_for", "obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
               "status_since", "last_event_at", "source_event_id", "verdict", "pipeline_stage", "task_map_generation", "required", "coverage_owner", "reused"}
     members = [{k: v for k, v in member.items() if k in fields} for member in team["members"]]
     return {**{k: v for k, v in team.items() if k != "communications"}, "partial": True, "members": members}
@@ -46,18 +47,27 @@ def _apply_operation(member, op, admissions, by_id, *, detailed):
         fact = by_id.get(event_id)
         if not fact or fact.origin != "kernel" or fact.type not in {
             "workflow.operation.started", "workflow.operation.failed", "workflow.operation.redrive_admitted",
-            "workflow.operation.retry_started", "workflow.operation.suspended", "workflow.operation.cancelled",
+            "workflow.operation.retry_started", "workflow.operation.interrupted", "workflow.operation.blocked", "workflow.operation.cancelled",
         }:
             continue
         p = fact.payload
         member["attempt_history"].append({"event_id": fact.id, "event_type": fact.type, "time": fact.ts,
             "attempt_id": p.get("active_attempt_id") or p.get("source_attempt_id") or "", "instance": p.get("role_instance", ""),
             "reason": p.get("reason", ""), "operation_id": op["operation_id"]})
-    if op.get("recent_activity"):
-        last = op["recent_activity"][-1]
-        member["last_activity"] = {"event_id": last["id"], "time": last.get("ts"), "event_type": last["type"]}
-
     attempt = op.get("active_attempt_id")
+    activity = []
+    for entry in op.get("recent_activity", []):
+        payload = entry.get("payload") or {}
+        observed_attempt = payload.get("attempt_id") or payload.get("active_attempt_id")
+        if observed_attempt and observed_attempt != attempt:
+            continue
+        if observed_attempt or not (op.get("retry_count") or op.get("redrive_count")):
+            activity.append(entry)
+    if activity:
+        last = activity[-1]
+        member["last_activity"] = {"event_id": last["id"], "time": last.get("ts"), "event_type": last["type"]}
+    else:
+        member.pop("last_activity", None)
     attempts = [*op.get("redrive_source_attempt_ids", []), attempt]
     member["attempt_ids"] = list(dict.fromkeys([*member["attempt_ids"], *(a for a in attempts if a)]))
     member["instance"] = op.get("role_instance", "") if op.get("started_event_id") else ""
@@ -72,8 +82,15 @@ def _apply_operation(member, op, admissions, by_id, *, detailed):
     elif status == "settled":
         status = "awaiting_admission"
     event = admission if status == "admitted" else by_id.get(op.get("last_event_id"))
-    if status == "running" and op.get("redrive_count", 0):
-        status = "retrying"
+    if status == "running":
+        retrying = op.get("redrive_count", 0) or op.get("retry_count", 0)
+        if retrying:
+            status = "retrying"
+        entry = next((by_id.get(i) for i in reversed(op.get("source_event_ids", []))
+                      if i in by_id and by_id[i].origin == "kernel" and by_id[i].type in {
+                          "workflow.operation.started", "workflow.operation.retry_started"}
+                      and by_id[i].payload.get("active_attempt_id") == attempt), None) if retrying else by_id.get(op.get("started_event_id"))
+        event = entry or event
     member["history"].append({"operation_id": op["operation_id"], "attempt_id": attempt or "",
                               "instance": member["instance"], "status": status,
                               "reason": op.get("reason", ""), "source_event_id": event.id if event else "",
@@ -82,12 +99,12 @@ def _apply_operation(member, op, admissions, by_id, *, detailed):
                   owner=(member.get("recipient") or "kernel") if status == "admitted" else
                   member["instance"] or "kernel", evidence_ref={k: evidence[k] for k in ("ref", "sha256")} if status == "admitted" else {},
                   last_event_at=max(filter(None, [op.get("last_event_at", ""), event.ts if event else "",
-                      *(a.get("ts", "") for a in op.get("recent_activity", []) if a.get("origin") == "kernel")]), default=""),
+                      *(a.get("ts", "") for a in activity)]), default=""),
                   status_since=(op.get("started_at", "") if status == "running" else event.ts if event else ""),
                   source_event_id=event.id if event else op.get("last_event_id", ""))
 
 
-def _message_relations(events, run_id):
+def _message_relations(events, run_id, positions):
     from zf.runtime.workflow_board import ACTOR
 
     messages, by_post = defaultdict(list), {}
@@ -101,7 +118,10 @@ def _message_relations(events, run_id):
                 continue
             links = []
             for recipient, binding in (p.get("audience") or {}).items():
-                row = {"sender": sender.get("instance_id", ""), "recipient": recipient,
+                if binding is not None and (not isinstance(binding, dict) or binding.get("workflow_run_id") != run_id
+                                            or binding.get("instance_id") != recipient):
+                    continue
+                row = {"posted_seq": positions[event.id], "sender": sender.get("instance_id", ""), "recipient": recipient,
                        "posted": event.ts, "source_event_id": event.id, "message_key": p.get("message_key", ""),
                        "seen": "", "consumed": ""}
                 messages[(sender["operation_id"], sender.get("attempt_id"))].append(row)
@@ -112,7 +132,8 @@ def _message_relations(events, run_id):
         elif event.type in {"workflow.board.seen", "workflow.board.consumed"}:
             for binding, row in by_post.get(event.causation_id, []):
                 if p.get("receiver") == binding:
-                    row[event.type.rsplit(".", 1)[1]] = event.ts
+                    kind = event.type.rsplit(".", 1)[1]
+                    row[kind], row[kind + "_seq"] = event.ts, positions[event.id]
     return messages
 
 
@@ -180,10 +201,14 @@ def _reused_opinion(member, binding, reused, old_invocations, operations, by_id,
     return None
 
 
-def _belongs_to_child(delivery, start, member, binding, latest, by_id, events, run):
+def _belongs_to_child(delivery, start, member, binding, latest, by_id, events, run, positions):
     if not start or start.payload.get("stage_id") != member["stage"]:
         return False
     p = delivery.payload
+    if binding.get("added_child_id"):
+        return (positions[delivery.id] > binding["added_source_seq"] and binding["added_fanout_id"] == p.get("fanout_id")
+                and latest.get(member["stage"]) == start.id
+                and binding["added_child_id"] == p.get("child_id") and p.get("role_instance") == member["role"])
     child = next((c for c in start.payload.get("expected_children", []) if c.get("child_id") == p.get("child_id")), {})
     if not (p.get("role_instance") == child.get("role_instance") == member["role"]):
         return False
@@ -291,7 +316,8 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
             reused[p["source_operation_id"]].append(event)
         elif event.type == "workflow.call.result.admitted":
             admissions[(p.get("operation_id"), p.get("attempt_id"), p.get("request_hash"))] = event
-    messages = _message_relations(events, run) if detail_node else {}
+    messages = _message_relations(events, run, positions) if detail_node else {}
+    observations = receipt_observations(events, operations, positions)
     stage_rows = {n["data"]["stage_id"]: n for n in nodes.values() if n["id"].startswith("workflow:stage:")}
     operations_by_role = defaultdict(dict)
     operations_by_unit = defaultdict(dict)
@@ -300,6 +326,26 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
         assignment = operation.get("orchestration_assignment") or {}
         if assignment.get("work_unit_id"):
             operations_by_unit[(assignment["work_unit_id"], operation.get("task_id"))][oid] = operation
+    additions = []
+    if authority == "approved" and teams.get("plan"):
+        for e in events:
+            p = e.payload
+            if (e.type != "fanout.plan.member.admitted" or e.origin != "kernel"
+                    or not run or p.get("workflow_run_id") != run or p.get("stage_id") != "prd-scan"
+                    or not p.get("workflow_proposal_digest") or p["workflow_proposal_digest"] != scope.get("proposal_digest")):
+                continue
+            start = fanouts.get(p.get("fanout_id"))
+            source_fact = by_id.get(p.get("evidence_event_id"))
+            member = p.get("member") or {}
+            if (not start or start.id != latest_fanout.get("prd-scan") or positions[start.id] >= positions[e.id]
+                    or not source_fact or source_fact.type != "fanout.child.completed" or source_fact.origin != "kernel"
+                    or (source_fact.payload.get("workflow_run_id") or source_fact.correlation_id) != run
+                    or source_fact.payload.get("fanout_id") != p["fanout_id"]
+                    or not positions[start.id] < positions[source_fact.id] < positions[e.id]
+                    or not isinstance(member, dict) or not member.get("obligation_id") or not p.get("child_id")
+                    or not member.get("role") or member["role"] != p.get("role_instance")):
+                continue
+            additions.append((e, member))
     for stage, node in stage_rows.items():
         detailed = detail_node in {"*", node["id"]}
         declared = []
@@ -315,11 +361,28 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
             if proposal and stage_node:
                 selected = stage_node["data"]["definition"].get("metadata", {}).get("team_obligations", [])
                 declared.extend((_member({**m, "stage": roster_stage}, authority, proposal), {}) for m in selected)
-        if proposal and stage == "prd-plan":
-            for specialist in teams.get("plan", {}).get("members", []):
+        if "prd-scan" in roster_stages and additions:
+            declared_ids = {m["obligation_id"] for m, _ in declared}
+            for e, item in additions:
+                if item["obligation_id"] in declared_ids:
+                    continue
+                declared_ids.add(item["obligation_id"])
+                added = _member({**item, "stage": "prd-scan", "admission_evidence_id": e.payload["evidence_event_id"]},
+                                "approved", e)
+                declared.append((added, {"added_child_id": e.payload["child_id"], "added_fanout_id": e.payload["fanout_id"],
+                                         "added_source_seq": positions[e.id]}))
+                if item.get("required", True):
+                    for m, _ in declared:
+                        if m["stage"] == "prd-plan" and m["obligation_id"] == "plan-author":
+                            m["input_refs"] = [*m.get("input_refs", []), item["obligation_id"]]
+                            m.update(status_since=e.ts, last_event_at=e.ts, source_event_id=e.id)
+        if proposal and (stage == "prd-plan" or stage.endswith(("-lanes-final", "-judge-advisory"))):
+            category = "plan" if stage == "prd-plan" else "judge"
+            advisory_stage = "prd-scan" if category == "plan" else "prd-judge-advisory"
+            for specialist in teams.get(category, {}).get("members", []):
                 disposition = specialist.get("disposition") or {}
                 if specialist.get("required") is False and disposition.get("status") == "reassigned":
-                    member = _member({**specialist, "stage": "prd-scan", "recipient": specialist["coverage_owner"]},
+                    member = _member({**specialist, "stage": advisory_stage, "recipient": specialist["coverage_owner"]},
                                      authority, proposal)
                     if authority == "approved":
                         member.update(status="reassigned", owner=specialist["coverage_owner"])
@@ -329,6 +392,8 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
             if author in node["data"]["definition"].get("roles", []):
                 declared.append((_member({"obligation_id": "judge-author", "role": author,
                     "stage": stage, "expected_output": "正式 Judge 判词",
+                    "judge_questions": teams["judge"].get("questions", []),
+                    "judge_objectives": teams["judge"].get("objectives", []),
                     "input_refs": [m["obligation_id"] for m, _ in declared if m.get("required", True)]},
                     authority, proposal), {}))
         dynamic = inputs.get(stage) or {}
@@ -341,6 +406,7 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
         seen = set()
         observed = []
         for member, binding in declared:
+            member_detail = detailed or any(detail_node == "task:" + t for t in member["task_ids"])
             if (authority == "approved" or binding) and member["status"] != "reassigned":
                 invocation = _specialist_invocation(member, binding, invocations) if member.get("specialist") else None
                 if invocation:
@@ -376,27 +442,28 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                             p = delivery.payload
                             start = fanouts.get(p.get("fanout_id"))
                             if op.get("role_instance") != member["role"] or not _belongs_to_child(
-                                    delivery, start, member, binding, latest_fanout, by_id, events, run):
+                                    delivery, start, member, binding, latest_fanout, by_id, events, run, positions):
                                 continue
                             match = True
                             break
                     if match:
-                        _apply_operation(member, op, admissions, by_id, detailed=detailed)
-                        if detailed:
-                            member["messages"].extend(messages.get((oid, op.get("active_attempt_id")), []))
+                        _apply_operation(member, op, admissions, by_id, detailed=member_detail)
+                        if member_detail:
+                            for attempt in member["attempt_ids"]:
+                                member["messages"].extend(messages.get((oid, attempt), []))
                         seen.add(oid)
                 if not member["operation_ids"]:
                     carried = _reused_opinion(member, binding, reused, old_invocations, operations, by_id, positions)
                     if carried:
                         receipt, admission, child, old = carried
                         key = (child["operation_id"], child["active_attempt_id"], child["request_hash"])
-                        _apply_operation(member, child, {key: admission}, by_id, detailed=detailed)
+                        _apply_operation(member, child, {key: admission}, by_id, detailed=member_detail)
                         member.update(source_event_id=receipt.id, source_result_event_id=admission.id,
                                       source_operation_id=child["parent_operation_id"], reused=True,
                                       original_execution_plan_ref=old["execution_plan_ref"],
                                       original_work_unit_id=old["work_unit_id"], target_commit=receipt.payload["target_commit"],
                                       status_since=receipt.ts, last_event_at=receipt.ts)
-                        if detailed:
+                        if member_detail:
                             member["messages"].extend(messages.get(key[:2], []))
                         seen.add(child["operation_id"])
                 # Legacy/observer-mode fanout may dispatch a real child without creating an operation.
@@ -404,12 +471,27 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                     for delivery in dispatches.get("", []):
                         p = delivery.payload
                         if not _belongs_to_child(delivery, fanouts.get(p.get("fanout_id")), member, binding,
-                                                 latest_fanout, by_id, events, run):
+                                                 latest_fanout, by_id, events, run, positions):
                             continue
                         member.update(status="dispatched", instance=p["role_instance"], owner=p["role_instance"],
                                       last_event_at=delivery.ts, status_since=delivery.ts, source_event_id=delivery.id)
                         if p.get("attempt_id"):
                             member["attempt_ids"].append(p["attempt_id"])
+            if member["operation_ids"]:
+                facts = observations.get(member["operation_ids"][-1], [])
+                pulse = next((f for f in reversed(facts) if f["kind"] == "heartbeat"), None)
+                if pulse and pulse["time"] >= (member.get("last_activity") or {}).get("time", ""):
+                    member["last_activity"] = pulse
+                    member["last_event_at"] = max(member["last_event_at"], pulse["time"])
+                wait = next((f for f in reversed(facts) if f["kind"] == "wait" and f["event_id"] == member["source_event_id"]), None)
+                if wait and member["status"] in {"suspended", "blocked"}:
+                    member["wait"] = wait
+                    member["owner"] = wait["owner"] or "kernel"
+            member["attempt_count"] = len(member["attempt_ids"])
+            member["instances"] = list(dict.fromkeys(h["instance"] for h in member["history"] if h["instance"]))
+            member["source_seq"] = positions.get(member["source_event_id"])
+            for fact in member["attempt_history"]:
+                fact["seq"] = positions.get(fact["event_id"])
             observed.append(member)
         relevant_ops = [o for o in operations.values() if run and o.get("workflow_run_id") == run
                         and (o.get("compiled_stage_id") or o.get("parent_stage_id")) in roster_stages]
@@ -419,8 +501,16 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                 waiting = [ref for ref in m.get("input_refs", []) if ref in by_obligation
                            and by_obligation[ref]["status"] != "admitted"]
                 if waiting:
+                    m["wait"] = {"reason": "awaiting_required_result", "wake_event": "workflow.call.result.admitted",
+                                 "seq": m["source_seq"], "event_id": m["source_event_id"]}
                     m.update(status="waiting_inputs", waiting_for=waiting,
                              owner=" / ".join(by_obligation[ref]["role"] for ref in waiting))
+                else:
+                    completed = [by_obligation[r] for r in m.get("input_refs", []) if r in by_obligation]
+                    latest_input = max(completed, key=lambda x: x.get("source_seq") or 0, default=None)
+                    if latest_input and (latest_input.get("source_seq") or 0) > (m["source_seq"] or 0):
+                        m.update(status_since=latest_input["status_since"], last_event_at=latest_input["status_since"],
+                                 source_seq=latest_input["source_seq"], source_event_id=latest_input["source_event_id"])
         bound = bool(declared) and (authority == "approved" or all(binding for _, binding in declared))
         required = [m for m in observed if m.get("required", True)]
         optional = [m for m in observed if not m.get("required", True)]
@@ -431,6 +521,8 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                 "verdicts": dict(Counter(m["verdict"] for m in required if m["verdict"])),
                 "optional_verdicts": dict(Counter(m["verdict"] for m in optional if m["verdict"])),
                 "unbound_operation_ids": [o["operation_id"] for o in relevant_ops if o["operation_id"] not in seen]}
+        if events:
+            team["snapshot_at"] = events[-1].ts
         definition = node["data"]["definition"]
         if authority == "approved" and not declared and not scope.get("historical"):
             if teams.get("candidate_verify") and definition.get("trigger") == "candidate.ready":
@@ -507,7 +599,8 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                 task = nodes.get("task:" + task_id)
                 if task and task["kind"] == "task":
                     summary = {"stage": m.get("pipeline_stage") or m["stage"], "obligation_id": m["obligation_id"],
-                               "instance": m["instance"], "status": m["status"], "owner": m["owner"]}
+                               "instance": m["instance"], "status": m["status"], "owner": m["owner"],
+                               "attempt_count": m["attempt_count"], "status_since": m["status_since"]}
                     rows = task["data"].setdefault("team_members", [])
                     if summary not in rows:
                         rows.append(summary)
