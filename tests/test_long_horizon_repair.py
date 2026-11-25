@@ -313,8 +313,9 @@ def test_stuck_worker_does_not_requeue_after_dev_blocked_progress(
 
 
 def test_stuck_worker_requests_terminal_after_manifest_without_requeue(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
+    monkeypatch.setenv("ZF_CLI_CMD", "python -m zf.cli.main")
     orch, store, log, transport = _make_arch_orchestrator(tmp_path)
     store.add(Task(
         id="TASK-PLAN",
@@ -362,7 +363,7 @@ def test_stuck_worker_requests_terminal_after_manifest_without_requeue(
     briefing_path = transport.sends[-1][1]
     briefing = briefing_path.read_text(encoding="utf-8")
     assert "Do not rewrite, regenerate, or replace" in briefing
-    assert "zf guard ownership --task TASK-PLAN --actor arch" in briefing
+    assert "python -m zf.cli.main guard ownership --task TASK-PLAN --actor arch" in briefing
     assert "arch.proposal.done" in briefing
     assert manifest.id in briefing
 
