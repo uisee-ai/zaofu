@@ -168,3 +168,19 @@ Fanout 超时扫描同样遵守 Run 状态围栏：暂停期间不发布超时�
 恢复后以最近的 `run.resumed` 时间作为计时下限，为尚未完成的 child、排队
 等待与 synth 提供新的有界计时窗口。该窗口从恢复时重新计算，并非精确扣除
 暂停前已使用的时长；后续仍按配置的超时及 idle 上限收敛。
+
+## 冻结候选的独立诊断裁决
+
+在 OA 已授权的 `candidate_diagnosis_only` 范围内，Planner 的
+`diagnosis_review` 产物可以交独立 Critic。签发端把原冻结、原 Candidate
+失败、逐条 finding ID、当前 Planner 准入和包含 Owner 答复的来源摘要固定在
+Critic 的 `plan-synth` 合同中。首次提交与断点恢复沿用相同合同。
+
+Critic 认可诊断时，逐条提交 `report.diagnosis_assessments`，每项包含原
+`finding_id`、自主判断的 `conclusion` 和 `basis`。其中
+`requirement_evidence` 引用 `plan-rework-context`，`current_evidence`
+引用本轮 Planner 产物；精确引用按签发清单检验。仍有阻塞时使用既有的
+拒绝或 Owner 决策流程。内核在冻结仍匹配时将双准入、合同和业务依据写入
+`fanout.aggregate.completed.candidate_diagnosis_review`，此收据只结算诊断；
+原候选是否通过仍由单独受控的 Candidate Verify 及下游关卡决定。
+回归见 `tests/test_candidate_diagnosis_review.py`。

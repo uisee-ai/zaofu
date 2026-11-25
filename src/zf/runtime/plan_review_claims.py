@@ -68,7 +68,13 @@ def review_claim_issues(
     if not rejected and (value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}):
         from zf.runtime.plan_review_comparisons import approval_assessments
         try:
-            rows.extend(approval_assessments(state_dir, request, report or result, error=error))
+            if scope := identity.get("diagnosis_review"):
+                from zf.runtime.candidate_diagnosis_review import diagnosis_assessments
+                if rows:
+                    error("report", "Diagnosis approval cannot retain blocking issues")
+                rows.extend(diagnosis_assessments(scope, report or result, error=error))
+            else:
+                rows.extend(approval_assessments(state_dir, request, report or result, error=error))
         except (KeyError, ValueError, TypeError, OSError) as exc:
             error("report.execution_assessments", str(exc))
     if not rows:

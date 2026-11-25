@@ -7070,6 +7070,18 @@ class FanoutCoordinationMixin(
         trace_id = str(manifest.get("trace_id") or payload.get("trace_id") or "")
         stage_id = str(manifest.get("stage_id") or payload.get("stage_id") or "")
         artifact_payload: dict = {}
+        if final_status == "completed" and (manifest.get("trigger_payload") or {}).get("resume_scope") == "candidate_diagnosis_only":
+            from zf.runtime.candidate_diagnosis_review import settle_diagnosis_review
+
+            try:
+                settle_diagnosis_review(self, event, manifest)
+                return
+            except (KeyError, ValueError, OSError, TypeError) as exc:
+                final_status, recommendation = "failed", "reject"
+                artifact_payload = self._contract_failure_payload({
+                    "failure_class": "plan_artifact_package_protocol",
+                    "attempt_domain": "protocol_repair", "semantic_rework_cost": 0,
+                }, f"frozen diagnosis handoff failed: {exc}")
         if final_status == "completed":
             artifact_projection = self._project_refactor_success_artifacts(
                 manifest=manifest,
@@ -8295,6 +8307,8 @@ class FanoutCoordinationMixin(
                 "```",
                 "",
             ]
+        from zf.runtime.candidate_diagnosis_review import DIAGNOSIS_CRITIC_GUIDANCE
+
         briefing_text = "\n".join([
                 f"# Fanout Synth: {fanout_id}",
                 "",
@@ -8308,6 +8322,7 @@ class FanoutCoordinationMixin(
                 "",
                 *runner_policy_lines,
                 *review_claim_briefing(str(call_payload.get("plan_review_evidence_policy") or "")),
+                *([DIAGNOSIS_CRITIC_GUIDANCE] if call_payload.get("diagnosis_review") else []),
                 *scope_summary_lines,
                 *research_handoff_lines,
                 *source_lines,

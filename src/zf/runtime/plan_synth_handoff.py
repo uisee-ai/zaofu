@@ -171,6 +171,9 @@ def synth_result_recovery_guidance(
         raise ValueError("synth recovery scratch is not bound inside the state directory")
     submit = render_result_scratch_command(state, operation["operation_id"], cli)
     validate = render_result_validate_command(submit)
+    from zf.runtime.candidate_diagnosis_review import DIAGNOSIS_CRITIC_GUIDANCE
+
+    diagnosis = (request.get("result_identity") or {}).get("diagnosis_review")
     return (
         f"\nResume attempt `{attempt_id}` using its signed result scratch `{scratch}`. "
         "Inspect the existing draft and preserve your independent verdict. An earlier turn's "
@@ -180,6 +183,7 @@ def synth_result_recovery_guidance(
         "any reproduced mechanical diagnostics, then rerun that preflight. When the current "
         f"preflight succeeds and your evaluation is complete, run `{submit}` and use its receipt. "
         "If the result has already been admitted, retain the existing receipt and stop."
+        + (" " + DIAGNOSIS_CRITIC_GUIDANCE if diagnosis else "")
     )
 
 
@@ -707,6 +711,11 @@ def build_plan_synth_call_payload(
             for item in input_refs
         ],
     }
+    from zf.runtime.candidate_diagnosis_review import diagnosis_review_scope
+
+    scope = diagnosis_review_scope(state_dir, manifest, reports, input_refs, child_bindings)
+    if scope:
+        revision_basis["diagnosis_review"] = scope
     plan_revision = f"plan-r{canonical_json_sha256(revision_basis)[:12]}"
     contract = {**revision_basis, "plan_revision": plan_revision}
     contract_ref = write_immutable_json_sidecar(
@@ -730,6 +739,7 @@ def build_plan_synth_call_payload(
         "stage_id": stage_id,
         "child_id": "synth",
         "run_id": run_id,
+        **({"diagnosis_review": scope} if scope else {}),
         "role_instance": role_instance,
         "target_ref": str(manifest.get("target_ref") or ""),
         "plan_revision": plan_revision,

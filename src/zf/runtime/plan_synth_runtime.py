@@ -718,7 +718,7 @@ class PlanSynthRuntimeMixin:
                 from zf.runtime.plan_critic_reassessment import validate_reassessment_inputs
                 validate_reassessment_inputs(self.state_dir, manifest, call_payload)
                 call_payload["plan_synth_verdict_only"] = bool(
-                    pure_aggregator_policy_plan(self.config, role).get("applies")
+                    call_payload.get("diagnosis_review") or pure_aggregator_policy_plan(self.config, role).get("applies")
                 )
                 if call_payload["plan_synth_verdict_only"]:
                     from zf.runtime.plan_review_claims import POLICY
@@ -732,7 +732,7 @@ class PlanSynthRuntimeMixin:
                         source_event_id=str(manifest.get("trigger_event_id") or ""),
                     )
                 workdir_write_scopes = []
-                if not pure_aggregator_policy_plan(self.config, role).get("applies"):
+                if not call_payload["plan_synth_verdict_only"]:
                     workdir_write_scopes = plan_artifact_workdir_write_scopes(
                         fanout_id=fanout_id,
                         success_event=success_event,
