@@ -139,6 +139,46 @@ def test_retires_only_empty_successor_and_never_reopens_twice(checkpoint):
     assert state["children"][0]["result_event_id"] == "producer"
 
 
+@pytest.mark.parametrize("use_snapshot", [True, False])
+def test_reader_replan_sweep_excludes_only_the_retired_empty_successor(checkpoint, use_snapshot):
+    from types import SimpleNamespace
+
+    from zf.runtime.durable_call_fanout import DurableCallFanoutMixin
+    from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
+    from zf.runtime.reader_fanout_recovery_snapshot import build_fanout_currentness
+
+    service, req, params, _ = checkpoint
+    log = service.writer.event_log
+    assert apply(service, req, params)["ok"]
+    events = log.read_all()
+    projector = FanoutManifestProjector(service.state_dir)
+    current, retired = (projector.rebuild(f, events) for f in ("old", "wrong"))
+    current["aggregate_config"]["success_event"] = "task_map.ready"
+    current["trigger_payload"]["rework_attempt"] = 4
+    retired["trigger_payload"]["rework_attempt"] = 5
+    manifests = [("old", current), ("wrong", retired)]
+    class Runtime(DurableCallFanoutMixin, FanoutEvidenceQueriesMixin):
+        event_log = log
+
+    runtime = Runtime()
+    snapshot = (
+        SimpleNamespace(currentness=build_fanout_currentness(events), superseding_goal_claims={})
+        if use_snapshot else None
+    )
+
+    def replacement():
+        return runtime._reader_fanout_stale_status(
+            fanout_id="old", manifest=current, manifests=manifests,
+            started_order={"old": 0, "wrong": 1, "different-target": len(events)},
+            events=events, recovery_snapshot=snapshot,
+        )
+
+    assert replacement() == ("", "")
+    # A later attempt at another target still goes through the cross-target fallback.
+    manifests.append(("different-target", {**retired, "trigger_event_id": "next", "target_ref": "other"}))
+    assert replacement() == ("superseded_by_newer_replan_attempt", "different-target")
+
+
 @pytest.mark.parametrize(
     "fault",
     [

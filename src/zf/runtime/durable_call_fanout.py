@@ -871,6 +871,20 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             )
         if stale_reason:
             return stale_reason, superseded_by
+        if manifest.get("critic_handoff_retry_event_id"):
+            # The fallback compares attempt numbers across targets. A successor
+            # explicitly retired in favour of this Reader cannot replace it.
+            from zf.runtime.fanout_identity import EMPTY_CRITIC_HANDOFF_SUCCESSOR
+            from zf.runtime.reader_fanout_recovery_snapshot import build_fanout_currentness
+
+            currentness = (
+                recovery_snapshot.currentness if recovery_snapshot is not None
+                else build_fanout_currentness(self.event_log.read_all())
+            )
+            manifests = [
+                (other_id, other) for other_id, other in manifests
+                if currentness.get(other_id) != (EMPTY_CRITIC_HANDOFF_SUCCESSOR, fanout_id)
+            ]
         superseded_by = self._newer_reader_replan_fanout(
             fanout_id=fanout_id,
             manifest=manifest,
