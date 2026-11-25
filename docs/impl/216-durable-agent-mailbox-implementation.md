@@ -64,3 +64,20 @@ Worker 首次派发或恢复时，briefing 给出本 attempt 的只读收件入�
 真实 Codex 定向试验由 Luna 提问、Astra 签收回答及换代后的 Luna 取回答案组成，旧 attempt 和已撤销凭据均被拒。真实 tmux 六个输入场景另有字节级证明。Claude 登录检查返回未登录，Claude 原生模型及其 stream-json 端到端资格仍待验证。独立 Codex 交接试验未运行实际业务 Verify 或 Judge。工作台的 Docker 浏览器用例覆盖当前与历史义务、隐私与无隐式签收。[真实 Codex 收据](../../reports/spec216/real-mailbox/followup/qualification.json) · [tmux 边界](../../reports/spec216/engineering/real-tmux-submit/summary.md) · [Claude 环境](../../reports/spec216/engineering/claude-qualification-capability.json) · [Dashboard 浏览器回执](../../reports/spec216/engineering/browser/frozen-cfa113d9e20d/provenance.json)
 
 A 的 RM 自主选择并重派了精确 Reader。Planner 预检曾显示零错，但正式提交缺少本 attempt 的必读凭证。随后旧回合结束信号先于已准许的校正处理。两项均已加入生产预检、WRC 调度与回归。A 最终停在修复候选的验证目录与隔离 checkout 不符，运行时已向 Owner 送达决定。B2 超时诊断曾被较早的静默状态挡住。在 `cfa113d9` 的真实父控制面，RM 已自动消费同一诊断并完成反思，随后送达 Owner 等待。两组的业务 Plan 均未获批，业务交付均为 0/16。[输入预检重放](../../reports/spec216/engineering/plan-readiness-fa319166/real-a-cli.json) · [A 原断点](../../reports/spec216/real-8x8/A/owner-escalation-before-plan.json) · [B2 真实恢复链](../../reports/spec216/real-8x8/B2/cfa113d9-diagnosis-continuation.json) · [配对资格清单](../../reports/spec216/real-8x8/qualification-outcomes.json)
+
+### 冻结版本的复验
+
+在 `ed208dd2`，确定性影响闭包有 18,987 项通过、19 项按标记跳过和 14 条警告，另有 4 项串行测试、前端类型检查和单元测试、53 项合并门禁与 10 项流程 smoke。修复前的 16 个 Plan 回归用例都曾在原实现失败，修复后同时保留语义诊断与本 attempt 的必读约束。[冻结版工程闭包](../../reports/spec216/engineering/dev-verify-ed208dd2.log) · [A 输入的受控回放](../../reports/spec216/engineering/plan-readiness-compatibility/real-a-cli.json)
+
+在一个独立的真实模型试验里，Worker 发出“已完成”的邮件，Judge 读到独有标记并明确签收。随后同一个 Judge 使用同一 attempt 的凭据两次调用公开 `zf result submit`。仅提交邮件正文时，两处证据引用均被拒，退出 1。改为正式准入的本地 Verify 结果后，退出 0，Judge 操作才完成。该对照由三个真实 Luna high 回合执行，上游工程用例只含一条本地断言。16 项产品的资格另计。[Judge 正负对照及角色绑定](../../reports/spec216/real-mailbox/final-gate-ed208dd2/qualification.json)
+
+
+### 产品级无人验证结果
+
+两次准备阶段试验保留了各自正式的人工决定，A 和 B2 均未获得可批准的 Plan。原 B 曾由测试助手在重派提案只有 proposed 状态时调用受控动作，已排除。A 和 B2 之间的实际团队义务摘要也有差异，无法据此估算常驻 RM 的净收益。[配对结果与排除原因](../../reports/spec216/real-8x8/qualification-outcomes.json)
+
+最终冻结试验 C 从新的业务基线和 Run 启动。OA 使用 Astra，其他角色使用 Luna。产品扫描完成，技术扫描在生成 operation 前拒绝了目录 `app/`。原提案曾被标作可批准，项目在该位置确实有目录。19:54:52 UTC，按需 RM 自主启动诊断，20:24:55 收到超时结果，20:25:17 向 Owner 送出需要授权的决定。实验期间没有从外部修订 C 的计划、重派 Worker 或代交结果。[原始技术扫描诊断](../../reports/spec216/real-8x8/C/tech-scan-input-diagnosis.json) · [正式终点](../../reports/spec216/real-8x8/C/final-qualification.json)
+
+C 的 16 项业务都未派发，未取得独立验收。没有实际 8 Impl 与 8 Task Verify 重叠，Candidate、产品 Docker 验收、Judge、Goal 和本地交付均未进入。批准后的无人窗口未开启。诊断转交与升级得到实证，端到端无人交付未通过。16 项覆盖和各自的证据状态均单独保留。[逐项覆盖](../../reports/spec216/real-8x8/C/module-qualification.json)
+
+后续工程修复 `e5ba0235` 用相同文件及可用 Markdown 锚点规则检查 Plan 的项目实物引用。C 原提案在隔离重放中提前被拒，保留同一合同只将 `app/` 改为合法文件的对照能够准入。来源变化后，提交预览与两个正式授权入口均报 409，原展示快照仍可查。该版本的确定性影响闭包有 18,994 项通过、19 项跳过、13 条警告，串行、前端、合并门禁和流程 smoke 均通过。C 实际运行在 `ed208dd2`。把这类确定性错误反馈给原 OA，自主产生并重新核准修正提案，还缺真实的受控闭环证明。[修复与公开入口回放](../../reports/spec216/engineering/stage-team-input-e5ba0235/qualification.json) · [最终工程闭包](../../reports/spec216/engineering/dev-verify-e5ba0235.log)
