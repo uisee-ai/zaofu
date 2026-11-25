@@ -464,8 +464,16 @@ Task，本次也只授权诊断。逐项记录原 finding、独立判断、当�
 完整任务图报 `candidate_diagnosis_no_writer_authority` 时，增删任务均无法改变派发权限。
 若下一步确实需要 Owner 决定受保护的合同范围、签发新的工作或独立重验授权，将这一具体选择
 与已经查清的结论分开，使用下述非执行草案交给 Critic。精确说明决定关乎哪项权限或范围，
-以及可供核对的证据。若原合同和现有授权已足以确定结论，保留结论及证据，沿适用的既有
-核验或恢复路径交接；不要为了通过草案校验编造阻塞问题，也不要代替 Reader 或 Judge 作终局裁定。
+以及可供核对的证据。
+
+原合同和已签入本轮的 Owner 答复足以完成诊断时，提交 `candidate_kind=diagnosis_review`。
+沿用 `execution_status=completed`、`result_semantics=artifact_production`、`recommendation=abstain`，
+写下独立 `summary`、`owner_decision_items=[]`、实际 Markdown 诊断和来源索引的 ref 与 SHA-256。
+从本次 `plan-rework-context` 原样保留 `operator_feedback`。逐项检查 `rework_summary.candidate_obligations`，
+为每个原始 `finding_id` 提交一条 `finding_results`，记录 `outcome`（`supported`、`refuted` 或
+`unknown`）、有依据的 `explanation` 和 `evidence_refs=[该项 control_result_ref.ref]`。证据仍不充分时说明哪些
+事实未知。清除结果模板中的任务图、backlog 与执行端口。使用当前 operation 的 `zf result validate`
+自检并以 `zf result submit` 交给独立 Critic。产品验收、重验与新增工作各自使用原有授权入口。
 
 先遵循 Task Map Skill 的来源 AC 归组、原子场景保留和逐片验收责任方法。
 业务约束冲突不等于 Provider/传输故障。若已完成分析，但真实互斥要求使完整 Task Map 无法成立，

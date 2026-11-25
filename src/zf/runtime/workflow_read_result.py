@@ -44,7 +44,10 @@ def normalize_workflow_read_result(
     raw = payload.get("report")
     report = dict(raw) if isinstance(raw, Mapping) else {}
     had_structured_report = bool(report)
-    for field in _TOP_LEVEL_HANDOFF_FIELDS:
+    handoff_fields = _TOP_LEVEL_HANDOFF_FIELDS
+    if (report.get("candidate_kind") or payload.get("candidate_kind")) == "diagnosis_review":
+        handoff_fields += ("finding_results", "operator_feedback")
+    for field in handoff_fields:
         payload_value = payload.get(field)
         report_value = report.get(field)
         if _empty(report_value) and not _empty(payload_value):
