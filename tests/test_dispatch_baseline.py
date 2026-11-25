@@ -9,7 +9,11 @@ from zf.cli.artifact_input_index import run_input_index
 from zf.core.config.schema import ProjectConfig, RoleConfig, ZfConfig
 from zf.core.events import ZfEvent
 from zf.core.security.hash import sha256_file
-from zf.runtime.artifact_read_capability import authorize_artifact_read_from_environment
+from zf.runtime.artifact_read_capability import (
+    authorize_artifact_read_from_environment,
+    canonical_source_manifest_digest,
+)
+from zf.runtime.artifact_read_ledger import write_attempt_source_manifest
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.dispatch_baseline import first_dispatch_baseline
 from zf.runtime.load_receipt import consumer_receipts, runtime_load_payload
@@ -58,6 +62,17 @@ def projection(tmp_path):
 
     boot = ev("loop.started", runtime_load_payload(config=cfg, state_dir=state, project_root=project))
     rev = hydrate_sidecar_ref(state, boot.payload["runtime_load_ref"]).payload
+    manifest = {
+        "schema_version": "attempt-source-manifest.v1",
+        "workflow_run_id": "run",
+        "task_id": "T",
+        "attempt_id": "disp",
+        "dispatch_id": "disp",
+        "sources": [],
+    }
+    raw_digest = write_attempt_source_manifest(state, manifest)["sha256"]
+    worker_digest = canonical_source_manifest_digest(manifest)
+    assert raw_digest != worker_digest
     request = {
         "schema_version": "workflow-operation-request.v1",
         "task_id": "T",
@@ -65,7 +80,7 @@ def projection(tmp_path):
         "workflow_run_id": "run",
         "operation_id": "op",
         "active_attempt_id": "disp",
-        "request": {"skills": ["audit"], "source_manifest_digest": "m"},
+        "request": {"skills": ["audit"], "source_manifest_digest": raw_digest},
     }
     issued = ev(
         "workflow.operation.requested",
@@ -115,7 +130,7 @@ def projection(tmp_path):
         "dispatch_id": "disp",
         "operation_id": "op",
         "attempt_id": "disp",
-        "manifest_digest": "m",
+        "manifest_digest": worker_digest,
     }
     worker = {
         "schema_version": "worker-load.v1",
@@ -212,3 +227,16 @@ def test_authentic_sandbox_read_without_release_identity_reports_specific_gap(tm
     result = check(rows)
     assert result["worker_event"] == event.id
     assert result["status"] == "unproven" and "resolve its Git revision" in result["reason"]
+
+
+def test_manifest_requires_exact_signed_bytes_and_attempt_path(tmp_path):
+    check, rows, _, _, _ = projection(tmp_path)
+    (original,) = (tmp_path / "state/artifacts/attempts/disp/source-manifests").glob("*.json")
+    raw = original.read_bytes()
+    original.write_bytes(raw + b"\n")
+    assert check(rows)["status"] == "unproven"
+    original.write_bytes(raw)
+    wrong = tmp_path / "state/artifacts/attempts/other/source-manifests" / original.name
+    wrong.parent.mkdir(parents=True)
+    original.rename(wrong)
+    assert check(rows)["status"] == "unproven"

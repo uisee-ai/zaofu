@@ -284,11 +284,31 @@ def first_dispatch_baseline(
             and all(worker["identity"].get(k) == v for k, v in identity.items()),
             "authenticated worker identity differs from the first WRC",
         )
-        manifest = request["request"].get("source_manifest_digest")
+        from zf.runtime.artifact_read_capability import canonical_source_manifest_digest
+        from zf.runtime.artifact_read_ledger import _safe_component
+
+        signed_digest = request["request"].get("source_manifest_digest")
+        key = _safe_component(identity["attempt_id"])
+        descriptor = {
+            "ref": f"artifacts/attempts/{key}/source-manifests/{signed_digest}.json",
+            "sha256": signed_digest,
+        }
+        manifest = _body(state, descriptor, "attempt-source-manifest.v1")
         _required(
-            manifest and worker["identity"].get("manifest_digest") == manifest,
+            all(
+                manifest.get(k) == identity[k]
+                for k in ("attempt_id", "dispatch_id", "workflow_run_id", "task_id")
+            ),
+            "WRC source manifest identity mismatch",
+        )
+        worker_digest = canonical_source_manifest_digest(manifest)
+        _required(
+            worker["identity"].get("manifest_digest")
+            == observed.payload.get("manifest_digest")
+            == worker_digest,
             "worker source manifest mismatch",
         )
+        report.update(source_manifest_sha256=signed_digest, worker_manifest_digest=worker_digest)
         report["status"] = "verified"
     except (KeyError, TypeError, OSError, ValueError) as exc:
         report["reason"] = str(exc)
