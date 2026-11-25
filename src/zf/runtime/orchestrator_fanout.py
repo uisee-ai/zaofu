@@ -37,6 +37,7 @@ from zf.runtime.fanout_failure_findings import (
     findings_from_payload,
 )
 from zf.runtime.fanout_result_identity import bind_blocking_writer_result_identity
+from zf.runtime.fanout_retry_projection import reader_result_dispatch_id
 from zf.runtime.fanout_retrigger_guard import (
     suppress_completed_generation,
     suppress_handled_stall_trigger,
@@ -4483,7 +4484,9 @@ class FanoutCoordinationMixin(
         )
         if child and child.get("status") in {"completed", "failed"}:
             return
-        run_id = str(payload.get("run_id") or (child or {}).get("run_id") or "")
+        run_id = reader_result_dispatch_id(child or {}, payload)
+        if run_id is None:
+            return
         raw_child_payload = (child or {}).get("payload")
         child_payload = raw_child_payload if isinstance(raw_child_payload, dict) else {}
         base_payload = {
