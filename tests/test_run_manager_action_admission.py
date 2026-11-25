@@ -220,7 +220,11 @@ def test_current_diagnostic_advice_survives_a_temporary_gate(tmp_path, route, co
 
 
 @pytest.mark.parametrize("scope", ["run", "side"])
-def test_resident_review_only_gate_shows_question_and_real_owner_actions(tmp_path, scope):
+@pytest.mark.parametrize("action_field,question_field", [
+    ("recommended_replan_or_resume_action", "decision_required"),
+    ("recommended_run_manager_action", "question"),
+])
+def test_resident_review_only_gate_shows_question_and_real_owner_actions(tmp_path, scope, action_field, question_field):
     from zf.runtime.operator_inbox import build_runtime_requests
     from zf.runtime.run_manager import _pending_human_decisions
 
@@ -229,11 +233,12 @@ def test_resident_review_only_gate_shows_question_and_real_owner_actions(tmp_pat
     question = "是否接受隔离诊断的现有归档，并保留报告缺失记录？"
     _recommend(writer, task_id="", recommended_route="human", safe_resume_action="agent_recommendation",
                workflow_run_id="r", blocking_scope=scope, summary="归档处置",
-               recommended_replan_or_resume_action={"decision_required": question})
+               **{action_field: {question_field: question}})
     for _ in range(2):
         run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
     events = log.read_all()
-    assert len([e for e in events if e.type == "human.escalate"]) == 1
+    escalation, = [e for e in events if e.type == "human.escalate"]
+    assert escalation.payload["question"] == question
     gate, = _pending_human_decisions(events)
     assert gate["blocking_scope"] == scope
     last_tick = next(e for e in reversed(events) if e.type == "run.manager.tick.completed")
@@ -276,3 +281,16 @@ def test_legacy_review_gate_recovers_bound_question_without_dismissing_gate(tmp_
     item, = build_runtime_requests(state, events)
     assert item["summary"] == question and item["status"] == "pending"
     assert log.read_all() == events
+
+
+@pytest.mark.parametrize("fields,expected", [
+    ({"question": "direct", "recommended_replan_or_resume_action": {"decision_required": "plan"}}, "direct"),
+    ({"recommended_replan_or_resume_action": {"decision_required": "plan"}}, "plan"),
+    ({"recommended_run_manager_action": "invalid"}, "summary"),
+    ({"recommended_run_manager_action": {"question": []}, "summary": " "}, "reason"),
+])
+def test_resident_recommendation_question_preserves_precedence(fields, expected):
+    from zf.runtime.run_manager_recovery_actions import resident_decision_question
+    payload = {"recommended_run_manager_action": {"question": "action question"},
+               "summary": "summary", "reason": "reason", **fields}
+    assert resident_decision_question(payload) == expected

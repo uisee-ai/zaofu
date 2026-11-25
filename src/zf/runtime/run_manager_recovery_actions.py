@@ -16,7 +16,9 @@ RECOVERY_FIELDS = (
 def resident_decision_question(payload: dict[str, Any]) -> str:
     disposition = payload.get("recommended_replan_or_resume_action")
     nested = disposition.get("decision_required") if isinstance(disposition, dict) else None
-    for value in (payload.get("question"), nested, payload.get("summary"), payload.get("reason")):
+    action = payload.get("recommended_run_manager_action")
+    action_question = action.get("question") if isinstance(action, dict) else None
+    for value in (payload.get("question"), nested, action_question, payload.get("summary"), payload.get("reason")):
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
