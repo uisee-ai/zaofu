@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from zf.core.events import EventLog
 from zf.core.events.model import ZfEvent
 from zf.runtime.plan_candidate_owner_review import bound_candidate_diagnosis
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -19,7 +18,8 @@ DIAGNOSIS_CRITIC_GUIDANCE = (
 )
 
 
-def diagnosis_review_scope(state: Path, manifest: Mapping, reports: list, refs: list, children: list) -> dict:
+def diagnosis_review_scope(state: Path, manifest: Mapping, reports: list, refs: list, children: list, *, events: list[ZfEvent] | None
+) -> dict:
     if not any(
         isinstance(body := row.get("report"), Mapping) and body.get("candidate_kind") == "diagnosis_review"
         for row in reports
@@ -53,7 +53,7 @@ def diagnosis_review_scope(state: Path, manifest: Mapping, reports: list, refs: 
         raise ValueError("The Planner diagnosis differs from the frozen OA evidence")
     admissions = [
         e
-        for e in EventLog(state / "events.jsonl").read_all()
+        for e in events or ()
         if e.type == "workflow.call.result.admitted"
         and e.origin == "kernel"
         and e.payload.get("source_event_id") == child["result_event_id"]

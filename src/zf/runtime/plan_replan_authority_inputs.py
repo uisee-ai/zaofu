@@ -12,7 +12,7 @@ from zf.runtime.workflow_operation import load_workflow_operation
 
 def replan_authority_sources(
     *, state_dir: Path, project_root: Path, payload: Mapping[str, Any],
-    context: dict[str, Any], handoff_source_id: str = "",
+    context: dict[str, Any], handoff_source_id: str = "", diagnosis_events: list | None = None,
 ) -> list[dict[str, Any]]:
     package_ref = str(payload.get("plan_artifact_package_ref") or "")
     package_digest = str(payload.get("plan_artifact_package_digest") or "")
@@ -44,9 +44,12 @@ def replan_authority_sources(
     observation = historical.get("orchestrator_decision_ref")
     if isinstance(observation, Mapping):
         refs.append(source(observation["ref"], observation["sha256"], "plan-rework-observation"))
+    if context.get("resume_scope") == "candidate_diagnosis_only" and diagnosis_events is None:
+        from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
+        diagnosis_events = frozen_diagnosis_events(state_dir, project_root)
     authority = dict(payload)
     if not authority.get("orchestrator_decision_ref"):
-        authority.update(_legacy_oa_authority(state_dir, payload, context, run_id, package_digest))
+        authority.update(_legacy_oa_authority(state_dir, payload, context, run_id, package_digest, events=diagnosis_events))
     decision_ref = authority.get("orchestrator_decision_ref")
     if not decision_ref:
         return refs
@@ -73,7 +76,7 @@ def replan_authority_sources(
         from zf.runtime.plan_candidate_diagnosis_inputs import candidate_diagnosis_inputs
 
         evidence, index = candidate_diagnosis_inputs(
-            state_dir, payload, context, decision, decision_ref, refs, handoff_source_id=handoff_source_id)
+            state_dir, payload, context, decision, decision_ref, refs, handoff_source_id=handoff_source_id, events=diagnosis_events)
         context["candidate_diagnosis_evidence"] = index
         return [*refs, *evidence]
     evidence = _decision_evidence_sources(state_dir, decision, task_ids=scope)
@@ -104,7 +107,7 @@ def replan_authority_sources(
 
 def _legacy_oa_authority(
     state_dir: Path, payload: Mapping[str, Any], context: Mapping[str, Any],
-    run_id: str, package_digest: str,
+    run_id: str, package_digest: str, *, events: list | None = None,
 ) -> dict[str, Any]:
     """Recover dropped legacy refs only from an exact canonical replan marker."""
     classification = context.get("replan_classification") or context.get("classification")
@@ -116,7 +119,9 @@ def _legacy_oa_authority(
     scope = set(context.get("task_ids") or context.get("failed_task_ids") or [])
     generation = str(payload.get("task_map_generation") or "")
     matches = []
-    for event in EventLog(state_dir / "events.jsonl").read_all():
+    if events is None:
+        events = EventLog(state_dir / "events.jsonl").read_all()
+    for event in events:
         body = event.payload
         if (event.type == "orchestrator.replan_requested"
                 and body.get("workflow_run_id") == run_id

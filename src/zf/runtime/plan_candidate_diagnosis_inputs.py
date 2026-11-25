@@ -1,22 +1,34 @@
 """Read-only Planner evidence from one admitted, aggregate Candidate diagnosis."""
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
-from zf.core.events import EventLog
+from zf.core.events.model import ZfEvent
 from zf.runtime.artifact_access import artifact_access_allowed
 from zf.runtime.artifact_query.extractors import _intersect_access_scopes
 from zf.runtime.candidate_failure_checkpoint import aggregate_candidate_binding
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _diagnosis_authority(state: Path, payload, context, decision, decision_ref, handoff_source_id):
+def frozen_diagnosis_events(state: Path, project: Path, read_events: Callable[[], list[ZfEvent]] | None = None) -> list[ZfEvent]:
+    if read_events is not None:
+        return read_events()
+    # Standalone callers can open the same configured ledger as the controller.
+    from zf.core.config.loader import load_config
+    from zf.core.events.factory import event_log_from_project
+
+    config_file = project / "zf.yaml"
+    config = load_config(config_file) if config_file.is_file() else None
+    return event_log_from_project(state, config=config).read_all()
+
+
+def _diagnosis_authority(state: Path, payload, context, decision, decision_ref, handoff_source_id, events):
     run = decision["identity"]["workflow_run_id"]
     anchor, failure = payload.get("pdd_id"), context.get("rework_of")
     scope = ("task_ids", "failed_task_ids", "downstream_task_ids")
     if (not anchor or not failure or context.get("replan_classification") != "oa_semantic_return_to_plan"
             or any(payload.get(key) or context.get(key) for key in scope)):
         raise ValueError("Candidate diagnosis requires its read-only anchor and empty Writer scope")
-    events = EventLog(state / "events.jsonl").read_all()
     if handoff_source_id or payload.get("stage_replan_generation") or payload.get("repaired_failure_event_id"):
         from zf.runtime.plan_diagnosis_repair_lineage import diagnosis_repair_failure
 
@@ -108,8 +120,8 @@ def _permitted_paths(paths, limits):
     return [path for path in paths if path in limits]
 
 
-def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision_ref, baseline_sources, *, handoff_source_id=""):
-    bound, directive, history, failure_id = _diagnosis_authority(state, payload, context, decision, decision_ref, handoff_source_id)
+def candidate_diagnosis_inputs(state: Path, payload, context, decision, decision_ref, baseline_sources, *, events, handoff_source_id=""):
+    bound, directive, history, failure_id = _diagnosis_authority(state, payload, context, decision, decision_ref, handoff_source_id, events)
     offered, origins, source_event_id = _offered_sources(state, history, decision, bound, baseline_sources, failure_id)
     selected = {}
     actor = str(payload.get("role_instance") or "")

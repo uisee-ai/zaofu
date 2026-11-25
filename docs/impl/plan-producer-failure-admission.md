@@ -174,7 +174,8 @@ Fanout 超时扫描同样遵守 Run 状态围栏：暂停期间不发布超时�
 在 OA 已授权的 `candidate_diagnosis_only` 范围内，Planner 的
 `diagnosis_review` 产物可以交独立 Critic。签发端把原冻结、原 Candidate
 失败、逐条 finding ID、当前 Planner 准入和包含 Owner 答复的来源摘要固定在
-Critic 的 `plan-synth` 合同中。首次提交与断点恢复沿用相同合同。
+Critic 的 `plan-synth` 合同中。签发时以运行中 EventLog 的同一份读取结果对账 OA 和
+Planner 准入，沿用项目配置的签名及历史兼容策略。首次提交与断点恢复沿用相同合同。
 
 Critic 认可诊断时，逐条提交 `report.diagnosis_assessments`，每项包含原
 `finding_id`、自主判断的 `conclusion` 和 `basis`。其中

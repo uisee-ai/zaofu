@@ -20,7 +20,7 @@ from zf.runtime.result_submit import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _case(tmp_path):
+def _case(tmp_path, *, handoff_log=None):
     runtime, trigger, frozen = _diagnosis(tmp_path)
     run = trigger["trace_id"]
     feedback = ["Owner confirmed the existing domain for this candidate"]
@@ -88,12 +88,15 @@ def _case(tmp_path):
     }
     call = build_plan_synth_call_payload(
         state_dir=runtime.state_dir,
+        event_log=handoff_log(runtime.event_log) if handoff_log else runtime.event_log,
         project_root=runtime.project_root,
         manifest=manifest,
         reports=[child],
         run_id="critic-attempt",
         role_instance="plan-critic",
     )
+    if handoff_log:
+        return call
     call.update(plan_review_evidence_policy=POLICY, plan_synth_verdict_only=True)
     token = provision_role_submit_credential(runtime.state_dir, "plan-critic").read_text().strip()
     prepared = prepare_call_operation(
@@ -292,3 +295,43 @@ def test_frozen_diagnosis_settles_only_its_aggregate(tmp_path, outcome):
         e.type in {"task_map.ready", "plan.approved", "candidate.ready", "test.passed", "judge.passed"}
         for e in published
     )
+
+@pytest.mark.parametrize("legacy, allowed", [
+    ("", False), ("planner", False), ("oa", False), ("planner", True),
+])
+def test_critic_uses_runtime_signed_history_for_planner_and_oa(tmp_path, legacy, allowed):
+    from zf.core.events import EventLog
+    from zf.core.security.signing import EventSigner
+
+    def configured_log(seed):
+        path = tmp_path / "archive-import" / "events.jsonl"
+        path.parent.mkdir()
+        signed = EventLog(path, signer=EventSigner(b"fixture-local-signing-material"), allow_unsigned=allowed)
+        pre_signing = EventLog(path)
+        for event in seed.read_all():
+            is_legacy = (
+                legacy == "planner" and event.type == "workflow.call.result.admitted"
+                and event.payload.get("operation_id") == "planner-op"
+            ) or (legacy == "oa" and event.type == "orchestrator.replan_requested")
+            (pre_signing if is_legacy else signed).append(event)
+        return signed
+
+    if legacy and not allowed:
+        reason = "Missing current Planner admission" if legacy == "planner" else "exact frozen replan marker"
+        with pytest.raises(ValueError, match=reason):
+            _case(tmp_path, handoff_log=configured_log)
+    else:
+        payload = _case(tmp_path, handoff_log=configured_log)
+        assert payload["diagnosis_review"]["planner_admitted_event_id"]
+
+
+def test_standalone_diagnosis_uses_project_signing_policy(tmp_path, monkeypatch):
+    from tests.test_event_signing_wireup import _write_yaml
+    from zf.core.events.factory import EventSigningConfigError
+    from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
+
+    key_var = "ZF_DIAGNOSIS_SIGNING_FIXTURE"
+    _write_yaml(tmp_path / "zf.yaml", {"event_signing": {"enabled": True, "secret_env": key_var}})
+    monkeypatch.delenv(key_var, raising=False)
+    with pytest.raises(EventSigningConfigError):
+        frozen_diagnosis_events(tmp_path / "state", tmp_path)

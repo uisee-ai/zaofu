@@ -93,10 +93,8 @@ def test_missing_or_ambiguous_independent_source_is_explicit_without_using_anoth
 
 
 @pytest.mark.parametrize("fault", ["shadow", "worker_marker", "ambiguous_marker"])
-def test_unadmitted_or_ambiguous_diagnosis_cannot_transfer_evidence(tmp_path, monkeypatch, fault):
+def test_unadmitted_or_ambiguous_diagnosis_cannot_transfer_evidence(tmp_path, fault):
     from dataclasses import replace
-    from types import SimpleNamespace
-    from zf.runtime import plan_candidate_diagnosis_inputs
 
     runtime, payload, _ = _diagnosis(tmp_path)
     history = runtime.event_log.read_all()
@@ -109,9 +107,8 @@ def test_unadmitted_or_ambiguous_diagnosis_cannot_transfer_evidence(tmp_path, mo
             history = [*history, replace(marker, id="evt-duplicate")]
         else:
             history = [replace(e, origin="external") if e == marker else e for e in history]
-    monkeypatch.setattr(plan_candidate_diagnosis_inputs, "EventLog", lambda path: SimpleNamespace(read_all=lambda: history))
     with pytest.raises(ValueError, match="Candidate diagnosis"):
-        build_plan_handoff_input_refs(state_dir=runtime.state_dir, project_root=runtime.project_root, payload=payload)
+        build_plan_handoff_input_refs(state_dir=runtime.state_dir, project_root=runtime.project_root, payload=payload, read_events=lambda: history)
 
 
 def test_unbound_legacy_scope_returns_only_existing_authorities(tmp_path):

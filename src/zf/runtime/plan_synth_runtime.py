@@ -709,7 +709,7 @@ class PlanSynthRuntimeMixin:
 
                 call_payload = build_plan_synth_call_payload(
                     state_dir=self.state_dir,
-                    project_root=self.project_root,
+                    project_root=self.project_root, event_log=self.event_log,
                     manifest=manifest,
                     reports=reports,
                     run_id=run_id,
