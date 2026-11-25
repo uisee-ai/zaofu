@@ -169,7 +169,7 @@ def is_handoff_failure(event: ZfEvent) -> bool:
 
 def prepare_critic_handoff(runtime, manifest: dict, reports: list, *, run_id: str, role: str) -> dict | None:
     """Build the original review inputs or record a proven pre-WRC infrastructure failure."""
-    from zf.runtime.plan_critic_reassessment import validate_reassessment_inputs
+    from zf.runtime.plan_critic_reassessment import validate_reassessment_inputs, review_checkpoint_id
     from zf.runtime.plan_review_input_budget import PlanReviewInputBudgetExceeded
     from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
 
@@ -208,7 +208,7 @@ def prepare_critic_handoff(runtime, manifest: dict, reports: list, *, run_id: st
                     "status": "failed",
                     "recommendation": "abstain",
                     "summary": str(exc),
-                    "review_request_event_id": manifest.get("review_request_event_id", ""),
+                    "review_request_event_id": review_checkpoint_id(manifest),
                     **details,
                 },
             )

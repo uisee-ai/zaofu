@@ -829,7 +829,9 @@ class FanoutCoordinationMixin(
         retry_floor = {}
         for position, event in enumerate(events):
             if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
-                    and event.actor == "zf-cli" and event.payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"):
+                    and event.actor == "zf-cli" and event.payload.get("recovery_kind") in {
+                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry",
+                    }):
                 fanout = event.payload.get("fanout_id")
                 retry_floor[fanout] = position
                 completed_fanouts.discard(fanout)

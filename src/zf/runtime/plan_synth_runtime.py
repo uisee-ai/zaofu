@@ -508,6 +508,9 @@ class PlanSynthRuntimeMixin:
                 correlation_id=trace_id,
             ))
         run_id = f"run-{fanout_id}-synth"
+        cancellation_retry = manifest.get("cancelled_critic_retry_event_id")
+        if cancellation_retry:
+            run_id += "-retry-" + cancellation_retry
         try:
             if manifest.get('review_checkpoint_ref'):
                 from zf.runtime.plan_critic_reassessment import reassessment_manifest
@@ -738,9 +741,9 @@ class PlanSynthRuntimeMixin:
                     self,
                     payload=call_payload,
                     operation_type="fanout_synth",
-                    operation_key=(
-                        f"synth@trig:{str(manifest.get('trigger_event_id') or '')[:12]}"
-                    ),
+                    operation_key=(f"synth@trig:{str(manifest.get('trigger_event_id') or '')[:12]}"
+                                   + (f"@retry:{cancellation_retry}" if cancellation_retry else "")),
+                    cancelled_critic_checkpoint=manifest.get("cancelled_critic_checkpoint"),
                     stage_id=stage_id,
                     task_id=str(call_payload.get("task_id") or ""),
                     dispatch_id=run_id,

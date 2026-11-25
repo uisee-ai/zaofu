@@ -395,6 +395,9 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
+        if "retry_cancelled_critic_event_id" in payload:
+            from zf.runtime.cancelled_critic_recovery import apply_cancelled_critic_retry
+            return apply_cancelled_critic_retry(self, requested, action, requested_action, payload)
         if "retry_critic_handoff_event_id" in payload:
             from zf.runtime.critic_handoff_retry import apply_handoff_retry
             return apply_handoff_retry(self, requested, action, requested_action, payload)

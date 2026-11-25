@@ -136,36 +136,7 @@ def prepare_handoff_retry(service, requested, payload):
         and e.payload.get("stage_id") == stage
         and e.payload.get("workflow_run_id") == run
     }
-    requests = {
-        e.payload.get("operation_id"): e for e in events if e.type == "workflow.operation.requested"
-    }
-    for e in later:
-        p = e.payload
-        if (p.get("workflow_run_id") or p.get("trace_id") or e.correlation_id) != run:
-            continue
-        if e.type in {"workflow.operation.requested", "workflow.call.result.admitted"}:
-            issue = e if e.type == "workflow.operation.requested" else requests.get(p.get("operation_id"))
-            if issue is None or not issue.payload.get("request_ref"):
-                raise ValueError("A later operation has no attributable signed request")
-            envelope = hydrate_sidecar_ref(service.state_dir, issue.payload["request_ref"]).payload
-            signed = envelope["request"]
-            if (
-                operation_request_hash(envelope) != issue.payload["request_hash"]
-                or signed.get("fanout_id") in carriers
-                or signed.get("role_instance") in roles
-                or p.get("role_instance") in roles
-            ):
-                raise ValueError("A later operation supersedes the unissued Critic handoff")
-        if e.type in {
-            "task_map.ready",
-            "task_map.admitted",
-            "plan.approved",
-            "candidate.ready",
-            "run.goal.completed",
-            "run.failed",
-            "run.cancelled",
-        }:
-            raise ValueError("A later authority supersedes the unissued Critic handoff")
+    refuse_superseding_work(service.state_dir, events, later, run, roles, carriers)
     displaced = _empty_descendant(events, later, failure, manifest, trigger, by_id)
     current = fanout_current_status(events, fanout)
     if not current.known or (not current.current and current.superseded_by != displaced):
@@ -188,6 +159,39 @@ def prepare_handoff_retry(service, requested, payload):
             "retired_empty_fanout_id": displaced,
         },
     ), False
+
+
+def refuse_superseding_work(state_dir, events, later, run, roles, carriers):
+    requests = {
+        e.payload.get("operation_id"): e for e in events if e.type == "workflow.operation.requested"
+    }
+    for e in later:
+        p = e.payload
+        if (p.get("workflow_run_id") or p.get("trace_id") or e.correlation_id) != run:
+            continue
+        if e.type in {"workflow.operation.requested", "workflow.call.result.admitted"}:
+            issue = e if e.type == "workflow.operation.requested" else requests.get(p.get("operation_id"))
+            if issue is None or not issue.payload.get("request_ref"):
+                raise ValueError("A later operation has no attributable signed request")
+            envelope = hydrate_sidecar_ref(state_dir, issue.payload["request_ref"]).payload
+            signed = envelope["request"]
+            if (
+                operation_request_hash(envelope) != issue.payload["request_hash"]
+                or signed.get("fanout_id") in carriers
+                or signed.get("role_instance") in roles
+                or p.get("role_instance") in roles
+            ):
+                raise ValueError("A later operation supersedes the unissued Critic handoff")
+        if e.type in {
+            "task_map.ready",
+            "task_map.admitted",
+            "plan.approved",
+            "candidate.ready",
+            "run.goal.completed",
+            "run.failed",
+            "run.cancelled",
+        }:
+            raise ValueError("A later authority supersedes the unissued Critic handoff")
 
 
 def _empty_descendant(events, later, failure, manifest, trigger, by_id):

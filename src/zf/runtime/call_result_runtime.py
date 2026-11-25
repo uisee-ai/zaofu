@@ -77,6 +77,7 @@ def prepare_call_operation(
     workdir_write_scopes: list[str] | None = None,
     scheduler_attempt_id: str = "",
     reassessment_scope_ref: dict | None = None,
+    cancelled_critic_checkpoint: dict | None = None,
 ) -> PreparedCallOperation:
     """Pin call identity and immutable inputs before provider dispatch."""
 
@@ -718,6 +719,9 @@ def prepare_call_operation(
     if provider_session is not None and provider_session.max_parallel_agents is not None:
         request["provider_session_max_parallel_agents"] = provider_session.max_parallel_agents
     service = workflow_operation_service(runtime)
+    if cancelled_critic_checkpoint is not None:
+        from zf.runtime.cancelled_critic_recovery import verify_replacement_inputs
+        verify_replacement_inputs(runtime.state_dir, cancelled_critic_checkpoint, request, source_manifest)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
         operation_id=operation_id,

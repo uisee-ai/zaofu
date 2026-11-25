@@ -143,12 +143,16 @@ def validate_reassessment_inputs(state, manifest: dict, payload: dict) -> None:
 
 def reconcile_reassessments(runtime, events) -> None:
     """Durable aggregate requests use the existing fanout dispatch/restart path."""
+    checkpoint_fields = {
+        KIND: 'review_request_event_id',
+        'diagnosis_critic_handoff_retry': 'critic_handoff_retry_event_id',
+        'cancelled_diagnosis_critic_retry': 'cancelled_critic_retry_event_id',
+    }
     for event in events:
-        if (event.type != 'fanout.aggregate.started' or event.origin != 'kernel'
-                or event.payload.get('recovery_kind') not in {KIND, 'diagnosis_critic_handoff_retry'}):
+        field = checkpoint_fields.get(event.payload.get('recovery_kind'))
+        if event.type != 'fanout.aggregate.started' or event.origin != 'kernel' or not field:
             continue
         current = runtime._fanout_manifest(event.payload['fanout_id'])
-        field = 'review_request_event_id' if event.payload['recovery_kind'] == KIND else 'critic_handoff_retry_event_id'
         if current.get(field) == event.id and (
                 runtime._fanout_synth_dispatched(current)
                 or (current.get('aggregate') or {}).get('status') in {'completed', 'failed', 'timed_out', 'cancelled'}):
@@ -161,7 +165,8 @@ def reconcile_reassessments(runtime, events) -> None:
 
 
 def review_checkpoint_id(manifest):
-    return manifest.get('critic_handoff_retry_event_id') or manifest.get('review_request_event_id') or ''
+    return (manifest.get('cancelled_critic_retry_event_id') or manifest.get('critic_handoff_retry_event_id')
+            or manifest.get('review_request_event_id') or '')
 
 
 def review_result_matches(checkpoint, dispatch, event):

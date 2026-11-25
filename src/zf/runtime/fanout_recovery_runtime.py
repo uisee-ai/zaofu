@@ -572,6 +572,8 @@ class FanoutRecoveryRuntimeMixin:
             events = []
         cancelled_event = None
         for event in reversed(events):
+            if event.id == manifest.get("cancelled_critic_retry_event_id"):
+                break
             if event.type != "fanout.cancelled":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}

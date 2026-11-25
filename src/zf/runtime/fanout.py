@@ -619,6 +619,14 @@ class FanoutManifestProjector:
             elif event.type == "fanout.aggregate.started":
                 prior_aggregate = manifest.get("aggregate") or {}
                 if (event.origin == "kernel" and event.actor == "zf-cli"
+                        and payload.get("recovery_kind") == "cancelled_diagnosis_critic_retry"
+                        and prior_aggregate.get("status") == "cancelled"
+                        and prior_aggregate.get("last_event_id") == payload.get("fanout_cancelled_event_id")
+                        and manifest.get("critic_handoff_retry_event_id") == payload.get("critic_handoff_event_id")):
+                    manifest.pop("synth", None)
+                    manifest.update(status="running", cancelled_critic_retry_event_id=event.id,
+                                    cancelled_critic_checkpoint=payload["prior_critic_checkpoint"])
+                if (event.origin == "kernel" and event.actor == "zf-cli"
                         and payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"
                         and (manifest.get("synth") or {}).get("last_event_id") == payload.get("retry_critic_handoff_event_id")):
                     manifest.pop("synth", None)
@@ -683,7 +691,7 @@ class FanoutManifestProjector:
                 _apply_synth_handoff_metadata(manifest["synth"], payload)
                 manifest["status"] = "synth_dispatched"
             elif event.type == "fanout.synth.completed":
-                if checkpoint := manifest.get("critic_handoff_retry_event_id"):
+                if checkpoint := manifest.get("cancelled_critic_retry_event_id") or manifest.get("critic_handoff_retry_event_id"):
                     from zf.runtime.plan_critic_reassessment import review_result_matches
                     current = manifest.get("synth") or {}
                     if not review_result_matches(checkpoint, current if current.get("operation_id") else None, event):
