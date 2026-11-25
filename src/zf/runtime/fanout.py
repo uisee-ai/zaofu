@@ -683,6 +683,11 @@ class FanoutManifestProjector:
                 _apply_synth_handoff_metadata(manifest["synth"], payload)
                 manifest["status"] = "synth_dispatched"
             elif event.type == "fanout.synth.completed":
+                if checkpoint := manifest.get("critic_handoff_retry_event_id"):
+                    from zf.runtime.plan_critic_reassessment import review_result_matches
+                    current = manifest.get("synth") or {}
+                    if not review_result_matches(checkpoint, current if current.get("operation_id") else None, event):
+                        continue
                 report = payload.get("report") if isinstance(payload.get("report"), dict) else {}
                 manifest["synth"] = {
                     "status": _payload_str(payload, "status") or "completed",

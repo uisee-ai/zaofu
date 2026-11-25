@@ -174,7 +174,12 @@ def test_never_revives_an_outdated_or_different_review(checkpoint, fault):
             request_hash=operation_request_hash(envelope),
         )
     elif fault == "planner-admitted":
-        event("workflow.call.result.admitted", "unexpected-admission", operation_id="unknown", role_instance="planner")
+        event(
+            "workflow.call.result.admitted",
+            "unexpected-admission",
+            operation_id="unknown",
+            role_instance="planner",
+        )
     elif fault == "new-dispatch":
         event("fanout.child.dispatched", "dispatched", fanout_id="wrong", child_id="planner")
     elif fault == "foreign-successor":
@@ -199,3 +204,65 @@ def test_never_revives_an_outdated_or_different_review(checkpoint, fault):
         e.payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"
         for e in service.writer.event_log.read_all()
     )
+
+
+def test_result_replay_is_scoped_to_the_recovered_critic(checkpoint):
+    from types import SimpleNamespace
+    from zf.runtime.plan_critic_reassessment import reassessment_result_current
+
+    service, req, params, event = checkpoint
+    log = service.writer.event_log
+    runtime = SimpleNamespace(event_log=log)
+    marker = apply(service, req, params)["critic_handoff_event_id"]
+    projector = FanoutManifestProjector(service.state_dir)
+
+    def manifest():
+        return projector.rebuild("old", log.read_all())
+
+    old = next(e for e in log.read_all() if e.id == "failure")
+    assert not reassessment_result_current(runtime, manifest(), old)
+    pending = ZfEvent(
+        type="fanout.synth.completed",
+        origin="kernel",
+        actor="zf-cli",
+        payload={"fanout_id": "old", "status": "failed", "review_request_event_id": marker},
+    )
+    assert reassessment_result_current(runtime, manifest(), pending)
+    signed = {"operation_id": "fresh-review", "request_hash": "hash", "attempt_id": "fresh-attempt"}
+    event("fanout.synth.dispatched", "dispatch", fanout_id="old", **signed)
+    delayed = event("fanout.synth.completed", "delayed", fanout_id="old", status="failed")
+    assert not reassessment_result_current(runtime, manifest(), delayed)
+    assert manifest()["synth"]["status"] == "dispatched"
+    assert not reassessment_result_current(runtime, manifest(), pending)
+    result = event("fanout.synth.completed", "result", fanout_id="old", status="completed", **signed)
+    assert reassessment_result_current(runtime, manifest(), result)
+    assert manifest()["synth"]["last_event_id"] == result.id
+
+
+def test_crash_recovery_consumes_current_signed_result_after_a_historical_terminal(checkpoint):
+    from types import SimpleNamespace
+    from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
+
+    service, req, params, event = checkpoint
+    log = service.writer.event_log
+    apply(service, req, params)
+    signed = {"operation_id": "fresh-review", "request_hash": "hash", "attempt_id": "fresh-attempt"}
+    event("fanout.synth.dispatched", "dispatch", fanout_id="old", **signed)
+    current = event("fanout.synth.completed", "result", fanout_id="old", status="completed", **signed)
+    consumed = []
+
+    def settle(result):
+        consumed.append(result.id)
+        event(
+            "fanout.aggregate.completed", "terminal", cause=result.id, fanout_id="old", status="completed"
+        )
+
+    state = FanoutManifestProjector(service.state_dir)
+    runtime = SimpleNamespace(
+        event_log=log,
+        _fanout_manifest=lambda fid: state.rebuild(fid, log.read_all()),
+        _handle_fanout_synth_completed=settle,
+    )
+    assert FanoutCoordinationMixin._resume_unrecorded_reader_synth_results(runtime, log.read_all())
+    assert not FanoutCoordinationMixin._resume_unrecorded_reader_synth_results(runtime, log.read_all())
+    assert consumed == [current.id]

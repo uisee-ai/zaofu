@@ -160,18 +160,27 @@ def reconcile_reassessments(runtime, events) -> None:
             runtime._evaluate_reader_fanout(event.payload['fanout_id'])
 
 
+def review_checkpoint_id(manifest):
+    return manifest.get('critic_handoff_retry_event_id') or manifest.get('review_request_event_id') or ''
+
+
+def review_result_matches(checkpoint, dispatch, event):
+    if dispatch:
+        return all(event.payload.get(key) and event.payload.get(key) == dispatch.get(key)
+                   for key in ('operation_id', 'attempt_id', 'request_hash'))
+    return bool(event.origin == 'kernel' and event.actor == 'zf-cli' and event.payload.get('status') == 'failed'
+                and event.payload.get('review_request_event_id') == checkpoint)
+
+
 def reassessment_result_current(runtime, manifest, event) -> bool:
-    if not manifest.get('review_request_event_id'):
+    checkpoint = review_checkpoint_id(manifest)
+    if not checkpoint:
         return True
     events = runtime.event_log.read_all()
-    review_index = next((i for i, row in enumerate(events)
-                         if row.id == manifest['review_request_event_id']), len(events))
-    dispatches = [row for row in events[review_index + 1:] if row.type == 'fanout.synth.dispatched'
-                  and row.payload.get('fanout_id') == manifest['fanout_id']]
-    if (not dispatches and event.origin == 'kernel' and event.actor == 'zf-cli'
-            and event.payload.get('status') == 'failed'
-            and event.payload.get('review_request_event_id') == manifest['review_request_event_id']):
-        return True  # A bound pre-dispatch failure must also close the recovery attempt.
-    return bool(dispatches and all(event.payload.get(key)
-        and event.payload.get(key) == dispatches[-1].payload.get(key)
-        for key in ('operation_id', 'attempt_id', 'request_hash')))
+    review_index = next((i for i, row in enumerate(events) if row.id == checkpoint), None)
+    if review_index is None or any(row.id == event.id for row in events[:review_index + 1]):
+        return False
+    dispatch = next((row.payload for row in reversed(events[review_index + 1:])
+                     if row.type == 'fanout.synth.dispatched'
+                     and row.payload.get('fanout_id') == manifest['fanout_id']), None)
+    return review_result_matches(checkpoint, dispatch, event)

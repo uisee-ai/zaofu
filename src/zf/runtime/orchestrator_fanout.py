@@ -826,7 +826,13 @@ class FanoutCoordinationMixin(
         }
         completed_fanouts: set[str] = set()
         completed_synth_sources: set[tuple[str, str]] = set()
-        for event in events:
+        retry_floor = {}
+        for position, event in enumerate(events):
+            if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
+                    and event.actor == "zf-cli" and event.payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"):
+                fanout = event.payload.get("fanout_id")
+                retry_floor[fanout] = position
+                completed_fanouts.discard(fanout)
             if event.type != "fanout.aggregate.completed":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
@@ -850,7 +856,7 @@ class FanoutCoordinationMixin(
                 continue
             if fanout_id in completed_fanouts:
                 continue
-            if index < latest_dispatch.get(fanout_id, -1):
+            if index < max(latest_dispatch.get(fanout_id, -1), retry_floor.get(fanout_id, -1)):
                 continue
             if (fanout_id, event.id) in completed_synth_sources:
                 continue
@@ -6578,6 +6584,8 @@ class FanoutCoordinationMixin(
                 "role_instance": str(synth.get("role_instance") or ""),
                 "status": "failed",
                 "recommendation": "reject",
+                **{k: synth[k] for k in ("operation_id", "attempt_id", "request_hash")
+                   if manifest.get("critic_handoff_retry_event_id") and synth.get(k)},
                 "reason": "synth_timeout",
                 "failure_class": "reader_execution_failure",
                 "failure_kind": "infra",
