@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实施提交 `d8bf60df feat: dispatch OA-selected stage teams and trace their handoffs`。
 
 # OA 阶段组队和执行工作台
 
@@ -16,3 +17,9 @@
 2. WRC 缺少任务状态或专项选择了不存在的合同字段时，会停在派发前。现已向调度投影提供任务状态；字段缺失绑定原 Task 和摘要交回 OA，其他任务照常推进。[派发回归](../../tests/e2e/test_oa_stage_team_dispatch_mock_e2e.py) · [局部纠正](../../tests/test_oa_verification_teams.py)
 3. 诊断空回执曾让已耗尽重试的 Reader 失去接手人。现可从原案卷进入按需诊断，重启后只执行一次获准的恢复，保留兄弟任务结果。[诊断交接](../../tests/test_diagnosis_timeout_handoff.py)
 4. 仅更新一项任务时，工作台曾漏掉其他代次仍有效的派发或完成回执，新代次也可能误用上次冻结的判词。现按 Task 合同和候选冻结各自核对来源。[工作台](../../tests/test_stage_team_workbench.py) · [任务回执](../../tests/test_sdlc_graph.py)
+
+## 验证结果
+
+- `python scripts/dev-verify.py run --base dev --workers 16 --keep-going` 自动层全部通过。Python 确定性并行 15,118 项通过、19 项跳过，串行 4 项通过；Web 类型与单元检查通过，预合并哨兵 53 项、流程 smoke 10 项通过。
+- Docker Chromium 工作台 24/24 通过，最终 API 上的三个相关路径复验 3/3。覆盖真实只读 API，以及按义务、任务和冻结版本模拟的业务快照。锁定的浏览器镜像、trace 和截图在工作树的 `reports/spec215/browser/validation.md`。
+- Synthesis skill 结构校验和两端分发副本一致性通过。真实 provider 试点与默认配置放行见[资格验证记录](../../docs/impl/spec215-qualification.md)。
