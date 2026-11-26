@@ -403,7 +403,7 @@ class SemanticResultSubmitService:
             return validation
         if delivery_errors:
             return delivery_failure
-        if profile_id in {"implementation", "task-verify", "candidate-verify"} or (
+        if profile_id in {"implementation", "task-verify", "candidate-verify", "thin-judge-goal-closure"} or (
             profile_id == "workflow-read"
             and request.get("canonical_success_event") == "flow.discovery.child.completed"
         ):
@@ -421,6 +421,7 @@ class SemanticResultSubmitService:
                 revision=_revision,
                 delivery=self._current_task_pipeline_delivery(_operation, request),
                 events=self.event_log.read_all(),
+                goal_checker=self.admission._goal_closure_issues if profile_id == "thin-judge-goal-closure" else None,
             )
         if profile_id == "orchestrator-semantic-decision":
             from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission

@@ -55,7 +55,7 @@ def _member_result(state: Path, by_id: dict, member: dict, *, run: str, freeze: 
 
 
 def judge_task_verify_evidence(state: Path, events: list[ZfEvent], *, batch: dict | None,
-                               run: str, generation: str, target: str) -> list[dict]:
+                               run: str, generation: str, target: str, task_ids: set[str] | None = None) -> list[dict]:
     """Return exact addressable results. Unproven legacy or external grants remain absent."""
     if not batch:
         return []
@@ -107,6 +107,8 @@ def judge_task_verify_evidence(state: Path, events: list[ZfEvent], *, batch: dic
     task_events = {e.id: e for e in freeze_history}
     rows = []
     for task, member in sorted(members_by_task.items()):
+        if task_ids is not None and task not in task_ids:
+            continue
         if not commits.get(task) or member.get("target_commit") != commits[task]:
             continue
         try:

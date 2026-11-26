@@ -442,6 +442,7 @@ class CallResultAuthorityMixin:
     def _goal_closure_issues(
         self,
         result: Mapping[str, Any],
+        *, ledger_descriptor: dict | None = None,
     ) -> list[dict[str, str]]:
         from zf.runtime.goal_closure_result import claim_set_issues
         from zf.runtime.sidecar_refs import SidecarRefError
@@ -489,6 +490,12 @@ class CallResultAuthorityMixin:
             candidate_head_commit=target_commit,
         )
         admitted_refs: set[str] = set()
+        candidate_refs: set[str] = set()
+        task_refs: set[str] = set()
+        task_publications = {
+            event.id for event in events if event.type == "task.pipeline.verify.completed"
+        } if current and current.get("has_task_verify_evidence") else set()
+        primary_ids = set(batch["readers"] + batch["discovery"]) if batch else set()
         for event in events:
             if event.type != "workflow.call.result.admitted" or not isinstance(event.payload, dict):
                 continue
@@ -522,6 +529,10 @@ class CallResultAuthorityMixin:
             ref = str(descriptor.get("ref") or "")
             if ref:
                 admitted_refs.add(ref)
+                if event.payload.get("source_event_id") in task_publications:
+                    task_refs.add(ref)
+                if event.id in primary_ids and event.origin == "kernel":
+                    candidate_refs.add(ref)
         latest_claim_pin = None
         for candidate in reversed(events):
             if candidate.type != "goal.claim_set.pinned":
@@ -585,10 +596,19 @@ class CallResultAuthorityMixin:
             from zf.runtime.goal_historical_candidate_evidence import pinned_historical_result_refs
 
             admitted_refs.update(pinned_historical_result_refs(self.state_dir, events, current))
+        claim_admissions = admitted_refs - task_refs
+        auxiliary_refs = None
+        if current and current.get("has_task_verify_evidence"):
+            from zf.runtime.goal_task_verify_citations import readable_task_citations
+
+            cited = {ref for row in (coverage if isinstance(coverage, list) else []) if isinstance(row, Mapping)
+                     for ref in _string_values(row.get("supporting_result_refs"))}
+            auxiliary_refs = readable_task_citations(
+                self.state_dir, events, current, result, cited - claim_admissions, ledger_descriptor=ledger_descriptor,
+            )
         issues.extend(claim_set_issues(
-            result,
-            claim_set,
-            admitted_result_refs=admitted_refs,
+            result, claim_set, auxiliary_refs=auxiliary_refs, candidate_refs=candidate_refs,
+            admitted_result_refs=claim_admissions,
             claim_set_descriptor_digest=claim_digest,
         ))
         for ref in _string_values(result.get("input_result_refs")):

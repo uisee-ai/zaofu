@@ -256,7 +256,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         ))
         issues.extend(currentness_issues)
         if adapted.schema_version == "goal-closure-result.v1":
-            issues.extend(self._goal_closure_issues(adapted.payload))
+            issues.extend(self._goal_closure_issues(adapted.payload, ledger_descriptor=ledger_descriptor))
         if adapted.schema_version == "artifact-delivery-result.v1":
             from zf.runtime.artifact_delivery_result import (
                 artifact_delivery_admission_issues,
