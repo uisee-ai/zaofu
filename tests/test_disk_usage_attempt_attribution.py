@@ -250,3 +250,96 @@ def test_workflow_reader_redrive_binds_native_turn_to_one_physical_attempt(tmp_p
     bound, _ = disk_usage_attempt_binding(runtime, role, new_usage)
     assert bound["attempt_id"] == other.context.attempt_id
     assert bound["lease_id"] == other.context.lease_id
+
+
+def test_registered_migrated_reader_requires_exclusive_fresh_session(tmp_path):
+    import json
+    from datetime import timedelta
+
+    from zf.core.events import ZfEvent
+    from zf.runtime.backend_session_reader import CodexSessionReader, read_role_usage
+    from zf.runtime.disk_usage_attempt_binding import disk_usage_attempt_binding
+
+    runtime, _, state = _runtime(tmp_path, mode="enforce")
+    spec = runtime.config.roles[0]
+    role = replace(spec, backend="codex", role_kind="reader",
+                   lifecycle=replace(spec.lifecycle, mode="on_demand", reader_context_scope="dispatch"))
+    session, turn = str(uuid4()), str(uuid4())
+    dispatch_id = "first-delivery"
+    attempt = prepare_task_attempt(runtime, context=DispatchContext(
+        task_id="T", role_name=role.name, instance_id=role.instance_id, dispatch_id=dispatch_id,
+        run_id="RUN", operation_id="op",
+    ), briefing_path=state / "input.md")
+    assert attempt
+    mark_task_attempt_sent(runtime, attempt, delivery_evidence={"role_instance": role.instance_id})
+    fields = {"task_id": "T", "workflow_run_id": "RUN", "operation_id": "op",
+              "role_instance": role.instance_id, "dispatch_id": dispatch_id,
+              "operation_type": "fanout_reader_child", "request_hash": "H",
+              "active_attempt_id": "signed-input", "provider_session_id": session}
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel", payload=fields))
+    dispatched = runtime.event_writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel", payload={
+        **fields, "attempt_id": attempt.context.attempt_id, "lease_id": attempt.context.lease_id,
+    }))
+    start = datetime.now(timezone.utc)
+    def ts(seconds):
+        return (start + timedelta(seconds=seconds)).isoformat()
+
+    path = tmp_path / "previous-provider-home" / f"rollout-2026-11-26T20-00-00-{session}.jsonl"
+    path.parent.mkdir()
+    registry = runtime._role_lifecycle_registry()
+    assert registry.bind_codex_session(role.instance_id, session, session_path=path)
+    registry.update_instance_meta(role.instance_id, fanout_context_task_id="T",
+                                 fanout_context_trace_id="RUN", fanout_context_dispatch_id=dispatch_id)
+    reader = CodexSessionReader()
+    def sample(*, previous_turn=False, start_offset=1, cached=path):
+        body = [("session_meta", {"id": session, "cwd": str(state)}, -4)]
+        if previous_turn:
+            body.append(("event_msg", {"type": "task_started", "turn_id": str(uuid4())}, -2))
+        body.extend([("event_msg", {"type": "task_started", "turn_id": turn}, start_offset),
+                     ("turn_context", {"turn_id": turn, "cwd": str(state), "model": "test"}, 2),
+                     ("event_msg", {"type": "token_count", "info": {
+                         "last_token_usage": {"input_tokens": 17, "output_tokens": 3}}}, 4)])
+        path.write_text("".join(json.dumps({"type": k, "payload": v, "timestamp": ts(t)})+"\n" for k, v, t in body))
+        resolved = reader.session_path(str(state.parent), session, cached_path=registry.get_path(role.instance_id))
+        usage = read_role_usage(reader, resolved, state=state, role=role, session=session, cached=cached)
+        assert usage.provider_session_id == session and not usage.native_turn_sample and not usage.provider_usage_turn_id
+        return disk_usage_attempt_binding(runtime, role, usage)[0].get("attempt_id")
+
+    def hook(turn_id, cause=dispatched.id, sid=session):
+        runtime.event_writer.append(ZfEvent(type="codex.hook.user_prompt_submit", actor=role.instance_id,
+            origin="kernel", causation_id=cause, ts=ts(2), payload={"session_id": sid, "turn_id": turn_id}))
+
+    assert sample() == attempt.context.attempt_id
+    assert sample(previous_turn=True) is None
+    assert sample(start_offset=-1) is None
+    assert sample(cached=None) is None
+    # An alias cannot supply native identity, even when ordinary accounting can read it.
+    target = path.with_name("restored-record.jsonl")
+    path.rename(target)
+    path.symlink_to(target)
+    assert sample() is None
+    path.unlink()
+    target.rename(path)
+    hook(turn)
+    assert sample() == attempt.context.attempt_id
+    hook(str(uuid4()))
+    assert sample() is None
+    hook(turn, cause="previous-dispatch")
+    assert sample() is None
+    hook(turn, sid=str(uuid4()))
+    assert sample() is None
+    hook(turn)
+    retry = runtime.event_writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel", payload={
+        **dispatched.payload, "retry_of_run_id": "old-physical-delivery",
+    }))
+    hook(turn, cause=retry.id)
+    assert sample() is None
+    dispatched = runtime.event_writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel",
+                                                    payload=dispatched.payload))
+    hook(turn, cause=dispatched.id)
+    assert sample() == attempt.context.attempt_id
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel",
+            payload={**fields, "task_id": "OTHER-TASK", "operation_id": "other-op", "dispatch_id": "other-send"}))
+    assert sample() is None

@@ -64,6 +64,8 @@ class CodexUsageTurn:
         self.session = session
         self.valid_header = False
         self.first_row = True
+        self.start_count = 0
+        self.prior_usage = False
         self.started = 0.0
         self.turn = self.context = self.sample = ""
         self.seen: set[str] = set()
@@ -78,6 +80,7 @@ class CodexUsageTurn:
         elif kind == "event_msg":
             event = p.get("type")
             if event == "task_started":
+                self.start_count += 1
                 turn = p.get("turn_id")
                 self.turn = turn if native_uuid(turn) and turn not in self.seen else ""
                 if self.turn:
@@ -87,12 +90,19 @@ class CodexUsageTurn:
             elif event in {"task_complete", "turn_aborted", "task_aborted"}:
                 self.turn = self.context = ""
             elif event == "token_count" and isinstance(p.get("info"), dict):
+                if not self.start_count:
+                    self.prior_usage = True
                 self.sample = self.turn if (
                     self.valid_header and self.context == self.turn
                     and p.get("turn_id", self.turn) == self.turn
                     and 0 < self.started <= timestamp(row.get("timestamp"))
                 ) else ""
         self.first_row = False
+
+    def first_sample(self) -> tuple[str, float] | None:
+        if self.valid_header and self.start_count == 1 and not self.prior_usage and self.sample and self.turn == self.sample:
+            return self.sample, self.started
+        return None
 
 
 class CodexTurnSample:

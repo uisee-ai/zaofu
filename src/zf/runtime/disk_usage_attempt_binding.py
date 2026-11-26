@@ -50,8 +50,7 @@ def disk_usage_attempt_binding(runtime, role: RoleConfig, usage: UsageReport | N
         for event in events:
             p = event.payload
             if event.type == "codex.hook.user_prompt_submit" and event.actor == role.instance_id:
-                if p.get("session_id") == session:
-                    hook = event
+                hook = event
             elif event.type in {"fanout.child.dispatched", "fanout.synth.dispatched"}:
                 key = (p.get("operation_id"), p.get("dispatch_id") or p.get("run_id"))
                 if key in keys and p.get("role_instance") == role.instance_id:
@@ -61,10 +60,11 @@ def disk_usage_attempt_binding(runtime, role: RoleConfig, usage: UsageReport | N
         op = ops.get(row.get("operation_id"), {})
         dispatch = dispatches.get((row.get("operation_id"), row.get("dispatch_id")))
         if dispatch:
-            owned = (hook is not None and hook.causation_id == dispatch.id and usage.provider_usage_turn_id
-                     and hook.payload.get("turn_id") == usage.provider_usage_turn_id
-                     and 0 < iso_epoch(hook.ts) <= iso_epoch(str(usage.timestamp))
-                     and _fanout_owns_physical_send(events, dispatch, row, op, meta, role.instance_id))
+            owned = (_fanout_owns_physical_send(events, dispatch, row, op, meta, role.instance_id)
+                     and _fanout_owns_usage(
+                         usage, dispatch, hook, row, op, meta, ops, rows,
+                         exclusive_candidate=dispatch_scoped and len(active) == 1,
+                     ))
         elif dispatch_scoped:
             owned = _context_owns_attempt(meta, row)
         else:
@@ -78,6 +78,34 @@ def disk_usage_attempt_binding(runtime, role: RoleConfig, usage: UsageReport | N
     if not sent_at or iso_epoch(str(usage.timestamp)) < sent_at:
         return {}, False
     return task_attempt_identity(row), True
+
+
+def _fanout_owns_usage(usage, dispatch, hook, row, op, meta, ops, rows, *, exclusive_candidate: bool) -> bool:
+    session = usage.provider_session_id
+    if op.get("provider_session_id") not in ("", session):
+        return False
+    if hook is not None and hook.payload.get("session_id") != session and iso_epoch(hook.ts) < iso_epoch(dispatch.ts):
+        hook = None  # An earlier session ended before this physical delivery.
+    if hook is not None:
+        if (hook.causation_id != dispatch.id or hook.payload.get("session_id") != session
+                or not 0 < iso_epoch(hook.ts) <= iso_epoch(str(usage.timestamp))):
+            return False
+        if usage.provider_usage_turn_id:
+            return hook.payload.get("turn_id") == usage.provider_usage_turn_id
+
+    # With no scoped turn/hook pair, only the sole native turn of an
+    # independently registered, exclusive first delivery can be attributed.
+    first = usage.registered_first_turn
+    if (not exclusive_candidate or not first or first[1] < iso_epoch(row.get("sent_at", ""))
+            or (hook is not None and hook.payload.get("turn_id") != first[0])
+            or dispatch.payload.get("retry_of_run_id") or op.get("redrive_count")
+            or not _context_owns_attempt(meta, row) or op.get("provider_session_id") != session):
+        return False
+    if any(other["operation_id"] != op["operation_id"] and other.get("provider_session_id") == session
+           for other in ops.values()):
+        return False
+    return not any(other.get("operation_id") == row["operation_id"] and other["attempt_id"] != row["attempt_id"]
+                   for other in rows)
 
 
 def _fanout_owns_physical_send(events, dispatch, row: dict, op: dict, meta: dict, role: str) -> bool:

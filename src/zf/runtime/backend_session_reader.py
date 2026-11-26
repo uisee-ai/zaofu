@@ -146,6 +146,9 @@ class UsageReport:
     provider_usage_turn_id: str = ""
     """Turn containing the token record in the registered lane-local Codex rollout."""
 
+    registered_first_turn: tuple[str, float] | None = None
+    """First and only native turn and its start time, for exclusive session accounting."""
+
 
 # Claude 4.x large-context models report a 1M context window. The 200k
 # default fallback otherwise mis-flags a healthy worker (e.g. 247k tokens on
@@ -548,6 +551,7 @@ class CodexSessionReader(BackendSessionReader):
         *,
         fallback_window: int | None = None,
         registered_rollout: tuple[Path, str, str] | None = None,
+        registered_session: str = "",
     ) -> UsageReport | None:
         if not session_path.exists():
             return None
@@ -569,6 +573,11 @@ class CodexSessionReader(BackendSessionReader):
                 source = open_rollout(state, session_path)
                 tracker = CodexTurnSample(session)
                 usage_turn = CodexUsageTurn(session)
+            elif registered_session:
+                # A restored cached path may sit outside the current lane. Only
+                # read a pinned regular file for exclusive-session accounting.
+                source = open_rollout(Path(session_path.anchor), session_path)
+                usage_turn = CodexUsageTurn(registered_session)
             else:
                 source = session_path.open("r", encoding="utf-8", errors="replace")
             with source as stream:
@@ -585,6 +594,8 @@ class CodexSessionReader(BackendSessionReader):
                         # An append in progress can leave the last line partial.
                         if tracker:
                             tracker.boundary.valid = False
+                        if usage_turn:
+                            usage_turn.sample = ""
                         continue
                     if not isinstance(obj, dict) or (
                         obj.get("type") in ("session_meta", "turn_context", "event_msg")
@@ -594,9 +605,12 @@ class CodexSessionReader(BackendSessionReader):
                     if tracker:
                         if complete:
                             tracker.consume(obj)
-                            usage_turn.consume(obj)
                         else:
                             tracker.boundary.valid = False
+                    if usage_turn:
+                        if complete:
+                            usage_turn.consume(obj)
+                        else:
                             usage_turn.sample = ""
                     if obj.get("type") == "session_meta":
                         payload = obj.get("payload") or {}
@@ -652,7 +666,8 @@ class CodexSessionReader(BackendSessionReader):
             usage_semantics="cumulative" if cumulative else "incremental",
             series_started_at=series_started_at,
             provider_session_id=session_id,
-            provider_usage_turn_id=usage_turn.sample if usage_turn else "",
+            provider_usage_turn_id=usage_turn.sample if tracker else "",
+            registered_first_turn=usage_turn.first_sample() if usage_turn else None,
             native_turn_sample=tracker.receipt(latest_ts, str(latest_info.get("model") or latest_model)) if tracker else {},
             usage_series_id=(
                 f"codex:{session_id}"
@@ -675,11 +690,19 @@ class CodexSessionReader(BackendSessionReader):
 def read_role_usage(reader: BackendSessionReader, path: Path, *, state: Path, role: RoleConfig,
                     session: str, cached: Path | None) -> UsageReport | None:
     """Keep ordinary accounting; only a registered local session can supply turn evidence."""
-    from zf.runtime.codex_turn_sample import scoped_rollout
+    from zf.runtime.codex_turn_sample import native_uuid, scoped_rollout
 
-    if isinstance(reader, CodexSessionReader) and cached == path and scoped_rollout(state, role.instance_id, session, path):
-        return reader.read_latest_usage(path, fallback_window=role.context_window_tokens,
-                                        registered_rollout=(state, role.instance_id, session))
+    if isinstance(reader, CodexSessionReader) and cached == path:
+        if scoped_rollout(state, role.instance_id, session, path):
+            return reader.read_latest_usage(path, fallback_window=role.context_window_tokens,
+                                            registered_rollout=(state, role.instance_id, session))
+        if (role.role_kind == "reader" and role.lifecycle.reader_context_scope == "dispatch"
+                and path.is_absolute() and ".." not in path.parts and native_uuid(session)
+                and re.fullmatch(rf"rollout-\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}}-{session}\.jsonl", path.name)):
+            registered = reader.read_latest_usage(path, fallback_window=role.context_window_tokens,
+                                                  registered_session=session)
+            if registered is not None:
+                return registered
     return reader.read_latest_usage(path, fallback_window=role.context_window_tokens)
 
 
