@@ -377,3 +377,83 @@ def test_changed_skill_plans_native_compatibility_check(mini_repo, monkeypatch, 
     check = next(s for s in plan.steps if s.id == "skill-harness-compatibility")
     assert check.automatic is available
     assert check.command[-2:] == ("--changed-skill", "demo")
+
+
+def test_run_cli_isolates_assigned_project_and_host_for_every_automatic_step(tmp_path):
+    import hashlib
+    import os
+    import shutil
+    import textwrap
+
+    # Both projects and all endpoints are disposable. No real unit, server, or account is started.
+    checkout, assigned = tmp_path / "qa", tmp_path / "assigned"
+    for repo, state in ((checkout, "qa-state"), (assigned, "live-state")):
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "zf.yaml").write_text(f'version: "1.0"\nproject:\n  name: fixture\n  state_dir: {state}\n')
+        (repo / state).mkdir()
+    live = assigned / "live-state" / "events.jsonl"
+    live.write_bytes(b"disposable-owner-canary\n")
+    before = hashlib.sha256(live.read_bytes()).hexdigest()
+    for sub in ("scripts", "examples", "tests"):
+        (checkout / sub).mkdir()
+    (checkout / "src").symlink_to(ROOT / "src", target_is_directory=True)
+    runner = checkout / "scripts/dev-verify.py"
+    shutil.copy2(SCRIPT, runner)
+    (checkout / "examples/test.yaml").touch()
+    (assigned / "bin").mkdir()
+    env = {**os.environ, "ZF_PROJECT_ROOT": str(assigned), "ZF_STATE_DIR": str(live.parent),
+           "ZF_HOST_SUPERVISOR_UNIT": "zf-disposable.service", "ZF_ROLE_INSTANCE": "worker-fixture",
+           "ZF_CLI_CMD": str(assigned / "bin/zf"), "ZF_WORKFLOW_ACTION_TOKEN": "fixture-only",
+           "ZF_RESULT_SUBMIT_TOKEN_FILE": str(assigned / "fixture-token"), "TMUX_TMPDIR": str(assigned),
+           "TMUX": str(assigned / "socket,1,0"), "TMUX_PANE": "%123",
+           "DBUS_SESSION_BUS_ADDRESS": f"unix:path={assigned}/bus", "XDG_RUNTIME_DIR": str(assigned),
+           "CODEX_HOME": str(assigned / "codex"), "HOME": str(assigned), "PYTHONPATH": str(ROOT / "src"),
+           "PATH": str(assigned / "bin") + os.pathsep + os.environ["PATH"]}
+    resolve = ("from zf.core.config.project_context import resolve_project_context; "
+               "print(resolve_project_context(require_config=True).state_dir)")
+    # Reproduce the old default propagating the assigned destination even from the other checkout.
+    assert subprocess.check_output([sys.executable, "-c", resolve], cwd=checkout, env=env, text=True).strip() == str(live.parent)
+    probe = checkout / "probe.py"
+    probe.write_text(textwrap.dedent(f"""
+        import json, os, subprocess, sys
+        from pathlib import Path
+        from zf.core.events import EventLog, ZfEvent
+        from zf.runtime.tmux import tmux_env
+        root = Path(__file__).resolve().parent
+        assigned = Path({str(assigned)!r})
+        state = Path(subprocess.check_output([sys.executable, "-c", {resolve!r}], cwd=root, text=True).strip())
+        assert state == root / "qa-state"
+        assert not any(key.startswith("ZF_") for key in os.environ if key != "ZF_WORKSPACE_HOME")
+        assert not any(key in os.environ for key in ("TMUX", "TMUX_PANE", "CODEX_HOME"))
+        assert str(assigned / "bin") not in os.get_exec_path()
+        private = Path(tmux_env()["TMUX_TMPDIR"])
+        assert private.is_dir() and private != assigned and private == Path(os.environ["XDG_RUNTIME_DIR"])
+        assert os.environ["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={{private}}/bus"
+        assert not (private / "bus").exists() and Path.home() != assigned
+        tier = sys.argv[1]
+        EventLog(state / "events.jsonl").append(ZfEvent(type="probe.received", actor="fixture", payload={{"tier": tier}}))
+        (root / (tier + ".json")).write_text(json.dumps({{"state": str(state), "socket_dir": str(private)}}))
+    """))
+    (checkout / "tests/test_probe.py").write_text(
+        "import subprocess, sys\ndef test_probe():\n    subprocess.run([sys.executable, 'probe.py', 'pytest'], check=True)\n"
+    )
+    for script, tier in (("dev-premerge-gate.sh", "contract"), ("run-flow-smoke.sh", "mock")):
+        (checkout / "scripts" / script).write_text(f"exec '{sys.executable}' probe.py {tier}\n")
+    args = [sys.executable, str(runner), "run", "--no-parallel", "--json", "--paths", "examples/test.yaml",
+            "--tests", "tests/test_probe.py"]
+    result = subprocess.run(args, cwd=assigned, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    receipt = json.loads(result.stdout)
+    assert [r["id"] for r in receipt["results"]] == ["python-deterministic", "premerge-sentinels", "flow-smoke"]
+    for tier in ("pytest", "contract", "mock"):
+        actual = json.loads((checkout / f"{tier}.json").read_text())
+        assert actual["state"] == str(checkout / "qa-state") and not Path(actual["socket_dir"]).exists()
+    assert hashlib.sha256(live.read_bytes()).hexdigest() == before
+    assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3
+
+    # A checkout with its own explicitly assigned ledger cannot safely serve as the QA cwd.
+    overlap = {**env, "ZF_PROJECT_ROOT": str(checkout), "ZF_STATE_DIR": "qa-state"}
+    refused = subprocess.run(args, cwd=assigned, env=overlap, text=True, capture_output=True)
+    assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3

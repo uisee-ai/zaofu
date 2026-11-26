@@ -14,6 +14,8 @@
 普通交互会话可直接使用项目 Skill 的 Prompt；受控 worker 保留原 Active task、
 required reads 和结果 profile。测试中使用的内部 fixture 不是 worker 可以伪造事实的权限。
 
+使用 `scripts/dev-verify.py run` 做自动验证时，工作目录取自脚本所在的 Git checkout。测试、哨兵、Web 与 mock 子进程使用临时 HOME、tmux 目录和用户服务总线地址。每个测试项目按自己的 `zf.yaml` 确定状态目录。若运行中的项目与验证 checkout 重合，请从独立 checkout 执行。真实宿主或模型验证继续使用显式入口。
+
 ## 其他产品
 
 按 [通用项目方法](../../skills/zf-harness-verification-checklist/references/project-verification.md)
