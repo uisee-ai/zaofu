@@ -666,6 +666,9 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         from zf.runtime.fanout import FanoutChild, FanoutContext
 
         terminal_statuses = {"completed", "failed", "timed_out", "cancelled"}
+        from zf.runtime.reader_initial_delivery import delivery_waits, hold_pending_delivery
+
+        delivery_holds = delivery_waits(events)
         active_children: set[tuple[str, str]] = set()
         for event in events:
             if event.type not in {
@@ -804,6 +807,8 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                     continue
                 child_id = str(raw_child.get("child_id") or "")
                 if not child_id or (fanout_id, child_id) in active_children:
+                    continue
+                if hold_pending_delivery(self, delivery_holds.get((fanout_id, child_id)), events):
                     continue
                 status = str(raw_child.get("status") or "")
                 if status not in {"", "pending", "queued"}:

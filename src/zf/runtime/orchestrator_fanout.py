@@ -497,6 +497,7 @@ class FanoutCoordinationMixin(
         if not revision_child_dispatch_allowed(self, context, child, role):
             return False
         run_id = f"run-{context.fanout_id}-{child.child_id}"
+        prepared_call = None
         try:
             prepared_dispatch = prepared_dispatch or self._prepare_reader_fanout_child_operation(
                 context=context,
@@ -509,7 +510,12 @@ class FanoutCoordinationMixin(
                 return True
             skill_entries = list(prepared_dispatch.get("skill_entries") or [])
             prepared_call = prepared_dispatch.get("prepared_call")
-            if prepared_call is not None and not prepared_call.should_dispatch:
+            from zf.runtime.reader_initial_delivery import prior_reader_delivery
+
+            prior = prior_reader_delivery(self, context, child, role, prepared_call, run_id, causation_id)
+            if prior is not None and prior.context is None:
+                return True
+            if prior is None and prepared_call is not None and not prepared_call.should_dispatch:
                 if prepared_call.ensure_status == "settled":
                     self._replay_settled_fanout_call(
                         context=context,
@@ -519,44 +525,48 @@ class FanoutCoordinationMixin(
                         causation_id=causation_id,
                     )
                 return True
-            if not self._ensure_fanout_role_dispatchable(
-                role=role,
-                fanout_id=context.fanout_id,
-                stage_id=context.stage_id,
-                child_id=child.child_id,
-                run_id=run_id,
-                trace_id=context.trace_id,
-                task_id=str(
-                    (child.payload or {}).get("task_id") or ""
-                ) or None,
-                causation_id=causation_id,
-                prompt_kind="fanout_child",
-            ):
-                return False
-            briefing_path = self._write_fanout_briefing(
-                role=role,
-                context=context,
-                child_id=child.child_id,
-                run_id=run_id,
-                aggregate=aggregate,
-                child_payload=child.payload,
-                skill_entries=skill_entries,
-                effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
-            )
-            prompt = build_task_prompt(
-                role.instance_id,
-                briefing_path,
-                prompt_kind="fanout_child",
-            )
-            dispatch_context = self._send_scoped_transport_task(
-                role,
-                briefing_path,
-                prompt,
-                trace_id=context.trace_id,
-                dispatch_id=run_id,
-                identity_sources=(child.payload, prepared_call),
-            )
-            if prepared_call is not None:
+            if prior is not None:
+                dispatch_context = prior.context
+                briefing_path = dispatch_context.briefing_path
+            else:
+                if not self._ensure_fanout_role_dispatchable(
+                    role=role,
+                    fanout_id=context.fanout_id,
+                    stage_id=context.stage_id,
+                    child_id=child.child_id,
+                    run_id=run_id,
+                    trace_id=context.trace_id,
+                    task_id=str(
+                        (child.payload or {}).get("task_id") or ""
+                    ) or None,
+                    causation_id=causation_id,
+                    prompt_kind="fanout_child",
+                ):
+                    return False
+                briefing_path = self._write_fanout_briefing(
+                    role=role,
+                    context=context,
+                    child_id=child.child_id,
+                    run_id=run_id,
+                    aggregate=aggregate,
+                    child_payload=child.payload,
+                    skill_entries=skill_entries,
+                    effective_operation_id=prepared_call.operation_id if prepared_call is not None else "",
+                )
+                prompt = build_task_prompt(
+                    role.instance_id,
+                    briefing_path,
+                    prompt_kind="fanout_child",
+                )
+                dispatch_context = self._send_scoped_transport_task(
+                    role,
+                    briefing_path,
+                    prompt,
+                    trace_id=context.trace_id,
+                    dispatch_id=run_id,
+                    identity_sources=(child.payload, prepared_call),
+                )
+            if prepared_call is not None and (prior is None or prepared_call.ensure_status != "running"):
                 from zf.runtime.call_result_runtime import mark_call_operation_started
 
                 mark_call_operation_started(
@@ -569,6 +579,9 @@ class FanoutCoordinationMixin(
                 )
             self._note_prompt_sent(role.instance_id, run_id)
             dispatched = context.child_dispatched_event(child, run_id=run_id)
+            if prior is not None:
+                dispatched.payload["transport_receipt_event_id"] = prior.receipt
+                dispatched.payload["task_attempt_id"] = dispatch_context.attempt_id
             bind_child_event_lineage(dispatched, child.payload)
             dispatched.payload["skills"] = list(role.skills)
             dispatched.payload["briefing_path"] = str(briefing_path)
@@ -639,6 +652,12 @@ class FanoutCoordinationMixin(
             ))
             return True
         except Exception as exc:
+            from zf.runtime.task_attempt_runtime import TaskAttemptDeliveryClaimedError
+            if isinstance(exc, TaskAttemptDeliveryClaimedError) and prepared_call is not None:
+                from zf.runtime.reader_initial_delivery import prior_reader_delivery
+
+                if prior_reader_delivery(self, context, child, role, prepared_call, run_id, causation_id):
+                    return True
             reason = str(exc)
             from zf.runtime.provider_dispatch_wait import defer_reader_external_gate
             if defer_reader_external_gate(self, exc, context=context, child=child,
@@ -6198,6 +6217,9 @@ class FanoutCoordinationMixin(
             return
         from zf.runtime.run_admission import build_run_admission_projection
 
+        from zf.runtime.reader_initial_delivery import delivery_waits, diagnose_reader_delivery
+
+        delivery_holds = delivery_waits(events)
         admission = build_run_admission_projection(events)
         resume_epochs: dict[str, float] = {}
         for event in events:
@@ -6387,6 +6409,10 @@ class FanoutCoordinationMixin(
                     and fanout_epoch is not None
                     and self._now() - fanout_epoch >= timeout_seconds
                 ):
+                    held = delivery_holds.get((fanout_id, child_id))
+                    if held is not None:
+                        diagnose_reader_delivery(self, held, events, deadline="stage_timeout")
+                        continue
                     # No dispatch event to retry from → time it out directly so
                     # the aggregate can converge to its failure event.
                     timed_out.append(child)

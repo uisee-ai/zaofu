@@ -82,3 +82,23 @@ dispatch、角色、attempt、request hash 和不可变 source manifest，再调
 普通读取；只有合法恢复投递触发续发，不把全部历史 attempt 一并延期。
 读取账本、输入范围和请求不变；终态、policy 阻塞、已准入结果、篡改来源和身份
 漂移均不续发、不投递。回归见 `tests/test_reader_recovery_capability.py`。
+
+## Reader 首次派发时 watcher 交接
+
+对带 TaskAttempt 的持久化 `fanout_reader`，Kernel 在调用 transport 前写入发送占用，
+transport 返回后才写 `task.attempt.sent`。重启发生在两步之间时，重新派发同一
+子任务可能重复提交已输入的简报。恢复会读取原 Run、operation、Task、角色、
+dispatch、attempt 和 lease。若有来自 Kernel 的发送回执，且原简报 SHA-256 可复核，
+则补记原 `fanout.child.dispatched` 与其 `transport_receipt_event_id`，继续接收原结果。
+发送回执证明 transport 已接受本次输入，业务完成仍由独立的结果事件证明。
+
+只有占用，或回执与简报不能对账时，`fanout.child.dispatch_deferred` 保留原尝试，
+记录 `reader_delivery_unconfirmed`。其他待派发成员照常执行。原 lease 或阶段等待
+时限届满后，已启用的 Run Manager 通过 `fanout.child.delivery_unconfirmed` 和
+`diagnose_attention` 核查原操作的传输、Provider 及尝试凭证。未配置可执行诊断
+的 Agent 时，`human.escalate` 将 `operator_review` 交给 Owner。超时、pane 显示、
+原生会话是否存活都不能单独授权重发。若 transport 明确证明原输入未发送，
+既有流程可释放同一 claim，再按原身份派发一次。
+
+该机制适用于各工作流中有持久 operation 与 TaskAttempt 的 Reader 首次派发。
+已经发出并开始消费的 Reader 后续中断，仍使用本文的读取断点恢复流程。

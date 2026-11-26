@@ -761,6 +761,10 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
         _kernel_child_result("workflow.child.completed", failed=False),
         _kernel_child_result("workflow.child.failed", failed=True),
         _kernel_child_result("fanout.child.completed", failed=False),
+        _abnormal("fanout.child.delivery_unconfirmed", source="reader_dispatch",
+                  title="Reader transport receipt requires reconciliation", problem_class="workflow_progress",
+                  failure_class="reader_transport_confirmation_expired", suggested_action_kind="diagnose_attention",
+                  dedupe_key_fields=("workflow_run_id", "operation_id", "task_attempt_id", "lease_id")),
         _kernel_child_result("fanout.child.failed", failed=True),
         _flow_stage_expected(
             "diagnosis.failed",

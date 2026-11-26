@@ -317,6 +317,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # dynamic workflow stages add custom child result names separately.
     "fanout.child.completed",
     "fanout.child.failed",
+    "fanout.child.delivery_unconfirmed",
     # Layer 1 housekeeping events (G-MEM-2/G-EVT-3): these don't wake
     # Layer 2 (orchestrator.triggers filter drops them) but they DO
     # need to trigger run_once so _apply_housekeeping fires and the

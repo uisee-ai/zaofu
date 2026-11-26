@@ -175,6 +175,15 @@ def _canonical_expired_lease_action(
 
     task_id = str(row.get("task_id") or "")
     owner = str(row.get("instance_id") or row.get("role") or "")
+    if (row.get("failure_class") == "reader_transport_confirmation_expired"
+            or (status == "delivering" and row.get("delivery_claimed_at") and not row.get("sent_at"))):
+        operator = row.get("recovery_owner") == "operator"
+        return _diagnosis_action(
+            task_id, row, failure_class="transport_delivery_unconfirmed",
+            reason="Lease expired before transport receipt reconciliation. Inspect the original attempt before any new input.",
+            intervention_class="human_decision" if operator else "diagnose",
+            action_policy="needs_approval" if operator else "needs_diagnosis", source_ref=_canonical_source_ref(row),
+        )
     if not owner:
         return _diagnosis_action(
             task_id,
