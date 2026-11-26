@@ -13,9 +13,10 @@ def run_replay_sweep(
     events: Iterable[ZfEvent] | None,
 ) -> None:
     event_batch = list(events or [])
-    if not event_batch or any(event.type in {
-        "run.goal.updated", "run.resumed", "runtime.maintenance.exited", "dispatch.resumed",
-    } for event in event_batch):
+    from zf.runtime.pause_lifecycle import RESUME_EVENT_TYPES
+
+    resumed = any(event.type in RESUME_EVENT_TYPES or event.type == "run.resumed" for event in event_batch)
+    if not event_batch or resumed or any(event.type == "run.goal.updated" for event in event_batch):
         from zf.runtime.fanout_aggregate_recovery import reconcile_pending_aggregate_rebuilds
 
         runtime._safe_housekeeping(
@@ -50,7 +51,7 @@ def run_replay_sweep(
     repair_wake = any(event.type in {
         "workflow.call.result.repair.requested", "codex.hook.stop", "claude.hook.stop",
     } for event in event_batch)
-    if event_batch and not provider_turn_closed and not repair_wake:
+    if event_batch and not (provider_turn_closed or repair_wake or resumed):
         return
     if not event_batch:
         runtime._safe_housekeeping(
@@ -64,7 +65,7 @@ def run_replay_sweep(
     runtime._safe_housekeeping(
         "reader_fanout_result_replay",
         lambda: _recover_reader_results_and_goal(
-            runtime, replay_readers=not event_batch or provider_turn_closed,
+            runtime, replay_readers=not event_batch or provider_turn_closed or resumed,
         ),
     )
 

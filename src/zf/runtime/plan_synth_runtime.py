@@ -449,8 +449,13 @@ class PlanSynthRuntimeMixin:
         mode: str,
         synth_role: str,
     ) -> None:
+        from zf.runtime.pause_lifecycle import is_run_dispatch_paused
         from zf.runtime.pre_impl_revision_settlement import revision_can_continue
 
+        trigger = manifest.get("trigger_payload") or {}
+        run = str(manifest.get("workflow_run_id") or trigger.get("workflow_run_id") or manifest.get("trace_id") or "")
+        if is_run_dispatch_paused(self.event_log.read_all(), run):
+            return  # Completed children remain replayable without registering a successor.
         if not revision_can_continue(self, manifest):
             return
         from zf.runtime.plan_critic_reassessment import review_checkpoint_id
