@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shlex
 
 from zf.core.security.redaction import redact_obj
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
@@ -9,6 +10,14 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
 IDENTITY = ('workflow_run_id', 'task_id', 'operation_id')
+MAX_HANDOFF_PAGE_CHARS = 8192
+
+
+def handoff_evidence_command(operation_id: str) -> str:
+    from zf.runtime.cli_command import zf_cli_cmd
+
+    return (f"{zf_cli_cmd()} artifact handoff-evidence --operation {shlex.quote(operation_id)} "
+            f"--page-size {MAX_HANDOFF_PAGE_CHARS}")
 
 
 def capture_execution_evidence(state_dir: Path, source: dict, events: list) -> dict:

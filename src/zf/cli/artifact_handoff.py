@@ -20,6 +20,7 @@ def register(subparsers):
     evidence.add_argument("--source-operation", default="")
     evidence.add_argument("--event", default="")
     evidence.add_argument("--page-start", type=int, default=0)
+    evidence.add_argument("--page-size", type=int, default=1024, help="Maximum characters per page, 1..8192")
     evidence.add_argument("--digest", default="")
     evidence.add_argument("--state-dir", default=None)
     evidence.set_defaults(func=run_evidence)
@@ -29,7 +30,7 @@ def run_evidence(args):
     from zf.core.events import EventWriter
     from zf.runtime.result_submit import SemanticResultSubmitService
     from zf.runtime.work_record import authorize_work_record
-    from zf.runtime.task_execution_evidence import read_execution_evidence
+    from zf.runtime.task_execution_evidence import MAX_HANDOFF_PAGE_CHARS, read_execution_evidence
 
     try:
         context = resolve_project_context(explicit_state_dir=args.state_dir)
@@ -43,7 +44,9 @@ def run_evidence(args):
             raise ValueError('evidence continuation requires the same digest')
         if not 0 <= args.page_start < len(content):
             raise ValueError('invalid evidence page offset')
-        end = min(len(content), args.page_start + 1024)
+        if not 1 <= args.page_size <= MAX_HANDOFF_PAGE_CHARS:
+            raise ValueError(f'evidence page size must be 1..{MAX_HANDOFF_PAGE_CHARS} characters')
+        end = min(len(content), args.page_start + args.page_size)
         result = {'content': content[args.page_start:end], 'sha256': ref['sha256'], 'ref': ref,
             'page_start': args.page_start, 'page_end': end, 'page_total': len(content),
             'next_page_start': end if end < len(content) else None, 'authorizes_execution': False}

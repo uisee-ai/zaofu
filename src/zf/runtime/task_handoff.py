@@ -138,12 +138,11 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
             raise ValueError("handoff workspace cannot be inspected")
         observed[field] = bool(result.stdout) if field == "dirty" else result.stdout.strip()
     from zf.core.security.redaction import redact_obj
-    from zf.runtime.task_execution_evidence import capture_execution_evidence, previous_handoff
-    from zf.runtime.cli_command import zf_cli_cmd
+    from zf.runtime.task_execution_evidence import capture_execution_evidence, handoff_evidence_command, previous_handoff
 
     evidence_ref = capture_execution_evidence(runtime.state_dir, source, events)
     evidence = hydrate_sidecar_ref(runtime.state_dir, evidence_ref).payload
-    evidence_read = zf_cli_cmd() + " artifact handoff-evidence --operation " + shlex.quote(target["operation_id"])
+    evidence_read = handoff_evidence_command(target["operation_id"])
     return redact_obj({
         "schema_version": SCHEMA, "target": target,
         "source": {key: source.get(key, "") for key in ("operation_id", "active_attempt_id", "dispatch_id", "status", "role_instance", "task_pipeline_stage", "reason", "semantic_verdict")},
@@ -171,7 +170,7 @@ def _body(runtime, payload, contract, target, source, events) -> dict[str, Any]:
                        "directly with --event; otherwise search the index for the required observation. "
                        "Use previous_operation and --source-operation to follow pinned earlier attempts before "
                        "concluding historical evidence is missing; a publication reassessment may contain only GREEN. "
-                       "Read every page of the selected observation using next_page_start and the returned digest. "
+                       "Read every page of the selected observation using next_page_start and --digest from its sha256. If output is truncated, reread the same offset with a smaller --page-size. "
                        "Use the indexed command event_id, never a receipt source_event_id. "
                        "Observations are not acceptance verdicts.",
         "references": references, "authorizes_execution": False, "business_completed": False,

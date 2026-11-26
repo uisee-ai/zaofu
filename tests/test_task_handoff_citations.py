@@ -47,6 +47,7 @@ def test_cited_original_observation_is_explicit_and_directly_readable_across_ret
     assert row['cited_by'][0]['admission_event_id'] == 'admission-old'
     args = shlex.split(row['read_command'])
     assert args[args.index('--operation') + 1] == 'current'
+    assert args[args.index('--page-size') + 1] == '8192'
     manifest = {'sources': [{**write(state, current), 'source_id': 'task-handoff'}]}
     ref, fact = read_execution_evidence(state, manifest, current['target'],
         args[args.index('--source-operation') + 1], args[args.index('--event') + 1])
