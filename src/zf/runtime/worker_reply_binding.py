@@ -23,12 +23,14 @@ def reply_operation_fields(payload: dict) -> dict:
     return {key: payload[key] for key in ("operation_id", *_OPERATION_BINDINGS) if key in payload}
 
 
-def resolve_reply_operation(runtime: Any, instance_id: str, payload: dict, *, exact: bool = False) -> dict:
+def resolve_reply_operation(runtime: Any, instance_id: str, payload: dict, *, exact: bool = False, operations=None) -> dict:
     """Unbound resident messages remain valid; explicit targets never fall back."""
     operation_id = str(payload.get("operation_id") or "").strip()
     if not operation_id:
         return {}
-    operation = reduce_workflow_operations(runtime.event_log.read_all()).get(operation_id)
+    if operations is None:
+        operations = reduce_workflow_operations(runtime.event_log.read_all())
+    operation = operations.get(operation_id)
     if operation is None:
         raise ValueError("reply target operation not found")
     if operation.get("status") != "running":
@@ -76,7 +78,7 @@ def admit_worker_reply(runtime: Any, request: ZfEvent, instance_id: str, payload
 
 def notification_authority(runtime, request_id, instance_id, payload, events):
     from zf.runtime.call_result_envelope import canonical_json_sha256
-    from zf.runtime.workflow_board import ACTOR as board_actor, _config
+    from zf.runtime.workflow_board import ACTOR as board_actor, current_board_identity, _binding
     from zf.runtime.workflow_schedule import ACTOR as scheduler_actor, definitions
 
     original = next((e for e in events if e.id == request_id and e.type == "worker.reply.requested"
@@ -90,8 +92,9 @@ def notification_authority(runtime, request_id, instance_id, payload, events):
     cause = next((e for e in events if e.id == original.causation_id and e.origin == "kernel"
                   and e.actor == original.actor), None)
     if original.actor == board_actor:
-        board = _config(runtime.config, op["workflow_run_id"])
-        if (not cause or cause.type != "workflow.board.posted" or instance_id not in board["members"]
+        op, board = current_board_identity(runtime, {**payload, "actor": instance_id}, events=events)
+        if (not cause or cause.type != "workflow.board.posted"
+                or cause.payload.get("audience", {}).get(instance_id) != _binding(op)
                 or board["generation"] != payload.get("generation")
                 or cause.payload["message_key"] != payload.get("message_key")):
             raise ValueError("notification audience changed")

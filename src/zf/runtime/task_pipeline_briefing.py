@@ -282,6 +282,10 @@ def write_task_pipeline_briefing(
                         for entry in assignment["specialists"]], ""])
     if controlled_inputs:
         lines.extend([controlled_inputs, ""])
+    from zf.runtime.mailbox_briefing import run_board_hint
+    board = run_board_hint(getattr(runtime, "config", None), state_dir, payload)
+    if board:
+        lines.extend([board, ""])
     if payload.get("candidate_repair_feedback_ref"):
         lines.extend(["## Candidate repair evidence",
             "Read the required candidate-repair-feedback source. "

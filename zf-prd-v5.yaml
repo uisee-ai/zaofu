@@ -29,6 +29,8 @@ spec:
   deliveryPolicy: ship_candidate
   artifactPackageMode: blocking
   milestoneHandoff: true
+  # Opt in before Proposal approval to let admitted Run members notify one another.
+  # runBoard: {enabled: true, silenceSeconds: 300}
   # The deployment may map individual worker instances to dedicated host
   # cgroups here once file delivery is qualified. Other workers use the CLI.
   artifactWorkerCgroups: {}

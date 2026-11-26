@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from shlex import quote
 
 from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
@@ -14,6 +14,7 @@ from zf.runtime.call_result_envelope import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.worker_reply_binding import resolve_reply_operation
+from zf.runtime.workflow_board_authority import board_for_run, board_policy_enabled, legacy_boards, permits
 
 ACTOR = "workflow-board"
 
@@ -30,26 +31,16 @@ def _binding(op: dict) -> dict:
     }
 
 
-def _config(config: Any, run: str) -> dict:
-    boards = (
-        getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {}
-    ).get("run_boards", {})
-    board = boards.get(run, {}) if isinstance(boards, dict) else {}
-    if (
-        board.get("enabled") is not True
-        or not isinstance(board.get("members"), list)
-        or not board.get("generation")
-    ):
-        raise ValueError("this run has no enabled board with a bound audience")
-    return board
-
-
-def current_board_identity(runtime, identity: dict) -> tuple[dict, dict]:
-    op = resolve_reply_operation(runtime, identity["actor"], identity)
+def current_board_identity(runtime, identity: dict, *, events=None, operations=None) -> tuple[dict, dict]:
+    if events is None:
+        events = runtime.event_log.read_all()
+    if operations is None:
+        operations = reduce_workflow_operations([e for e in events if e.origin == "kernel"])
+    op = resolve_reply_operation(runtime, identity["actor"], identity, operations=operations)
     if not op or op.get("active_attempt_id") != identity["attempt_id"]:
         raise ValueError("board requires a current bound operation")
-    board = _config(runtime.config, op["workflow_run_id"])
-    if identity["actor"] not in board["members"]:
+    board = board_for_run(runtime.state_dir, runtime.config, events, operations, op["workflow_run_id"])
+    if not permits(board, op):
         raise ValueError("worker outside the authorized board audience")
     return op, board
 
@@ -70,8 +61,10 @@ def post(
         [run, op["operation_id"], identity["actor"], message_id]
     )
     with locked_path(runtime.state_dir / "locks" / "run-board" / key):
-        op, board = current_board_identity(runtime, identity)
+        offset = runtime.event_log.current_offset()
         events = runtime.event_log.read_all()
+        operations = reduce_workflow_operations([e for e in events if e.origin == "kernel"])
+        op, board = current_board_identity(runtime, identity, events=events, operations=operations)
         digest = canonical_json_sha256([text, sorted(set(recipients))])
         prior = next(
             (
@@ -85,7 +78,7 @@ def post(
             None,
         )
         if prior:
-            if prior.payload["request_digest"] != digest or prior.payload[
+            if prior.payload["generation"] != board["generation"] or prior.payload["request_digest"] != digest or prior.payload[
                 "sender"
             ] != _binding(op):
                 raise ValueError(
@@ -106,7 +99,6 @@ def post(
                 targets.add(target)
         if not targets or not targets <= members:
             raise ValueError("recipient outside this run board")
-        operations = reduce_workflow_operations(events)
         audience = {}
         for who in sorted(targets):
             rows = [
@@ -116,6 +108,7 @@ def post(
                 and r.get("role_instance") == who
                 and r.get("workflow_run_id") == run
                 and not r.get("admitted_call_result_ref")
+                and permits(board, r)
             ]
             audience[who] = _binding(rows[0]) if len(rows) == 1 else None
         ref = write_immutable_json_sidecar(
@@ -137,6 +130,8 @@ def post(
             "viewers": sorted(members),
             "body_ref": ref,
         }
+        if "authorized_operations" in board:
+            payload["viewer_operations"] = sorted(board["authorized_operations"])
         return runtime.event_writer.append(
             ZfEvent(
                 type="workflow.board.posted",
@@ -146,7 +141,7 @@ def post(
                 correlation_id=run,
                 causation_id=op.get("last_event_id"),
                 payload=payload,
-            )
+            ), expected_offset=offset, allow_intervening=frozenset({"agent.text", "worker.heartbeat"})
         ).payload
 
 
@@ -163,6 +158,7 @@ def inbox(runtime, identity: dict, *, acknowledge: str = "", seen: str = "") -> 
             or p["workflow_run_id"] != own["workflow_run_id"]
             or p["generation"] != board["generation"]
             or identity["actor"] not in p["viewers"]
+            or ("viewer_operations" in p and own["operation_id"] not in p["viewer_operations"])
         ):
             continue
         key = canonical_json_sha256([p["message_key"], own, board["generation"]])
@@ -172,8 +168,10 @@ def inbox(runtime, identity: dict, *, acknowledge: str = "", seen: str = "") -> 
         ):
             continue
         with locked_path(runtime.state_dir / "locks" / "run-board" / key):
-            current_board_identity(runtime, identity)
             history = runtime.event_log.read_all()
+            _, current = current_board_identity(runtime, identity, events=history)
+            if current["generation"] != p["generation"]:
+                continue
             viewed = any(
                 x.type == "workflow.board.seen"
                 and x.actor == ACTOR
@@ -234,12 +232,12 @@ def inbox(runtime, identity: dict, *, acknowledge: str = "", seen: str = "") -> 
 
 
 def deliver_mentions(runtime):
-    metadata = (
-        getattr(getattr(runtime.config, "workflow", None), "flow_metadata", {}) or {}
-    )
-    if not metadata.get("run_boards"):
+    if not legacy_boards(runtime.config) and not board_policy_enabled(runtime.config):
         return
-    for e in runtime.event_log.read_all():
+    history = runtime.event_log.read_all()
+    settled = {e.payload.get("notification_key") for e in history if e.origin == "kernel" and e.actor == ACTOR
+               and e.type in {"worker.reply.requested", "workflow.board.expired"}}
+    for e in history:
         if (
             e.origin != "kernel"
             or e.actor != ACTOR
@@ -251,6 +249,8 @@ def deliver_mentions(runtime):
             key = canonical_json_sha256(
                 [p["message_key"], binding, actor, p["generation"]]
             )
+            if key in settled:
+                continue
             with locked_path(Path(runtime.state_dir) / "locks" / "run-board" / key):
                 if any(
                     x.origin == "kernel"
@@ -261,14 +261,11 @@ def deliver_mentions(runtime):
                 ):
                     continue
                 try:
-                    board = _config(runtime.config, p["workflow_run_id"])
-                    if (
-                        not binding
-                        or actor not in board["members"]
-                        or board["generation"] != p["generation"]
-                    ):
+                    if not binding:
+                        raise ValueError("unbound recipient")
+                    op, board = current_board_identity(runtime, {**binding, "actor": actor})
+                    if board["generation"] != p["generation"]:
                         raise ValueError("audience or generation expired")
-                    op = resolve_reply_operation(runtime, actor, binding)
                     if _binding(op) != binding:
                         raise ValueError("recipient changed")
                 except ValueError as exc:
@@ -278,8 +275,8 @@ def deliver_mentions(runtime):
                         "worker.reply.requested",
                         {
                             **binding,
-                            "message": f"Read the Run board with zf artifact board --attempt {binding['attempt_id']}. "
-                            "The notice carries no change to the current task contract.",
+                            "message": f"Read the Run board with zf artifact board --attempt {quote(binding['attempt_id'])} "
+                            f"--state-dir {quote(str(runtime.state_dir.resolve()))}. The notice carries no change to the current task contract.",
                         },
                     )
                 runtime.event_writer.append(

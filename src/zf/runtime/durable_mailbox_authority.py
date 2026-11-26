@@ -252,8 +252,8 @@ def guarded(runtime, identity, *, mutation=True):
             admission_offset.reset(token)
 
 
-def roster(runtime, events, ops, run):
-    """Borrow the 215 membership/operation join, using only immutable approved inputs."""
+def approved_stage_graph(state, events, run):
+    """Load the immutable graph for the currently approved proposal for this Run."""
     kernel = [e for e in events if e.origin == "kernel"]
     request_ids = {run}
     for e in kernel:
@@ -277,7 +277,7 @@ def roster(runtime, events, ops, run):
         and e.payload.get("request_id") in request_ids
     ]
     if not changes or changes[-1].type != "workflow.request.approved":
-        return []
+        return None
     approved = changes[-1]
     proposed = next(
         (
@@ -289,24 +289,39 @@ def roster(runtime, events, ops, run):
         None,
     )
     if not proposed:
-        return []
+        return None
     desc = proposed.payload
-    proposal = load_workflow_proposal(runtime.state_dir, desc["proposal_ref"])
+    proposal = load_workflow_proposal(state, desc["proposal_ref"])
     if (
         proposal["proposal_digest"] != desc["proposal_digest"]
         or proposal["request_id"] != desc["request_id"]
         or proposal["request_revision"] != desc["revision"]
     ):
         raise ValueError("mailbox stage proposal authority changed")
-    graph = hydrate_sidecar_ref(runtime.state_dir, proposal["effective_config_ref"]).payload["compiled_graph"]
+    graph = hydrate_sidecar_ref(state, proposal["effective_config_ref"]).payload["compiled_graph"]
     scope = {
         "run_id": run,
         "revision": desc["revision"],
         "request_id": desc["request_id"],
         "proposal_digest": desc["proposal_digest"],
+        "effective_config_digest": proposal["effective_config_ref"]["sha256"],
     }
+    return graph, scope, approved
+
+
+def roster(runtime, events, ops, run):
+    """Borrow the 215 membership/operation join, using only immutable approved inputs."""
+    approved = approved_stage_graph(runtime.state_dir, events, run)
+    if not approved:
+        return []
+    return approved_stage_roster(runtime.state_dir, events, ops, run, approved)
+
+
+def approved_stage_roster(state, events, ops, run, approval):
+    graph, scope, approved = approval
+    kernel = [e for e in events if e.origin == "kernel"]
     source = {"compiled": graph, "scope": scope, "events": list(enumerate(kernel, 1))}
-    source["stage_team_inputs"], _ = read_stage_team_inputs(runtime.state_dir, source)
+    source["stage_team_inputs"], _ = read_stage_team_inputs(state, source)
     nodes = {
         n["stage_id"]: {
             "id": "workflow:stage:" + n["stage_id"],
@@ -332,7 +347,7 @@ def roster(runtime, events, ops, run):
                 continue
             for task in m.get("task_ids") or [""]:
                 address = member_address(
-                    m, task, proposal_digest=desc["proposal_digest"], freeze_id=team.get("freeze_id", "")
+                    m, task, proposal_digest=scope["proposal_digest"], freeze_id=team.get("freeze_id", "")
                 )
                 key = tuple(address.items())
                 active = [

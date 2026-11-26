@@ -45,6 +45,19 @@ Candidate 分工覆盖所有已声明的 AC。跨任务检查拥有独立的检�
 
 Web 从 Task 打开成员时，按当前 Run、代次和事件游标获取详情。Web 与 CLI 都支持按成员实例或任务筛选 Board 元数据，历史视图保留当时的来源事件、等待与接手事实。[读模型](../../tests/test_stage_team_workbench.py) · [浏览器验收](../../web/tests/workflow-team-live.spec.ts)
 
+### 按需启用 Run Board
+
+在准备 Proposal 前，可在项目配置的 `PrdFlow` 文档中添加以下字段。通用 `zf-prd-v5.yaml` 默认关闭。Workflow Synthesis 选用注册的 v5 模板时，项目显式设置的开关和静默时长会一并写入 Proposal 的有效配置与阶段图。新 Run 使用获批的阶段分工和实际派发的 operation 确定成员及其当前 attempt，部署时无须填写 Run ID 或手工维护实例名单。[注册控制器准备回归](../../tests/test_workflow_registered_controller.py)
+
+```yaml
+spec:
+  runBoard: {enabled: true, silenceSeconds: 300}
+```
+
+成员从各自的 briefing 取得带 `--attempt` 和 `--state-dir` 的命令，加 `--roster` 可以查看当前成员和阶段组。例如，Plan 的 `product-scan` 发现需求与实现约束冲突，可将 `--roster` 换为 `--post scan-conflict --recipient tech-scan --text "请核对 PRD 的并发约束"`，点名当前技术调查席。收件人沿自己的 operation 取阅。使用同一消息 ID、收件人和正文重发时只提醒一次。需要成员正式提交意见或独立验收的阶段，继续按该义务接收交付。
+
+当已加入的团队仍有未完成工作，且超过配置时间没有进展时，Supervisor 结合当前租约与已登记等待判断是否送 Run Manager 诊断。启用 Run Board 不会增加 OA 的派工权限。[新 Run 派发与静默回归](../../tests/e2e/test_prd_run_board_mock_e2e.py)
+
 ### 成员会话的查看权限
 
 对需要开放会话的项目，在 `zf.yaml` 设置 `observability.workflow_session_excerpts: true`。Stream JSON transport 在本次调用结束时可发布经过脱敏的最终答复。工作台展开成员后按需检查权限；每次读取都重新核对项目、Run、当前快照、义务、实际实例、operation、attempt 和 provider turn。只读部署、历史快照、已换绑的实例，或缺少可验证发布凭证时均不开放正文。Codex/tmux 的角色级会话路径和 pane 历史不能证明消息归属，不作为查看凭证。[读取入口](../../src/zf/web/workflow_session_routes.py) · [绑定校验](../../src/zf/runtime/workflow_session_excerpt.py)
