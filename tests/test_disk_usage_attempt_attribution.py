@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
 from tests.test_scheduler_task_attempt import _runtime
 from zf.core.state.task_attempts import TaskAttemptStore
 from zf.runtime.backend_session_reader import UsageReport
@@ -132,6 +134,12 @@ def test_shared_task_stage_session_is_bound_to_its_current_placement(tmp_path):
         runtime._synthesize_agent_usage(role, report)
         return runtime.event_log.query(type="agent.usage")[-1]
 
+    # A reader lane can serve a task pipeline after an unrelated fanout.
+    role = replace(role, role_kind="reader")
+    runtime.event_writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel", payload={
+        "role_instance":role.instance_id, "operation_id":"historical-reader", "dispatch_id":"old-send",
+        "run_id":"old-send", "workflow_run_id":"old-run", "retry_of_run_id":"old-logical-input",
+    }))
     assert sample().payload.get("attempt_id") == attempt.context.attempt_id
     registry.bind_task_stage_session(
         workflow_run_id="RUN-1", task_id="TASK-1", stage="impl", rework_affinity_id="v1",
@@ -139,3 +147,106 @@ def test_shared_task_stage_session_is_bound_to_its_current_placement(tmp_path):
         backend="codex",
     )
     assert sample().payload.get("usage_binding_status") == "unattributed"
+
+
+@pytest.mark.parametrize(("scope", "fresh_synth"), [("workflow", False), ("dispatch", False), ("dispatch", True)])
+def test_workflow_reader_redrive_binds_native_turn_to_one_physical_attempt(tmp_path, scope, fresh_synth):
+    from zf.core.events import ZfEvent
+    from zf.runtime.backend_session_reader import CodexSessionReader, read_role_usage
+    from zf.runtime.disk_usage_attempt_binding import disk_usage_attempt_binding
+    from datetime import timedelta
+    import json
+
+    runtime, _, state = _runtime(tmp_path, mode="enforce")
+    role = replace(runtime.config.roles[0], backend="codex", role_kind="reader",
+                   lifecycle=replace(runtime.config.roles[0].lifecycle, mode="on_demand", reader_context_scope=scope))
+    session, old, new = (str(uuid4()) for _ in range(3))
+    physical = "retry-delivery"
+    op = "op-reader"
+    attempt = prepare_task_attempt(runtime, context=DispatchContext(
+        task_id="T", role_name=role.name, instance_id=role.instance_id,
+        dispatch_id=physical, run_id="RUN", operation_id=op,
+    ), briefing_path=state / "reader.md")
+    assert attempt
+    mark_task_attempt_sent(runtime, attempt, delivery_evidence={"role_instance":role.instance_id})
+    identity = {"task_id": "T", "workflow_run_id": "RUN", "operation_id": op,
+                "role_instance": role.instance_id, "dispatch_id": physical,
+                "attempt_id": attempt.context.attempt_id, "lease_id": attempt.context.lease_id}
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel", payload={
+            **identity, "operation_type":"fanout_reader_child", "request_hash":"pinned",
+            "active_attempt_id":"logical-input-contract",
+        }))
+    if fresh_synth:
+        carrier = {"run_id":physical, "workflow_run_id":"RUN", "role_instance":role.instance_id,
+                   "operation_id":op, "attempt_id":"logical-input-contract"}
+    else:
+        carrier = {**identity, "retry_of_run_id":"logical-input-contract"}
+    dispatch = runtime.event_writer.append(ZfEvent(
+        type="fanout.synth.dispatched" if fresh_synth else "fanout.child.dispatched",
+        origin="kernel", payload=carrier))
+    start = datetime.now(timezone.utc)
+    def ts(offset):
+        return (start + timedelta(seconds=offset)).isoformat()
+    runtime.event_writer.append(ZfEvent(type="codex.hook.user_prompt_submit", actor=role.instance_id,
+        origin="kernel", causation_id=dispatch.id, ts=ts(2), payload={"session_id":session,"turn_id":new}))
+    registry = runtime._role_lifecycle_registry()
+    rollout = state / "workdirs" / role.instance_id / "codex-home/sessions/2026/11/26" / (
+        f"rollout-2026-11-26T20-00-00-{session}.jsonl")
+    rollout.parent.mkdir(parents=True)
+    registry.bind_codex_session(role.instance_id, session, session_path=rollout)
+    registry.update_instance_meta(role.instance_id, fanout_context_task_id="" if fresh_synth else "T",
+                                 fanout_context_trace_id="RUN", fanout_context_dispatch_id=physical)
+
+    def usage(turn, *, context=None, extra=()):
+        rows = [("session_meta", {"id":session,"cwd":str(state)}, -100),
+                ("event_msg", {"type":"task_started","turn_id":old}, -90),
+                # Graceful process stop left the original native turn open.
+                ("event_msg", {"type":"task_started","turn_id":turn}, 1),
+                ("turn_context", {"turn_id":context or turn,"model":"test","cwd":str(state)}, 2),
+                *extra,
+                ("event_msg", {"type":"token_count","info":{"last_token_usage":{
+                    "input_tokens":40,"output_tokens":5}}}, 4)]
+        rollout.write_text("".join(json.dumps({"type":typ,"payload":body,"timestamp":ts(t)})+"\n" for typ,body,t in rows))
+        return read_role_usage(CodexSessionReader(), rollout, state=state, role=role, session=session, cached=rollout)
+
+    accepted = usage(new)
+    assert disk_usage_attempt_binding(runtime, role, accepted)[0].get("attempt_id") == attempt.context.attempt_id
+    assert runtime._synthesize_agent_usage(role, accepted)
+    heartbeats = runtime.event_log.query(type="task.attempt.heartbeat")
+    assert any(e.payload.get("attempt_id")==attempt.context.attempt_id for e in heartbeats)
+    assert disk_usage_attempt_binding(runtime, role, usage(old))[0] == {}
+    assert disk_usage_attempt_binding(runtime, role, usage(new, context=old))[0] == {}
+    assert disk_usage_attempt_binding(runtime, role, usage(new, extra=[
+        ("event_msg", {"type":"turn_aborted","turn_id":new},3)]))[0] == {}
+    registry.update_instance_meta(role.instance_id, fanout_context_task_id="ANOTHER-TASK")
+    assert disk_usage_attempt_binding(runtime, role, accepted)[0] == {}
+
+    other = prepare_task_attempt(runtime, context=DispatchContext(
+        task_id="ANOTHER-TASK", role_name=role.name, instance_id=role.instance_id,
+        dispatch_id="other-retry", run_id="RUN", operation_id="another-op",
+    ), briefing_path=state / "other.md")
+    assert other
+    mark_task_attempt_sent(runtime, other, delivery_evidence={"role_instance":role.instance_id})
+    registry.update_instance_meta(role.instance_id, fanout_context_dispatch_id="other-retry")
+    other_id = {**identity, "task_id":"ANOTHER-TASK", "dispatch_id":"other-retry",
+                "operation_id":"another-op", "attempt_id":other.context.attempt_id,
+                "lease_id":other.context.lease_id}
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel",
+            payload={**other_id, "operation_type":"fanout_reader_child", "request_hash":"other",
+                     "active_attempt_id":"other-logical-input"}))
+    other_dispatch = runtime.event_writer.append(ZfEvent(type="fanout.child.dispatched", origin="kernel",
+        payload={**other_id, "retry_of_run_id":"other-logical-input"}))
+    next_turn = str(uuid4())
+    prompt = {"session_id":session, "turn_id":next_turn}
+    new_usage = usage(next_turn)
+    runtime.event_writer.append(ZfEvent(type="codex.hook.user_prompt_submit", actor=role.instance_id,
+        origin="worker", causation_id=other_dispatch.id, ts=ts(2), payload=prompt))
+    assert disk_usage_attempt_binding(runtime, role, new_usage)[0] == {}
+    runtime.event_writer.append(ZfEvent(type="codex.hook.user_prompt_submit", actor=role.instance_id,
+        origin="kernel", causation_id=other_dispatch.id, ts=ts(2), payload=prompt))
+    assert disk_usage_attempt_binding(runtime, role, accepted)[0] == {}
+    bound, _ = disk_usage_attempt_binding(runtime, role, new_usage)
+    assert bound["attempt_id"] == other.context.attempt_id
+    assert bound["lease_id"] == other.context.lease_id

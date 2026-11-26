@@ -40,16 +40,37 @@ def disk_usage_attempt_binding(runtime, role: RoleConfig, usage: UsageReport | N
     if str(registry.get(role.instance_id) or "") != session:
         return {}, False
     meta = registry.instance_meta().get(role.instance_id, {})
-    if dispatch_scoped:
-        matches = [row for row in sent if row.get("dispatch_id") == meta.get("fanout_context_dispatch_id")
-                   and row.get("run_id") == meta.get("fanout_context_trace_id")
-                   and row.get("task_id") == meta.get("fanout_context_task_id")]
-    else:
-        stage = registry.task_stage_bindings().get(meta.get("active_task_stage_binding_key"), {})
-        ops = reduce_workflow_operations([e for e in runtime.event_log.read_all() if e.origin == "kernel"])
-        matches = [row for row in sent if _session_owns_operation(
-            session, role.instance_id, row, ops.get(row.get("operation_id"), {}), stage,
-        )]
+    events = [e for e in runtime.event_log.read_all() if e.origin == "kernel"]
+    ops = reduce_workflow_operations(events)
+    stage = registry.task_stage_bindings().get(meta.get("active_task_stage_binding_key"), {})
+    keys = {(row.get("operation_id"), row.get("dispatch_id")) for row in sent}
+    dispatches = {}
+    hook = None
+    if role.backend == "codex" and role.role_kind == "reader":
+        for event in events:
+            p = event.payload
+            if event.type == "codex.hook.user_prompt_submit" and event.actor == role.instance_id:
+                if p.get("session_id") == session:
+                    hook = event
+            elif event.type in {"fanout.child.dispatched", "fanout.synth.dispatched"}:
+                key = (p.get("operation_id"), p.get("dispatch_id") or p.get("run_id"))
+                if key in keys and p.get("role_instance") == role.instance_id:
+                    dispatches[key] = event
+    matches = []
+    for row in sent:
+        op = ops.get(row.get("operation_id"), {})
+        dispatch = dispatches.get((row.get("operation_id"), row.get("dispatch_id")))
+        if dispatch:
+            owned = (hook is not None and hook.causation_id == dispatch.id and usage.provider_usage_turn_id
+                     and hook.payload.get("turn_id") == usage.provider_usage_turn_id
+                     and 0 < iso_epoch(hook.ts) <= iso_epoch(str(usage.timestamp))
+                     and _fanout_owns_physical_send(events, dispatch, row, op, meta, role.instance_id))
+        elif dispatch_scoped:
+            owned = _context_owns_attempt(meta, row)
+        else:
+            owned = _session_owns_operation(session, role.instance_id, row, op, stage)
+        if owned:
+            matches.append(row)
     if len(matches) != 1:
         return {}, False
     row = matches[0]
@@ -59,9 +80,50 @@ def disk_usage_attempt_binding(runtime, role: RoleConfig, usage: UsageReport | N
     return task_attempt_identity(row), True
 
 
+def _fanout_owns_physical_send(events, dispatch, row: dict, op: dict, meta: dict, role: str) -> bool:
+    """Join the registered WRC and hook to the physical delivery receipt.
+
+    Fresh synth occurrences carry the logical attempt, while redrives may
+    carry the scheduler attempt. The physical send identifies the latter.
+    """
+    p = dispatch.payload
+    key = row.get("dispatch_id")
+    task = row.get("task_id")
+    if (not task or not key or not _running_role_operation(op, row, role)
+            or op.get("task_id") != task or p.get("operation_id") != row.get("operation_id")
+            or p.get("workflow_run_id") != row.get("run_id")
+            or (p.get("dispatch_id") or p.get("run_id")) != key
+            or meta.get("fanout_context_dispatch_id") != key
+            or meta.get("fanout_context_trace_id") != row.get("run_id")
+            or any(value and value != task for value in (
+                dispatch.task_id, p.get("task_id"), meta.get("fanout_context_task_id")))
+            or (p.get("attempt_id") and p["attempt_id"] not in {row.get("attempt_id"), op.get("active_attempt_id")})
+            or (p.get("lease_id") and p["lease_id"] not in {row.get("lease_id"), op.get("lease_id")})):
+        return False
+    for event in reversed(events):
+        if event.type != "task.attempt.sent":
+            continue
+        receipt = event.payload
+        if receipt.get("operation_id") == p["operation_id"] and receipt.get("dispatch_id") == key:
+            return (receipt.get("run_id") == row.get("run_id") and receipt.get("role_instance") == role
+                    and receipt.get("task_id") == task and receipt.get("attempt_id") == row.get("attempt_id")
+                    and receipt.get("lease_id") == row.get("lease_id") and event.ts <= dispatch.ts)
+    return False
+
+
+def _context_owns_attempt(meta: dict, row: dict) -> bool:
+    return (row.get("dispatch_id") == meta.get("fanout_context_dispatch_id")
+            and row.get("run_id") == meta.get("fanout_context_trace_id")
+            and row.get("task_id") == meta.get("fanout_context_task_id"))
+
+
+def _running_role_operation(op: dict, row: dict, role: str) -> bool:
+    return (op.get("status") == "running" and op.get("workflow_run_id") == row.get("run_id")
+            and op.get("dispatch_id") == row.get("dispatch_id") and op.get("role_instance") == role)
+
+
 def _session_owns_operation(session: str, role: str, row: dict, op: dict, stage: dict) -> bool:
-    if (op.get("status") != "running" or op.get("workflow_run_id") != row.get("run_id")
-            or op.get("dispatch_id") != row.get("dispatch_id") or op.get("role_instance") != role):
+    if not _running_role_operation(op, row, role):
         return False
     if op.get("provider_session_id"):
         return op["provider_session_id"] == session

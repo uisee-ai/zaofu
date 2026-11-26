@@ -52,6 +52,49 @@ def open_rollout(state: Path, path: Path):
         os.close(directory)
 
 
+class CodexUsageTurn:
+    """Attribute a token record within one turn after a native process restart.
+
+    A stopped process may leave an earlier turn open. A new, unique start and
+    matching context can identify later samples without certifying the old
+    turn's completion or a continuous native execution interval.
+    """
+
+    def __init__(self, session: str):
+        self.session = session
+        self.valid_header = False
+        self.first_row = True
+        self.started = 0.0
+        self.turn = self.context = self.sample = ""
+        self.seen: set[str] = set()
+
+    def consume(self, row: dict) -> None:
+        p = row.get("payload") or {}
+        kind = row.get("type")
+        if kind == "session_meta":
+            self.valid_header = self.first_row and p.get("id") == self.session
+        elif kind == "turn_context":
+            self.context = p.get("turn_id") if p.get("turn_id") == self.turn else ""
+        elif kind == "event_msg":
+            event = p.get("type")
+            if event == "task_started":
+                turn = p.get("turn_id")
+                self.turn = turn if native_uuid(turn) and turn not in self.seen else ""
+                if self.turn:
+                    self.seen.add(self.turn)
+                self.started = timestamp(row.get("timestamp"))
+                self.context = self.sample = ""
+            elif event in {"task_complete", "turn_aborted", "task_aborted"}:
+                self.turn = self.context = ""
+            elif event == "token_count" and isinstance(p.get("info"), dict):
+                self.sample = self.turn if (
+                    self.valid_header and self.context == self.turn
+                    and p.get("turn_id", self.turn) == self.turn
+                    and 0 < self.started <= timestamp(row.get("timestamp"))
+                ) else ""
+        self.first_row = False
+
+
 class CodexTurnSample:
     def __init__(self, session: str):
         self.session = session
