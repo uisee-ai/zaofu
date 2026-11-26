@@ -348,6 +348,14 @@ def prepare_call_operation(
 
         attach_reader_handoff(runtime, payload)
 
+    if (output_profile_id in {"workflow-read", "plan-synth"} and previous_request
+            and previous_request.get("active_attempt_id") == attempt_id
+            and payload.get("required_reads") == previous_request.get("required_reads")):
+        from zf.runtime.plan_rework_input_overlap import has_scoped_rework_context
+
+        if has_scoped_rework_context(previous_request):
+            payload.pop("required_reads", None)  # A replayed projection is not a new explicit requirement.
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,
@@ -422,6 +430,7 @@ def prepare_call_operation(
             required_reads, selection_strategy = select_plan_input_reads(
                 runtime.state_dir, source_manifest, required_reads,
                 policy=configured_review, explicit=bool(explicit_required_reads),
+                lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request,
             )
         required_reads, payload["plan_review_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
@@ -432,7 +441,8 @@ def prepare_call_operation(
         from zf.runtime.plan_review_selection_cost import choose_review_reads
 
         partitioned, strategy = select_plan_input_reads(runtime.state_dir, source_manifest,
-            required_reads, policy={}, explicit=bool(explicit_required_reads))
+            required_reads, policy={}, explicit=bool(explicit_required_reads),
+            lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request)
         required_reads, payload["plan_input_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
             explicit=bool(explicit_required_reads), strategy=strategy,

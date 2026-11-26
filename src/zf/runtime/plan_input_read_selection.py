@@ -95,7 +95,7 @@ def _navigation_phase(sources: list, bodies: dict, required: list) -> str:
 
 def select_plan_input_reads(
     state_dir: Path, manifest: Mapping[str, Any], required: list[dict[str, Any]], *,
-    policy: Mapping[str, Any], explicit: bool = False,
+    policy: Mapping[str, Any], explicit: bool = False, lookup_failure=None, previous_request=None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Keep explicit policies intact; unknown or unbound sources remain required."""
     if explicit:
@@ -114,6 +114,9 @@ def select_plan_input_reads(
             continue  # The normal reader still reports the original failure.
     full_rows = {(row.get("source_id"), row.get("artifact_id"), row.get("artifact_sha256"))
                  for row in required if row.get("json_path", "$") == "$"}
+    from zf.runtime.plan_rework_input_overlap import rework_context_paths
+
+    context_paths = rework_context_paths(manifest, source_map, bodies, required, lookup_failure, previous_request)
     peers = {encode_selected(body) for key, body in bodies.items() if key in full_rows}
     phase = _navigation_phase(sources, bodies, required)
     targeted = policy.get("mode") == "targeted" and bool(policy.get("focus")) and bool(phase)
@@ -184,6 +187,10 @@ def select_plan_input_reads(
         body = bodies.get(key)
         # Only complete report/candidate wrappers are partitioned. Authority,
         # core Plan and explicit partial reads retain their original selection.
+        if (context_paths and key[0] == "plan-rework-context" and row.get("json_path") == "$"
+                and not any(row.get(k) for k in ("max_chars", "max_items", "allow_truncated"))):
+            result.extend({**row, "json_path": path} for path in context_paths)
+            continue
         wrapper = str(key[0]).startswith(("child-result-", "previous-plan-candidate-"))
         if (not wrapper or not isinstance(body, dict) or row.get("json_path", "$") != "$"
                 or any(row.get(k) for k in ("max_chars", "max_items", "allow_truncated"))):
@@ -201,7 +208,9 @@ def select_plan_input_reads(
     if result == required:
         return required, ""
     strategy = "targeted_replan_navigation" if phase == "replan" else "targeted_navigation"
-    return result, strategy if optional else "lossless_report_partition"
+    if optional:
+        return result, strategy
+    return result, "bound_rework_descriptor_index" if context_paths else "lossless_report_partition"
 
 
 def complete_partition_read(

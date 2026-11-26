@@ -11,3 +11,7 @@ Plan 是基于旧证据提出修订的角色；输入基线可以是历史已准
 新测试通过真实 OA return_to_plan、Reader prepare/started 和公开 `artifact index/recover` CLI 串联，先 3 失败 12 通过。真实 155592 条事件前缀只读回放：旧 `superseded/requires_rebind=true`，修复后 `pinned/current_plan_reader_baseline`；同一个已终结旧 attempt 在当前事实下仍需重绑定，不能复活。`authorizes_execution=false` 与 `current_memory=unknown` 的保守含义保持。
 
 实施、部署与现场后继结果见 [任务](../../tasks/2026-11-08-1551-plan-reader-input-lifecycle.md)。
+
+## 返工描述符的按需读取
+
+新的 Plan 读取请求在同一 Run 的 kernel 失败事件已绑定全部历史候选，且当前 manifest 对每项都授予内容相同的独立完整读取时，可将 `plan-rework-context.v1` 的整根必读改为四项。四项分别是 `schema_version`、`rework_of`、`rework_attempt` 和完整 `rework_feedback`。历史候选逐一核对文件、摘要、授权路径和完整内容绑定。根文档保留原历史 occurrence、事件与版本元数据，可按 `$` 回读。任何未知字段、受限授权、历史身份变化、缺少独立来源或显式必读要求，都沿用原策略。旧 operation 以已登记的读取政策和请求摘要重放。实际减少的引文字节按两个选区的完整文本计算。[受控读与重放测试](../../tests/test_plan_rework_descriptor_reads.py)
