@@ -1243,6 +1243,7 @@ def _apply_batch_candidate_ready(
     emitted: list[str],
     *,
     gate_dispatcher=None,
+    registration_binding: dict[str, Any] | None = None,
 ) -> WorkflowResumeApplyResult:
     missing = [
         name for name, value in {
@@ -1293,6 +1294,8 @@ def _apply_batch_candidate_ready(
             "source": "workflow_resume_batch",
         },
     }
+    if registration_binding:
+        payload.update(registration_binding)
     reason = batch_candidate_replay_rejection(writer.event_log.read_all(), payload)
     if reason:
         return _reject_batch(writer, checkpoint, emitted, reason)

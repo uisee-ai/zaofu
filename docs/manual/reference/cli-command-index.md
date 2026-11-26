@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**348** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**349** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -575,6 +575,7 @@ Recover deterministic runtime state from append-only events
 | `zf recover` | Recover deterministic runtime state from append-only events |
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
+| `zf recover candidate-registration` | Retry an untouched frozen Reader roster on its original Run |
 | `zf recover candidate-repair` | Recheck a cap-rejected OA Candidate repair on its original Run |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
 | `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |

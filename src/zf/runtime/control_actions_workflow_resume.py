@@ -85,6 +85,10 @@ class WorkflowResumeActionsMixin:
 
         from zf.integrations.controller.execution import check_project
         check_project(self.project_root)
+        if "registration_failure_event_id" in payload:
+            from zf.runtime.candidate_registration_resume import apply_registration_resume
+            return apply_registration_resume(self, requested, action, requested_action, payload)
+
         from zf.runtime.workflow_resume import apply_workflow_resume
 
         result = apply_workflow_resume(

@@ -37,6 +37,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     from zf.cli.recover_oa_review import register_recover_candidate_repair, register_recover_oa_review
     register_recover_oa_review(nested)
     register_recover_candidate_repair(nested)
+    from zf.cli.recover_candidate_registration import register as register_candidate_registration
+    register_candidate_registration(nested)
     from zf.cli.recover_assistance import register_recover_assistance
     register_recover_assistance(nested)
     from zf.cli.recover_association import register_recover_association
