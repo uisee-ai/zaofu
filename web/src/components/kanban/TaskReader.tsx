@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, PanelRightOpen, Pencil } from "lucide-react";
 import type { ActionResponse, Task, TaskDetail } from "../../api/types";
 import { asRecord, asStringArray, textValue } from "../../app/shared";
 import { taskIsEffectivelyTerminal } from "../../lib/task-display";
-import { MarkdownText } from "../agent-session/MarkdownText";
+import { TaskReadingBody } from "./TaskReadingBody";
 import { TaskProperties } from "./TaskProperties";
 import { TaskEditPanel } from "./TaskEditPanel";
 import { latestInvalidContract, taskExecution } from "./taskExecution";
@@ -58,7 +58,6 @@ export function TaskReader(props: Props) {
   const properties = task && <TaskProperties task={task} detail={detail} projectId={projectId}
     worker={execution?.worker} onOpenTask={onOpenTask} onClose={() => setProperties(false)} />;
   const contract = detail?.contract ?? task?.contract ?? {};
-  const description = textValue(contract.behavior || detail?.handoff_summary?.objective).trim();
   return <section className="task-detail task-reader" aria-label="任务详情">
     <header className="reader-toolbar">
       <button type="button" ref={back} onClick={props.onBackToBoard}><ArrowLeft size={16} />返回看板</button>
@@ -71,23 +70,39 @@ export function TaskReader(props: Props) {
       </>}
     </header>
     {loadError && <p role="alert">任务详情读取失败：{loadError} <button onClick={props.onRetry}>重试</button></p>}
-    {task && execution ? <div className="reader-layout">
-      <div className="reader-main"><article className="reader-article" key={task.id}>
-        <header className="reader-heading">
+    {selectedTaskId ? <div className="reader-layout">
+      <div className="reader-main"><article className="reader-article" key={selectedTaskId}>
+        {task && execution && <header className="reader-heading">
           <h1>{task.title || task.id}</h1>
           <TaskStatus execution={execution} task={task} detail={detail} projectId={projectId} onOpenTask={onOpenTask} />
-        </header>
-        {description && description !== task.title && <div className="reader-description"><MarkdownText content={description} /></div>}
-        <AcceptanceCriteria contract={contract} />
-        <TaskResults detail={detail} projectId={projectId} />
+        </header>}
+        {task ? <>
+          <TaskReadingBody contract={contract} title={task.title} objective={detail?.handoff_summary?.objective} />
+          <TaskResults detail={detail} projectId={projectId} />
+        </> : !loadError && <p role="status">正在读取任务…</p>}
+        <TaskSkillEvaluationDisclosure key={JSON.stringify([projectId, selectedTaskId])} taskId={selectedTaskId} projectId={projectId} />
       </article>
       {props.conversation}</div>
-      {wide ? expanded && <aside id="task-properties" aria-label="任务属性" className="reader-properties">{properties}</aside>
+      {task && (wide ? expanded && <aside id="task-properties" aria-label="任务属性" className="reader-properties">{properties}</aside>
         : <dialog id="task-properties" ref={drawer} aria-label="任务属性" className="reader-properties reader-drawer"
             onClose={() => setDrawerOpen(false)} onClick={event => {
               if (event.target === drawer.current && event.clientX < drawer.current.getBoundingClientRect().left) setProperties(false);
-            }}>{drawerOpen && properties}</dialog>}
-    </div> : !loadError && <p role="status">{selectedTaskId ? "正在读取任务…" : "请选择一张任务卡。"}</p>}
+            }}>{drawerOpen && properties}</dialog>)}
+    </div> : !loadError && <p role="status">请选择一张任务卡。</p>}
+  </section>;
+}
+
+const TaskSkillEvaluations = lazy(() => import("./TaskSkillEvaluations").then(module => ({ default: module.TaskSkillEvaluations })));
+
+function TaskSkillEvaluationDisclosure({ taskId, projectId }: { taskId: string; projectId?: string }) {
+  const [open, setOpen] = useState(false);
+  return <section>
+    <details onToggle={event => setOpen(event.currentTarget.open)}>
+      <summary>任务 Skill 评估</summary>
+      {open && (projectId
+        ? <Suspense fallback={<p role="status">正在加载任务评估…</p>}><TaskSkillEvaluations taskId={taskId} projectId={projectId} /></Suspense>
+        : <p role="status">正在确认任务所属项目…</p>)}
+    </details>
   </section>;
 }
 
@@ -157,21 +172,6 @@ function TaskStatus({ execution, task, detail, projectId, onOpenTask }: Pick<Pro
       <a href={`?page=runtime&project=${encodeURIComponent(projectId || "")}`}>查看运行处置请求</a>
     </>}
   </div>;
-}
-
-function AcceptanceCriteria({ contract }: { contract: Record<string, unknown> }) {
-  const acceptance = textValue(contract.acceptance).trim();
-  const criteria = Array.isArray(contract.acceptance_criteria) ? contract.acceptance_criteria : [];
-  const labels = [...new Set(criteria.map(item => {
-    const row = asRecord(item);
-    return textValue(typeof item === "string" ? item : row.text || row.statement || row.criterion || row.description || row.acceptance).trim();
-  }).filter(Boolean))];
-  const intro = acceptance !== "exit_code=0" && !labels.includes(acceptance) ? acceptance : "";
-  if (!intro && !labels.length) return null;
-  return <section><h2>验收条件</h2>
-    {intro && <MarkdownText content={intro} />}
-    {labels.length > 0 && <ul className="reader-criteria">{labels.map(label => <li key={label}>{label}</li>)}</ul>}
-  </section>;
 }
 
 function TaskResults({ detail, projectId }: Pick<Props, "detail" | "projectId">) {

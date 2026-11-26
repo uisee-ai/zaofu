@@ -1,9 +1,27 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from zf.core.task.schema import Task
+from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.web import board_bootstrap as module, server
+
+
+def test_task_reading_record_serves_the_selected_contract_without_event_replay(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "kanban.json")
+    store.add(Task(id="active", title="Active task", contract=TaskContract(behavior="Read this task")))
+    store.add(Task(id="closed", title="Finished", status="done",
+                   contract=TaskContract(behavior="Archived body", acceptance="TOKEN=private")))
+    (tmp_path / "events.jsonl").touch()
+    monkeypatch.setattr(server, "_task_detail", lambda *a, **kw: pytest.fail("full projection requested"))
+    with TestClient(server.create_app(tmp_path, project_root=tmp_path)) as client:
+        for task_id, behavior in [("active", "Read this task"), ("closed", "Archived body")]:
+            response = client.get(f"/api/projects/default/tasks/{task_id}/record")
+            assert response.status_code == 200
+            assert response.json()["id"] == task_id
+            assert response.json()["contract"]["behavior"] == behavior
+            assert "private" not in response.text
+        assert client.get("/api/projects/default/tasks/absent/record").status_code == 404
+        assert client.get("/api/projects/missing-project/tasks/active/record").status_code == 404
 
 
 def test_real_route_reads_tasks_without_event_projection_or_unknown_metrics(tmp_path, monkeypatch):

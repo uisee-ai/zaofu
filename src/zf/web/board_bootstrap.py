@@ -1,6 +1,7 @@
 """TaskStore-only first paint; never impersonate a complete dashboard snapshot."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,6 +12,19 @@ from zf.core.task.store import TaskStore
 
 class BoardTasksChanged(RuntimeError):
     pass
+
+
+def task_reading_record(state_dir: Path, task_id: str) -> dict | None:
+    task = TaskStore(state_dir / "kanban.json").get(task_id)
+    if task is None:
+        return None
+    return redact_obj({
+        "id": task.id, "title": task.title, "status": task.status,
+        "contract": asdict(task.contract), "created_at": task.created_at,
+        "assigned_to": task.assigned_to or "", "priority": task.priority, "phase": None,
+        "blocked_by": task.blocked_by, "blocked_reason": task.blocked_reason or "",
+        "retry_count": task.retry_count, "skills_required": task.skills_required,
+    })
 
 
 def _identity(state: Path) -> tuple:

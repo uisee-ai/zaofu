@@ -1,0 +1,10 @@
+.reader-contract-text > .agent-markdown,
+.reader-contract-text > .reader-criteria { max-width: 78ch; }
+.reader-contract-text .agent-markdown { line-height: 1.75; }
+.reader-contract-text .agent-markdown p + p { margin-block-start: .75em; }
+.reader-contract-text .reader-criteria { margin-block: .5em 0; }
+.reader-contract-text .reader-criteria > li + li { margin-block-start: .6em; }
+.reader-criteria > li > .agent-markdown > :first-child { margin-block-start: 0; }
+.reader-criteria > li > .agent-markdown > :last-child { margin-block-end: 0; }
+.reader-output-names { margin-block: .5em 0; padding-inline-start: 1.3em; }
+.reader-output-names > li { overflow-wrap: anywhere; }

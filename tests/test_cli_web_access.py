@@ -155,6 +155,37 @@ def test_corrupt_record_never_reinitializes(tmp_path):
         configure_web_access(host="127.0.0.1")
     assert account.path.read_text() == "{}"
 
+
+def test_in_flight_project_read_returns_login_challenge_on_revocation(tmp_path):
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from fastapi import FastAPI
+    from zf.web.local_login import LocalLoginMiddleware
+
+    account = LocalAccount(tmp_path)
+    account.initialize()
+    app = FastAPI()
+    app.add_middleware(LocalLoginMiddleware, account=account, read_only=False)
+    entered = Event()
+
+    @app.get("/api/pending-read")
+    async def pending_read():
+        entered.set()
+        await asyncio.sleep(10)
+        return {"ok": True}
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as pool:
+        assert login(client).is_success
+        pending = pool.submit(client.get, "/api/pending-read")
+        assert entered.wait(timeout=5)
+        assert client.post("/auth/local/logout", headers=ORIGIN, json={}).is_success
+        response = pending.result(timeout=6)
+        assert response.status_code == 401 and response.headers["X-ZF-Login"] == "required"
+        assert response.json()["error"] == "local_login_required"
+
+
 def test_websocket_and_ticket_follow_the_issuing_login(tmp_path):
     from fastapi import FastAPI, WebSocket
     from starlette.websockets import WebSocketDisconnect
