@@ -35,3 +35,5 @@ Planner 从工作区使用 `zf plan draft-baseline --workspace --from-rework --a
 普通 `draft-baseline` 继续导出已准入的正式比较包；`--seed-goals` 仅适用该模式。旧签发请求按原身份重放。独立 Critic 已签收并拒绝候选时，同代 Kernel 返工可从被拒的确切工件开始编辑，收据列出 Critic 的准入事件和控制结果摘要。Owner 另起一代时还须在受控请求中点名该 Critic 的同一断点，保留相同的正式包和任务图基线，收据增加该次审批与申请的事件 ID。未绑定的 Owner 新代、缺少正式比较包或未签收的评审只能按原读取授权访问。来源不全、跨代或只有部分读取许可时，新参数会明确报错；Planner 可用该次已分配的来源进行修订。[授权与导出测试](../../tests/test_plan_rework_draft.py)
 
 Owner 拒绝待审批的正式 Plan 时，新 Planner 简报若能核对本次拒绝事件、正式包与已分配的完整返工上下文，会直接列出该包的 SHA256、决策事件和 `draft-baseline --workspace` 命令。当前修订理由位于 `plan-rework-context` 的 `$.rework_feedback`；较早的 `operator_feedback` 和候选文件提供历史依据，仍适用的约束应继续保留。此提示取自既有签发输入，必读内容、授权和已签 WRC 不随渲染改变。[Planner 简报与历史来源回归](../../tests/test_planner_owner_draft_briefing.py)
+
+Planner 和独立 Plan Critic 在原尝试运行 `zf artifact recover` 时，若有授权范围内的历史阅读缺口，恢复包的 `commands.required_read` 分别以 16 KiB、32 KiB 文本页启动。每页须把原文连同结束标记送到模型；循环中只输出页码和来源，不能证明正文已交付。工具输出容量受限时可缩至 2 KiB，从同一输入游标补读，再沿返回的游标继续。恢复包沿用该尝试既有的阅读证据策略。[恢复入口测试](../../tests/test_artifact_input_recovery.py)

@@ -6,17 +6,20 @@ from typing import Any
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 
 
+def plan_read_page_bytes(profile: object, authority: object) -> int | None:
+    if profile == "plan-synth":
+        return 32768
+    if (profile == "workflow-read" and isinstance(authority, Mapping)
+            and authority.get("output_profile_id") == profile and authority.get("attempt_domain") == "plan"
+            and authority.get("operation_type") == "fanout_reader_child"):
+        return 16384
+    return None
+
+
 def required_cli_entry(payload: Mapping[str, Any], command: str, *, native: bool) -> list[str]:
     label = "CLI fallback" if native else "Preferred deduplicated read"
-    profile = payload.get("output_profile_id")
-    authority = payload.get("handoff_authority_contract")
-    if profile == "plan-synth":
-        page_bytes = 32768
-    elif (profile == "workflow-read" and isinstance(authority, Mapping)
-          and authority.get("output_profile_id") == profile and authority.get("attempt_domain") == "plan"
-          and authority.get("operation_type") == "fanout_reader_child"):
-        page_bytes = 16384
-    else:
+    page_bytes = plan_read_page_bytes(payload.get("output_profile_id"), payload.get("handoff_authority_contract"))
+    if not page_bytes:
         return [f"- {label}: `{command}`."]
     return [
         f"- {label} with an adjustable tool output budget: "

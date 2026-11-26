@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from zf.runtime.artifact_access import artifact_access_allowed
 from zf.runtime.artifact_input_index import input_index, load_attempt_source_manifest
 from zf.runtime.artifact_input_lifecycle import input_lifecycle
+from zf.runtime.artifact_read_briefing_policy import plan_read_page_bytes
 from zf.runtime.artifact_read_ledger import required_read_satisfied
 from zf.runtime.artifact_read_requirements import required_reads_for_attempt
 from zf.runtime.cli_command import zf_cli_cmd
@@ -119,7 +120,16 @@ def build_input_recovery(
         result["commands"]["work_record_read"] = f"{prefix} work-record show --operation {op}"
     if not lifecycle["requires_rebind"]:
         if missing:
-            result["commands"]["required_read"] = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
+            command = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
+            page_bytes = plan_read_page_bytes(manifest.get("read_purpose"), manifest.get("handoff_authority_contract"))
+            if page_bytes:
+                command += f" --format text --page-bytes {page_bytes}"
+                result["instructions"] += (
+                    " Return each full tool output to the model through ZF_ARTIFACT_TEXT_PAGE_END, including in loops. "
+                    "Allow 16384 output tokens or reduce --page-bytes to 2048. Retry clipped pages at the same cursor. "
+                    "For the next page keep the format and size, replacing --resume with the returned --cursor."
+                )
+            result["commands"]["required_read"] = command
         from zf.runtime.task_handoff_receipt import handoff_receipt_projection
 
         handoff_sources = [s for s in manifest.get("sources", []) if s.get("source_id") == "task-handoff"]
