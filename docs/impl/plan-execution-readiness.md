@@ -257,3 +257,5 @@ Kernel 继续只传播显式声明。真实审查通过但遗漏声明时，页�
 拒绝后的返工读取 `critical-reader-repair-context`。其中 `rework_feedback` 给出已确认的修复项；
 `plan_review_dispositions` 按拒绝包的 digest 附上本次裁决及其证据，供 Planner 了解已撤回意见及影响范围。
 完成当前裁决只结算当前独立评审，一次失败仍遵循现有因果幂等的返工路由。新候选的审批仍需独立裁决。
+
+同一 Critic WRC 重放时，用量与验证明细沿用首次已登记 manifest 的引用和顺序。规划、验证职责或策略发生实质变化时，WRC 仍核对完整请求摘要。

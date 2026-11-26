@@ -8,7 +8,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import WorkflowOperationError
 
 
-def _prepare(runtime, *, usage=55, tasks=0, key="critic", usage_details=False):
+def _prepare(runtime, *, usage=55, tasks=0, key="critic", usage_details=False, verification_owner="", reverse_details=False):
     payload = {"workflow_run_id": "run-plan", "fanout_id": "fanout-plan",
                "role_instance": "critic", "output_profile_id": "plan-synth",
                "canonical_success_event": "fanout.synth.completed",
@@ -18,9 +18,13 @@ def _prepare(runtime, *, usage=55, tasks=0, key="critic", usage_details=False):
     if usage_details:
         review["usage_observations"].update({"schema_version": "execution-usage-facts.v1",
             "scope": "run", "available": True, "groups": [{"operation_id": "op", "input_tokens": usage}]})
+    if verification_owner:
+        review["verification"]["task_requirements"] = [{"task_id": "T", "commands": [{"id": "check", "owner": verification_owner}]}]
     review["graph"]["task_count"] = tasks
     attach_execution_review(state_dir=runtime.state_dir, payload=payload,
                             review=review, source_event_id="evt-trigger")
+    if reverse_details:
+        payload["input_refs"][:2] = reversed(payload["input_refs"][:2])
     prepared = prepare_call_operation(runtime, payload=payload, operation_type="fanout_synth",
                                       operation_key=key, stage_id="plan", task_id="",
                                       dispatch_id="synth-attempt")
@@ -100,3 +104,14 @@ def test_replay_keeps_legacy_inlined_usage(tmp_path):
     assert not any(r["source_id"] == "plan-execution-usage" for r in payload["input_refs"])
     review = next(r for r in payload["input_refs"] if r["source_id"] == "plan-execution-review")
     assert hydrate_sidecar_ref(runtime.state_dir, review).payload["usage_observations"]["unattributed_project_samples"] == 55
+
+@pytest.mark.parametrize("reverse_details", [False, True])
+def test_two_review_details_replay_in_frozen_order(tmp_path, reverse_details):
+    runtime = _runtime(tmp_path)
+    original, first = _prepare(runtime, usage_details=True, verification_owner="task_verify", reverse_details=reverse_details)
+    payload, replay = _prepare(runtime, usage=56, usage_details=True, verification_owner="task_verify")
+    assert replay.replay_hit and replay.request_hash == first.request_hash
+    assert payload["attempt_source_manifest_digest"] == original["attempt_source_manifest_digest"]
+    assert [s["source_id"] for s in payload["input_refs"]] == [s["source_id"] for s in original["input_refs"]]
+    with pytest.raises(WorkflowOperationError, match="diverged"):
+        _prepare(runtime, usage=57, usage_details=True, verification_owner="human")

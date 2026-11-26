@@ -107,18 +107,9 @@ def pin_replayed_review_usage(
             new_source[key] = old_source[key]
         else:
             new_source.pop(key, None)
-    # Preserve the exact legacy inline/detail representation for this attempt.
-    refs = payload.get("input_refs", [])
-    refs[:] = [source for source in refs if not isinstance(source, Mapping)
-               or source.get("source_id") != "plan-execution-verification"]
-    old_verification = [source for source in manifest.get("sources", [])
-                        if source.get("source_id") == "plan-execution-verification"]
-    if old_verification:
-        position = next(i for i, source in enumerate(refs)
-                        if source.get("source_id") == "plan-execution-review")
-        refs.insert(position, dict(old_verification[0]))
-    old_usage = [source for source in manifest.get("sources", [])
-                 if source.get("source_id") == "plan-execution-usage"]
+    detail_ids = {"plan-execution-usage", "plan-execution-verification"}
+    old_details = [source for source in manifest.get("sources", []) if source.get("source_id") in detail_ids]
+    old_usage = [source for source in old_details if source["source_id"] == "plan-execution-usage"]
     if len(old_usage) > 1:
         raise ValueError("ambiguous pinned plan execution usage")
     if old_usage:
@@ -127,13 +118,10 @@ def pin_replayed_review_usage(
                 or detail.get("detail_sha256") != old_usage[0].get("sha256")):
             raise ValueError("pinned plan execution usage differs from review")
         hydrate_sidecar_ref(runtime.state_dir, dict(old_usage[0]))
-    # Usage is a single frozen observation: pin both its summary and its
-    # optional detail source, including upgrades of requests created before
-    # the detail was separated from the required review body.
-    refs = payload.get("input_refs", [])
+    # Both details are issued together immediately before the review. Their
+    # order is part of the manifest digest, including for pre-upgrade attempts.
+    refs = payload["input_refs"]
     refs[:] = [source for source in refs if not isinstance(source, Mapping)
-               or source.get("source_id") != "plan-execution-usage"]
-    if old_usage:
-        position = next(i for i, source in enumerate(refs)
-                        if isinstance(source, Mapping) and source.get("source_id") == "plan-execution-review")
-        refs.insert(position, dict(old_usage[0]))
+               or source.get("source_id") not in detail_ids]
+    position = next(i for i, source in enumerate(refs) if source is new_source)
+    refs[position:position] = [dict(source) for source in old_details]
