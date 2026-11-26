@@ -372,6 +372,17 @@ def count_event_records(state_dir: Path) -> int:
     return count
 
 
+def _indexed_event_line(state_dir: Path, segment: str, offset: int, length: int) -> str | None:
+    path = Path(state_dir) / segment
+    try:
+        with path.open("rb") as fh:
+            fh.seek(max(0, int(offset)))
+            raw = fh.read(max(0, int(length)))
+    except OSError:
+        return None
+    return raw.decode("utf-8", "replace").strip()
+
+
 def hydrate_event_at(
     state_dir: Path,
     *,
@@ -382,15 +393,26 @@ def hydrate_event_at(
     event_log: EventLog | None = None,
 ) -> ZfEvent | None:
     """Decode one indexed event, optionally reusing a caller-owned decoder."""
-    path = Path(state_dir) / segment
-    try:
-        with path.open("rb") as fh:
-            fh.seek(max(0, int(offset)))
-            raw = fh.read(max(0, int(length)))
-    except OSError:
-        return None
-    line = raw.decode("utf-8", "replace").strip()
+    line = _indexed_event_line(state_dir, segment, offset, length)
     if not line:
         return None
     decoder = event_log or event_log_from_project(state_dir, config=config)
     return decoder.decode_line(line)
+
+
+def hydrate_indexed_events(
+    state_dir: Path, positions: Iterable[tuple[str, int, int]], *, config: ZfConfig | None = None,
+) -> list[ZfEvent]:
+    """Decode a query in index order, resolving its signing policy at the first readable row."""
+    decoder = None
+    events = []
+    for segment, offset, length in positions:
+        line = _indexed_event_line(state_dir, segment, offset, length)
+        if not line:
+            continue
+        if decoder is None:
+            decoder = event_log_from_project(state_dir, config=config)
+        event = decoder.decode_line(line)
+        if event is not None:
+            events.append(event)
+    return events

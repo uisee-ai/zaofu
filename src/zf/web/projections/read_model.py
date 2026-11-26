@@ -26,6 +26,7 @@ from zf.core.events.segments import (
     count_event_records,
     current_event_cursor,
     hydrate_event_at,
+    hydrate_indexed_events,
     iter_event_records,
     iter_event_records_from_cursor,
     write_event_manifest,
@@ -823,18 +824,12 @@ def hydrate_events(
         # Build straight from indexed columns — no per-event raw file read,
         # which is what made graph/trace projections take tens of seconds.
         return [_event_from_index_row(row) for row in rows]
-    out: list[ZfEvent] = []
-    for row in rows:
-        event = hydrate_event_at(
-            state_dir,
-            segment=str(row["raw_segment"]),
-            offset=int(row["raw_offset"]),
-            length=int(row["raw_length"]),
-            config=config,
-        )
-        if event is not None:
-            out.append(event)
-    return out
+    return _hydrate_raw_rows(state_dir, rows, config)
+
+
+def _hydrate_raw_rows(state_dir: Path, rows: Iterable[sqlite3.Row], config: ZfConfig | None) -> list[ZfEvent]:
+    positions = ((str(row["raw_segment"]), int(row["raw_offset"]), int(row["raw_length"])) for row in rows)
+    return hydrate_indexed_events(state_dir, positions, config=config)
 
 
 def hydrate_events_by_ref(
@@ -912,18 +907,7 @@ def hydrate_events_by_ref(
         return None
     if slim:
         return [_event_from_index_row(row) for row in rows]
-    events: list[ZfEvent] = []
-    for row in rows:
-        event = hydrate_event_at(
-            state_dir,
-            segment=str(row["raw_segment"]),
-            offset=int(row["raw_offset"]),
-            length=int(row["raw_length"]),
-            config=config,
-        )
-        if event is not None:
-            events.append(event)
-    return events
+    return _hydrate_raw_rows(state_dir, rows, config)
 
 
 def agent_session_history(

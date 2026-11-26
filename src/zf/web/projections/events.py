@@ -1,6 +1,7 @@
 """Projections layer: events (moved verbatim from web/server.py)."""
 from __future__ import annotations
 
+from collections import Counter
 import itertools
 import os
 
@@ -23,7 +24,7 @@ import json
 import threading
 from zf.web.projections.common import _first_nonempty, _is_blocked_event, _is_failed_event, _line_count, _matches_event_filters, _matches_task_filters, _parse_search_query, _payload_first_string, _payload_mentions, _payload_ref, _raw_event_has_task_id, _read_events_with_seq
 from zf.web.projections.request_util import _active_event_seq_window, _record_sse_gap_projection, _sse_event, _sse_gap
-from zf.web.projections.summaries import _archive_tasks, _refs_from_events
+from zf.web.projections.summaries import _refs_from_events, _task_records_with_archive
 from zf.web.projections.task_pipeline_events import task_pipeline_trace
 from zf.web.projections.event_windows import events_read_days
 
@@ -87,17 +88,17 @@ def _event_log_run_summary(
     ]
     if not task_events:
         return None
-    task_ids = sorted({
+    event_task_ids = {
         str(getattr(event, "task_id", "") or "")
         for _, event in task_events
         if getattr(event, "task_id", None)
-    })
-    archived_tasks = _archive_tasks(state_dir, include_active=True, config=config)
-    terminal_tasks = [
-        task for task in archived_tasks
-        if str(task.get("id") or "") in set(task_ids)
-        and str(task.get("status") or "") in {"done", "cancelled"}
-    ]
+    }
+    task_ids = sorted(event_task_ids)
+    # The archive counts historical rows, while the ledger counts distinct task IDs.
+    terminal_counts = Counter(
+        task.status for task in _task_records_with_archive(state_dir)
+        if task.status in ("done", "cancelled") and str(redact_obj(task.id) or "") in event_task_ids
+    )
     failed_events = [
         event for _, event in task_events
         if str(getattr(event, "type", "")).endswith((".failed", ".rejected"))
@@ -126,8 +127,8 @@ def _event_log_run_summary(
             "event_count": len(events),
             "task_event_count": len(task_events),
             "task_count": len(task_ids),
-            "done_tasks": len([task for task in terminal_tasks if task.get("status") == "done"]),
-            "cancelled_tasks": len([task for task in terminal_tasks if task.get("status") == "cancelled"]),
+            "done_tasks": terminal_counts["done"],
+            "cancelled_tasks": terminal_counts["cancelled"],
             "failed_event_count": len(failed_events),
             "task_ids": task_ids[:50],
         },

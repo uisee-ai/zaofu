@@ -863,18 +863,13 @@ def _task_detail(
     if task is None:
         return None
 
-    task_events = _task_events_with_seq(
-        state_dir,
-        task_id,
-        config=config,
-        include_payload_mentions=True,
-    )
     # NOTE: kept on the full replay deliberately. _global_failure_applies_to_task
     # matches via _payload_mentions() scanning the WHOLE payload for refs, so a
     # slim/truncated payload silently drops failure-context matches (caught by
     # test_candidate_integration_failure_projects_to_task_detail_and_snapshot).
     # Making task detail fast needs ref-scoped hydration, tracked as P1.
     all_events = _events_with_seq(state_dir, config=config)
+    task_events = _events_mentioning_task(all_events, task_id)
     latest_fanout = _latest_task_fanout_runtime(state_dir, task.id, all_events)
     trace_id = _trace_id_from_events(task_events)
     refs = _refs_from_events(task_events, task=task, state_dir=state_dir, config=config)
@@ -1990,6 +1985,13 @@ def _ship_blockers(
     return sorted(set(blockers))
 
 
+def _events_mentioning_task(events: list[tuple[int, ZfEvent]], task_id: str) -> list[tuple[int, ZfEvent]]:
+    return [
+        (seq, event) for seq, event in events
+        if event.task_id == task_id or _payload_mentions(event.payload, task_id)
+    ]
+
+
 def _task_events_with_seq(
     state_dir: Path,
     task_id: str,
@@ -2003,12 +2005,7 @@ def _task_events_with_seq(
     if not include_payload_mentions:
         events = _events_with_exact_task_id(state_dir, task_id, config=config)
     else:
-        events = [
-            (seq, event)
-            for seq, event in _events_with_seq(state_dir, config=config)
-            if getattr(event, "task_id", None) == task_id
-            or _payload_mentions(getattr(event, "payload", {}), task_id)
-        ]
+        events = _events_mentioning_task(_events_with_seq(state_dir, config=config), task_id)
     if limit is not None and limit > 0:
         return events[-limit:]
     return events
