@@ -27,19 +27,38 @@ def _assignments():
     ]
 
 
-def _scoped_project(tmp_path, monkeypatch):
+def _scoped_project(tmp_path, monkeypatch, *, team=None):
     runtime = _runtime(tmp_path)
     spec = product._spec()
     spec["candidate_reader_assignments"] = _assignments()
+    if team:
+        from zf.runtime.candidate_reader_assignments import bind_reader_obligations
+        spec = bind_reader_obligations(spec, team)
     monkeypatch.setattr(product, "_spec", lambda **kw: spec)
     package, _ = product._package(runtime.state_dir)
     admitted = package_event_payload(hydrate_plan_artifact_package(runtime.state_dir, package), package,
                                      status="admitted")
     runtime.event_log.append(ZfEvent(id="evt-package", type="plan.artifact_package.admitted",
                                      correlation_id=product.RUN_ID, payload=admitted))
+    binding = {}
+    if team:
+        from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
+        ident = {"workflow_run_id": product.RUN_ID, "task_map_generation": product.GENERATION,
+                 "plan_artifact_package_ref": package["ref"], "plan_artifact_package_digest": package["sha256"]}
+        digest = canonical_json_sha256(spec["candidate_reader_assignments"])
+        plan = write_immutable_json_sidecar(runtime.state_dir,
+            {"schema_version": "orchestrator-execution-plan.v1", "identity": ident,
+             "candidate_reader_assignments_digest": digest}, root="fixtures/execution-plans",
+            kind="orchestrator_execution_plan", schema_version="orchestrator-execution-plan.v1", created_by="test")
+        binding = {"candidate_reader_assignments_digest": digest, "execution_plan_ref": plan}
+        runtime.event_writer.append(ZfEvent(type="orchestrator.run_plan.admitted", origin="kernel",
+                                           payload={**binding, **ident}))
+        runtime.config.workflow.flow_metadata.update({"stage_teams": {"candidate_verify": team},
+            "task_pipeline": {"pools": {"verify": {"role_instances": [m["role"] for m in team["members"]]}}}})
     _seed_frozen_candidate(runtime, run_id=product.RUN_ID, generation=product.GENERATION,
                            additional_checks=[("AC-2", "cmd-extra", "pytest tests/test_other.py")],
-                           package_fields={"task_id": "FLOW-ANCHOR", "plan_artifact_package_id": package["package_id"],
+                           package_fields={**({"candidate_reader_approval": binding} if binding else {}),
+                                           "task_id": "FLOW-ANCHOR", "plan_artifact_package_id": package["package_id"],
                                            "plan_artifact_package_ref": package["ref"],
                                            "plan_artifact_package_digest": package["sha256"]})
     stage = WorkflowStageConfig(id="prd-lanes-verify", trigger="candidate.ready", topology="fanout_reader",

@@ -143,6 +143,12 @@ def maybe_emit_goal_idle_rescan(
         events, run_id=run_id, resident=getattr(manager, "resident_agent", None), now=now or datetime.now(timezone.utc),
     ):
         return ""
+    from zf.runtime.plan_revision_handoff import plan_revision_handoff
+
+    handoff = plan_revision_handoff(events, run_id)
+    missing_dispatch = ({"revision_handoff": handoff} if handoff.get("status") in {
+        "awaiting_route", "awaiting_owner", "awaiting_dispatch",
+    } else {})
     max_rescans = int(getattr(config.goal, "max_rescans", 5) or 0)
     if rescan_count >= max_rescans:
         # 有界:穷尽后升级 human(quiescent 会在宽限后接管静默)
@@ -156,6 +162,7 @@ def maybe_emit_goal_idle_rescan(
                 "workflow_run_id": run_id,
                 "reason": "goal idle rescans exhausted",
                 "source": "goal_idle_driver",
+                **missing_dispatch,
                 "rescan_count": rescan_count,
                 "max_rescans": max_rescans,
             },
@@ -168,6 +175,7 @@ def maybe_emit_goal_idle_rescan(
         payload={
             "workflow_run_id": run_id,
             "trigger": "idle",
+            **missing_dispatch,
             "source": "goal_idle_driver",
             "rescan_ordinal": rescan_count + 1,
             "max_rescans": max_rescans,

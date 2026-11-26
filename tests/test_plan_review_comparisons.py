@@ -13,7 +13,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def case(tmp_path, *, mode="full", legacy=False):
+def case(tmp_path, *, mode="full", legacy=False, mixed=False):
     state = tmp_path / "project/.zf"
 
     def source(name, body):
@@ -49,6 +49,14 @@ def case(tmp_path, *, mode="full", legacy=False):
             }
         ]
     }
+    if mixed:
+        task_map["tasks"].append({
+            "task_id": "Audit", "execution_mode": "runtime_only", "allowed_paths": [],
+            "runtime_only": True, "write_free": True, "immutable_baseline": "git:current",
+            "acceptance_criteria": [{"id": "review", "statement": "Review", "verification_owner": "candidate_verify",
+                                     "verification_command_ids": ["inspect"]}],
+            "validation": {"commands": [{"id": "inspect", "command": "inspect", "owner": "candidate_verify"}]},
+        })
     policy = {
         "host_verification_commands": [
             "build",
@@ -73,7 +81,7 @@ def case(tmp_path, *, mode="full", legacy=False):
         "test-all",
         "optional-probe",
     }
-    assert set(selections["candidate_commands"]) == {"build && browser"}
+    assert set(selections["candidate_commands"]) == ({"build && browser", "inspect"} if mixed else {"build && browser"})
     if legacy:
         review.pop("execution_comparisons")
     extra = {}
@@ -96,6 +104,7 @@ def case(tmp_path, *, mode="full", legacy=False):
         tmp_path,
         verdict_only=True,
         extra_payload={
+            **extra,
             "plan_review_evidence_policy": POLICY,
             "plan_synth_contract_ref": contract["ref"],
             "plan_synth_contract_digest": contract["sha256"],

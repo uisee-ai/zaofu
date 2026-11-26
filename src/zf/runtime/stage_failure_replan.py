@@ -717,6 +717,11 @@ def plan_reader_stage_replan(
         for item in failure_payload.get("findings", []) or []
         if isinstance(item, dict)
     ]
+    # A new replan must name this rejection's adjudications, not an older
+    # generation's inherited assessment. Failed packets never authorize approval.
+    origin_payload.pop("plan_review_disposition_ref", None)
+    if failure_payload.get("plan_review_disposition_ref"):
+        origin_payload["plan_review_disposition_ref"] = failure_payload["plan_review_disposition_ref"]
     diagnostics_ref = str(failure_payload.get("diagnostics_ref") or "").strip()
     diagnostic_reason = str(failure_payload.get("reason") or "").strip()
     if diagnostics_ref and diagnostic_reason and not any(

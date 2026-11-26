@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zf.core.config.stage_teams import _text, active_members, author_team, member_child
+from zf.core.config.stage_teams import _text, active_members, author_team, member_child, team_member
 from zf.core.config.task_pipeline_profile import profile_digest
 
 
@@ -13,7 +13,8 @@ def normalize_validation_teams(teams: dict) -> dict:
             result[stage] = author_team(spec, stage=stage)
             continue
         field = {"task_verify": "mode", "candidate_verify": "width"}.get(stage)
-        if not field or not isinstance(spec, dict) or set(spec) != {"reason", field}:
+        allowed = {"reason", field} | ({"members"} if stage == "candidate_verify" else set())
+        if not field or not isinstance(spec, dict) or not {"reason", field} <= spec.keys() <= allowed:
             raise ValueError(f"stage_teams.{stage} requires reason and {field}")
         value = spec[field]
         if stage == "task_verify" and value != "oa_run_plan":
@@ -21,6 +22,23 @@ def normalize_validation_teams(teams: dict) -> dict:
         if stage == "candidate_verify" and (type(value) is not int or not 1 <= value <= 32):
             raise ValueError("candidate_verify.width must be a positive registered Reader count")
         result[stage] = {"reason": _text(spec["reason"], "reason"), field: value}
+        if stage == "candidate_verify" and "members" in spec:
+            if not isinstance(spec["members"], list) or len(spec["members"]) != value:
+                raise ValueError("candidate_verify.members must declare exactly width independent Readers")
+            members = [team_member(row, stage=stage) for row in spec["members"]]
+            if any(len({m[k] for m in members}) != value for k in ("role", "obligation_id")):
+                raise ValueError("candidate_verify.members requires distinct roles and obligation IDs")
+            refs = [_text(ref, "input ref") for member in spec["members"] for ref in member["input_refs"]]
+            if len(set(refs)) != len(refs):
+                raise ValueError("Candidate evidence references require one declared owner each")
+            for ref in refs:
+                kind, _, name = ref.partition(":")
+                parts = name.split("/")
+                if (kind not in {"acceptance", "journey", "integration"} or
+                        len(parts) != (2 if kind == "acceptance" else 1) or
+                        any(not part or part != part.strip() for part in parts)):
+                    raise ValueError("Candidate member input_refs require acceptance:TASK/AC, journey:ID or integration:ID")
+            result[stage]["members"] = members
     return result
 
 
@@ -39,6 +57,17 @@ def apply_validation_teams(expansion: dict, teams: dict) -> None:
             registered = policy["candidate"].get("verify_width", pipeline["lane_count"])
             if width > min(registered, len(policy["pools"]["verify"]["role_instances"])):
                 raise ValueError("candidate_verify.width conflicts with the registered Candidate Reader seats")
+            members = teams["candidate_verify"].get("members", [])
+            owners = {m["role"] for m in members}
+            if owners - set(policy["pools"]["verify"]["role_instances"]):
+                raise ValueError("Candidate evidence owners must be registered verification pool seats")
+            judge = teams.get("judge", {})
+            independent = {judge.get("author", pipeline["final"]["role"]), *(m["role"] for m in judge.get("members", []))}
+            for stage in expansion["stages"]:
+                if stage["id"] in {"prd-plan", "prd-post-verify-discovery"}:
+                    independent.update(stage["roles"])
+            if owners & independent:
+                raise ValueError("Candidate evidence owners must be independent of Plan author, Discovery and Judge")
             if meta["product_acceptance"]["mode"] != "blocking":
                 raise ValueError("Candidate Reader assignments require blocking product acceptance")
             policy["candidate"]["verify_width"] = width
@@ -51,6 +80,11 @@ def apply_validation_teams(expansion: dict, teams: dict) -> None:
                 "and integration_check_ids: [] on each assignment. For required cross-task interactions, declare "
                 "check_id, task_ids and an observable assertion, and assign every check ID via integration_check_ids. "
                 "The OA will review the exact assignment on this Plan revision."]
+            for member in members:
+                planner["criteria"]["instructions"].append(
+                    f"Candidate obligation {member['obligation_id']} belongs to {member['role']}. "
+                    f"Assign the following evidence IDs only to this Reader: {', '.join(member['input_refs'])}. "
+                    f"Question: {member['question']}. Expected output: {member['expected_output']}.")
         policy["profile_digest"] = profile_digest(policy)
     judge = teams.get("judge")
     if judge:

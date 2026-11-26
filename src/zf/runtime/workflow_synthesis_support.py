@@ -202,7 +202,9 @@ def synthesis_prompt(
 
         "Optional stage_teams.task_verify={mode:'oa_run_plan',reason} assigns independent verification "
         "at pre_impl; candidate_verify={width,reason} assigns bounded Reader seats and requires "
-        "complete freeze-bound coverage. judge={reason,author,members} chooses a named authorized_judges instance as formal "
+        "complete freeze-bound coverage. For distinct evidence owners declare candidate_verify.members using "
+        "one existing stage obligation per selected verification pool seat in requested_roles. Its input_refs reserve Plan IDs "
+        "(acceptance:TASK/AC, journey:ID, integration:ID) for that seat. judge={reason,author,members} chooses a named authorized_judges instance as formal "
         "Judge and distinct read-only specialists. Each member declares obligation_id, role, question, input_refs "
         "and expected_output. Judge opinions are required by default. Set required:false for advisory input; it "
         "can inform the Judge if admitted on time and never blocks signing. Set judge.objectives and judge.questions "

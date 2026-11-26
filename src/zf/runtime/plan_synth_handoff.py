@@ -13,6 +13,30 @@ from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
 from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
 
 
+PLAN_SYNTH_HANDOFF_KEYS = (
+    "workflow_run_id",
+    "child_id",
+    "operation_id",
+    "request_hash",
+    "attempt_id",
+    "result_protocol_mode",
+    "output_profile_id",
+    "output_profile_revision",
+    "attempt_source_manifest_ref",
+    "attempt_source_manifest_digest",
+    "attempt_source_manifest",
+    "input_consumption_policy_ref",
+    "input_consumption_policy_digest",
+    "input_consumption_policy",
+    "required_reads",
+    "result_scratch_ref",
+    "semantic_result_submit_mode",
+    "plan_revision",
+    "plan_synth_contract_ref",
+    "plan_synth_contract_digest",
+    "reviewed_plan_candidate_digest",
+    "plan_review_optimization",
+)
 PLAN_SYNTH_PROFILE_ID = "plan-synth"
 PLAN_SYNTH_PROFILE_REVISION = "1"
 PLAN_SYNTH_RESULT_SCHEMA = "plan-synthesis-result.v1"
@@ -55,6 +79,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_attempt",
     "rework_source",
     "rework_feedback",
+    "plan_review_disposition_ref",
     "operator_feedback",
     "input_task_ids",
     "dispatch_scope_source_event_id",
@@ -788,6 +813,7 @@ def _child_artifact_refs(report: Mapping[str, Any]) -> list[str]:
 
 
 __all__ = [
+    "PLAN_SYNTH_HANDOFF_KEYS",
     "PLAN_SYNTH_CONTRACT_SCHEMA",
     "PLAN_SYNTH_PROFILE_ID",
     "PLAN_SYNTH_PROFILE_REVISION",

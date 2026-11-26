@@ -94,7 +94,8 @@ def read_stage_team_inputs(state, inputs):
                 spec = binding.get("spec", {})
                 strategy = (inputs["compiled"].get("stage_teams") or {}).get("candidate_verify")
                 if strategy:
-                    from zf.runtime.candidate_reader_assignments import approved_roster_ref
+                    from zf.runtime.candidate_reader_assignments import approved_roster_ref, bind_reader_obligations
+                    bind_reader_obligations(spec, strategy, frozen=True)
                     approval = approved_roster_ref(state, events, f, spec)
                     if f.get("candidate_reader_approval") != approval or len(spec.get("candidate_reader_assignments", [])) != strategy["width"]:
                         raise ValueError("冻结 Reader 名单与 OA 获准版本不一致")
@@ -106,7 +107,8 @@ def read_stage_team_inputs(state, inputs):
                     members.append({"obligation_id": row["role_instance"], "role": row["role_instance"],
                                     "task_ids": list(dict.fromkeys(ac["task_id"] for ac in row["acceptance"])),
                                     "acceptance": row["acceptance"], "journey_ids": row.get("journey_ids", []),
-                                    "integration_check_ids": row.get("integration_check_ids", []), "expected_output": "Candidate 判词"})
+                                    "integration_check_ids": row.get("integration_check_ids", []), "expected_output": "Candidate 判词",
+                                    **row.get("stage_obligation", {})})
                 for stage in candidate_stages:
                     result[stage] = {"event_id": freeze.id, "freeze_id": f["freeze_id"],
                                      "task_map_generation": f.get("task_map_generation"), "members": members}

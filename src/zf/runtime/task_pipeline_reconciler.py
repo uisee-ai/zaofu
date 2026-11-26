@@ -12,6 +12,7 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.task_pipeline_failure_accounting import is_semantic_failure, semantic_failures
 
 
+VERIFY_ONLY_INITIAL_STAGE = "verify_ready"
 TASK_PIPELINE_SHADOW_SCHEMA = "task-pipeline-shadow.v1"
 _ACTIVE_OPERATION_STATUSES = frozenset({"reserved", "running", "suspended"})
 _ACTIVE_ATTEMPT_STATUSES = frozenset({"prepared", "delivering", "sent"})
@@ -912,7 +913,7 @@ def _derive_verify_only_stage(
 ) -> tuple[str, int, int]:
     verify = current.get("verify")
     if verify is None:
-        return "verify_ready", 1, 0
+        return VERIFY_ONLY_INITIAL_STAGE, 1, 0
     generation = int(verify.get("operation_generation") or 1)
     status = str(verify.get("status") or "")
     if _verify_execution_retry(verify):

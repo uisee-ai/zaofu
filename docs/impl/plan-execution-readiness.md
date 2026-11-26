@@ -243,3 +243,15 @@ Kernel 继续只传播显式声明。真实审查通过但遗漏声明时，页�
 
 在线 Apply 改变执行配置后，已启动 consumer 仍可能持有旧配置而拒绝新 Run；本验证
 不绕过 `consumer_config_stale`，也不把启动前配置的成功结果当作热重载验证。
+
+### 独立 Critic 在本次候选内核证执行异议
+
+完整审查遇到只读 Task Pipeline 入口时，冻结摘要分别列出每项任务的首站、实际选取的命令和验收，
+以及混合任务间的显式依赖。比较的 `before_rework` 标记适用于当前候选。独立 Critic 在
+`validate-plan` 和正式提交时用 `execution_assessments` 对这些比较逐项裁决。
+每项引用当前冻结摘要中与争议直接相关的子字段、需求和候选证据。`repair_required` 对应有同名 comparison
+的修复项，`no_repair` 保留解释及反证，证据不足的 `needs_clarification` 关联 Owner 决策问题。运行时检查选择事实、证据绑定和覆盖，语义由 Critic 判断。
+
+拒绝后的返工读取 `critical-reader-repair-context`。其中 `rework_feedback` 给出已确认的修复项；
+`plan_review_dispositions` 按拒绝包的 digest 附上本次裁决及其证据，供 Planner 了解已撤回意见及影响范围。
+完成当前裁决只结算当前独立评审，一次失败仍遵循现有因果幂等的返工路由。新候选的审批仍需独立裁决。

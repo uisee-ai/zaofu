@@ -33,6 +33,9 @@ def attach_execution_review(
         kind="plan_execution_review", schema_version="plan-execution-review.v1",
         created_by="plan-preflight", source_event_id=source_event_id,
     )
+    if ((body.get("plan_review") or {}).get("mode", "full") == "full"
+            and any(row.get("before_rework") for row in (body.get("execution_comparisons") or {}).values())):
+        payload["plan_review_disposition_digest"] = descriptor["sha256"]
     payload.setdefault("input_refs", []).append({
         **descriptor, "source_id": "plan-execution-review",
         "artifact_id": "plan-execution-review.json", "allowed_paths": ["$"],
@@ -162,7 +165,8 @@ def review_execution(
                if not kind or role.get("flow_kind") in ("", kind)]
     from zf.runtime.plan_review_comparisons import execution_comparisons
 
-    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger)
+    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger,
+                                        dependencies=graph["direct_dependencies"])
     return {
         "schema_version": "plan-execution-review.v1",
         **({"execution_comparisons": comparisons} if comparisons else {}),

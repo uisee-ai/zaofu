@@ -446,6 +446,14 @@ def prepare_call_operation(
 
         payload["plan_review_optimization"]["scope"] = review_scope_diagnostics(runtime.state_dir, source_manifest)
         check_review_input_budget(runtime.config, stage_id, payload["plan_review_optimization"])
+    if payload.get("plan_review_disposition_digest") and (
+        payload.get("review_scope_ref") or payload.get("diagnosis_review")
+        or any(s.get("artifact_id") in {"scoped_plan_review.json", "unchanged-plan-review.json"}
+               for s in source_manifest["sources"])
+        or not any(r.get("source_id") == "plan-execution-review" and r.get("json_path") == "$"
+                   and r.get("artifact_sha256") == payload["plan_review_disposition_digest"] for r in required_reads)
+    ):
+        payload.pop("plan_review_disposition_digest")
     if required_reads:
         payload["required_reads"] = required_reads
         from zf.runtime.input_delivery_contract import operation_delivery_mode
@@ -582,6 +590,7 @@ def prepare_call_operation(
                 "plan_synth_contract_digest",
                 "plan_synth_verdict_only",
                 "plan_review_evidence_policy",
+                "plan_review_disposition_digest",
                 "diagnosis_review",
                 "reviewed_plan_candidate_digest",
                 "pdd_id",

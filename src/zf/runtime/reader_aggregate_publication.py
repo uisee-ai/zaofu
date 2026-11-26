@@ -83,15 +83,17 @@ def freeze_publication(runtime, event):
         source_event_id=event.causation_id)
 
 
-def publish_prepared(runtime, aggregate, events=None):
-    descriptor = aggregate.payload.get('rebuild_publication_ref') or {}
+def publish_prepared(runtime, aggregate, events=None, *, revision_writer=None):
+    descriptor = aggregate.payload.get('revision_publication_ref' if revision_writer else 'rebuild_publication_ref') or {}
     body = hydrate_sidecar_ref(runtime.state_dir, descriptor)
     if not body.ok or not isinstance(body.payload, dict):
         raise ValueError('rebuild publication sidecar is unavailable')
     event = ZfEvent.from_dict(body.payload)
     expected_type = aggregate.payload.get('success_event') or aggregate.payload.get('failure_event')
+    cause = aggregate.causation_id if revision_writer else aggregate.id
     if (aggregate.origin != 'kernel' or event.origin != 'kernel'
-            or event.type != expected_type or event.causation_id != aggregate.id
+            or (revision_writer and event.id != aggregate.payload.get('revision_publication_id'))
+            or event.type != expected_type or event.causation_id != cause
             or event.correlation_id != aggregate.correlation_id
             or any(event.payload.get(key) != aggregate.payload.get(key) for key in (
                 'fanout_id', 'rebuild_of', 'rebuild_request_event_id', 'recovery_generation',
@@ -107,4 +109,4 @@ def publish_prepared(runtime, aggregate, events=None):
                 and existing.payload.get('blocked_event_type') == event.type
                 and existing.payload.get('blocked_event_payload') == event.payload):
             return existing
-    return runtime.event_writer.append(event)
+    return (revision_writer or runtime.event_writer).append(event)

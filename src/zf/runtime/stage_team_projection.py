@@ -586,6 +586,10 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                            for ac in m.get("acceptance", [])}
             team["unreported_acceptance"] = [{"task_id": t, "acceptance_id": a} for t, a in sorted(declared_ac - reported_ac)]
         if stage == "prd-plan":
+            from zf.runtime.plan_revision_handoff import plan_revision_handoff
+
+            if handoff := plan_revision_handoff(events, run):
+                team["revision_handoff"] = handoff
             if bound:
                 inputs_required = [m for m in required if m["obligation_id"] != "plan-author"]
                 team["plan_inputs"] = {"total": len(inputs_required),

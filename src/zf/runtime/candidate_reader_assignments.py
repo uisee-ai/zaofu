@@ -123,7 +123,7 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
     for index, row in enumerate(rows):
         path = f"candidate_reader_assignments[{index}]"
         _row_fields(row, path, required={"role_instance", "acceptance", "journey_ids"},
-                    optional=("plan_reads", "integration_check_ids"))
+                    optional=("plan_reads", "integration_check_ids", "stage_obligation"))
         role = row["role_instance"]
         if not _identifier(role):
             raise ValueError(f"{path}.role_instance must be a nonempty trimmed string")
@@ -167,6 +167,49 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
     required = {j["journey_id"] for j in spec["user_journeys"] if j.get("mandatory", True)}
     if journeys - known or required - journeys:
         raise ValueError("Candidate Reader journey assignments do not cover the frozen product spec")
+
+
+def bind_reader_obligations(spec: Mapping[str, Any], team: Mapping[str, Any], *, frozen: bool = False) -> dict:
+    """Join authorized stage members to validated product assignments, then pin each Reader's own brief."""
+    rows = spec.get("candidate_reader_assignments", [])
+    members = {m["role"]: m for m in team.get("members", [])}
+    if not members:
+        if any("stage_obligation" in row for row in rows):
+            raise ValueError("Candidate stage obligation requires an approved evidence owner")
+        return dict(spec)
+    if set(members) != {row["role_instance"] for row in rows}:
+        raise ValueError("Candidate evidence owners must match the approved Reader instances")
+    owners: dict[str, set[str]] = {}
+    for row in rows:
+        role = row["role_instance"]
+        refs = [f"acceptance:{item['task_id']}/{item['acceptance_id']}" for item in row["acceptance"]]
+        refs.extend("journey:" + key for key in row["journey_ids"])
+        refs.extend("integration:" + key for key in row.get("integration_check_ids", []))
+        for ref in refs:
+            owners.setdefault(ref, set()).add(role)
+    bound = []
+    for row in rows:
+        role = row["role_instance"]
+        member = members[role]
+        for ref in member["input_refs"]:
+            if owners.get(ref) != {role}:
+                raise ValueError(f"Candidate evidence {ref} must be assigned exclusively to {role}")
+        if ("stage_obligation" in row or frozen) and row.get("stage_obligation") != member:
+            raise ValueError(f"Candidate frozen stage obligation differs from the approved owner {role}")
+        bound.append({**row, "stage_obligation": member})
+    return {**spec, "candidate_reader_assignments": bound}
+
+
+def candidate_obligation_lines(scope: Mapping[str, Any]) -> list[str]:
+    member = scope.get("stage_obligation")
+    if not member:
+        return []
+    return [
+        f"Evidence obligation {member['obligation_id']}: {member['question']}",
+        "Assigned evidence: " + ", ".join(member["input_refs"]),
+        "Expected output: " + member["expected_output"],
+        *(["Completion condition: " + member["completion_condition"]] if "completion_condition" in member else []),
+    ]
 
 
 def assigned_spec(state: Path, freeze: Mapping[str, Any]) -> dict:
@@ -276,12 +319,15 @@ def scope_reader_contract(aggregate: dict, spec: dict, *, role: str, target: str
                          "integration_check_id": check["check_id"], "task_ids": check["task_ids"]})
         ids.add(check_ac)
     scope = {
-        **({"integration_check_ids": list(row["integration_check_ids"])} if assigned_checks else {}),        "role_instance": role, "task_ids": sorted({a["task_id"] for a in row["acceptance"]} | {t for c in assigned_checks for t in c["task_ids"]}),
+        **({"integration_check_ids": list(row["integration_check_ids"])} if assigned_checks else {}),
+        "role_instance": role, "task_ids": sorted({a["task_id"] for a in row["acceptance"]} |
+                                                {t for c in assigned_checks for t in c["task_ids"]}),
         "acceptance_ids": sorted(ids), "journey_ids": list(row["journey_ids"]),
         "candidate_event_id": aggregate["candidate_event_id"], "target_commit": target,
         "plan_artifact_package_digest": aggregate["plan_artifact_package_digest"],
         "assignments_digest": canonical_json_sha256(rows), "parent_contract_digest": canonical_json_sha256(aggregate),
         "plan_reads": row.get("plan_reads", {}),
+        **({"stage_obligation": row["stage_obligation"]} if "stage_obligation" in row else {}),
     }
     aggregate.update(acceptance_criteria=selected, verification_commands=commands,
                      verification_command=commands[0]["command"] if commands else "",

@@ -15,6 +15,10 @@ from typing import Any
 from zf.core.config.schema import RoleConfig
 from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
+from zf.runtime.orchestrator_agent_pre_impl_revision import (
+    is_pre_impl_revision_trigger, pre_impl_revision_stale_reason,
+    revision_child_dispatch_allowed, start_current_revision_fanout,
+)
 from zf.runtime.channel_workflow_bridge import emit_fanout_channel_state_update
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.failure_kind import (
@@ -490,6 +494,8 @@ class FanoutCoordinationMixin(
         causation_id: str,
         prepared_dispatch: dict[str, Any] | None = None,
     ) -> bool:
+        if not revision_child_dispatch_allowed(self, context, child, role):
+            return False
         run_id = f"run-{context.fanout_id}-{child.child_id}"
         try:
             prepared_dispatch = prepared_dispatch or self._prepare_reader_fanout_child_operation(
@@ -724,6 +730,8 @@ class FanoutCoordinationMixin(
             stages = reader_stages_by_trigger.get(event.type)
             if not stages:
                 continue
+            if is_pre_impl_revision_trigger(event, self.config):
+                stages = [s for s in stages if s.id == event.payload.get("revision_target_stage")]
             for stage in stages:
                 if not self._fanout_stage_matches_trigger_event(stage, event):
                     continue
@@ -827,6 +835,7 @@ class FanoutCoordinationMixin(
             for index, event in enumerate(events)
             if event.type == "fanout.synth.dispatched"
         }
+        pending_publications = []
         completed_fanouts: set[str] = set()
         completed_synth_sources: set[tuple[str, str]] = set()
         retry_floor = {}
@@ -844,6 +853,8 @@ class FanoutCoordinationMixin(
             fanout_id = str(payload.get("fanout_id") or "")
             if not fanout_id:
                 continue
+            if event.origin == "kernel" and payload.get("revision_publication_ref") and payload.get("revision_publication_id"):
+                pending_publications.append(event)
             completed_fanouts.add(fanout_id)
             synth_event_id = str(payload.get("synth_event_id") or "")
             if synth_event_id:
@@ -851,6 +862,11 @@ class FanoutCoordinationMixin(
             if event.causation_id:
                 completed_synth_sources.add((fanout_id, str(event.causation_id)))
 
+        if pending_publications:
+            from zf.runtime.pre_impl_revision_settlement import resume_revision_publications
+
+            if resume_revision_publications(self, events, pending_publications):
+                return True
         recovered = False
         for index, event in enumerate(events):
             if event.type != "fanout.synth.completed":
@@ -2356,7 +2372,13 @@ class FanoutCoordinationMixin(
             and not str(trigger_payload.get("workflow_invoke_pattern_id") or "")
         ):
             return False
-        stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
+        if is_pre_impl_revision_trigger(event, self.config):
+            stage_id = event.payload.get("revision_target_stage", "")
+            if pre_impl_revision_stale_reason(self, event, stage_id):
+                return False
+            stages = [self._fanout_stage_by_id(stage_id)]
+        else:
+            stages = task_pipeline_candidate_readers.candidate_reader_stages(self, event)
         if not stages:
             return False
         from zf.runtime.plan_diagnosis_repair_lineage import awaiting_diagnosis_repair_receipt
@@ -2964,7 +2986,11 @@ class FanoutCoordinationMixin(
                 "review_strategy": stage.aggregate.review_strategy,
                 "synth_timeout_seconds": stage.aggregate.synth_timeout_seconds,
             }
-            self.event_writer.append(started)
+            if is_pre_impl_revision_trigger(event, self.config):
+                if not start_current_revision_fanout(self, event, started):
+                    continue
+            else:
+                self.event_writer.append(started)
             started_any = True
             manifest = self._fanout_manifest(context.fanout_id)
             if manifest and self._cancel_candidate_superseded_replan_fanout(manifest):
@@ -3300,6 +3326,8 @@ class FanoutCoordinationMixin(
             self._maybe_start_writer_fanout(original)
 
     def _maybe_start_writer_fanout(self, event: ZfEvent) -> None:
+        if is_pre_impl_revision_trigger(event, self.config):
+            return
         if getattr(event, "type", "") == "plan.approved":
             self._resume_writer_fanout_on_plan_approved(event)
             return
@@ -7046,6 +7074,14 @@ class FanoutCoordinationMixin(
         from zf.runtime.stage_definition_binding import fanout_timeout_seconds
         return fanout_timeout_seconds(self, stage_id, manifest, DEFAULT_FANOUT_TIMEOUT_S)
     def _finalize_fanout_synth(self, event: ZfEvent) -> None:
+        from zf.runtime.pre_impl_revision_settlement import RevisionSettlementDeferred
+
+        try:
+            FanoutCoordinationMixin._publish_fanout_synth(self, event)
+        except RevisionSettlementDeferred:
+            return
+
+    def _publish_fanout_synth(self, event: ZfEvent) -> None:
         payload = event.payload if isinstance(event.payload, dict) else {}
         fanout_id = str(payload.get("fanout_id") or "")
         if not fanout_id:
@@ -7209,8 +7245,11 @@ class FanoutCoordinationMixin(
                 artifact_payload=artifact_payload,
             )
         )
+        from zf.runtime.pre_impl_revision_settlement import revision_settlement_writer
+
+        writer = revision_settlement_writer(self, manifest, event) or self.event_writer
         if not self._fanout_aggregate_started(manifest):
-            self.event_writer.append(ZfEvent(
+            writer.append(ZfEvent(
                 type="fanout.aggregate.started",
                 actor="zf-cli",
                 payload={
@@ -7245,7 +7284,7 @@ class FanoutCoordinationMixin(
         candidate_ref_payload = (
             {"candidate_ref": candidate_ref} if candidate_ref else {}
         )
-        aggregate_event = self.event_writer.append(ZfEvent(
+        aggregate = ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",
             payload={
@@ -7264,16 +7303,14 @@ class FanoutCoordinationMixin(
             },
             causation_id=event.id,
             correlation_id=trace_id,
-        ))
-        from zf.runtime.research_delivery import settle_research_delivery
-
-        settle_research_delivery(self, aggregate_event, manifest, artifact_payload, event)
+        )
+        publication = None
         if publish_event:
             children = [
                 child for child in manifest.get("children", [])
                 if isinstance(child, dict)
             ]
-            published = self.event_writer.append(ZfEvent(
+            publication = ZfEvent(
                 type=publish_event,
                 actor="zf-cli",
                 payload={
@@ -7292,7 +7329,24 @@ class FanoutCoordinationMixin(
                 },
                 causation_id=event.id,
                 correlation_id=trace_id,
-            ))
+            )
+            if writer is not self.event_writer:
+                from zf.runtime.reader_aggregate_publication import freeze_publication
+
+                publication.origin = "kernel"
+                aggregate.payload.update(revision_publication_id=publication.id,
+                                         revision_publication_ref=freeze_publication(self, publication))
+        aggregate_event = writer.append(aggregate)
+        from zf.runtime.research_delivery import settle_research_delivery
+
+        settle_research_delivery(self, aggregate_event, manifest, artifact_payload, event)
+        if publication is not None:
+            if writer is self.event_writer:
+                published = writer.append(publication)
+            else:
+                from zf.runtime.reader_aggregate_publication import publish_prepared
+
+                published = publish_prepared(self, aggregate_event, revision_writer=writer)
             if final_status == "completed" and publish_event == "verify.passed":
                 self._bridge_verify_passed_to_parity_scan(published)
             elif (

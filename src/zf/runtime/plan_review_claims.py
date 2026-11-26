@@ -33,6 +33,12 @@ def review_claim_briefing(policy: str) -> list[str]:
         'and the same basis with requirement_evidence from a frozen requirement/declared input and current_evidence '
         'from the current candidate. Compare actual stage entry and standalone Candidate commands to the obligation. '
         'A host allowlist grants permission only. Reconcile every still-present comparison again after rework. '
+        'Before any rejection, assess every frozen comparison marked before_rework; on approval assess all. '
+        'For each marked comparison include disposition (no_repair, repair_required, or needs_clarification), runtime_evidence with '
+        'an exact current field beneath $.execution_comparisons.<comparison>.facts, and the requirement/candidate '
+        'basis. Link fixes by fix_items[].comparison (other for a separate obligation) and unresolved questions by owner_decision_items[].comparison. A command owner selects acceptance and commands '
+        'within a task; verify_only uses the Task Pipeline Verify entry. Evaluate cross-task ordering separately '
+        'against the requirement and direct dependencies. Unresolved execution contracts remain unknown. '
         'Positive assessments are verdict metadata; leave clean findings and Planner-owned gates empty.', '',
     ]
 
@@ -65,16 +71,17 @@ def review_claim_issues(
     rejected = value('verdict') == 'rejected' or value('recommendation') in {'reject', 'needs_rework'}
     if rejected and not rows:
         error('fix_items', 'A rejection requires a blocking item with current evidence and obligation basis')
-    if not rejected and (value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}):
-        from zf.runtime.plan_review_comparisons import approval_assessments
+    if rejected or value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}:
+        from zf.runtime.plan_review_comparisons import execution_assessments
         try:
             if scope := identity.get("diagnosis_review"):
                 from zf.runtime.candidate_diagnosis_review import diagnosis_assessments
-                if rows:
-                    error("report", "Diagnosis approval cannot retain blocking issues")
-                rows.extend(diagnosis_assessments(scope, report or result, error=error))
+                if not rejected:
+                    if rows:
+                        error("report", "Diagnosis approval cannot retain blocking issues")
+                    rows.extend(diagnosis_assessments(scope, report or result, error=error))
             else:
-                rows.extend(approval_assessments(state_dir, request, report or result, error=error))
+                rows.extend(execution_assessments(state_dir, request, report or result, rejected=rejected, error=error))
         except (KeyError, ValueError, TypeError, OSError) as exc:
             error("report.execution_assessments", str(exc))
     if not rows:
@@ -121,6 +128,12 @@ def review_claim_issues(
             if not isinstance(basis, Mapping) or not str(basis.get('obligation') or '').strip():
                 error(field, 'Name the existing requirement/approved obligation; advice cannot create one')
                 continue
+            if 'runtime_evidence' in row:
+                try:
+                    _check_citation(state_dir, manifest, row['runtime_evidence'], current=None,
+                                    role=str(request.get('role_instance') or ''))
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    error(path + '.runtime_evidence', str(exc))
             for name in ('requirement_evidence', 'current_evidence'):
                 citations = basis.get(name)
                 if not isinstance(citations, list) or not citations:

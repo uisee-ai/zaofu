@@ -34,8 +34,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     register_recover_task_verify(nested)
     from zf.cli.recover_task_integration import register_recover_task_integration
     register_recover_task_integration(nested)
-    from zf.cli.recover_oa_review import register_recover_candidate_repair, register_recover_oa_review
+    from zf.cli.recover_oa_review import (
+        register_recover_candidate_repair, register_recover_oa_review, register_pre_impl_revision,
+    )
     register_recover_oa_review(nested)
+    register_pre_impl_revision(nested)
     register_recover_candidate_repair(nested)
     from zf.cli.recover_candidate_registration import register as register_candidate_registration
     register_candidate_registration(nested)

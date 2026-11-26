@@ -21,6 +21,19 @@ OA 角色偏好是软约束；`capability_refs`、Task 能力要求和执行池�
 
 OA execution plan 的 graph/edges 不替换 Task Map 的依赖；`skill_refs` 也不授权临时安装或执行未配置的技能。改变任务依赖、scope 或执行配置须走既有计划修订与审批。局部修订保留的任务继续使用自身已接纳 generation 的委派。
 
+### 实施前退回规划
+
+在 blocking `pre_impl` 检查点，OA 可以对已经通过 Critic 的版本提出 `revise`。例如，候选验收要求三个 Reader 各自核对不同证据，而获准的计划包把同一项验收分给了三人。OA 在决定中说明受影响的分工、证据和所需改动。内核核对同一 Run 的 Task Map 代次、当前计划包摘要和决定来源，将决定及其审过的版本交回 Planner。Planner 可从该包恢复任务图和验收规格，沿用已有扫描证据，保留本次修订以外的任务、权限和审批边界。
+
+新版本仍要经过 Critic、已启用的 OA 检查点及配置要求的 Owner 审批，之后才能派发业务任务。相同决定的重放复用同一次返工。即使其他阶段监听相同的扫描完成事件，只有决定绑定的规划阶段可接手。派发、启动 Critic 和接纳修订结果时重新核对父版本。Owner 在此期间已裁决原版或另一个计划包已接替时，旧返工不能覆盖它。计划包已被替代、业务审批已经发生，或修订次数已经用尽时，内核保留对应回执供操作员核查。
+
+Planner 交接给 Critic、Critic 发布修订包及 `task_map.ready` 时，内核重新核对当初退回的父包和 Owner 决定。
+已有更新包或 Owner 已裁决时，取消这条过期返工。暂停期间保留已提交结果并阻止新派发，恢复后的正常空闲扫描可继续启动待评审的 Critic。如果账本并发写入，当前轮有限重试；已完成聚合而尚未发布的结果使用冻结事件 ID 恢复，一次结果只发布一次。
+
+在 `zf workflow team --request <request_id> --stage prd-plan` 或工作台的「阶段分工」中查看此次修订。视图绑定原决定、被审计划包、`plan-author` 和派发回执。OA 已提出意见、内核已生成返工触发、Planner 已获派分别显示。Run 暂停保留在同一视图。未完成的 Goal 在既有空闲检查确认缺少接手时，重扫回执会附上该次交接；已有待批单、有效在途工作和暂停仍按原策略处理。
+
+旧版曾把这类决定升级给 Owner。用 `zf recover pre-impl-revision --escalation <event_id>` 预览，再用 `--apply --approval-ref <授权引用>` 应用。恢复入口验证原升级与已准入决定的因果、当前代次、原扫描和派发权限。原扫描载有旧 Owner 答复时，Planner 可以读取历史答案；这次修订的权限仍取自当前检查点。可在[返工派发测试](../../tests/test_orchestrator_agent_pre_impl_revision.py)及[工作台与空闲检查测试](../../tests/test_plan_revision_handoff.py)核对。
+
 ## 阶段结果回流
 
 正常结果在已启用的 `stage_barrier` / `pre_closeout` 检查点批量进入 OA 的 canonical source manifest 和 required reads。聚合阶段不会把每个 lane 的完成变成全局 LLM 等待点。

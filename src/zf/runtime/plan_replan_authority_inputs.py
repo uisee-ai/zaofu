@@ -41,6 +41,9 @@ def replan_authority_sources(
     refs.extend(source(port["ref"], port["sha256"], f"baseline-plan-port-{port['logical_name']}")
                 for port in [*package["produced"], *package["inherited"]])
     historical = payload.get("historical_orchestration_context") or {}
+    owner = historical.get("owner_confirmation")
+    if isinstance(owner, Mapping) and owner.get("ref") == historical.get("owner_confirmation_ref"):
+        refs.append(source(owner["ref"], owner["sha256"], "historical-owner-confirmation"))
     observation = historical.get("orchestrator_decision_ref")
     if isinstance(observation, Mapping):
         refs.append(source(observation["ref"], observation["sha256"], "plan-rework-observation"))
@@ -57,11 +60,18 @@ def replan_authority_sources(
         raise ValueError("replan OA decision requires an immutable descriptor")
     decision = hydrate_sidecar_ref(state_dir, dict(decision_ref)).payload
     identity = decision.get("identity", {})
+    pre_impl = (context.get("replan_classification") == "oa_pre_impl_revision"
+                and identity.get("checkpoint") == "pre_impl" and decision.get("decision") == "revise")
     if (identity.get("workflow_run_id") != package["workflow_run_id"]
             or identity.get("plan_artifact_package_digest") != package_digest
             or identity.get("task_map_generation") != package["task_map_generation"]
-            or decision.get("decision") != "return_to_plan"):
+            or (not pre_impl and decision.get("decision") != "return_to_plan")):
         raise ValueError("replan OA decision differs from baseline identity")
+    if pre_impl:
+        delta_ref = {"ref": authority.get("orchestration_delta_ref"), "sha256": authority.get("orchestration_delta_digest")}
+        if (identity.get("plan_artifact_package_ref") != package_ref
+                or hydrate_sidecar_ref(state_dir, delta_ref).payload != decision.get("delta")):
+            raise ValueError("pre_impl revision directive differs from the original OA decision")
     refs.append(source(decision_ref["ref"], decision_ref["sha256"], "plan-rework-decision"))
     refs.append(source(str(authority.get("orchestration_delta_ref") or ""),
                        str(authority.get("orchestration_delta_digest") or ""), "plan-rework-delta"))
@@ -146,7 +156,7 @@ def _decision_evidence_sources(
     state_dir: Path, decision: Mapping[str, Any], *, task_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Reuse only cited sources already pinned in this decision's OA manifest."""
-    operation = load_workflow_operation(EventLog(state_dir / "events.jsonl"), str(decision.get("operation_id") or ""))
+    operation = load_workflow_operation(EventLog(state_dir / "events.jsonl"), str(decision.get("operation_id") or (decision.get("identity") or {}).get("operation_id") or ""))
     if not operation:
         raise ValueError("replan OA decision operation is unavailable")
     request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
@@ -158,7 +168,8 @@ def _decision_evidence_sources(
     citations = list(legacy)
     for directive in (decision.get("delta") or {}).get("directives", []):
         target = directive.get("target") or {}
-        if directive.get("action") == "return_to_plan" and (task_ids is None or target.get("task_id") in task_ids):
+        if (directive.get("action") == "revise" and (decision.get("identity") or {}).get("checkpoint") == "pre_impl"
+                or directive.get("action") == "return_to_plan" and (task_ids is None or target.get("task_id") in task_ids)):
             citations.extend(directive.get("basis_refs") or [])
     legacy_paths = {item for item in legacy if isinstance(item, str)}
     legacy_paths.update(item.get("ref") for item in legacy if isinstance(item, Mapping) and not item.get("sha256"))

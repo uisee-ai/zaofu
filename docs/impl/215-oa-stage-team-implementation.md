@@ -74,3 +74,17 @@ Web 从 Task 打开成员时，按当前 Run、代次和事件游标获取详情
 
 
 父 Run 已因待处理决定进入静默时，原 Run Manager 请求关联的 Autoresearch 超时仍可把部分诊断送回该决定的负责人。运行时验证原告警、同一 Run 的诊断请求及终止回执，并检查其他待决事项、暂停与终态。已消费的交接保留原回执。单次反思建议继续等待时，新的恢复动作仍需独立授权。[静默与准入回归](../../tests/test_quiescent_autoresearch_handoff.py)
+
+
+### Candidate Reader 的证据分工
+
+提案可继续只用 `stage_teams.candidate_verify` 的 `width` 和 `reason`。
+需要指定不同证据的责任人时，`members` 声明与席位数相同的阶段义务。每席引用现有验收标识
+（`acceptance:TASK/AC`、`journey:ID`、`integration:ID`），写明独立核查的问题及预期输出。
+例：浏览器席负责 `journey:checkout`，运行时席负责 `integration:overlap`；
+Planner 用现有用户旅程与集成断言定义两者，把对应 ID 分给各自的 Reader。
+
+Planner 提交前校验成员、证据 ID 与具体分配。显式声明的每个 ID 必须由其唯一责任席领取。
+正式 Plan 包将获准的职责连同角色分配一起冻结，OA 按现有摘要批准。在 Candidate 阶段，
+成员收到自己的问题、证据 ID、验收范围与预期输出，通过现有结果准入对同一目标签署判词。
+项目批准文字中的专业判断仍由 OA、Planner 与独立 Reader 核对。

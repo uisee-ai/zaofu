@@ -78,6 +78,8 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
         if strategy:
             raise ValueError("frozen candidate lacks the required Candidate Reader assignments")
         return stage
+    if not strategy and any("stage_obligation" in row for row in spec["candidate_reader_assignments"]):
+        raise ValueError("frozen Candidate evidence owners lack the approved team strategy")
     if strategy and len(spec["candidate_reader_assignments"]) != strategy["width"]:
         raise ValueError("frozen Candidate Reader roster differs from approved verification width")
     kind = spec["flow_kind"]
@@ -105,7 +107,8 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
     else:
         eligible = {r.instance_id for r in runtime._fanout_roles(stage.roles)}
     if strategy:
-        from zf.runtime.candidate_reader_assignments import approved_roster_ref
+        from zf.runtime.candidate_reader_assignments import approved_roster_ref, bind_reader_obligations
+        bind_reader_obligations(spec, strategy, frozen=True)
         binding = approved_roster_ref(Path(runtime.state_dir), runtime.event_log.read_all(), body, spec)
         if body.get("candidate_reader_approval") != binding:
             raise ValueError("Candidate Reader approval differs from the frozen decision")
