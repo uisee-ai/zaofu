@@ -348,13 +348,8 @@ def prepare_call_operation(
 
         attach_reader_handoff(runtime, payload)
 
-    if (output_profile_id in {"workflow-read", "plan-synth"} and previous_request
-            and previous_request.get("active_attempt_id") == attempt_id
-            and payload.get("required_reads") == previous_request.get("required_reads")):
-        from zf.runtime.plan_rework_input_overlap import has_scoped_rework_context
-
-        if has_scoped_rework_context(previous_request):
-            payload.pop("required_reads", None)  # A replayed projection is not a new explicit requirement.
+    from zf.runtime.plan_rework_input_overlap import restore_replayed_rework_reads
+    restore_replayed_rework_reads(payload, previous_request, attempt_id, output_profile_id)
 
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
@@ -397,6 +392,8 @@ def prepare_call_operation(
             else ()
         ),
     )
+    plan_read_diagnostic = {}
+    baseline = required_reads
     full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
     if output_profile_id == "plan-synth" and configured_review.get("mode") != "full" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
@@ -431,22 +428,21 @@ def prepare_call_operation(
                 runtime.state_dir, source_manifest, required_reads,
                 policy=configured_review, explicit=bool(explicit_required_reads),
                 lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request,
+                read_events=runtime.event_log.read_all, explicit_rows=explicit_required_reads,
             )
         required_reads, payload["plan_review_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
             explicit=bool(explicit_required_reads), strategy=selection_strategy,
         )
+        plan_read_diagnostic = payload["plan_review_optimization"]
     elif (source_manifest.get("handoff_authority_contract") or {}).get("attempt_domain") == "plan":
-        from zf.runtime.plan_input_read_selection import select_plan_input_reads
-        from zf.runtime.plan_review_selection_cost import choose_review_reads
+        from zf.runtime.plan_input_read_selection import choose_plan_reader_reads
 
-        partitioned, strategy = select_plan_input_reads(runtime.state_dir, source_manifest,
-            required_reads, policy={}, explicit=bool(explicit_required_reads),
-            lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request)
-        required_reads, payload["plan_input_optimization"] = choose_review_reads(
-            runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
-            explicit=bool(explicit_required_reads), strategy=strategy,
-        )
+        required_reads, plan_read_diagnostic = choose_plan_reader_reads(
+            runtime.state_dir, source_manifest, required_reads, declarations=explicit_required_reads,
+            lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request,
+            read_events=runtime.event_log.read_all)
+        payload["plan_input_optimization"] = plan_read_diagnostic
     from zf.runtime.artifact_review_scope import select_review_inputs
     required_reads = select_review_inputs(runtime, operation_id, output_profile_id, payload, source_manifest,
                                          required_reads, explicit_required_reads)
@@ -518,7 +514,11 @@ def prepare_call_operation(
     payload.pop("judge_specialist_obligation", None)
     if specialist:
         payload["judge_specialist_obligation"] = specialist
+    explicit_indexes = ([required_reads.index(row) for row in explicit_required_reads]
+                        if explicit_required_reads and required_reads != baseline
+                        and plan_read_diagnostic.get("strategy") == "bound_rework_descriptor_index" else [])
     request = {
+        **({"plan_rework_explicit_read_indexes": explicit_indexes} if explicit_indexes else {}),
         **({"judge_specialist_obligation": specialist} if specialist else {}),
         "workflow_run_id": workflow_run_id,
         "operation_type": operation_type,

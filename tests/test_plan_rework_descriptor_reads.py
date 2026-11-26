@@ -134,7 +134,7 @@ def test_preupgrade_root_policy_replays_and_explicit_root_stays_authoritative(tm
     from zf.runtime import plan_rework_input_overlap
     runtime, refs, _ = scenario(tmp_path, 3)
     with monkeypatch.context() as old:
-        old.setattr(plan_rework_input_overlap, "rework_context_paths", lambda *args: ())
+        old.setattr(plan_rework_input_overlap, "rework_context_paths", lambda *args, **kwargs: ())
         issued, pinned = prepare(runtime, refs, "legacy")
     assert context_paths(pinned) == ["$"]
     before = (runtime.state_dir / pinned["input_consumption_policy_ref"]["ref"]).read_bytes()
