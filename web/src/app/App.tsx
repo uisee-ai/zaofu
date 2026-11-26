@@ -5,7 +5,7 @@ import { useBoardBootstrap } from "./useBoardBootstrap";
 import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
 import { useUiPreferences } from "./UiPreferences";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
@@ -627,6 +627,10 @@ export function App() {
   const [actionResult, setActionResult] = useState<ActionResponse | null>(null);
   const [webActionTokenPresent, setWebActionTokenPresent] = useState(false);
   const [webSessionStatus, setWebSessionStatus] = useState<NonNullable<RuntimeSummary["web_session"]> | null>(null);
+  // The server can switch a running legacy tab to password login. Its first
+  // challenge can also arrive from the session bootstrap request itself.
+  const controllerManaged = Boolean(webSessionStatus?.controller_managed);
+  useLayoutEffect(() => watchDashboardLogin(controllerManaged), [controllerManaged]);
   const { preferences, t } = useUiPreferences();
   const themeMode = preferences.theme;
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>(
@@ -689,11 +693,6 @@ export function App() {
     configureDashboardSession(window.localStorage, sessionMode);
     setWebActionTokenPresent(Boolean(storedWebActionToken()));
   }, [sessionMode]);
-  useEffect(() => {
-    if (webSessionStatus?.local_account || webSessionStatus?.controller_managed) {
-      return watchDashboardLogin(Boolean(webSessionStatus.controller_managed));
-    }
-  }, [webSessionStatus?.local_account, webSessionStatus?.controller_managed]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);

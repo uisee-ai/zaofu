@@ -1834,6 +1834,18 @@ def create_app(
             "items": pending_kanban_proposals(events),
         })
 
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/record")
+    def project_task_reading_record(project_id: str, task_id: str) -> JSONResponse:
+        from zf.web.board_bootstrap import task_reading_record
+        context = _resolve_api_project(
+            project_id, default_project_id=default_project_id, default_state_dir=state_dir,
+            default_config=config, default_project_root=project_root,
+        )
+        record = task_reading_record(context.state_dir, task_id)
+        if record is None:
+            raise HTTPException(404, f"task {task_id!r} not found")
+        return JSONResponse(record)
+
     @app.get("/api/projects/{project_id}/tasks/{task_id}")
     def project_task_detail(project_id: str, task_id: str) -> JSONResponse:
         context = _resolve_api_project(

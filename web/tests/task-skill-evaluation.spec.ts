@@ -1,14 +1,66 @@
 import { readFile } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
+import { installUiFixture } from "./ui-alignment.fixture";
+
+const firstRevision = {
+  workflow_run_id: "workflow-A", task_outcome: "blocked", operation_id: "op", attempt_id: "a-1",
+  dispatch_id: "d1", revision: 1, digest: "first-digest", change_reason: "terminal_observed", predecessor: null,
+  critical_status: "pending", score: { percent: null, passed: 0, denominator: 0, unknown: 5, not_applicable: 0, coverage: 0 },
+  recommendation: { action: "复核冻结证据" }, criteria: [], skills: [],
+};
+
+test("task reader opens the selected task's Skill assessment on demand and distinguishes failures from missing scores", async ({ page }, testInfo) => {
+  await installUiFixture(page);
+  const task = { id: "SKILL-LONG-DETAIL", title: "等待完整详情的任务", status: "in_progress" };
+  const pendingDetails: Route[] = [];
+  await page.route(/\/tasks\/SKILL-LONG-DETAIL(?:\?.*)?$/, route => { pendingDetails.push(route); });
+  const requested: string[] = [];
+  let response: "error" | "empty" | "score" = "error";
+  await page.route("**/tasks/*/skill-evaluations?*", route => {
+    const url = new URL(route.request().url());
+    requested.push(url.pathname + url.search);
+    if (response === "error") return route.fulfill({ status: 403, body: "assessment unavailable" });
+    const cards = response === "empty" ? [] : [{ ...firstRevision, score: { ...firstRevision.score, percent: 75, passed: 3, denominator: 4 } }];
+    return route.fulfill({ json: { cards } });
+  });
+  await page.goto(`/?page=task&project=ui-review&task=${task.id}`);
+  const reader = page.getByRole("region", { name: "任务详情" });
+  const entry = reader.getByText("任务 Skill 评估", { exact: true });
+  await expect(entry).toBeVisible();
+  await expect.poll(() => pendingDetails.length).toBeGreaterThan(0);
+  await expect(reader.getByRole("heading", { name: task.title })).toHaveCount(0);
+  expect(requested).toEqual([]);
+  await entry.click();
+  const panel = reader.getByTestId("task-skill-evaluations");
+  await expect(panel.getByRole("alert")).toContainText("任务评分卡读取失败");
+  await expect(panel.getByText(/尚无已发布/)).toHaveCount(0);
+  response = "empty";
+  await panel.getByRole("button", { name: "刷新评估" }).click();
+  await expect(panel.getByRole("status")).toContainText("该任务尚无已发布的评分卡");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  response = "score";
+  await panel.getByRole("button", { name: "刷新评估" }).click();
+  await expect(panel.getByText(/75%.*3\/4/)).toBeVisible();
+  expect(new Set(requested)).toEqual(new Set([`/api/projects/ui-review/tasks/${task.id}/skill-evaluations?history=false`]));
+  await Promise.all(pendingDetails.map(route => route.fulfill({ json: {
+    task, events: [], contract: { acceptance: "确认任务的交付内容" },
+    deliverables: [{ name: "交付报告", sha256: "a".repeat(64) }],
+  } })));
+  await expect(reader.getByRole("heading", { name: task.title })).toBeVisible();
+  await expect(panel.getByText(/75%.*3\/4/)).toBeVisible();
+  const sections = reader.getByRole("heading", { name: "验收条件" })
+    .or(reader.getByRole("heading", { name: "交付结果" })).or(entry)
+    .or(reader.getByRole("region", { name: "Task conversation" }));
+  await expect(sections).toHaveCount(4);
+  await expect(sections.nth(0)).toHaveText("验收条件");
+  await expect(sections.nth(1)).toHaveText("交付结果");
+  await expect(sections.nth(2)).toHaveText("任务 Skill 评估");
+  await expect(sections.nth(3)).toHaveAccessibleName("Task conversation");
+  await testInfo.attach("task-reader-assessment", { body: await panel.screenshot(), contentType: "image/png" });
+});
 
 test("task score, unknowns, evidence and revision follow the selected project", async ({ page }, testInfo) => {
-  const first = {
-    workflow_run_id: "workflow-A", task_outcome: "blocked", operation_id: "op", attempt_id: "a-1",
-    dispatch_id: "d1", revision: 1, digest: "first-digest", change_reason: "terminal_observed", predecessor: null,
-    critical_status: "pending", score: { percent: null, passed: 0, denominator: 0, unknown: 5, not_applicable: 0, coverage: 0 },
-    recommendation: { action: "复核冻结证据" }, criteria: [], skills: [],
-  };
-  const second = { ...first, revision: 2, digest: "second-digest", predecessor: first.digest,
+  const second = { ...firstRevision, revision: 2, digest: "second-digest", predecessor: firstRevision.digest,
     change_reason: "independent_review_updated", critical_status: "failed", task_outcome: "passed",
     review_evidence: { H1: "evt-host" },
     independent_review: { status: "reviewed", requested_model: "local:1", rule: "task-verify-independent.v3",
@@ -21,7 +73,7 @@ test("task score, unknowns, evidence and revision follow the selected project", 
   };
   await page.route("**/api/projects/*/tasks/same-task/skill-evaluations?*", route => {
     const url = new URL(route.request().url());
-    const cards = url.pathname.includes("/second/") ? [] : url.searchParams.get("history") === "true" ? [first, second] : [second];
+    const cards = url.pathname.includes("/second/") ? [] : url.searchParams.get("history") === "true" ? [firstRevision, second] : [second];
     return route.fulfill({ json: { cards } });
   });
   await page.goto("/tests/task-inputs.html?evaluations");

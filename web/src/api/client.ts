@@ -44,6 +44,7 @@ import type {
   SearchResult,
   SkillsSummary,
   Snapshot,
+  Task,
   TaskDetail,
   TaskDiff,
   TaskTimeline,
@@ -721,6 +722,10 @@ export function getRecentEventsPage(
 
 export function getTaskDetail(taskId: string, projectId?: string, signal?: AbortSignal): Promise<TaskDetail> {
   return requestJson<TaskDetail>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}`, { signal });
+}
+
+export function getTaskReadingRecord(taskId: string, projectId: string, signal: AbortSignal): Promise<Task> {
+  return requestJson<Task>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}/record`, { signal });
 }
 
 export function getTaskTimeline(taskId: string, projectId?: string, signal?: AbortSignal): Promise<TaskTimeline> {

@@ -531,7 +531,7 @@ def _delivery_feature_statuses(state_dir: Path) -> dict[str, str]:
     return out
 
 
-def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfConfig | None = None) -> list[dict]:
+def _task_records_with_archive(state_dir: Path) -> list[Task]:
     path = state_dir / "kanban.json"
     try:
         path.lstat()
@@ -542,14 +542,17 @@ def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfC
         record_projection_failure("archive_tasks")
         return []
     try:
-        tasks = _DeliveryTaskStore(path).list_all_with_archive()
+        return _DeliveryTaskStore(path).list_all_with_archive()
     except Exception:
         from zf.web.projections.projection_failures import record_projection_failure
         record_projection_failure("archive_tasks")
         return []
+
+
+def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfConfig | None = None) -> list[dict]:
     tasks = [
         task
-        for task in tasks
+        for task in _task_records_with_archive(state_dir)
         if include_active or task.status in {"done", "cancelled"}
     ]
     if not tasks:

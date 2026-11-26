@@ -1,6 +1,50 @@
 import { expect, test } from "@playwright/test";
 import { installUiFixture, uiTasks } from "./ui-alignment.fixture";
 
+test("legacy task prose keeps its sentences, criteria and declared outputs readable", async ({ page }, info) => {
+  await installUiFixture(page);
+  const sentences = [
+    "使用已确认的需求清单核对本轮交付范围与原来约定的条件，保留每一项已有记录的来源和说明。",
+    "执行前核对当前选中的目标和输入文件，确保后续步骤仍能依据同一份清单独立复核。",
+    "执行完成后，把每个核查项目的结果分别记录到交付材料里，再由另外一个角色核对并签收。",
+    "若证据不足，列出实际缺少的材料，保留原有依据，并将问题交回最初确认需求的负责人。",
+  ];
+  const contract = {
+    behavior: sentences.join(""), acceptance: "按合同核验", acceptance_criteria: [
+      "保留 **已确认** 的版本", { statement: "执行 `check --version`" }, "保留 **已确认** 的版本",
+    ], handoff_artifacts: ["docs/交付说明.md", "work/output-with-a-long-name.txt"],
+  };
+  await page.route("**/tasks/UI-101", route => route.fulfill({ json: { task: uiTasks[0], contract, events: [] } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?project=ui-review&page=board&task=UI-101");
+  const reader = page.getByRole("region", { name: "任务详情" });
+  await expect(reader.locator(".reader-description p")).toHaveText(sentences);
+  await expect(reader.locator(".reader-criteria > li")).toHaveCount(2);
+  await expect(reader.locator('.reader-criteria [data-streamdown="strong"]')).toHaveText("已确认");
+  await expect(reader.locator(".reader-criteria code")).toHaveText("check --version");
+  await expect(reader.locator(".reader-output-names > li")).toHaveText(contract.handoff_artifacts);
+  await expect(reader.getByRole("heading", { name: "交付结果" })).toHaveCount(0);
+  await expect(reader.locator(".reader-output-names a")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: info.outputPath("legacy-task-reading.png") });
+});
+
+test("authored task Markdown keeps source paragraphs, links and code intact", async ({ page }) => {
+  await installUiFixture(page);
+  const paragraph = "保留原文的 Markdown 强调、段落和标点。".repeat(9);
+  const contract = { behavior: paragraph + "**继续。原段。**\n\n`命令。参数。` [报告](https://example.org/report)",
+    acceptance_criteria: "旧合同只有一条验收要求", handoff_artifacts: [] };
+  await page.route("**/tasks/UI-101", route => route.fulfill({ json: { task: uiTasks[0], contract, events: [] } }));
+  await page.goto("/?project=ui-review&page=board&task=UI-101");
+  const reader = page.getByRole("region", { name: "任务详情" });
+  await expect(reader.locator(".reader-description p")).toHaveCount(2);
+  await expect(reader.locator('.reader-description [data-streamdown="strong"]')).toHaveText("继续。原段。");
+  await expect(reader.locator(".reader-description code")).toHaveText("命令。参数。");
+  await expect(reader.getByRole("link", { name: "报告", exact: true })).toHaveAttribute("href", "https://example.org/report");
+  await expect(reader.locator(".reader-criteria > li")).toHaveText(["旧合同只有一条验收要求"]);
+  await expect(reader.getByRole("heading", { name: "约定产物" })).toHaveCount(0);
+});
+
 test("task conversations send with the current binding and restore only that task's history", async ({ page }, info) => {
   const { errors } = await installUiFixture(page, { snapshot: { runtime: {
     mode: "live", live: true, actions: { mutation_enabled: true, allowed: ["chat-orchestrator"] },

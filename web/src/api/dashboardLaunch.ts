@@ -27,10 +27,12 @@ export function localWebActionToken(): string {
 /** A rejected session returns the user to the owning login flow, including writes from nested panels. */
 export function watchDashboardLogin(managed: boolean): () => void {
   const original = window.fetch;
+  let returningToLogin = false;
   window.fetch = async (...args) => {
     const response = await original.call(window, ...args);
-    if (response.status === 401 && response.url && new URL(response.url).origin === window.location.origin
+    if (!returningToLogin && response.status === 401 && response.url && new URL(response.url).origin === window.location.origin
         && (response.headers.get("X-ZF-Login") === "required" || (managed && new URL(response.url).pathname.startsWith("/api/")))) {
+      returningToLogin = true;
       window.location.reload();
     }
     return response;

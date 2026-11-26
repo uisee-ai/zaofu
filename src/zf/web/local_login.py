@@ -29,6 +29,12 @@ def _json(body: dict, status: int = 200) -> JSONResponse:
     return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
 
 
+def _login_required() -> JSONResponse:
+    response = _json({"error": "local_login_required"}, 401)
+    response.headers["X-ZF-Login"] = "required"
+    return response
+
+
 class LocalLoginMiddleware:
     def __init__(self, app, account: LocalAccount, read_only: bool):
         self.login_lock = asyncio.Lock()
@@ -124,8 +130,7 @@ class LocalLoginMiddleware:
             if method == "GET" and not path.startswith(("/api/", "/__zf")) and "text/html" in conn.headers.get("accept", ""):
                 response = self.page()
             else:
-                response = _json({"error": "local_login_required"}, 401)
-                response.headers["X-ZF-Login"] = "required"
+                response = _login_required()
         elif not safe and self.read_only:
             response = _json({"error": "read_only"}, 403)
         elif path == _BASE + "/account" and method == "GET":
@@ -169,7 +174,7 @@ class LocalLoginMiddleware:
                         elif started:
                             await send({"type": "http.response.body", "body": b""})
                         else:
-                            await _json({"error": "local_login_required"}, 401)(scope, receive, send)
+                            await _login_required()(scope, receive, send)
                         return
             finally:
                 if not task.done():

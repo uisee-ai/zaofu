@@ -86,7 +86,9 @@ uv run python scripts/calibrate-skill-review.py --suite challenge --model qwen2.
 
 ## 加载策略和首个试点
 
-看板 → 任务详情 → Evidence → **Task Verify 技能评估**。展开一个 attempt 可核对分子、分母、未知项、关键告警、Skill 读取见证与独立复核。展开 **Skill 加载策略对照（参考试验）** 可查看随此版本发布的试验、切换案例集、核对提交偏差或下载逐例 JSON。表旁的本任务记录来自所选项目的派发，显示其模型、模式与 Skill 摘要是否吻合。切换项目会重新读取记录。[逐例结果](../../web/src/data/skill-loading-reference.json)
+从看板打开任务详情，在任务正文和交付结果下方、任务对话之前展开 **任务 Skill 评估**，即可读取当前项目、当前任务的 Task Verify 评分卡。这个入口可在完整任务详情仍在加载时使用。没有已发布的卡片时显示空状态，读取失败时可点 **刷新评估** 重试。也可以从 **查看任务事件 → 查看任务运行详情 → 输入与交付依据** 查看同一组评分卡。
+
+默认显示每次 attempt 的最新修订，勾选 **显示历史修订** 可以追溯旧版本。展开一个 attempt 可核对分子、分母、未知项、关键告警、Skill 读取见证与独立复核。展开 **Skill 加载策略对照（参考试验）** 可查看随此版本发布的试验、切换案例集、核对提交偏差或下载逐例 JSON。表旁的本任务记录来自所选项目的派发，显示其模型、模式与 Skill 摘要是否吻合。切换项目会重新读取记录。[逐例结果](../../web/src/data/skill-loading-reference.json)
 
 2026-11-24 对 `zf-project-adapter-matrix-enrichment` 做三组配对。三组共享八项其他 Skills、同一输出合同及预算，分别移除目标、保持默认必读、只在方法匹配时读取。Codex CLI 0.171.0、模型 `gpt-6-luna`、推理强度 `high`。共七个案例，每例每组两次，共 42 次隔离调用，全部完成。两个案例从 8×8 的 SUM、MEDIAN 记录提炼，其余涵盖服务、CLI、矩阵缺口、错目标截图和无关请求。参考答案保留在容器外。[冻结案例及预设门槛](../../tests/fixtures/skill-loading/task-verify.json)
 

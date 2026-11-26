@@ -50,9 +50,9 @@ export function TaskSkillEvaluations({ taskId, projectId }: { taskId: string; pr
         <SkillLoadingComparison cards={cards ?? []} />
       </Suspense>}
     </details>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">任务评分卡读取失败。{error}</p>}
     {!error && !cards && <p role="status">正在读取评分卡…</p>}
-    {cards?.length === 0 && <p className="empty-text">尚无已发布的评分卡。</p>}
+    {cards?.length === 0 && <p className="empty-text" role="status">该任务尚无已发布的评分卡。评分来自 Task Verify 执行时的 Skill 使用记录。</p>}
     {cards?.map(card => <details key={JSON.stringify([card.workflow_run_id, card.operation_id, card.attempt_id, card.dispatch_id, card.revision])}>
       <summary>{card.attempt_id} · 修订 {card.revision} · {card.task_outcome} · {card.score.percent == null ? "待评分" : `${card.score.percent}%`}
         {" · "}{card.score.passed}/{card.score.denominator} · {card.critical_status === "failed" ? "关键项失败" : card.critical_status === "pending" ? "关键项待证" : "关键项通过"}</summary>
