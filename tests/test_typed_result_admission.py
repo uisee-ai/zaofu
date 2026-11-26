@@ -686,6 +686,11 @@ def test_legacy_reader_admission_repairs_placeholder_result_before_accepting(tmp
 
 
 @pytest.mark.parametrize(("first", "second", "separate_execution"), [
+    ("0a1377", "exec-output:0a1377", False),
+    ("exec-output:0a1377", "6fff83", True),
+    ("0a1377", "./0a1377", False),
+    ("file://{state}/0a1377", "exec-output:0a1377", True),
+    ("reports/0a1377", "exec-output:0a1377", True),
     ("event:evt-1", "event:evt-1", False),
     ("event:evt-1", "evt-1", False),
     ("logs/probes.txt#run-1", "file://{state}/logs/./probes.txt#run-1", False),
