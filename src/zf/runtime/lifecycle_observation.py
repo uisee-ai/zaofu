@@ -335,6 +335,8 @@ class LifecycleObservationMixin:
             task_id = self._active_task_id_for_usage_role(role)
         if not attempt_lookup_complete or not operation_lookup_complete:
             usage_identity = {"usage_binding_status": "unattributed"}
+        if attempt_identity.get("identity_version") == "operation-v2" and getattr(usage, "native_turn_sample", None):
+            event.payload["native_turn_sample"] = usage.native_turn_sample
         event.task_id = task_id or None
         event.payload.update(usage_identity, task_id=task_id)
         event.correlation_id = usage_identity.get("workflow_run_id") or None

@@ -38,12 +38,17 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 | 配置或入口 | 行为及恢复 |
 | --- | --- |
 | `milestone_handoff: true` | Candidate Verify 新 request 冻结目标、成员、前驱判定、草稿来源及剩余义务。重放复用同一摘要。worker 通过 `zf artifact milestone --attempt ATTEMPT` 查看状态，本地操作员可在原 worker 退出后执行 `zf workflow milestone OPERATION`。 |
-| `milestone-task-lifecycles` | 有任务级调度证据时，首次 Candidate 审查按需读取。新的 Candidate 恢复请求同时绑定修复说明和生命周期索引时，将说明和对应冻结的 `$.summary` 排在必读首位；成员明细按需读取。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。该时长统计内核运行区间，Provider 实际活跃时长需独立轨迹证据。 |
+| `milestone-task-lifecycles` | 有任务级调度证据时，首次 Candidate 审查按需读取。新的 Candidate 恢复请求同时绑定修复说明和生命周期索引时，将说明和对应冻结的 `$.summary` 排在必读首位；成员明细按需读取。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。上述调度时长仍按内核事件计算。可选的原生观测见下文。 |
 | `milestone_readiness.required_gates` | 显式 gate ID 需要同 run、合同、generation 和 target 的已通过证据。空义务集须有 `empty_waiver_gate` 对应的通过记录。目标变更、未决执行、缺少独立验收、缺少命令或发现待处理问题时，投影列出缺口与 owner。实际推进继续走原准入。 |
 | `run_boards[RUN]` | 固定 `enabled`、`generation`、`members` 与可选 `groups`。用 `zf artifact board --attempt ATTEMPT --post ID --recipient @group/review --text TEXT` 提交；接收者用 `--seen KEY` 和 `--ack KEY` 分别报告看见与消费。投递前重新核对活跃 operation、原 request、接收者、代次；竞争和重复消费共享同一认领。 |
 | `orchestration_schedules` | 定义 `id/revision/owner/goal/workflow_run_id/effective_at/enabled/action`。`inspect` 需要五字段 cron、IANA 时区、`max_occurrences`；`notify` 需要 deadline 和原 operation、request_hash、actor、attempt，可绑定一个事件类型及来源。每个 wait 只有一个胜因。夏令时缺口跳过，重复时间取较早一次；停机默认合并，`catchup` 可指定有限补算。 |
 | `zf workflow schedule ID` | 返回历史、计划时刻、执行与完成时间、重试归属。手工巡检给 `--run-now REQUEST_ID --authorization-token TOKEN`，在定义中预先固定 owner 令牌的 `manual_token_sha256`，重复 request 不重复作业。独立巡检仅汇总已有 run 的操作事实；首轮没有启用无人值守的外部写入。 |
 | `worker_model_planners[实例]` | 仅 Impl 新派发冻结 `enabled/model/port/max_calls/max_output_tokens/timeout_seconds`。Executor 可在同一 attempt 通过 `zf artifact worker-plan` 将选中的冻结依据交给本机只读 Planner，再将建议带回原工作区。回交原因有 initial、repeated_failure、interface_deviation、design_choice。保留用量、耗时和失败回执，结果未知时不自动重发。独立 Verify 和原合同继续管控交付。 |
+
+`$.summary.provider_activity` 单独报告冻结成员的原生 turn 观测。Codex 的运行时用量采集沿用注册的角色私有 rollout 和已发送的 TaskAttempt 绑定，在同次读取中核对会话、turn、工作目录、模型和正用量样本。冻结时核对同一 Run、成员的 Plan 代次与包、派发、租约、placement、workspace、原生 submit 与 usage 事件。成员明细 `$.tasks[i].provider_turns` 可追到三个事件 ID，工作目录只提供摘要。有效区间从原生开始、派发记录和 submit 三者最晚时间，到最近的同一 turn 用量样本。原生开始早于派发记录时，还要先找到同一尝试和租约的投递领取记录。样本端点不证明 turn 已结束或持续占用计算资源。共同窗口按同一 Plan 包计算，只计同时覆盖正时间且角色、任务与会话各自独立的成员。
+
+没有身份齐备的原生样本时，保留调度事实，原生观测标为 `unknown`；部分覆盖列出缺少证据的成员。既有 Candidate、OA 与 Judge 读取同一个冻结引用。此字段不触发新会话、补扫旧档或改变验收门禁。
+
 
 双模型试点使用环回地址的 Ollama 文本接口，默认端口 11434；没有授予 Planner 工具、工作区写权限或新的业务角色。不支持该适配器、既有预算无法覆盖或没有授权时，Executor 使用原模型继续。服务返回的模型名、输入和输出 token 才计入该次调用。[Ollama 文本接口](https://docs.ollama.com/api/chat)
 

@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from zf.core.config.schema import RoleConfig
     from zf.core.events.log import EventLog
 
 # Patchable in tests
@@ -138,6 +139,9 @@ class UsageReport:
 
     provider_session_id: str = ""
     """Native session confirmed by both the record and transcript filename."""
+
+    native_turn_sample: dict = field(default_factory=dict)
+    """Optional scoped native bounds for the same latest usage sample."""
 
 
 # Claude 4.x large-context models report a 1M context window. The 200k
@@ -540,6 +544,7 @@ class CodexSessionReader(BackendSessionReader):
         session_path: Path,
         *,
         fallback_window: int | None = None,
+        registered_rollout: tuple[Path, str, str] | None = None,
     ) -> UsageReport | None:
         if not session_path.exists():
             return None
@@ -550,15 +555,36 @@ class CodexSessionReader(BackendSessionReader):
         latest_model: str = ""
         model_provider: str = "openai"
         latest_rate_limits: dict = {}
+        from zf.runtime.codex_turn_sample import CodexTurnSample, open_rollout, scoped_rollout
+
+        tracker = None
         try:
-            with session_path.open("r", encoding="utf-8", errors="replace") as stream:
+            if registered_rollout:
+                if not scoped_rollout(*registered_rollout, session_path):
+                    return None
+                state, _, session = registered_rollout
+                source = open_rollout(state, session_path)
+                tracker = CodexTurnSample(session)
+            else:
+                source = session_path.open("r", encoding="utf-8", errors="replace")
+            with source as stream:
                 for line in stream:
+                    complete = line.endswith("\n")
                     line = line.strip()
                     if not line:
                         continue
                     try:
                         obj = json.loads(line)
                     except json.JSONDecodeError:
+                        if tracker:
+                            tracker.boundary.valid = False
+                        continue
+                    if tracker:
+                        if complete and isinstance(obj, dict):
+                            tracker.consume(obj)
+                        else:
+                            tracker.boundary.valid = False
+                    if not isinstance(obj, dict):
                         continue
                     if obj.get("type") == "session_meta":
                         payload = obj.get("payload") or {}
@@ -614,6 +640,7 @@ class CodexSessionReader(BackendSessionReader):
             usage_semantics="cumulative" if cumulative else "incremental",
             series_started_at=series_started_at,
             provider_session_id=session_id,
+            native_turn_sample=tracker.receipt(latest_ts, str(latest_info.get("model") or latest_model)) if tracker else {},
             usage_series_id=(
                 f"codex:{session_id}"
                 if session_id
@@ -630,6 +657,17 @@ class CodexSessionReader(BackendSessionReader):
             ),
             input_semantics="combined_includes_cache",
         )
+
+
+def read_role_usage(reader: BackendSessionReader, path: Path, *, state: Path, role: RoleConfig,
+                    session: str, cached: Path | None) -> UsageReport | None:
+    """Keep ordinary accounting; only a registered local session can supply turn evidence."""
+    from zf.runtime.codex_turn_sample import scoped_rollout
+
+    if isinstance(reader, CodexSessionReader) and cached == path and scoped_rollout(state, role.instance_id, session, path):
+        return reader.read_latest_usage(path, fallback_window=role.context_window_tokens,
+                                        registered_rollout=(state, role.instance_id, session))
+    return reader.read_latest_usage(path, fallback_window=role.context_window_tokens)
 
 
 _READERS: dict[str, BackendSessionReader] = {
