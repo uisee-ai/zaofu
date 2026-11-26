@@ -578,7 +578,7 @@ Recover deterministic runtime state from append-only events
 | `zf recover candidate-registration` | Retry an untouched frozen Reader roster on its original Run |
 | `zf recover candidate-repair` | Recheck a cap-rejected OA Candidate repair on its original Run |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
-| `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |
+| `zf recover goal-evidence` | Re-review a hold with historical Candidate evidence or newly readable Task Verify results |
 | `zf recover host-assist` | Preview exact task host assistance without executing it |
 | `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
 | `zf recover host-unit` | Render or install an opt-in user systemd supervisor |

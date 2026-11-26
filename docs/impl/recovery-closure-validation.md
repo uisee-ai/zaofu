@@ -38,3 +38,9 @@ Provider 非重试拒绝与产品语义失败分开处理。`tests/test_provider
 执行 `scripts/dev-verify.py plan/run --base dev`，显式纳入本 E2E、`tests/test_candidate_incremental.py`、`tests/test_task_pipeline_generation.py`、`tests/test_workflow_operation_resume.py`、`tests/test_provider_turn_error.py`、`tests/test_task_pipeline_targets.py`、`tests/test_task_pipeline_oa_rework.py` 和 `tests/test_task_pipeline_integration_evidence.py`；合并前执行 `bash scripts/dev-premerge-gate.sh`。
 
 最终影响闭包另纳入 candidate reader、candidate verification stages 和 workflow projection：22 个测试文件、193 项通过，其中含本场景 3 项及八槽位 mock E2E。哨兵门 53 项通过，manual docs currentness 通过。首次结构检查发现模块超过 1000 行，去除重复参数与中间变量后复跑通过，未增加豁免。没有执行 full pytest、浏览器或真实 Provider 测试。
+
+## Thin Judge 缺少独立 Task Verify 正文时恢复
+
+对已经提交 `hold` 的 Thin Judge，可用 `zf recover goal-evidence --blocked-event <goal.closure.blocked ID>` 预览。若 Judge 指出的每项缺口都精确引用同一冻结 Candidate 已准入的独立 Task Verify 正文，内核会核对原 Judge 派发时的不可变来源清单，以及当前 Git 指针、Plan 和批准配置。原清单没有授权这些正文，新事实可以提供对应的按需读取权限时，预览返回 `eligible`、候选提交和 `task_verify_results`。已有 owner 决策待处理、后续产品拒绝、无关缺口或已授权的正文均无法选择这条路径。
+
+经授权加 `--apply` 后，内核基于原始来源在同一 Run 更新一次闭环输入，保留旧 Judge 的诊断和原 Task、Candidate Verify 收据。新 Judge 仍须独立裁定，每项 Goal 和交付门禁照常执行。重复请求旧 hold 不会再次派发。原有依据上一代 Candidate 新增历史证据进行复核的入口继续有效。
