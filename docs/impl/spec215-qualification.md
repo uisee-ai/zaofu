@@ -81,3 +81,7 @@ PYTHONPATH=src uv run python scripts/compare-stage-team-pilot.py /path/to/captur
 当已签收的 Candidate Reader 合同绑定成员的独立 Task Verify 时，Goal closure 在冻结事实的 `task_verify_evidence` 中记录每个成员的 Task 提交、Verify 发布事件、准入事件、WRC 尝试和正文摘要。Judge 可从自己的输入索引按需读取 `task-verify-<task_id>`，回答已批准的 mandate。运行内核按被冻结的 Candidate、成员提交及承认这份正文的调用交叉核对来源。当前 Candidate 和 Discovery 的签收仍承担原有闭环职责，阅读单项 Task 正文不会增加一张 Candidate 票或代替 Judge 裁决。新增可读材料进入 closure identity 的摘要，同一批材料重复加载产生相同 identity。[实现](../../src/zf/runtime/goal_task_verify_evidence.py) · [回归](../../tests/test_goal_task_verify_evidence.py)
 
 Judge 可在逐条结论的 `goal_coverage[].supporting_result_refs` 增补冻结成员的 Task Verify envelope。内核同时核对该结论的当前 Candidate 或 Discovery 主引证，以及本次 Judge 已完整读取该 Task 正文的凭证。首次 `zf result validate` 读取当前尝试的活动凭证，正式提交按同一规则核对封存凭证。顶层 `input_result_refs` 沿用冻结批次。
+
+### Judge 重试后复核原 Goal 拒绝
+
+周期性 Goal 对账可复核一次只因 `verification_evidence_missing` 被拒的完成声明。复核要求当前 Judge 的重试因果、正式准入、签署正文、原冻结和每位 Candidate Reader 的签名可复验；原拒绝时与当前时刻必须绑定同一完整批次。新审批、替代或作废版本、活动任务、人门及其他正常交付条件继续约束原声明。核实成立后沿原交付策略发布请求，交付和终态记录原 `rechecked_rejection_event_id`。历史拒绝、重试计数和原 Judge 签单均保留。产品交付和 Judge 当次实际阅读在无人验收报告中分别计量。

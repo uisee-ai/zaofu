@@ -3022,19 +3022,28 @@ def run_goal_completion_gate_event(
         return None
     claim_payload = claim.payload if isinstance(claim.payload, dict) else {}
     claim_id = str(claim_payload.get("claim_id") or claim.id)
-    if any(
-        event.type in {"run.goal.completed", RUN_GOAL_COMPLETION_REJECTED}
-        and isinstance(event.payload, dict)
-        and str(event.payload.get("claim_id") or "") == claim_id
-        for event in events
-    ):
-        return None
+    prior_terminals = [
+        e for e in events if e.type in {"run.goal.completed", RUN_GOAL_COMPLETION_REJECTED}
+        and isinstance(e.payload, dict) and e.payload.get("claim_id") == claim_id
+    ]
+    if prior_terminals:
+        from zf.runtime.goal_claim_recheck import recheckable_rejection
+
+        if len(prior_terminals) != 1 or not recheckable_rejection(prior_terminals[0]):
+            return None
     from zf.runtime.run_scope import events_for_run, resolve_run_id
 
     run_id = resolve_run_id(events, str(claim_payload.get("run_id") or ""))
     if not run_id:
         return None
     scoped_events = events_for_run(events, run_id=run_id)
+    rechecked_quorum = None
+    if prior_terminals:
+        from zf.runtime.goal_claim_recheck import previous_quorum_for_claim
+
+        rechecked_quorum = previous_quorum_for_claim(scoped_events, claim, prior_terminals[0], state_dir)
+        if rechecked_quorum is None:
+            return None
     proj = build_run_goal_projection(scoped_events, run_id=run_id)
     if proj.get("status") != "active" or not run_id:
         return None
@@ -3123,6 +3132,8 @@ def run_goal_completion_gate_event(
             scoped_events,
             claim_payload=claim_payload,
         )
+        if rechecked_quorum is not None and verification != rechecked_quorum:
+            return None
         verified_target = verification.verified_target_commit
         verification_event_id = verification.verification_event_id
         verification_admitted_ref = verification.verification_admitted_ref
@@ -3334,6 +3345,10 @@ def run_goal_completion_gate_event(
         ) if isinstance(claim_payload.get("admitted_call_result_ref"), Mapping) else {},
         "delivery_policy": str(delivery_policy or "report_only"),
     }
+    if rechecked_quorum is not None:
+        if invalid_reasons or blockers:
+            return None
+        shared["rechecked_rejection_event_id"] = prior_terminals[0].id
     if invalid_reasons:
         from zf.runtime.goal_verification import GOAL_COMPLETION_REVERIFY_CAP
 
