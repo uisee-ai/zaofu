@@ -82,6 +82,9 @@ def build_orchestrator_agent_context(
         effective_config_summary_ref=effective_config_summary_ref,
         expand_package=checkpoint != "candidate_reader_observation" and not payload.get("verify_assignment_task"),
     )
+    if checkpoint == "pre_impl" and payload.get("initial_verify_scope_ref"):
+        from zf.runtime.oa_initial_verify_scope import REF, SOURCE
+        _append_descriptor(sources, source_id=SOURCE, kind="initial_task_verify_scope", descriptor=payload[REF])
     if checkpoint == "pre_impl" and payload.get("verify_assignment_contract_ref"):
         _append_descriptor(sources, source_id="current-task-contract", kind="verify_contract",
                            descriptor=payload["verify_assignment_contract_ref"])
@@ -168,6 +171,8 @@ def build_orchestrator_agent_context(
                 "verify_assignment_mode",
                 "verify_assignment_task",
                 "verify_assignment_revision",
+                "verify_assignment_release_event_id",
+                "verify_assignment_rejection_event_id",
                 "target_stage_id",
                 "target_attempt_id",
                 "target_role_instance",

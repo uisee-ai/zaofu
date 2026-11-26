@@ -157,7 +157,7 @@ def pre_impl_checkpoint_state(
         checkpoint_policy=policy,
         workflow_run_id=workflow_run_id,
         source_event=trigger_event,
-        payload=payload,
+        payload=payload, initial_writer_plan=loaded,
     )
     return PreImplCheckpointState(
         enabled=True,
@@ -196,6 +196,10 @@ def validate_run_plan_admission(
     _validate_delegation(runtime, run_plan)
     from zf.runtime.oa_task_verify_assignment import validate_verify_units
     validate_verify_units(runtime, run_plan, request)
+    from zf.runtime.oa_initial_verify_scope import initial_verify_errors
+    scope_errors = initial_verify_errors(runtime.state_dir, request, run_plan)
+    if scope_errors:
+        raise OrchestratorAgentContractError("; ".join(error["message"] for error in scope_errors))
     source_manifest = _request_source_manifest(runtime, request)
     allowed = {
         (str(row.get("ref") or ""), str(row.get("sha256") or ""))

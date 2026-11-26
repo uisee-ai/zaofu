@@ -58,6 +58,7 @@ def request_orchestrator_agent_checkpoint(
     workflow_run_id: str,
     source_event: ZfEvent,
     payload: Mapping[str, Any],
+    initial_writer_plan: Any = None,
 ) -> PreparedOrchestratorAgentOperation:
     if checkpoint == "candidate_reader_observation" and checkpoint_policy != "shadow":
         raise ValueError("Candidate Reader observation requires shadow policy")
@@ -143,6 +144,11 @@ def request_orchestrator_agent_checkpoint(
         from zf.runtime.task_verify_specialists import specialist_catalog
 
         payload = {**payload, "verify_specialist_patterns": specialist_catalog(runtime.config)}
+        if initial_writer_plan is not None:
+            from zf.runtime.oa_initial_verify_scope import REF, pin_initial_verify_scope
+            descriptor = pin_initial_verify_scope(runtime, initial_writer_plan, payload, source_event.id)
+            if descriptor:
+                payload[REF] = descriptor
     context = build_orchestrator_agent_context(
         runtime,
         checkpoint=checkpoint,
@@ -256,7 +262,7 @@ def request_orchestrator_agent_checkpoint(
     if checkpoint == "pre_impl":
         request.update({k: payload[k] for k in ("verify_assignment_mode", "verify_assignment_task",
                                                 "verify_assignment_seats", "verify_specialist_patterns", "verify_assignment_acceptance", "verify_specialist_incident",
-                                                "verify_assignment_revision", "candidate_reader_assignments_digest") if k in payload})
+                                                "verify_assignment_revision", "candidate_reader_assignments_digest", "initial_verify_scope_ref") if k in payload})
     service = workflow_operation_service(runtime)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
@@ -423,6 +429,8 @@ def orchestrator_agent_checkpoint_revision(
             from zf.runtime.call_result_envelope import canonical_json_sha256
             key = [payload.get("task_map_generation"), payload.get("plan_artifact_package_digest"),
                    payload["verify_assignment_task"], payload["verify_assignment_revision"]]
+            if release := payload.get("verify_assignment_release_event_id"):
+                key.append(release)
             incident = payload.get("verify_specialist_incident")
             if incident:
                 key.extend((incident["source_event_id"], incident["operation_id"]))

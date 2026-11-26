@@ -135,15 +135,106 @@ def current_scope(runtime: Any, task_id: str, context: Mapping, admission: Mappi
 
 
 def request_verification_corrections(runtime, projection, contexts, events) -> None:
+    waiting = [row["task_id"] for row in projection["tasks"] if VERIFY_WAIT in row["blockers"]]
+    if not waiting:
+        return
     by_id = {event.id: event for event in events}
-    for view in projection["tasks"]:
-        if VERIFY_WAIT in view["blockers"]:
-            task_id = view["task_id"]
-            context = contexts[task_id]
-            source = by_id.get(context["generation_admitted_event_id"])
-            task = runtime.task_store.get(task_id)
-            if source and task:
-                _request_correction(runtime, task, context, source, {})
+    rejected = {e.payload.get("operation_id"): e for e in events
+                if e.type == "orchestrator.semantic.decision.rejected" and e.origin == "kernel"
+                and e.actor == "zf-cli" and e.payload.get("status") == "rejected"}
+    awaiting_release = _pending_impl_releases(events, contexts, set(waiting))
+    for task_id in waiting:
+        if task_id in awaiting_release:
+            continue
+        context = contexts[task_id]
+        source = by_id.get(context["generation_admitted_event_id"])
+        task = runtime.task_store.get(task_id)
+        if not source or not task or task.active_dispatch_id:
+            continue
+        prepared = _request_correction(runtime, task, context, source, {})
+        rejection = rejected.get(prepared.operation_id)
+        if rejection and rejection.payload.get("reason") == "execution_target_changed:" + task_id:
+            release = _released_verify_predecessor(runtime, task, context, prepared, events)
+            if release:
+                _request_correction(runtime, task, context, source, {
+                    "verify_assignment_release_event_id": release.id,
+                    "verify_assignment_rejection_event_id": rejection.id,
+                })
+
+
+def _pending_impl_releases(events, contexts, waiting):
+    """Hold an in-flight physical Impl. Terminal failures keep their existing recovery route."""
+    last_impl = {}
+    last_sent = {}
+    released = set()
+    terminals = {"task.attempt.succeeded", "task.attempt.failed", "task.attempt.superseded", "task.attempt.deadlettered"}
+    relevant = terminals | {"task.pipeline.stage.dispatched", "task.attempt.sent"}
+    for event in events:
+        if (event.type not in relevant
+                or event.origin != "kernel" or event.actor != "orchestrator"):
+            continue
+        p = event.payload
+        task_id = p.get("task_id")
+        if task_id not in waiting or p.get("workflow_run_id") != contexts[task_id]["workflow_run_id"]:
+            continue
+        placement = tuple(p.get(key) for key in ("task_id", "operation_id", "attempt_id", "dispatch_id"))
+        if event.type == "task.pipeline.stage.dispatched":
+            if (p.get("task_pipeline_stage") == "impl"
+                    and p.get("task_map_generation") == contexts[task_id]["task_map_generation"]):
+                last_impl[task_id] = p.get("operation_id")
+        elif event.type == "task.attempt.sent":
+            if all(placement):
+                last_sent[(task_id, p["operation_id"])] = placement
+        elif all(placement):
+            released.add(placement)
+    return {task_id for task_id, operation in last_impl.items()
+            if (placement := last_sent.get((task_id, operation))) and placement not in released}
+
+
+def _released_verify_predecessor(runtime, task, context, prepared, events):
+    """Reopen only an old scoped input whose exact settled Impl dispatch has since been released."""
+    from zf.runtime.orchestrator_agent_execution_policy import operation_bindings, task_execution_binding
+    from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+
+    if prepared.status != "settled" or not prepared.context:
+        return None
+    descriptor = prepared.context.input_body.get("execution_context_ref")
+    if not descriptor:
+        return None
+    try:
+        frozen = hydrate_sidecar_ref(runtime.state_dir, descriptor).payload
+    except (OSError, SidecarRefError):
+        return None
+    original = frozen.get("task_bindings", {}).get(task.id) or {}
+    dispatch = original.get("active_dispatch_id")
+    if not dispatch or task_execution_binding(task) != {**original, "active_dispatch_id": ""}:
+        return None
+    expected = frozen.get("operation_bindings", {})
+    operation = expected.get(task.id) or {}
+    run = context["workflow_run_id"]
+    if (operation.get("task_pipeline_stage") != "impl" or operation.get("status") != "settled"
+            or operation.get("task_map_generation") != context["task_map_generation"]
+            or operation_bindings(events, run, {task.id}) != expected):
+        return None
+    source_id = (operation.get("admitted_control_result_ref") or {}).get("source_event_id")
+    attempt = operation.get("active_attempt_id")
+    if not source_id or not attempt or not operation.get("operation_id"):
+        return None
+    release = None
+    for event in reversed(events):
+        p = event.payload
+        if (event.origin != "kernel" or event.actor != "orchestrator" or p.get("workflow_run_id") != run
+                or p.get("task_id") != task.id or p.get("operation_id") != operation["operation_id"]):
+            continue
+        same_placement = p.get("dispatch_id") == dispatch and p.get("attempt_id") == attempt
+        if event.type == "task.attempt.sent":
+            return release if same_placement else None
+        if same_placement and release is None:
+            if event.type in {"task.attempt.failed", "task.attempt.superseded", "task.attempt.deadlettered"}:
+                return None
+            if event.type == "task.attempt.succeeded" and p.get("status") == "succeeded" and p.get("source_event_id") == source_id:
+                release = event
+    return release
 
 
 def _current_assignment(events, context, task_id):

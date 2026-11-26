@@ -171,3 +171,10 @@ stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当�
 终态，`recover workflow` 生成 `cancel_terminal_reader_operation`，通过 Operation
 服务取消残留占用。它不重放旧 child、不签发验收结果，也不把正在新代次工作的父
 任务改为 blocked；新的活跃 TaskAttempt 优先保护，取消前再次核对终态归属。
+
+
+### Impl 交付后的 Verify 分工修订
+
+任务缺少适用的 OA 分工时，WRC 等当前 Impl 投递结束并释放任务执行位，再请求 OA 签署该任务的 Verify 分工。物理派发按 Run、任务、操作、attempt 和 dispatch 核对。租约过期、派发失败或被代替时，原有调度和故障恢复仍依据正式业务结果处理。首次即从 Verify 开始的任务沿用本任务的合同。
+
+旧版本可能在 Impl 已结算、任务执行位尚未释放时冻结 OA 输入，导致分工被当前性检查拒绝。调度器核对原核准的 Impl 结果、物理释放记录以及任务当前合同、依赖和状态；仅执行位清空时，它保留旧拒绝，按该次释放身份请求一次新的 OA 判断。新的执行者与证据要求仍须获准。[回放与拒绝用例](../../tests/test_oa_verify_predecessor_release.py)
