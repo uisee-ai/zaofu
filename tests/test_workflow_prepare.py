@@ -468,10 +468,16 @@ def test_kanban_preparation_keeps_explicit_prd_source_and_target(tmp_path):
     assert '8 independent impl and verify lanes' in requirement['objective']
 
 
-def test_kanban_prd_v4_request_produces_bound_yaml_candidate(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider_ready", [True, False], ids=["ready", "signed-out"])
+def test_kanban_prd_v4_request_produces_bound_yaml_candidate(tmp_path, monkeypatch, provider_ready):
     from tests.test_workflow_proposal import _synthesis_result
     from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
+    def probe_auth(backend):
+        assert backend == "codex"
+        return provider_ready, "simulated authentication state"
+
+    monkeypatch.setattr("zf.runtime.preflight._probe_provider_auth", probe_auth)
     service, log = _service(tmp_path)
     config_file = tmp_path / 'zf.yaml'
     config_file.write_text(config_file.read_text().replace('IssueFlow', 'PrdFlow')
@@ -510,6 +516,15 @@ def test_kanban_prd_v4_request_produces_bound_yaml_candidate(tmp_path, monkeypat
     assert prepared['status'] == 'synthesis_queued', prepared
     assert _consume(service) == 1
     request = load_workflow_request(service.state_dir, prepared['request_id'])
+    if not provider_ready:
+        assert request['status'] == 'ready' and not request.get('proposal_ref')
+        failure, = log.query(type='workflow.synthesis.proposal.failed')
+        assert failure.payload['request_id'] == prepared['request_id']
+        assert [(row['kind'], row['severity']) for row in failure.payload['blockers']] == [
+            ('static_preflight_provider_auth_readiness', 'STOP')
+        ]
+        assert config_file.read_bytes() == original
+        return
     assert request['status'] == 'proposed', request
     proposal = hydrate_sidecar_ref(service.state_dir, request['proposal_ref']).payload
     snapshot = hydrate_sidecar_ref(service.state_dir, proposal['effective_config_ref']).payload
