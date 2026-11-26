@@ -71,15 +71,17 @@ def evaluate_plan_candidate_preflight(
         bound_candidate_diagnosis, diagnosis_only_writer_error, diagnosis_review_preflight, owner_review_preflight,
     )
 
-    errors = handoff_json_errors(candidates, state_dir=state_dir, project_root=project_root)
+    handoff_errors = handoff_json_errors(candidates, state_dir=state_dir, project_root=project_root,
+                                         ports_materialized=ports_materialized)
     review = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
     if review is None:
         review = owner_review_preflight(candidates, state_dir=state_dir, project_root=project_root)
     if review is not None:
-        if errors:
-            review["errors"].extend(errors)
+        if handoff_errors:
+            review["errors"].extend(handoff_errors)
             review["status"] = "failed"
         return review
+    errors: list[dict[str, str]] = []
     if ports_materialized:
         errors.extend(prepared_plan_port_path_errors(candidates, state_dir=state_dir))
     from zf.runtime.workflow_read_result import workflow_read_finding_issues
@@ -332,6 +334,8 @@ def evaluate_plan_candidate_preflight(
 
     from zf.runtime.plan_candidate_input_cost import candidate_input_cost
 
+    if handoff_errors:
+        errors = handoff_errors + [issue for issue in errors if issue not in handoff_errors]
     return {
         "schema_version": SCHEMA_VERSION,
         "input_cost": candidate_input_cost(task_map or {}, port_bodies, review_input_limits),

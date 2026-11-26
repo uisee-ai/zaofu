@@ -100,6 +100,57 @@ def test_handoff_json_uses_port_size_limit_and_keeps_unstructured_sources(tmp_pa
     ]
 
 
+@pytest.mark.parametrize("materialized", [False, True])
+@pytest.mark.parametrize(("location", "field", "name"), [
+    ("descriptor", "plan_ports[0]", "execution_spec"),
+    ("regression_test_matrix_ref", "regression_test_matrix_ref", "test_matrix"),
+])
+def test_declared_port_and_attachment_share_one_bound_diagnostic(tmp_path, monkeypatch, materialized,
+                                                                 location, field, name):
+    from zf.runtime import plan_candidate_ports as ports
+    from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
+
+    state = tmp_path / "state"
+    ref = "artifacts/plan/draft"
+    path = state / ref
+    path.parent.mkdir(parents=True)
+    raw = b'{"note":"' + b"x" * 4096 + b'"}'
+    path.write_bytes(raw)
+    monkeypatch.setattr(ports, "DEFAULT_HYDRATE_LIMIT_BYTES", 4096)
+    report = _plan_candidate()
+    report["artifact_refs"] = [ref]
+    if location == "descriptor":
+        report["plan_ports"] = [{"artifact_kind": name, "ref": ref, "sha256": hashlib.sha256(raw).hexdigest()}]
+    else:
+        report[location] = ref
+    result = evaluate_plan_candidate_preflight(
+        state_dir=state, project_root=tmp_path, ports_materialized=materialized,
+        reports=[{"report": report}], manifest={"trigger_payload": {"flow_kind": "issue"}}, metadata={},
+    )
+    assert result["status"] == "failed"
+    assert [e for e in result["errors"] if e["code"] == "plan_port_too_large"] == [{
+        "code": "plan_port_too_large", "field": f"report[0].{field}",
+        "message": f"plan port {name!r} exceeds sidecar hydration limit: {len(raw)} > 4096 bytes",
+    }]
+
+
+@pytest.mark.parametrize("materialized", [False, True])
+def test_handoff_parser_respects_declared_port_boundary(tmp_path, materialized):
+    from zf.runtime.plan_candidate_ports import handoff_json_errors
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b'{"private_key_name":true,"private_key_name":false}')
+    ref = "../outside.json"
+    report = {"artifact_refs": [ref], "plan_ports": [{"logical_name": "execution_spec", "ref": ref,
+              "sha256": hashlib.sha256(outside.read_bytes()).hexdigest()}]}
+    errors = handoff_json_errors([report], state_dir=project / "state", project_root=project,
+                                 ports_materialized=materialized)
+    assert [(e["code"], e["field"]) for e in errors] == [("plan_port_unreadable", "report[0].plan_ports[0]")]
+    assert "private_key_name" not in errors[0]["message"]
+
+
 @pytest.mark.parametrize("kind", ["owner_review", "diagnosis_review"])
 def test_review_only_candidates_require_readable_declared_sources(diagnosis_case, kind):
     from zf.runtime.plan_candidate_preflight import evaluate_plan_candidate_preflight
