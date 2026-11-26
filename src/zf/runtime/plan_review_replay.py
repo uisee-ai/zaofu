@@ -80,15 +80,28 @@ def pin_replayed_review_usage(
     # The new comparison index is derived entirely from the bound Task Map and
     # compiled policy. Keep older attempts' exact summary and review obligations.
     bindings = old_comparable.get("input_binding") or {}
-    if ("execution_comparisons" not in old_comparable
-            and all(bindings.get(k) for k in ("task_map_digest", "effective_policy_digest"))
+    if (all(bindings.get(k) for k in ("task_map_digest", "effective_policy_digest"))
             and bindings == new_comparable.get("input_binding")):
-        new_comparable.pop("execution_comparisons", None)
+        if "execution_comparisons" not in old_comparable:
+            new_comparable.pop("execution_comparisons", None)
+        else:
+            key = "standard_with_empty_write_scope"
+            old_check = old_comparable["execution_comparisons"].get(key)
+            new_checks = dict(new_comparable.get("execution_comparisons") or {})
+            current = new_checks.get(key) or {}
+            if old_check == {"task_ids": current.get("task_ids")} and current.get("before_rework"):
+                new_comparable["execution_comparisons"] = {**new_checks, key: old_check}
     # Usage is observational, while all candidate/policy/graph facts remain
     # request identity. A real change must still reach the divergence guard.
     if ({key: value for key, value in old_comparable.items() if key != "usage_observations"}
             != {key: value for key, value in new_comparable.items() if key != "usage_observations"}):
         return
+    if payload.get("plan_review_disposition_digest") == new_source["sha256"]:
+        pinned = (request.get("result_identity") or {}).get("plan_review_disposition_digest")
+        if pinned:
+            payload["plan_review_disposition_digest"] = pinned
+        else:
+            payload.pop("plan_review_disposition_digest")
     for key in ("ref", "sha256", "byte_count"):
         if key in old_source:
             new_source[key] = old_source[key]

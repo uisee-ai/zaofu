@@ -2,6 +2,8 @@
 from copy import deepcopy
 import json
 
+import pytest
+
 from zf.runtime.plan_execution_review import attach_execution_review, review_execution
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -60,7 +62,8 @@ def test_delivery_estimate_uses_same_summary_without_writing(tmp_path):
     assert cost['rendered_bytes'] < 10000
 
 
-def test_legacy_review_replay_keeps_original_required_body(tmp_path):
+@pytest.mark.parametrize('indexed_legacy', [False, True])
+def test_legacy_review_replay_keeps_original_required_body(tmp_path, indexed_legacy):
     from tests.test_call_result_runtime import _runtime
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     from zf.runtime.call_result_runtime import prepare_call_operation
@@ -70,7 +73,13 @@ def test_legacy_review_replay_keeps_original_required_body(tmp_path):
     runtime = _runtime(tmp_path)
     review = _review()
     review['input_binding']['effective_policy_digest'] = 'sha256:' + 'a' * 64
-    indexed = {**review, 'execution_comparisons': {'standard_with_empty_write_scope': {'task_ids': ['T']}}}
+    key = 'standard_with_empty_write_scope'
+    if indexed_legacy:
+        review['execution_comparisons'] = {key: {'task_ids': ['T']}}
+    indexed = {**review, 'execution_comparisons': {key: {
+        'task_ids': ['T'], 'before_rework': True,
+        'facts': {'entries': [{'task_id': 'T', 'entry_mode': 'standard'}]},
+    }}}
     source = write_immutable_json_sidecar(runtime.state_dir, review, root='plan-execution-reviews',
         kind='plan_execution_review', schema_version='plan-execution-review.v1', created_by='plan-preflight', source_event_id='evt')
     legacy = {'workflow_run_id': 'run', 'fanout_id': 'fanout', 'role_instance': 'critic',
@@ -115,7 +124,7 @@ def test_verification_detail_tampering_fails_closed(tmp_path):
 def test_critic_summary_identifies_missing_audit_entry_and_unbound_candidate_probes(tmp_path):
     from zf.runtime.plan_execution_delivery import execution_review_delivery
 
-    audit = {'task_id': 'AUDIT', 'phase': 'verify_only', 'allowed_paths': []}
+    audit = {'task_id': 'AUDIT', 'execution_mode': 'requested_review', 'allowed_paths': []}
     commands = [
         {'id': key, 'owner': 'candidate_verify', 'command': f'run {key}', 'acceptance_ids': []}
         for key in ('build', 'all-tests', 'browser')
@@ -136,6 +145,13 @@ def test_critic_summary_identifies_missing_audit_entry_and_unbound_candidate_pro
     assert {'standard_with_empty_write_scope', 'candidate_commands_without_mandatory_binding'} <= set(summary['review_items'])
     detail = hydrate_sidecar_ref(tmp_path, sources['plan-execution-verification']).payload
     rows = {row['task_id']: row for row in detail['task_requirements']}
+    actual = summary['execution_comparisons']['standard_with_empty_write_scope']
+    assert actual['before_rework'] is True
+    assert actual['facts']['entries'] == [{
+        'task_id': 'AUDIT', 'declared_execution_mode': 'requested_review',
+        'entry_mode': 'standard', 'first_stage_on_admission': 'impl_ready',
+        'allowed_paths': [], 'declared_command_ids': [],
+    }]
     assert rows['AUDIT']['standard_with_empty_write_scope'] is True
     assert 'initial_readonly_verify' not in rows['AUDIT']
     assert rows['IMPL']['unbound_candidate_command_ids'] == ['build', 'all-tests']

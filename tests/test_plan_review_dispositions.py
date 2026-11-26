@@ -43,7 +43,8 @@ def mixed_case(tmp_path):
             "runtime_evidence": {**{k: source[k] for k in ("source_id", "artifact_id", "sha256")},
                                  "json_path": f"$.execution_comparisons.{key}.facts.{path}", "observed_value": value},
         })
-    return runtime, svc, args, result, legacy, rows
+    rows.append(legacy[0])
+    return runtime, svc, args, result, legacy[1:], rows
 
 
 def test_same_candidate_mixed_review_requires_bound_counterevidence_then_routes_once(tmp_path):
@@ -133,3 +134,49 @@ def test_approval_and_unresolved_owner_question_are_distinct(tmp_path):
     op = reduce_workflow_operations(runtime.event_log.read_all())[args["operation_id"]]
     control = hydrate_sidecar_ref(runtime.state_dir, op["admitted_control_result_ref"]).payload
     assert control["verdict"] == "rejected" and control["owner_decision_items"][0]["decision_id"] == "timing"
+
+def test_wrong_projection_request_is_corrected_on_same_candidate_and_only_routes_author_fields(tmp_path):
+    runtime, svc, args, result, assessments = case(tmp_path, readonly_required=True)
+    read_current_review_inputs(runtime, args["operation_id"])
+    row = assessments[0]
+    row.update(disposition="repair_required", conclusion="The frozen export requires Verify but would start in Impl.")
+    basis = row["basis"]
+    basis["obligation"] = "Verify the frozen payroll export before any implementation."
+    field = basis["current_evidence"][0]
+    field.update(json_path="$.tasks[0].execution_mode", observed_value="document_review")
+    fix = {"comparison": row["comparison"], "task_id": "A", "observed_gap": row["conclusion"],
+           "required_change": "Set the Task Map execution_mode to verify_only with the frozen verification contract.",
+           "done_when": "The computed entry is verify_only and starts at verify_ready.", "basis": basis}
+    report = result["report"]
+    result.update(recommendation="reject")
+    report.update(status="failed", recommendation="reject", execution_assessments=[row], fix_items=[fix])
+    wrong = deepcopy(result)
+    old = wrong["report"]["execution_assessments"][0]["runtime_evidence"]
+    old.update(json_path="$.execution_comparisons.standard_with_empty_write_scope",
+               observed_value={"task_ids": ["A"]})
+    wrong["report"]["fix_items"][0]["required_change"] = "Regenerate the runtime facts."
+    before = [e.id for e in runtime.event_log.read_all()]
+    for _ in range(2):
+        errors = svc.validate_plan_candidate(**args, semantic_result=wrong)["errors"]
+        assert any(e["field"] == "report.execution_assessments[0].runtime_evidence" for e in errors)
+        with pytest.raises(ResultSubmitError):
+            svc.submit(**args, semantic_result=wrong)
+    assert before == [e.id for e in runtime.event_log.read_all()]
+    svc.submit(**args, semantic_result=result)
+    events = runtime.event_log.read_all()
+    op = reduce_workflow_operations(events)[args["operation_id"]]
+    ref = op["admitted_control_result_ref"]
+    verdict = hydrate_sidecar_ref(runtime.state_dir, ref).payload
+    settled = next(e for e in events if e.type == "fanout.synth.completed")
+    failure = _failure()
+    failure.payload.update(project_synth_failure_payload({}, {**settled.payload, **verdict, "control_result_ref": ref}, report, []))
+    origin = ZfEvent(type="issue.requested", payload={"issue_ref": "frozen-export"})
+    replan, _ = plan_reader_stage_replan(_config(), [origin, failure], failure)
+    assert replan and not plan_reader_stage_replan(_config(), [origin, failure, replan], failure)[0]
+    refs = repair_input_refs(runtime.state_dir, {"trigger_payload": replan.payload}, workflow_run_id=verdict["workflow_run_id"],
+                             task_id="planner", source_event_id=replan.id)
+    handoff = hydrate_sidecar_ref(runtime.state_dir, refs[0]).payload
+    action, = handoff["rework_feedback"]
+    assert action["task_id"] == "A" and action["required_change"] == fix["required_change"]
+    assert action["basis"]["current_evidence"] == [field]
+    assert handoff["plan_review_dispositions"]["assessments"] == [row]

@@ -36,7 +36,10 @@ def review_claim_briefing(policy: str) -> list[str]:
         'Before any rejection, assess every frozen comparison marked before_rework; on approval assess all. '
         'For each marked comparison include disposition (no_repair, repair_required, or needs_clarification), runtime_evidence with '
         'an exact current field beneath $.execution_comparisons.<comparison>.facts, and the requirement/candidate '
-        'basis. Link fixes by fix_items[].comparison (other for a separate obligation) and unresolved questions by owner_decision_items[].comparison. A command owner selects acceptance and commands '
+        'basis. Unmarked comparisons use conclusion and basis on approval; their optional fields impose no '
+        'repair obligation. The runtime derives the comparison from the Task Map and policy. Give the author '
+        'the disputed Task Map field, its observed value and the requirement it must meet. Revalidate the '
+        'candidate to recompute the facts. Link fixes by fix_items[].comparison (other for a separate obligation) and unresolved questions by owner_decision_items[].comparison. A command owner selects acceptance and commands '
         'within a task; verify_only uses the Task Pipeline Verify entry. Evaluate cross-task ordering separately '
         'against the requirement and direct dependencies. Unresolved execution contracts remain unknown. '
         'Positive assessments are verdict metadata; leave clean findings and Planner-owned gates empty.', '',

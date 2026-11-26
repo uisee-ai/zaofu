@@ -59,7 +59,9 @@ Planner 的 validate 结果与 Critic 的输入使用相同事实生成器。
 ### Critic 的执行对账
 
 新冻结的 `plan-execution-review.execution_comparisons` 是本轮待对照的执行事实。
-`standard_with_empty_write_scope.task_ids` 列出实际进入标准流程且写入范围为空的任务。
+`standard_with_empty_write_scope` 列出实际进入标准流程且显式声明空写集的任务。
+新评审的 `facts.entries[]` 提供声明与调度入口、起始阶段、允许路径和本任务登记的命令 ID。
+Critic 对照原始需求确定这一入口是否合适。返工指向作者能修改的候选字段，重新验证候选时由运行时生成新的摘要。
 `candidate_command_scope` 列出当前按 Candidate 选择或声明的命令、登记任务与命令 ID，
 以及仅由宿主许可的命令。Critic 从冻结需求确定本轮必须取得哪些独立回执，再与
 当前 Task Map 的登记对照。独立构建与“构建后执行浏览器检查”可以在同一需求中分别出现。

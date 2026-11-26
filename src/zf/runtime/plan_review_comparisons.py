@@ -11,12 +11,12 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 def execution_comparisons(
     tasks: list, requirements: list, host_commands: set, *, candidate_stage: bool, dependencies: Mapping
 ) -> dict:
+    from zf.runtime.task_pipeline_reconciler import STANDARD_INITIAL_STAGE, VERIFY_ONLY_INITIAL_STAGE
+
     comparisons = {}
     entries = {r["task_id"]: r["initial_readonly_verify"] for r in requirements
                if "initial_readonly_verify" in r}
     if entries:
-        from zf.runtime.task_pipeline_reconciler import VERIFY_ONLY_INITIAL_STAGE
-
         comparisons["readonly_pipeline_entry"] = {
             "task_ids": list(entries), "before_rework": True,
             "facts": {"entries": [
@@ -37,15 +37,20 @@ def execution_comparisons(
                 "task_ids": list(dependencies), "before_rework": True,
                 "facts": {"tasks": [{"task_id": key, "blocked_by": value} for key, value in dependencies.items()]},
             }
-    empty = [
-        row["task_id"]
-        for row in requirements
-        if row.get("standard_with_empty_write_scope")
-    ]
-    if empty:
-        comparisons["standard_with_empty_write_scope"] = {"task_ids": empty}
+    empty = []
     selections = {}
     for task, row in zip(tasks, requirements, strict=True):
+        if row.get("standard_with_empty_write_scope"):
+            evidence = task.get("evidence_contract")
+            declarations = {k: evidence[k] for k in ("task_pipeline_entry_mode", "execution_mode")
+                            if isinstance(evidence, Mapping) and k in evidence}
+            empty.append({
+                "task_id": row["task_id"], "declared_execution_mode": task.get("execution_mode"),
+                **({"evidence_contract": declarations} if declarations else {}),
+                "entry_mode": "standard", "first_stage_on_admission": STANDARD_INITIAL_STAGE,
+                "allowed_paths": task["allowed_paths"],
+                "declared_command_ids": [c["command_id"] for c in row["commands"]],
+            })
         validation = task.get("validation")
         raw_commands = (
             validation.get("commands", []) if isinstance(validation, Mapping) else []
@@ -70,6 +75,11 @@ def execution_comparisons(
                 selections.setdefault(text, []).append(
                     {"task_id": row["task_id"], "command_id": command["id"]}
                 )
+    if empty:
+        comparisons["standard_with_empty_write_scope"] = {
+            "task_ids": [entry["task_id"] for entry in empty], "before_rework": True,
+            "facts": {"entries": empty},
+        }
     if (
         (candidate_stage or selections)
         and host_commands

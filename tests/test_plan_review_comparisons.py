@@ -13,7 +13,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def case(tmp_path, *, mode="full", legacy=False, mixed=False):
+def case(tmp_path, *, mode="full", legacy=False, mixed=False, readonly_required=False):
     state = tmp_path / "project/.zf"
 
     def source(name, body):
@@ -49,6 +49,10 @@ def case(tmp_path, *, mode="full", legacy=False, mixed=False):
             }
         ]
     }
+    rule = "The authorized noop producer uses the standard entry. Only build && browser is required."
+    if readonly_required:
+        task_map["tasks"][0]["execution_mode"] = "document_review"
+        rule = "Verify the frozen payroll export as the initial step, with no implementation."
     if mixed:
         task_map["tasks"].append({
             "task_id": "Audit", "execution_mode": "runtime_only", "allowed_paths": [],
@@ -91,9 +95,7 @@ def case(tmp_path, *, mode="full", legacy=False, mixed=False):
     current = source("child-artifact-planner-1", task_map)
     requirement = source(
         "requirement",
-        {
-            "rule": "The authorized noop producer uses the standard entry. Only build && browser is required."
-        },
+        {"rule": rule},
     )
     bindings = [current, requirement, *extra["input_refs"]]
     contract = source(
@@ -135,7 +137,7 @@ def case(tmp_path, *, mode="full", legacy=False, mixed=False):
     authority = cite(
         requirement,
         "$.rule",
-        "The authorized noop producer uses the standard entry. Only build && browser is required.",
+        rule,
     )
     args = {
         "operation_id": prepared.operation_id,
@@ -169,6 +171,10 @@ def case(tmp_path, *, mode="full", legacy=False, mixed=False):
             },
         },
     ]
+    if not legacy:
+        summary = next(r for r in extra["input_refs"] if r["source_id"] == "plan-execution-review")
+        assessments[0].update(disposition="no_repair", runtime_evidence=cite(
+            summary, "$.execution_comparisons.standard_with_empty_write_scope.facts.entries[0].entry_mode", "standard"))
     return runtime, svc, args, result, assessments
 
 

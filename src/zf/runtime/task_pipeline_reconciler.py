@@ -12,6 +12,7 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.task_pipeline_failure_accounting import is_semantic_failure, semantic_failures
 
 
+STANDARD_INITIAL_STAGE = "impl_ready"
 VERIFY_ONLY_INITIAL_STAGE = "verify_ready"
 TASK_PIPELINE_SHADOW_SCHEMA = "task-pipeline-shadow.v1"
 _ACTIVE_OPERATION_STATUSES = frozenset({"reserved", "running", "suspended"})
@@ -802,7 +803,7 @@ def _derive_stage(
     max_rework = int(policy.get("max_rework_attempts") or 0)
     impl = current.get("impl")
     if impl is None:
-        return "impl_ready", 1, 0
+        return STANDARD_INITIAL_STAGE, 1, 0
     impl_generation = int(impl.get("operation_generation") or 1)
     impl_status = str(impl.get("status") or "")
     if (impl_status == "superseded"
