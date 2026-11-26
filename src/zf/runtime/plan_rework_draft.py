@@ -1,4 +1,4 @@
-"""Issue editable copies of an exact failed-preflight candidate, separately from Plan authority."""
+"""Issue editable copies of the admitted author candidate explicitly returned for rework."""
 
 from __future__ import annotations
 
@@ -51,7 +51,6 @@ def _grant(state, events, scope, request, manifest, operation_id):
         or start.payload.get("fanout_id") != request.get("fanout_id")
         or start.payload.get("stage_id") != stage
         or not trigger
-        or trigger.origin != "kernel"
         or start.payload.get("trigger_event_id") != trigger.id
     ):
         raise ValueError("recipient is not bound to its kernel fanout")
@@ -69,7 +68,17 @@ def _grant(state, events, scope, request, manifest, operation_id):
         or manifest.get("task_map_generation") != scope.get("task_map_generation")
     ):
         raise ValueError("no matching formal Plan comparison baseline")
-    old_start, synth, failure, previous, provenance = _preflight_source(
+    from zf.runtime.plan_rework_signed_rejection import signed_rejection_source
+
+    failure = by_id.get(scope.get("rework_of"))
+    if not failure:
+        raise ValueError("missing bound rework failure")
+    source = (
+        _preflight_source
+        if failure.payload.get("failure_class") == "plan_candidate_preflight"
+        else signed_rejection_source
+    )
+    old_start, synth, failure, previous, provenance = source(
         state, events, scope=scope, start=start, trigger=trigger, request=request
     )
     admission, control_ref, control = _admitted_producer(
@@ -101,7 +110,8 @@ def _preflight_source(state, events, *, scope, start, trigger, request):
     synth = by_id.get(failure.causation_id) if failure else None
     old = by_id.get(synth.causation_id) if synth else None
     if (
-        not failure
+        trigger.origin != "kernel"
+        or not failure
         or trigger.causation_id != failure.id
         or not old
         or not _kernel(synth, "fanout.synth.completed", run)
@@ -293,8 +303,7 @@ def _editable_files(state, prev, manifest, control):
         )
         expected = projected.get(delivered["source_id"], {})
         if any(
-            delivered.get(key) != expected.get(key)
-            for key in ("kind", "ref", "sha256", "allowed_paths")
+            delivered.get(key) != expected.get(key) for key in ("kind", "ref", "sha256", "allowed_paths")
         ) or (delivered.get("access_scope") or {}) != (expected.get("access_scope") or {}):
             raise ValueError("candidate edit source differs from its kernel read projection")
         acl = original.get("access_scope") or {}
@@ -342,11 +351,11 @@ def _editable_files(state, prev, manifest, control):
 
 
 def bind_authoring_context(runtime, payload, request, manifest, previous, operation_id):
+    payload.pop(KEY, None)
     ctx = payload.get("plan_candidate_validation")
     if not isinstance(ctx, Mapping):
         return
     request["plan_candidate_validation"] = dict(ctx)
-    payload.pop(KEY, None)
     scope = (ctx.get("manifest") or {}).get("trigger_payload") or {}
     role = request.get("role_instance")
     planner = role == "planner" or any(
@@ -434,6 +443,10 @@ def editable_candidate_files(state, log, manifest, identity, names):
             "producer_admission_event_id",
             "control_sha256",
             "preflight_sha256",
+            "critic_admission_event_id",
+            "critic_control_sha256",
+            "generation_request_event_id",
+            "generation_approval_event_id",
             "plan_inline_sha256",
             "plan_file_sha256",
             "single_trailing_lf_difference",

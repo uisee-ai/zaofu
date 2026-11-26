@@ -60,7 +60,10 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
             grant = payload.get("editable_rework_candidate") or {}
             if grant.get("ref"):
                 from zf.runtime.plan_rework_draft import SCHEMA
-                body = hydrate_sidecar_ref(state_dir, grant).payload
+                try:
+                    body = hydrate_sidecar_ref(state_dir, grant).payload
+                except (KeyError, OSError, TypeError, ValueError):
+                    return entry + "\n- Editable candidate grant is unavailable. Use the assigned sources."
                 if (body.get("schema_version") != SCHEMA or body.get("attempt_id") != attempt
                         or body.get("operation_id") != payload.get("operation_id")):
                     return entry + "\n- Editable candidate grant identity mismatch."

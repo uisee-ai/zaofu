@@ -26,10 +26,10 @@ Owner 从已接受的计划启动新一代返工时，还可核对本次 Web 批
 
 OA 给只读审计分配 Task Verify 时，可列出该任务首站的精确 AC。请求纠正和派发按同一份当前任务合同计算，复用快照的路由与冻结 Candidate 的延后规则。这样首站由独立审计负责的 Candidate-owned AC 可以被点名，已延后的全局 AC 仍由冻结 Candidate 验收。普通任务沿用其 Task Verify 所属 AC。例见[精确分工及真实派发测试](../../tests/test_oa_readonly_verify_scope.py)。
 
-## 机械预检返工的编辑起点
+## 返工的可编辑候选
 
 同一 Run、同一阶段和同一授权代内，内核因 `plan_candidate_preflight` 退回已签收的 Planner 候选时，下一份新签发的 Planner 请求可以单独绑定编辑授权。内核沿退回事件定位唯一的签发、结果准入、子任务、控制清单与预检回执；每个文件需要原返工授权允许整文件、在本次输入清单中出现且内容摘要吻合。必读选区、原 ACL 和原 PlanPackage 保持各自的约束。
 
 Planner 从工作区使用 `zf plan draft-baseline --workspace --from-rework --attempt <attempt> --port task_map` 导出所选端口及获准的 `plan.md`，可重复指定端口。命令返回生产者准入事件、控制清单与预检摘要、每个导出文件的 SHA256，以及正式比较包摘要。Markdown 按物理文件逐字节导出，其文本与已签控制正文可仅差一个末尾换行；收据分别列出两份摘要。后续修改仍须满足 Owner 纠正、独立评审和正常的 Plan/Goal 准入。
 
-普通 `draft-baseline` 继续导出已准入的正式比较包；`--seed-goals` 仅适用该模式。旧签发请求按原身份重放。独立 Critic 的评审返工和 Owner 开启新代各有自己的输入授权，本入口只识别上述同代机械预检链。来源不全、跨代或只有部分读取许可时，新参数会明确报错；Planner 可用该次已分配的来源进行修订。[授权与导出测试](../../tests/test_plan_rework_draft.py)
+普通 `draft-baseline` 继续导出已准入的正式比较包；`--seed-goals` 仅适用该模式。旧签发请求按原身份重放。独立 Critic 已签收并拒绝候选时，同代 Kernel 返工可从被拒的确切工件开始编辑，收据列出 Critic 的准入事件和控制结果摘要。Owner 另起一代时还须在受控请求中点名该 Critic 的同一断点，保留相同的正式包和任务图基线，收据增加该次审批与申请的事件 ID。未绑定的 Owner 新代、缺少正式比较包或未签收的评审只能按原读取授权访问。来源不全、跨代或只有部分读取许可时，新参数会明确报错；Planner 可用该次已分配的来源进行修订。[授权与导出测试](../../tests/test_plan_rework_draft.py)

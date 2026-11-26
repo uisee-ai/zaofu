@@ -321,6 +321,11 @@ def test_public_cli_and_briefing_export_immutable_candidate_from_owned_workspace
     }
     briefing = render_role_input_entry(active, runtime.state_dir, role_name="planner")
     assert "--from-rework" in briefing and "Goal authority" in briefing
+    damaged = {**active, KEY: {**active[KEY], "sha256": "0" * 64}}
+    assert "Use the assigned sources" in render_role_input_entry(
+        damaged, runtime.state_dir, role_name="planner"
+    )
+    assert "--from-rework" not in render_role_input_entry(damaged, runtime.state_dir, role_name="planner")
     assert "--from-rework" not in render_role_input_entry(active, runtime.state_dir, role_name="critic")
     token = provision_role_artifact_read_credential(
         runtime.state_dir, "planner", role_name="planner", provider="codex"
