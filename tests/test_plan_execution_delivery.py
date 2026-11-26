@@ -15,6 +15,43 @@ def _review():
         ports={}, policy={}, metadata={}, identity={'task_map_generation': 'generation'})
 
 
+def test_cli_summary_distinguishes_empty_initial_acceptance_from_an_unresolved_contract(tmp_path):
+    from zf.cli.result import _validation_summary
+    from zf.runtime.plan_review_claims import POLICY, review_claim_briefing
+
+    tasks = []
+    for task_id, command_owner in [('catalog', 'task_verify'), ('loans', 'candidate_verify')]:
+        tasks.append({
+            'task_id': task_id, 'execution_mode': 'runtime_only', 'runtime_only': True,
+            'write_free': True, 'allowed_paths': [], 'verification_read_paths': ['catalog.json'],
+            'acceptance_criteria': [{'id': 'inspect-' + task_id, 'statement': 'Published records agree',
+                                     'verification_owner': 'candidate_verify', 'verification_tier': 'runtime',
+                                     'verification_command_ids': ['check-' + task_id]}],
+            'validation': {'commands': [{'id': 'check-' + task_id, 'command': 'inspect ' + task_id,
+                                         'owner': command_owner, 'tier': 'runtime',
+                                         'acceptance_ids': ['inspect-' + task_id]}]},
+        })
+    tasks.append({**tasks[0], 'task_id': 'unresolved', 'acceptance_criteria': [], 'validation': {}})
+    review = review_execution({'tasks': tasks}, ports={}, policy={}, metadata={'task_pipeline': {'mode': 'blocking'}})
+    summary = _validation_summary({'status': 'passed', 'errors': [], 'execution_review': review})
+    scope = summary['execution_comparisons']['readonly_command_scope']
+    assert scope['task_count'] == 3
+    assert scope['resolved_acceptance_task_count'] == 2
+    assert scope['without_mandatory_acceptance_count'] == 1
+    assert scope['sample_without_mandatory_acceptance'] == ['catalog']
+    assert summary['status'] == 'passed' and not summary['errors']
+    payload = {}
+    attach_execution_review(state_dir=tmp_path, payload=payload, review=review, source_event_id='review')
+    detail = next(r for r in payload['input_refs'] if r['source_id'] == 'plan-execution-verification')
+    bound = hydrate_sidecar_ref(tmp_path, detail).payload
+    rows = {row['task_id']: row['initial_readonly_verify'] for row in bound['task_requirements']}
+    assert rows['catalog']['mandatory_acceptance_ids'] == [] and rows['catalog']['command_ids'] == ['check-catalog']
+    assert rows['loans']['mandatory_acceptance_ids'] == ['inspect-loans']
+    assert 'mandatory_acceptance_ids' not in rows['unresolved']
+    hint = ' '.join(review_claim_briefing(POLICY))
+    assert detail['source_id'] in hint and 'initial_readonly_verify.mandatory_acceptance_ids' in hint
+
+
 def test_delivery_keeps_verification_details_bound_and_on_demand(tmp_path):
     from zf.runtime.artifact_read_ledger import source_manifest_from_payload
     from zf.runtime.artifact_read_requirements import build_canonical_required_reads
