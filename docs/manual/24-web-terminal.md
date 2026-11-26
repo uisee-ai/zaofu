@@ -124,6 +124,8 @@ Dock 模式可拖动顶部调整高度；全屏、Dock、主题切换、Tab 名�
 | Control | 正常可写 attach；发送按键、resize、scroll，同一 Session 同时只有一个 controller | 日常操作 |
 | Take over control | 显式用 Herdr `--takeover` 替换现有 controller；旧 controller 随即失去控制权 | 原设备失联或明确跨设备交接 |
 
+旁观连接就绪后，终端上方显示 Read-only。允许接管时可直接点 Take over control，拿到控制连接的首个完整画面后会短暂显示「Control transferred. You can type now.」。有 Agent 等待输入时，工具栏显示数量（如「1 needs input」），点击可选中对应终端。
+
 建议顺序是：查看用 Observe，输入用 Control，只有确认要替换现有操作者时才 Take over。该选项
 受 `allow_takeover`、mutation auth 和 takeover receipt 约束。
 
@@ -157,3 +159,5 @@ cost 与精度。Rename 不重置用量；这些数字来自每个 CLI 的结构
 浏览器不能指定任意 executable、cwd、argv 或环境变量。终端字符流不进入 EventLog、Task、
 Workflow 或 Artifact，也不能靠 screen scraping 推进 Kernel 状态。遇到 unavailable、controller
 冲突或恢复问题，先核对[宿主配置](#2-默认启用与宿主配置)和[会话恢复](#3-创建tab-与恢复)。
+
+Herdr 0.9.2 起，Control 支持单击启用鼠标的 TUI；拖选文字和 Observe 保持本地操作。刷新终端列表可查看 agent 的工作、空闲或等待输入状态。见[集成规格与验收](../impl/herdr-web-terminal-095.md)。

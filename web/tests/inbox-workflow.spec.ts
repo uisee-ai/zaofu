@@ -271,8 +271,10 @@ test("Board summarizes blockers while List retains details and outcomes", async 
   await expect(rows).toContainText("Waiting for owner");
   await expect(rows).not.toContainText(/internal-|tokens|ctx|tok |fanout_queue/);
   await rows.locator(".workbench-task-row").filter({ hasText: "Ship checkout" }).click();
-  await expect(page.getByRole("dialog", { name: "Task details" })).toContainText("internal-route");
-  await page.keyboard.press("Escape");
+  const reader = page.getByRole("region", { name: "任务详情" });
+  await expect(reader).toContainText("Waiting for owner");
+  await expect(reader).not.toContainText("internal-route");
+  await page.getByRole("button", { name: "返回看板" }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });

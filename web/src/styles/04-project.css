@@ -32,11 +32,6 @@
   white-space: nowrap;
 }
 
-.project-home {
-  min-height: 0;
-  overflow: auto;
-}
-
 .project-overview-hero {
   display: flex;
   justify-content: space-between;
@@ -631,17 +626,6 @@ button.project-focus-card {
 .detail-body {
   min-height: 0;
   overflow: auto;
-}
-
-.task-detail > .tab-row {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.task-detail > .tab-row .tab-button {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
 .detail-grid {

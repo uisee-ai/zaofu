@@ -8,6 +8,8 @@ from typing import Any
 from zf.core.config.schema import ZfConfig
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
+from zf.web.task_deliverables import verified_task_files
+from zf.web.projections.task_properties import task_properties
 from zf.core.security.redaction import redact_obj
 from zf.core.task.kanban_projection import kanban_column_label
 from zf.core.task.kanban_projection import kanban_column_projection
@@ -1012,6 +1014,7 @@ def _task_detail(
     task_payload = redact_obj(asdict(task))
     if isinstance(task_payload, dict):
         task_payload.update({
+            "source": redact_obj(_task_source_from_events([(seq, event) for seq, event in task_events if event.task_id == task.id])),
             "phase": phase,
             "workflow_phase": workflow["workflow_phase"],
             "impl_exit_gate_state": workflow["impl_exit_gate_state"],
@@ -1028,8 +1031,14 @@ def _task_detail(
 
     return {
         "task": task_payload,
+        "properties": redact_obj(task_properties(state_dir, task, task_events)),
         "contract": redact_obj(asdict(task.contract)),
         "artifact_refs": redact_obj(artifact_refs),
+        "deliverables": [
+            {"name": redact_obj(path.name), "sha256": digest}
+            for digest, path in verified_task_files(artifact_refs, state_dir=state_dir,
+                project_root=project_root or state_dir.parent).items()
+        ],
         "evidence": redact_obj(asdict(task.evidence)) if task.evidence else {},
         "status_model": status_model,
         "evidence_model": redact_obj(evidence_model),

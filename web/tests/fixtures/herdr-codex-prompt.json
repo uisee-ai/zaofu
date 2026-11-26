@@ -1,0 +1,17 @@
+{
+  "codex": "0.171.0",
+  "herdr": "0.9.5",
+  "columns": 120,
+  "rows": 40,
+  "ansi_rows": [
+    "\u001b[0m\u001b[1m\u001b[2m\u001b[48;2;68;68;68m› \u001b[0m\u001b[38;2;238;238;238m\u001b[48;2;68;68;68m请检查界面排版 ⚠️ 👨‍👩‍👧 👍🏽。这是一条用于验证浅色主题的合成提问，请保留下一行的中文和反引号。请检查界面排版和换行的对齐\u001b[0m\u001b[48;2;68;68;68m  \u001b[0m",
+    "\u001b[0m\u001b[48;2;68;68;68m  \u001b[0m\u001b[38;2;238;238;238m\u001b[48;2;68;68;68m方式。\u001b[0m\u001b[48;2;68;68;68m                                                                                                               \u001b[0m",
+    "\u001b[0m\u001b[48;2;68;68;68m  \u001b[0m\u001b[38;2;238;238;238m\u001b[48;2;68;68;68m第二行包含 \u001b[0m\u001b[38;2;166;227;161m\u001b[48;2;68;68;68m示例\u001b[0m\u001b[38;2;238;238;238m\u001b[48;2;68;68;68m 和 ASCII marker。\u001b[0m\u001b[48;2;68;68;68m                                                                                    \u001b[0m",
+    "",
+    "  \u001b[0m\u001b[1mSelect Model and Effort\u001b[0m",
+    " ",
+    " ",
+    "\u001b[0m\u001b[1m\u001b[7m› 1. GPT-6.2-Sol    \u001b[0m\u001b[7mFast, go-to model for coding and everyday work.\u001b[0m\u001b[1m\u001b[7m                                                    \u001b[0m",
+    "  2. GPT-6.2-Astra  \u001b[0m\u001b[2mOur most capable model for complex coding and professional work.\u001b[0m"
+  ]
+}

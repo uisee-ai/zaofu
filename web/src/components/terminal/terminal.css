@@ -25,7 +25,7 @@
   position: fixed;
   inset: 0;
   width: 100%;
-  height: 100dvh;
+  height: var(--terminal-viewport, 100dvh);
   min-height: 0;
 }
 
@@ -130,6 +130,18 @@
 
 .web-terminal-toolbar-button {
   cursor: pointer;
+}
+
+.web-terminal-tab small,
+.web-terminal-waiting-button { white-space: nowrap; }
+
+.web-terminal-waiting-button {
+  display: inline-flex;
+  width: auto;
+  min-width: 28px;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 4px;
 }
 
 .web-terminal-toolbar-button:hover:not(:disabled),
@@ -391,6 +403,8 @@
   margin-left: auto;
 }
 
+.web-terminal-observer-bar,
+.web-terminal-input-notice,
 .web-terminal-notice,
 .web-terminal-connection-notice {
   min-height: 28px;
@@ -403,6 +417,35 @@
   background: var(--wt-surface);
   font-family: var(--font-mono);
   font-size: var(--text-11);
+}
+
+.web-terminal-observer-bar {
+  justify-content: space-between;
+  font-family: inherit;
+}
+
+.web-terminal-observer-bar button {
+  cursor: pointer;
+  padding: 3px 8px;
+  border: 1px solid var(--wt-line);
+  border-radius: 4px;
+  background: var(--wt-chrome);
+  color: var(--wt-text);
+}
+
+.web-terminal-takeover-feedback {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 4px 10px;
+  border: 1px solid var(--wt-line);
+  border-radius: 4px;
+  background: var(--wt-chrome);
+  color: var(--wt-text);
+  font-size: var(--text-12);
+  pointer-events: none;
 }
 
 .web-terminal-notice.is-error,
@@ -450,11 +493,30 @@
   background: var(--wt-bg);
 }
 
+.web-terminal-view[data-terminal-status="observing"] .web-terminal-xterm-host { overflow: auto; }
+.web-terminal-view[data-terminal-status="observing"] .xterm { min-width: max-content; }
+
 .web-terminal-xterm-host .xterm {
   box-sizing: border-box;
   height: 100%;
   padding: 5px 8px;
   background: var(--wt-bg);
+}
+
+/* xterm serializes RGB in hex until the DOM normalizes the inline style to
+   rgb() (e.g. for CJK spacing). Its selection and cursor own their colors. */
+.web-terminal-codex-prompt > span:not(.xterm-decoration-top, .xterm-cursor):is(
+  [style*="background-color:#444444"], [style*="background-color: rgb(68, 68, 68)"]
+) {
+  background-color: var(--wt-surface) !important;
+
+  &:is([style*=";color:#a6e3a1"], [style*="; color: rgb(166, 227, 161)"]) {
+    color: var(--wt-ok) !important;
+  }
+
+  &:is([style*=";color:#eeeeee"], [style*="; color: rgb(238, 238, 238)"]) {
+    color: var(--wt-text) !important;
+  }
 }
 
 .web-terminal-xterm-host .xterm-viewport {
@@ -508,13 +570,13 @@
     position: fixed;
     inset: auto 0 0;
     width: 100%;
-    height: min(var(--web-terminal-dock-height), calc(100dvh - 16px));
-    min-height: min(240px, calc(100dvh - 16px));
+    height: min(var(--web-terminal-dock-height), calc(var(--terminal-viewport, 100dvh) - 16px));
+    min-height: min(240px, calc(var(--terminal-viewport, 100dvh) - 16px));
   }
 
   .web-terminal-layer.is-fullscreen {
     inset: 0;
-    height: 100dvh;
+    height: var(--terminal-viewport, 100dvh);
   }
 
   .web-terminal-tab-wrap {
@@ -534,3 +596,41 @@
     transition: none;
   }
 }
+
+.web-terminal-quote {
+  position: absolute;
+  z-index: 3;
+  top: 0.5rem;
+  right: 0.5rem;
+  max-width: calc(100% - 1rem);
+  color: var(--wt-text);
+  border: 1px solid var(--wt-line);
+  border-radius: 6px;
+  background: var(--wt-chrome);
+  box-shadow: 0 3px 12px color-mix(in oklab, var(--wt-text) 12%, transparent);
+}
+.web-terminal-quote fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 0;
+}
+.web-terminal-quote legend { padding: 6px 0 0; font-weight: 600; }
+.web-terminal-quote textarea {
+  width: min(26rem, 72vw);
+  min-height: 6em;
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+.web-terminal-quote-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.web-terminal-quote :is(button, select, textarea) {
+  color: var(--wt-text);
+  background: var(--wt-surface);
+  border: 1px solid var(--wt-line);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.web-terminal-quote button:disabled { opacity: 0.5; }
+.web-terminal-input-notice { gap: 8px; }

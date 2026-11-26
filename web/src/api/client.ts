@@ -719,19 +719,20 @@ export function getRecentEventsPage(
   }));
 }
 
-export function getTaskDetail(taskId: string, projectId?: string): Promise<TaskDetail> {
-  return requestJson<TaskDetail>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}`);
+export function getTaskDetail(taskId: string, projectId?: string, signal?: AbortSignal): Promise<TaskDetail> {
+  return requestJson<TaskDetail>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}`, { signal });
 }
 
-export function getTaskTimeline(taskId: string, projectId?: string): Promise<TaskTimeline> {
+export function getTaskTimeline(taskId: string, projectId?: string, signal?: AbortSignal): Promise<TaskTimeline> {
   const params = new URLSearchParams({ limit: "200" });
   return requestJson<TaskTimeline>(
     `${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}/timeline?${params.toString()}`,
+    { signal },
   );
 }
 
-export function getTaskDiff(taskId: string, projectId?: string): Promise<TaskDiff> {
-  return requestJson<TaskDiff>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}/diff`);
+export function getTaskDiff(taskId: string, projectId?: string, signal?: AbortSignal): Promise<TaskDiff> {
+  return requestJson<TaskDiff>(`${projectPrefix(projectId)}/tasks/${encodeURIComponent(taskId)}/diff`, { signal });
 }
 
 export function getEventsPage(

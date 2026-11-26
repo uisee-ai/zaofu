@@ -281,7 +281,7 @@ def kanban_agent_evidence_model() -> dict[str, Any]:
     return {
         "canonical": "task/card status is workflow truth",
         "execution": "run, trace, fanout, role, verify, and review events are evidence",
-        "interaction": "Kanban Agent chat and PTY transcript are interaction evidence",
+        "interaction": "zaofu agent chat and PTY transcript are interaction evidence",
         "completion_rule": "operator/backend completion never moves a task to done by itself",
     }
 

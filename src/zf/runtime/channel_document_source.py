@@ -148,7 +148,16 @@ def read_channel_document(
             descriptors.append({})
     if not ref or not descriptors:
         raise ChannelDocumentError(403, "File is not referenced by this Channel thread")
-    path = _cited_path(ref)
+    expected = {
+        str(item.get("sha256") or item.get("artifact_digest") or "").removeprefix(
+            "sha256:"
+        )
+        for item in descriptors
+    } - {""}
+    return read_referenced_text(ref, project_root=project_root, state_dir=state_dir, expected=expected)
+
+
+def document_locations(path: Path, *, project_root: Path, state_dir: Path) -> list[tuple[Path, Path]]:
     if ".." in path.parts:
         raise ChannelDocumentError(403, "Unsafe file reference")
     roots = [project_root.resolve(), state_dir.resolve()]
@@ -181,6 +190,13 @@ def read_channel_document(
         raise ChannelDocumentError(403, "File is outside this project")
     if path.suffix.lower() not in TEXT_SUFFIXES:
         raise ChannelDocumentError(415, "This file type has no text preview")
+    return choices
+
+
+def read_referenced_text(ref: str, *, project_root: Path, state_dir: Path, expected: set[str]) -> dict[str, Any]:
+    """Read bounded text after the caller authorizes the reference in its own scope."""
+    path = _cited_path(ref)
+    choices = document_locations(path, project_root=project_root, state_dir=state_dir)
     data = None
     for root, relative in choices:
         try:
@@ -195,12 +211,6 @@ def read_channel_document(
             404, "Referenced file is unavailable; no summary substituted"
         )
     digest = hashlib.sha256(data).hexdigest()
-    expected = {
-        str(item.get("sha256") or item.get("artifact_digest") or "").removeprefix(
-            "sha256:"
-        )
-        for item in descriptors
-    } - {""}
     if expected and digest not in expected:
         raise ChannelDocumentError(409, "Referenced file has changed; refresh its reference")
     try:

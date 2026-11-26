@@ -475,7 +475,7 @@ def normalize_action_proposal(
         if value and not payload.get(key):
             payload[key] = value
     if action in {"create-task", "update-task", "idea-to-product"}:
-        payload = normalize_proposed_task_contract(payload)
+        payload = normalize_proposed_task_contract(payload, partial_update=action == "update-task")
     validator = validate_payload or default_validate_payload
     validation_errors = [
         error

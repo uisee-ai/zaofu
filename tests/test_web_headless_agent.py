@@ -128,6 +128,9 @@ def _fake_codex_script(tmp_path: Path, *, reply: str = "headless reply") -> Path
                 "    msg = json.loads(line)",
                 "    method = msg.get('method')",
                 "    req_id = msg.get('id')",
+                "    if (capture := os.environ.get('FAKE_CODEX_CAPTURE')):",
+                "        with open(capture, 'a', encoding='utf-8') as out:",
+                "            out.write(line)",
                 "    if req_id and method == 'initialize':",
                 "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'serverInfo':{'name':'fake-codex'}}}), flush=True)",
                 "    elif method == 'initialized':",
@@ -161,6 +164,38 @@ def _fake_codex_script(tmp_path: Path, *, reply: str = "headless reply") -> Path
         encoding="utf-8",
     )
     return script
+
+
+def test_chat_identity_reaches_new_and_resumed_codex_turns(
+    state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture = tmp_path / "codex.jsonl"
+    script = _fake_codex_script(tmp_path)
+    monkeypatch.setenv("ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD", f"{sys.executable} {script}")
+    monkeypatch.setenv("FAKE_CODEX_EXPECT_RESUME_SECURITY", "1")
+    monkeypatch.setenv("FAKE_CODEX_CAPTURE", str(capture))
+    agent = KanbanHeadlessAgent(state_dir=state_dir, project_root=tmp_path)
+    for message in ("你是谁？", "用英文介绍自己"):
+        assert agent.run_turn(backend="codex-headless", message=message, thread_key="chat-a").ok
+
+    requests = [json.loads(line) for line in capture.read_text().splitlines()]
+    threads = [r for r in requests if r.get("method") in {"thread/start", "thread/resume"}]
+    assert [r["method"] for r in threads] == ["thread/start", "thread/resume"]
+    for request in threads:
+        instructions = request["params"]["developerInstructions"]
+        assert "Your name is zaofu agent." in instructions
+        assert "kanban agent" not in instructions.lower()
+    prompts = [r["params"]["input"][0]["text"] for r in requests if r.get("method") == "turn/start"]
+    assert len(prompts) == 2
+    assert all(prompt.startswith("zaofu agent turn\n") for prompt in prompts)
+@pytest.mark.parametrize(("thread", "bound"), [("task:A", True), ("task:B", False), ("main", False)])
+def test_task_conversation_guidance_is_bound_to_the_current_task(
+    state_dir: Path, tmp_path: Path, thread: str, bound: bool,
+) -> None:
+    agent = KanbanHeadlessAgent(state_dir=state_dir, project_root=tmp_path)
+    prompt = agent._build_prompt(message="补充背景", task_id="A", context={"thread_key": thread})
+    assert ("Treat background as context for this thread" in prompt) is bound
+    assert ("matching delivery receipt" in prompt) is bound
 
 
 def test_system_prompt_requires_exact_artifact_lineage_for_create_task(

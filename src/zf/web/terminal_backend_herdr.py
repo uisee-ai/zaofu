@@ -14,6 +14,7 @@ from typing import Protocol, Sequence
 from zf.web.terminal_backend import (
     HerdrProjectRuntime,
     HerdrTerminalResource,
+    TerminalAgent,
     TerminalBridgeSpec,
     TerminalCapability,
     TerminalRuntimeError,
@@ -222,13 +223,18 @@ class HerdrTerminalBackend:
             schema_available=schema_available,
             observe_bridge=observe_bridge,
             control_bridge=control_bridge,
+            mouse=control_bridge and actual >= (0, 9, 2),
             tab_rename=tab_rename_available,
             reason="" if available else "Herdr terminal bridge capability probe failed",
         )
 
     def ensure_project_runtime(self, session_name: str) -> HerdrProjectRuntime:
-        status = self._run(self._session(session_name, "workspace", "list"), timeout=3.0)
-        if status.returncode == 0:
+        response = self._run_json(
+            self._session(session_name, "workspace", "list"),
+            timeout=3.0,
+            allowed_error_codes=frozenset({"server_not_running"}),
+        )
+        if not response.get("error"):
             return HerdrProjectRuntime(session_name=session_name)
         try:
             process = self.runner.spawn(self._session(session_name, "server"))
@@ -378,17 +384,72 @@ class HerdrTerminalBackend:
             except TerminalRuntimeError:
                 pass
             raise
+        result = agent.get("result")
+        metadata = self._agent_metadata(
+            result.get("agent") if isinstance(result, dict) else None
+        )
+        native_id = ""
+        if metadata and metadata.name == agent_name and metadata.provider == provider_kind:
+            native_id = metadata.native_id
         return HerdrTerminalResource(
             workspace_id=workspace_id,
             tab_id=tab_id,
             pane_id=pane_id,
             terminal_id=terminal_id,
             agent_name=agent_name,
+            native_id=native_id,
         )
 
+    @staticmethod
+    def _agent_metadata(row: object) -> TerminalAgent | None:
+        if not isinstance(row, dict) or not row.get("terminal_id"):
+            return None
+        provider = str(row.get("agent") or "").lower()
+        ref = row.get("agent_session")
+        native_id = ""
+        if (
+            provider == "codex"
+            and isinstance(ref, dict)
+            and ref.get("source") == "herdr:codex"
+            and ref.get("agent") == "codex"
+            and ref.get("kind") == "id"
+        ):
+            value = ref.get("value")
+            if isinstance(value, str) and re.fullmatch(
+                r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value, re.I
+            ):
+                native_id = value
+        status = row.get("agent_status")
+        return TerminalAgent(
+            str(row["terminal_id"]),
+            str(row.get("name") or ""),
+            provider,
+            status if status in ("working", "blocked", "idle", "done") else "",
+            native_id,
+        )
+
+    def list_agents(self, runtime: HerdrProjectRuntime) -> list[TerminalAgent]:
+        response = self._run_json(
+            self._session(runtime.session_name, "agent", "list"), timeout=3
+        )
+        result = response.get("result")
+        rows = result.get("agents") if isinstance(result, dict) else None
+        if not isinstance(rows, list):
+            raise TerminalRuntimeError(
+                "herdr_protocol_error",
+                "Herdr agent list omitted agents",
+                status_code=502,
+            )
+        return [
+            agent for row in rows if (agent := self._agent_metadata(row)) is not None
+        ]
+
     def terminal_exists(self, *, runtime: HerdrProjectRuntime, tab_id: str) -> bool:
-        response = self._run(self._session(runtime.session_name, "tab", "get", tab_id))
-        return response.returncode == 0
+        response = self._run_json(
+            self._session(runtime.session_name, "tab", "get", tab_id),
+            allowed_error_codes=frozenset({"tab_not_found"}),
+        )
+        return not response.get("error")
 
     def stop_terminal(self, *, runtime: HerdrProjectRuntime, tab_id: str) -> None:
         completed = self._run(self._session(runtime.session_name, "tab", "close", tab_id))

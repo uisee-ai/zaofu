@@ -180,9 +180,9 @@ test("Channel Group and Kanban Agent real interaction audit", async ({ page, req
   expect(JSON.stringify(eventsBeforeKanban)).not.toContain('"type":"task.dispatched"');
 
   await page.goto(projectUrl(projectId));
-  await expect(page.getByRole("button", { name: "Open Kanban Agent" })).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open zaofu" })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Agent backend: Claude/ })).toBeVisible();
 
   const input = page.locator("textarea.headless-input");
@@ -193,7 +193,7 @@ test("Channel Group and Kanban Agent real interaction audit", async ({ page, req
   await expect(page.locator(".agent-session")).toContainText("ZF_KANBAN_AGENT_FAKE_OK", { timeout: 30_000 });
   await expect(page.locator(".agent-session")).toContainText("read_project_projection", { timeout: 30_000 });
 
-  await page.getByRole("button", { name: "New Kanban Agent chat" }).click();
+  await page.getByRole("button", { name: "New zaofu chat" }).click();
   await input.fill("请把‘修复 Channel Group 真实互动 E2E 缺口’整理成一个 task proposal。");
   await expect(sendButton).toHaveAttribute("title", "Send", { timeout: 60_000 });
   await sendButton.click();
@@ -203,9 +203,9 @@ test("Channel Group and Kanban Agent real interaction audit", async ({ page, req
   } catch {
     auditIssues.push("Kanban Agent 新 chat 的 action proposal 没有实时渲染；刷新页面后才继续验证。");
     await page.reload();
-    const kanbanDialog = page.getByRole("dialog", { name: "Kanban Agent" });
+    const kanbanDialog = page.getByRole("dialog", { name: "zaofu" });
     if (!(await kanbanDialog.isVisible().catch(() => false))) {
-      await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+      await page.getByRole("button", { name: "Open zaofu" }).click();
       await expect(kanbanDialog).toBeVisible();
     }
   }
@@ -257,8 +257,8 @@ test("optional real Codex headless interaction", async ({ page, request }) => {
   const projectId = String(project?.project_id ?? "");
   expect(projectId, "default project id is required for real Codex smoke").not.toBe("");
   await page.goto(projectUrl(projectId));
-  await page.getByRole("button", { name: "Open Kanban Agent" }).click();
-  await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Open zaofu" }).click();
+  await expect(page.getByRole("dialog", { name: "zaofu" })).toBeVisible({ timeout: 15_000 });
   const threadKey = await page.evaluate(() => window.localStorage.getItem("zf.kanbanAgentThreadKey") || "main");
   const result = await action(request, "chat-orchestrator", {
     backend: "codex-headless",
@@ -271,9 +271,9 @@ test("optional real Codex headless interaction", async ({ page, request }) => {
   });
   expect(JSON.stringify(result)).toContain("ZF_KANBAN_AGENT_REAL_OK");
   await page.goto(projectUrl(projectId));
-  const dialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const dialog = page.getByRole("dialog", { name: "zaofu" });
   if (!(await dialog.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+    await page.getByRole("button", { name: "Open zaofu" }).click();
     await expect(dialog).toBeVisible({ timeout: 15_000 });
   }
   await expect(page.locator(".agent-session")).toContainText("ZF_KANBAN_AGENT_REAL_OK", { timeout: 180_000 });

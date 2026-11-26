@@ -14,7 +14,7 @@ test("Kanban Agent keeps the composer border unchanged while typing", async ({ p
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/?project=ui-review&page=board");
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
-    await page.getByRole("button", { name: "Open Kanban Agent" }).click();
+    await page.getByRole("button", { name: "Open zaofu" }).click();
     const composer = page.locator(".headless-composer");
     const input = composer.locator("textarea.headless-input");
     await expect(input).toBeVisible({ timeout: 30_000 });

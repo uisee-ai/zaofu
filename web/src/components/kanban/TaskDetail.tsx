@@ -1,64 +1,16 @@
-// TaskDetail + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import { DETAIL_TABS, OPERATOR_BACKENDS } from "../../app/sharedTypes";
-import type { ActionResponse, EventRecord, ExecutionRouteProjection, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff, TaskTimeline } from "../../api/types";
+import type { EventRecord, ExecutionRouteProjection, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff } from "../../api/types";
 import { contextBadgeTone, contextLabel } from "../../lib/format";
-import { routeStatusTone, taskPriority } from "../../lib/task-display";
+import { routeStatusTone } from "../../lib/task-display";
 import { Hash, Wrench } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
-import type { DetailTab, ProjectionKind } from "../../app/sharedTypes";
-import { EventTable, ExecutionRoutePanel, KeyValuePanel, PreBlock, TablePage, asRecord, asRecordArray, asStringArray, csvList, formatAge, numberValue, recordValue, stringify, textValue } from "../../app/shared";
-import { HandoffBindingDetails } from "./HandoffBindingDetails";
-import { TaskSkillEvaluations } from "./TaskSkillEvaluations";
+import { Fragment } from "react";
+import type { ProjectionKind } from "../../app/sharedTypes";
+import { EventTable, ExecutionRoutePanel, KeyValuePanel, PreBlock, TablePage, asRecord, asRecordArray, asStringArray, formatAge, numberValue, recordValue, stringify, textValue } from "../../app/shared";
+import { latestInvalidContract } from "./taskExecution";
 import { TaskInputPanel } from "./TaskInputPanel";
+import { TaskSkillEvaluations } from "./TaskSkillEvaluations";
 import { previewProfileForRef } from "../agent-session/previewRegistry";
 
-type TaskActionHandler = (action: string, payload?: Record<string, unknown>) => void;
-
-
-interface TaskEditDraft {
-  title: string;
-  status: string;
-  priority: string;
-  assignedTo: string;
-  blockedReason: string;
-  blockedBy: string;
-  skills: string;
-  behavior: string;
-  verification: string;
-  scope: string;
-  exclusions: string;
-  acceptance: string;
-  reworkTo: string;
-}
-
-
-function joinCsv(value: unknown): string {
-  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean).join(", ") : "";
-}
-
-
-function taskEditDraft(task: Task, detail: TaskDetailModel | null): TaskEditDraft {
-  const taskRecord = task as Task & Record<string, unknown>;
-  const contract = recordValue(detail?.contract) ?? recordValue(taskRecord.contract) ?? {};
-  return {
-    title: task.title || "",
-    status: task.status || "backlog",
-    priority: String(taskPriority(task)),
-    assignedTo: task.assigned_to || "",
-    blockedReason: task.blocked_reason || "",
-    blockedBy: joinCsv(task.blocked_by),
-    skills: joinCsv(task.skills_required),
-    behavior: textValue(contract.behavior),
-    verification: textValue(contract.verification),
-    scope: joinCsv(contract.scope),
-    exclusions: joinCsv(contract.exclusions),
-    acceptance: textValue(contract.acceptance || "exit_code=0"),
-    reworkTo: textValue(contract.rework_to),
-  };
-}
-
-
-function ContractInvalidBanner({
+export function ContractInvalidBanner({
   task,
   detail,
   events,
@@ -74,19 +26,7 @@ function ContractInvalidBanner({
     ? detailEvents
     : events.filter((e) => (e as EventRecord).task_id === task.id);
 
-  let latestInvalid: EventRecord | null = null;
-  for (let i = taskEvents.length - 1; i >= 0; i--) {
-    const e = taskEvents[i];
-    if (!e || !e.type) continue;
-    if (e.type === "task.contract.invalid") {
-      latestInvalid = e;
-      break;
-    }
-    // If a later update/dispatch supersedes the invalid, no banner.
-    if (e.type === "task.contract.update" || e.type === "task.dispatched") {
-      return null;
-    }
-  }
+  const latestInvalid = latestInvalidContract(taskEvents);
   if (!latestInvalid) return null;
 
   const payload = (latestInvalid.payload ?? {}) as Record<string, unknown>;
@@ -184,218 +124,7 @@ function handoffTone(summary: Record<string, unknown>): "ok" | "warn" | "err" | 
 }
 
 
-export function TaskDetail({
-  projectId,
-  actionReady,
-  actionResult,
-  actionState,
-  detail,
-  diff,
-  events,
-  loadError,
-  onAction,
-  onBackToBoard,
-  onOpenOrchestrator,
-  onOpenProjection,
-  selectedTaskId,
-  setTab,
-  skillsSummary,
-  tab,
-  task,
-  timeline,
-  timelineError,
-  timelineLoading,
-}: {
-  projectId?: string;
-  actionReady: boolean;
-  actionResult: ActionResponse | null;
-  actionState: string;
-  detail: TaskDetailModel | null;
-  diff: TaskDiff | null;
-  events: RecentEvent[];
-  loadError: string | null;
-  onAction: TaskActionHandler;
-  onBackToBoard: () => void;
-  onOpenOrchestrator: () => void;
-  onOpenProjection: (kind: ProjectionKind, id: string) => void;
-  selectedTaskId: string | null;
-  setTab: (tab: DetailTab) => void;
-  skillsSummary: SkillsSummary | null;
-  tab: DetailTab;
-  task: Task | null;
-  timeline: TaskTimeline | null;
-  timelineError: string | null;
-  timelineLoading: boolean;
-}) {
-  const taskEvents = detail?.events?.length ? detail.events : events.slice(0, 40);
-  const timelineRoute = timeline?.execution_route ?? detail?.execution_route ?? null;
-  const timelineTraceId = timeline?.links?.trace || timeline?.trace_id || detail?.links?.trace || detail?.trace_id || task?.links?.trace || "";
-
-  if (!task) {
-    return (
-      <section className="task-detail">
-        <div className="section-heading">
-          <h2>Task</h2>
-          <button className="icon-button" type="button" onClick={onBackToBoard}>
-            Board
-          </button>
-        </div>
-        <p className="empty-text">
-          {selectedTaskId
-            ? (loadError
-              ? `Task unavailable: ${selectedTaskId}`
-              : detail
-                ? `Task unavailable: ${selectedTaskId}`
-                : `Loading task ${selectedTaskId}…`)
-            : "Select a task."}
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="task-detail">
-      <div className="section-heading">
-        <div>
-          <h2>Task</h2>
-          <span className="mono">{task.id}</span>
-        </div>
-        <div className="button-row">
-          <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>
-            Agent
-          </button>
-          <button className="icon-button" type="button" onClick={onBackToBoard}>
-            Board
-          </button>
-          <span className="badge">{task.status}</span>
-        </div>
-      </div>
-      <ContractInvalidBanner task={task} detail={detail} events={events} />
-      <div className="task-product-surface">
-        <TaskRunSummaryPanel
-          detail={detail}
-          onOpenProjection={onOpenProjection}
-          task={task}
-        />
-      </div>
-      <div className="tab-row">
-        {DETAIL_TABS.map((item) => (
-          <button
-            className={`tab-button ${tab === item ? "active" : ""}`}
-            key={item}
-            type="button"
-            onClick={() => setTab(item)}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-      <div className="detail-body">
-        {tab === "Summary" ? (
-          <TaskSummaryPanel
-            actionReady={actionReady}
-            actionResult={actionResult}
-            actionState={actionState}
-            detail={detail}
-            onAction={onAction}
-            onOpenOrchestrator={onOpenOrchestrator}
-            onOpenProjection={onOpenProjection}
-            task={task}
-            setTab={setTab}
-          />
-        ) : null}
-        {tab === "Activity" ? (
-          <TaskActivityPanel
-            detail={detail}
-            events={taskEvents.slice(0, 20)}
-            onOpenProjection={onOpenProjection}
-            route={timelineRoute}
-            timelineError={timelineError}
-            timelineLoading={timelineLoading}
-            traceId={timelineTraceId}
-          />
-        ) : null}
-        {tab === "Evidence" ? <TaskEvidencePanel detail={detail} diff={diff} projectId={projectId} /> : null}
-        {tab === "Advanced" ? (
-          <TaskAdvancedPanel detail={detail} skillsSummary={skillsSummary} task={task} />
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-
-function TaskSummaryPanel({
-  actionReady,
-  actionResult,
-  actionState,
-  detail,
-  onAction,
-  onOpenOrchestrator,
-  onOpenProjection,
-  task,
-  setTab,
-}: {
-  actionReady: boolean;
-  actionResult: ActionResponse | null;
-  actionState: string;
-  detail: TaskDetailModel | null;
-  onAction: TaskActionHandler;
-  onOpenOrchestrator: () => void;
-  onOpenProjection: (kind: ProjectionKind, id: string) => void;
-  task: Task;
-  setTab: (tab: DetailTab) => void;
-}) {
-  return (
-    <div className="task-summary-view" data-testid="task-summary-view">
-      <dl className="detail-grid">
-        <dt>Title</dt>
-        <dd>{task.title || "-"}</dd>
-        <dt>Phase</dt>
-        <dd>{detail?.handoff_summary?.pipeline ? detail.handoff_summary.current_stage : task.phase ?? "-"}</dd>
-        <dt>Assignee</dt>
-        <dd>{task.assigned_to || "-"}</dd>
-        <dt>Trace</dt>
-        <dd><EvidenceLink id={detail?.links?.trace || detail?.trace_id || ""} kind="trace" onOpen={onOpenProjection} /></dd>
-        <dt>Candidate</dt>
-        <dd><EvidenceLink id={detail?.links?.candidate || ""} kind="candidate" onOpen={onOpenProjection} /></dd>
-        <dt>Fanout</dt>
-        <dd><EvidenceLink id={detail?.links?.fanout || ""} kind="fanout" onOpen={onOpenProjection} /></dd>
-        <dt>Workdir</dt>
-        <dd>{detail?.role_instance || task.assigned_to || "-"}</dd>
-        <dt>Blocked By</dt>
-        <dd>{task.blocked_by?.length ? task.blocked_by.join(", ") : "-"}</dd>
-      </dl>
-      <HandoffSummaryPanel detail={detail} />
-      <HandoffBindingDetails summary={detail?.handoff_summary} setTab={setTab} />
-      <TaskEditPanel
-        actionReady={actionReady}
-        actionState={actionState}
-        detail={detail}
-        onUpdate={(payload) => onAction("update-task", payload)}
-        task={task}
-      />
-      <AssignmentIntentPanel
-        actionReady={actionReady}
-        actionState={actionState}
-        onPropose={(payload) => onAction("assignment-propose", payload)}
-        task={task}
-      />
-      <div className="action-row">
-        <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>Open Agent</button>
-        {["dispatch-task", "request-verify", "request-review", "ship-candidate"].map((action) => (
-          <button className="icon-button" key={action} type="button" onClick={() => onAction(action)}>{action}</button>
-        ))}
-      </div>
-      {actionResult ? (
-        <div className="notice"><span className="mono">{actionResult.status}</span> {actionResult.reason}</div>
-      ) : null}
-    </div>
-  );
-}
-
-
-function TaskActivityPanel({
+export function TaskActivityPanel({
   detail,
   events,
   onOpenProjection,
@@ -431,7 +160,7 @@ function TaskActivityPanel({
 }
 
 
-function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailModel | null; diff: TaskDiff | null; projectId?: string }) {
+export function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailModel | null; diff: TaskDiff | null; projectId?: string }) {
   const operation = asRecord(detail?.task_run_panel?.active_operation);
   const pipelineAttempt = textValue(asRecord(detail?.handoff_summary?.pipeline).attempt_id);
   const attemptId = detail?.handoff_summary?.pipeline ? pipelineAttempt
@@ -457,7 +186,7 @@ function TaskEvidencePanel({ detail, diff, projectId }: { detail: TaskDetailMode
 }
 
 
-function TaskAdvancedPanel({
+export function TaskAdvancedPanel({
   detail,
   skillsSummary,
   task,
@@ -496,7 +225,7 @@ function TaskAdvancedPanel({
       <section className="subsection"><h3>Contract</h3><PreBlock value={detail?.contract ?? task} /></section>
       <section className="subsection">
         <h3>Briefing</h3>
-        {detail?.briefing.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">No briefing projection.</p>}
+        {detail?.briefing?.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">No briefing projection.</p>}
       </section>
       <section className="subsection"><h3>Diagnostics</h3><PreBlock value={detail?.diagnostics ?? {}} /></section>
     </div>
@@ -504,7 +233,7 @@ function TaskAdvancedPanel({
 }
 
 
-function TaskRunSummaryPanel({
+export function TaskRunSummaryPanel({
   detail,
   onOpenProjection,
   task,
@@ -593,15 +322,10 @@ function TaskRunSummaryPanel({
 }
 
 
-function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
+export function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
   const summary = asRecord(detail?.handoff_summary);
-  const owner = asRecord(summary.owner);
   const completed = asRecordArray(summary.completed).slice(0, 4);
   const missing = asRecordArray(summary.missing_evidence).slice(0, 4);
-  const blockers = asStringArray(summary.blockers).slice(0, 4);
-  const nextAction = textValue(summary.next_required_action);
-  const nextEvent = textValue(summary.next_required_event);
-  const changedFiles = asStringArray(summary.changed_files).slice(0, 4);
   const receipt = asRecord(summary.receipt);
   const receiptStatus = textValue(receipt.status);
   const receiptLabel: Record<string, string> = {
@@ -611,30 +335,28 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
     incomplete: "交接证据不完整，需要修复",
   };
 
+  const hasReceipt = Boolean(receiptStatus && receiptStatus !== "unavailable");
+  const hasDelivery = Boolean(receipt.delivery_status);
+  if (!completed.length && !missing.length && !hasReceipt && !hasDelivery) return null;
+
   return (
     <section className="subsection handoff-summary-panel">
       <div className="inline-heading">
-        <h3>Handoff Summary</h3>
+        <h3>交接</h3>
         <span className={`badge badge-${handoffTone(summary)}`}>
           {textValue(summary.current_state) || "unknown"}
         </span>
       </div>
-      <dl className="detail-grid compact-detail-grid task-run-grid">
-        <dt>owner</dt>
-        <dd>{textValue(owner.role) || "-"} {textValue(owner.instance_id) ? <span className="mono">{textValue(owner.instance_id)}</span> : null}</dd>
-        <dt>stage</dt>
-        <dd>{textValue(summary.current_stage) || "-"}</dd>
-        <dt>交接接收</dt>
-        <dd data-testid="task-handoff-receipt">{receiptLabel[receiptStatus] || "接收状态未知"}</dd>
-        {receipt.delivery_status ? <>
+      {(hasReceipt || hasDelivery) && <dl className="detail-grid compact-detail-grid task-run-grid">
+        {hasReceipt && <>
+          <dt>接收状态</dt>
+          <dd data-testid="task-handoff-receipt">{receiptLabel[receiptStatus] || receiptStatus}</dd>
+        </>}
+        {hasDelivery ? <>
           <dt>交接派发</dt>
           <dd>{receipt.delivery_status === "dispatched" ? "已派发到目标执行" : "尚未派发到目标执行"}</dd>
         </> : null}
-        <dt>next_event</dt>
-        <dd className="mono">{nextEvent || "-"}</dd>
-        <dt>next_action</dt>
-        <dd>{nextAction || "-"}</dd>
-      </dl>
+      </dl>}
       {completed.length ? (
         <div className="compact-list">
           {completed.map((item, index) => (
@@ -645,30 +367,9 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
           ))}
         </div>
       ) : null}
-      {missing.length || blockers.length ? (
-        <div className="compact-list">
-          {missing.map((item, index) => (
-            <span className="handoff-line" key={`missing-${index}`}>
-              <span className="badge badge-warn">missing</span>
-              <span>{textValue(item.message || item.kind || item.expected)}</span>
-            </span>
-          ))}
-          {blockers.map((item) => (
-            <span className="handoff-line" key={`blocker-${item}`}>
-              <span className="badge badge-err">blocker</span>
-              <span>{item}</span>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {changedFiles.length ? (
-        <div className="compact-list handoff-files">
-          {changedFiles.map((file) => <span className="mono" key={file}>{file}</span>)}
-        </div>
-      ) : null}
-      {!completed.length && !missing.length && !blockers.length && !nextAction ? (
-        <p className="empty-text">No handoff summary yet.</p>
-      ) : null}
+      {missing.length > 0 && <ul>{missing.map((item, index) => <li key={index}>
+        缺少依据 · {textValue(item.message || item.kind || item.expected)}
+      </li>)}</ul>}
     </section>
   );
 }
@@ -961,207 +662,6 @@ function ArtifactLedgerPanel({ detail }: { detail: TaskDetailModel | null }) {
 }
 
 
-function TaskEditPanel({
-  actionReady,
-  actionState,
-  detail,
-  onUpdate,
-  task,
-}: {
-  actionReady: boolean;
-  actionState: string;
-  detail: TaskDetailModel | null;
-  onUpdate: (payload: Record<string, unknown>) => void;
-  task: Task;
-}) {
-  const [draft, setDraft] = useState<TaskEditDraft>(() => taskEditDraft(task, detail));
-
-  useEffect(() => {
-    setDraft(taskEditDraft(task, detail));
-  }, [detail, task]);
-
-  const update = (patch: Partial<TaskEditDraft>) => setDraft((current) => ({ ...current, ...patch }));
-  const dirty = JSON.stringify(draft) !== JSON.stringify(taskEditDraft(task, detail));
-
-  function saveTaskEdit() {
-    onUpdate({
-      title: draft.title,
-      status: draft.status,
-      priority: Number(draft.priority || 3),
-      assigned_to: draft.assignedTo.trim(),
-      blocked_reason: draft.blockedReason,
-      blocked_by: csvList(draft.blockedBy),
-      skills_required: csvList(draft.skills),
-      contract: {
-        behavior: draft.behavior,
-        verification: draft.verification,
-        scope: csvList(draft.scope),
-        exclusions: csvList(draft.exclusions),
-        acceptance: draft.acceptance || "exit_code=0",
-        rework_to: draft.reworkTo,
-      },
-    });
-  }
-
-  return (
-    <div className="subsection task-edit-panel">
-      <div className="inline-heading">
-        <h3>Maintenance</h3>
-        <span className="muted">{actionReady ? "controlled action" : actionState}</span>
-      </div>
-      <div className="task-edit-grid">
-        <label>
-          <span>Title</span>
-          <input className="filter-input" value={draft.title} onChange={(event) => update({ title: event.target.value })} />
-        </label>
-        <label>
-          <span>Status</span>
-          <select className="filter-input" value={draft.status} onChange={(event) => update({ status: event.target.value })}>
-            {["backlog", "in_progress", "review", "testing", "blocked", "done", "cancelled"].map((status) => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Priority</span>
-          <select className="filter-input" value={draft.priority} onChange={(event) => update({ priority: event.target.value })}>
-            {[0, 1, 2, 3, 4, 5].map((priority) => <option key={priority} value={String(priority)}>P{priority}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Assignee</span>
-          <input className="filter-input" value={draft.assignedTo} onChange={(event) => update({ assignedTo: event.target.value })} />
-        </label>
-        <label>
-          <span>Skills</span>
-          <input className="filter-input" value={draft.skills} onChange={(event) => update({ skills: event.target.value })} />
-        </label>
-        <label>
-          <span>Blocked By</span>
-          <input className="filter-input" value={draft.blockedBy} onChange={(event) => update({ blockedBy: event.target.value })} />
-        </label>
-        <label className="wide-field">
-          <span>Blocked Reason</span>
-          <input className="filter-input" value={draft.blockedReason} onChange={(event) => update({ blockedReason: event.target.value })} />
-        </label>
-        <label className="wide-field">
-          <span>Behavior</span>
-          <textarea className="textarea-input compact-textarea" value={draft.behavior} onChange={(event) => update({ behavior: event.target.value })} />
-        </label>
-        <label className="wide-field">
-          <span>Verification</span>
-          <textarea className="textarea-input compact-textarea" value={draft.verification} onChange={(event) => update({ verification: event.target.value })} />
-        </label>
-        <label>
-          <span>Scope</span>
-          <input className="filter-input" value={draft.scope} onChange={(event) => update({ scope: event.target.value })} />
-        </label>
-        <label>
-          <span>Exclusions</span>
-          <input className="filter-input" value={draft.exclusions} onChange={(event) => update({ exclusions: event.target.value })} />
-        </label>
-        <label>
-          <span>Acceptance</span>
-          <input className="filter-input" value={draft.acceptance} onChange={(event) => update({ acceptance: event.target.value })} />
-        </label>
-        <label>
-          <span>Rework To</span>
-          <input className="filter-input" value={draft.reworkTo} onChange={(event) => update({ reworkTo: event.target.value })} />
-        </label>
-      </div>
-      <div className="action-row flush-action-row">
-        <button className="icon-button primary" disabled={!actionReady || !dirty} type="button" onClick={saveTaskEdit}>
-          Save Task
-        </button>
-        <button className="icon-button" disabled={!dirty} type="button" onClick={() => setDraft(taskEditDraft(task, detail))}>
-          Reset
-        </button>
-      </div>
-    </div>
-  );
-}
-
-
-function AssignmentIntentPanel({
-  actionReady,
-  actionState,
-  onPropose,
-  task,
-}: {
-  actionReady: boolean;
-  actionState: string;
-  onPropose: (payload: Record<string, unknown>) => void;
-  task: Task;
-}) {
-  const [role, setRole] = useState(task.assigned_to || "");
-  const [backend, setBackend] = useState("");
-  const [channelId, setChannelId] = useState("");
-  const [supervisor, setSupervisor] = useState("");
-  const [reason, setReason] = useState("operator assignment intent");
-
-  useEffect(() => {
-    setRole(task.assigned_to || "");
-  }, [task.id, task.assigned_to]);
-
-  const hasIntent = Boolean(
-    role.trim() || backend.trim() || channelId.trim() || supervisor.trim(),
-  );
-
-  function propose() {
-    onPropose({
-      task_id: task.id,
-      role: role.trim() || undefined,
-      backend: backend.trim() || undefined,
-      channel_id: channelId.trim() || undefined,
-      supervisor: supervisor.trim() || undefined,
-      reason: reason.trim() || "operator assignment intent",
-      source: "web-assignment-intent",
-    });
-  }
-
-  return (
-    <div className="subsection task-edit-panel">
-      <div className="inline-heading">
-        <h3>Assignment Intent</h3>
-        <span className="muted">{actionReady ? "proposal only" : actionState}</span>
-      </div>
-      <div className="task-edit-grid">
-        <label>
-          <span>Role</span>
-          <input className="filter-input" value={role} onChange={(event) => setRole(event.target.value)} />
-        </label>
-        <label>
-          <span>Backend</span>
-          <select className="filter-input" value={backend} onChange={(event) => setBackend(event.target.value)}>
-            <option value="">unchanged</option>
-            {OPERATOR_BACKENDS.map((item) => (
-              <option key={item.id} value={item.id}>{item.title}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Channel</span>
-          <input className="filter-input" value={channelId} onChange={(event) => setChannelId(event.target.value)} />
-        </label>
-        <label>
-          <span>Supervisor</span>
-          <input className="filter-input" value={supervisor} onChange={(event) => setSupervisor(event.target.value)} />
-        </label>
-        <label className="wide-field">
-          <span>Reason</span>
-          <input className="filter-input" value={reason} onChange={(event) => setReason(event.target.value)} />
-        </label>
-      </div>
-      <div className="action-row flush-action-row">
-        <button className="icon-button primary" disabled={!actionReady || !hasIntent} type="button" onClick={propose}>
-          Propose Assignment
-        </button>
-      </div>
-    </div>
-  );
-}
-
-
 function TaskExecutionPanel({
   detail,
   onOpenProjection,
@@ -1200,23 +700,5 @@ function TaskExecutionPanel({
         />
       </div>
     </div>
-  );
-}
-
-
-function EvidenceLink({
-  id,
-  kind,
-  onOpen,
-}: {
-  id: string;
-  kind: ProjectionKind;
-  onOpen: (kind: ProjectionKind, id: string) => void;
-}) {
-  if (!id) return <span>-</span>;
-  return (
-    <button className="link-button mono" type="button" onClick={() => onOpen(kind, id)}>
-      {id}
-    </button>
   );
 }

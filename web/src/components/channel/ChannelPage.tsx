@@ -396,6 +396,7 @@ function escapeHtml(value: string): string {
 
 
 export function ChannelPage({
+  consumeTerminalQuote,
   actionReady,
   actionResult,
   channels,
@@ -435,6 +436,7 @@ export function ChannelPage({
   onReviewPlans,
   events = [],
 }: {
+  consumeTerminalQuote?: (project: string, target: string) => string;
   actionReady: boolean;
   actionResult: ActionResponse | null;
   channels: ChannelSummary[];
@@ -489,6 +491,16 @@ export function ChannelPage({
     composerRefs, setComposerRefs,
     retryClientMessageId, setRetryClientMessageId, composerError, setComposerError, currentDraftKey,
   } = useChannelComposerDraft(projectId || "", selectedChannelId, activeChannelThreadId, composerRef);
+  useEffect(() => {
+    const editor = composerRef.current;
+    if (!editor || detail?.channel_id !== selectedChannelId || !actionReady) return;
+    const quote = consumeTerminalQuote?.(projectId, "channel:" + selectedChannelId);
+    if (quote) {
+      editor.append(document.createTextNode((editor.textContent ? "\n\n" : "") + quote));
+      setComposerText(editor.innerText);
+      editor.focus();
+    }
+  });
   const [postingCount, setPostingCount] = useState(0);
   const [workflowDraft, setWorkflowDraft] = useState({ taskId: "", reason: "" });
   const [controlsBusy, setControlsBusy] = useState(false);
@@ -2299,7 +2311,7 @@ export function ChannelPage({
               Add role / member
             </button>
             {onRequestProjectProfile ? <div className="channel-control-panel">
-              <label htmlFor="channel-profile-objective">缺少合适角色？交给 Kanban Agent 生成项目级配置</label>
+              <label htmlFor="channel-profile-objective">缺少合适角色？交给 zaofu agent 生成项目级配置</label>
               <textarea id="channel-profile-objective" className="filter-input" value={profileObjective}
                 placeholder="说明需要的角色、职责和交付物，例如页面布局、交互与可视化设计"
                 onChange={(event) => setProfileObjective(event.target.value)} />
@@ -2366,7 +2378,7 @@ export function ChannelPage({
         </button> : null}
         {activeDrawer !== "requirement" ? <div className="channel-control-actions">
           <button className="icon-button" type="button" onClick={() => setDrawer("prd")}>Preview PRD</button>
-          <button className="icon-button" type="button" onClick={onReviewPlans}>Open Kanban Agent</button>
+          <button className="icon-button" type="button" onClick={onReviewPlans}>Open zaofu</button>
         </div> : null}
       </>;
     }

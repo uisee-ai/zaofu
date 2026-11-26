@@ -27,6 +27,7 @@ export function ComposerSubmitButton({
   disabled,
   className,
   title,
+  "aria-label": sendLabel = "Send message",
   children,
   onClick,
   ...rest
@@ -38,7 +39,7 @@ export function ComposerSubmitButton({
   return (
     <button
       {...rest}
-      aria-label={canStop ? "Interrupt" : "Send message"}
+      aria-label={canStop ? "Interrupt" : sendLabel}
       className={className}
       // While generating without a stop handler the button is inert; with a
       // stop handler it stays clickable so the user can interrupt.

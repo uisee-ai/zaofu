@@ -3,7 +3,6 @@ import { useOverviewPulse } from "./useOverviewPulse";
 import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
 import { useBoardBootstrap } from "./useBoardBootstrap";
 import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
-import { TaskDrawer } from "../components/kanban/TaskDrawer";
 import { useUiPreferences } from "./UiPreferences";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -80,8 +79,6 @@ import {
   getRunDetail,
   invalidateProjectReadCache,
   getTaskDetail,
-  getTaskDiff,
-  getTaskTimeline,
   getWebSession,
   getWorkspaceProjects,
   getOnboarding,
@@ -114,7 +111,7 @@ import type { BoardColumnId } from "../components/kanban/board";
 import { formatTime, formatTokens, contextBadgeTone, contextLabel } from "../lib/format";
 import { taskPriority, taskActorLabel, taskRiskBadge, latestEventAge, routeStatusTone } from "../lib/task-display";
 import type { TaskTelemetry } from "../lib/task-display";
-import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../components/kanban/TaskCard";
+import { BacklogRefsBadge, WorkflowBadges } from "../components/kanban/TaskCard";
 import { BoardColumn } from "../components/kanban/BoardColumn";
 import { buildObservabilityEventWindow } from "./observabilityModel";
 import { buildProjectCostPresentation } from "./costPrecision";
@@ -128,14 +125,15 @@ import {
 } from "./channelConversationState";
 import { useProjectRequestScope } from "./useProjectRequestScope";
 import { resolveWorkspaceProjectId } from "./workspaceProjectSelection";
-import { ChannelRoute, OrchestratorRoute, ProjectionRoute, TracesRoute } from "./lazyRoutes";
+import { ChannelRoute, OrchestratorRoute, ProjectionRoute, TaskReaderRoute, TracesRoute } from "./lazyRoutes";
 import {
   canBootstrapScopedPageBeforeWorkspace,
   projectionPageQuery,
   projectionSelectionForPage,
   resolvePageCompatibility,
 } from "./pageCompatibility";
-import { isRefreshNoiseEventType } from "./refreshEventPolicy";
+import { dashboardActionAccess } from "./dashboardActionAccess";
+import { isRefreshNoiseEventType, isTaskBusinessEvent } from "./refreshEventPolicy";
 import { createChannelActionAdapter } from "./channelActionAdapter";
 import { useChannelDiagnostics } from "./useChannelDiagnostics";
 import { useChannelLiveConvergence } from "./useChannelLiveConvergence";
@@ -179,9 +177,7 @@ import type {
   Snapshot,
   Task,
   TaskDetail as TaskDetailModel,
-  TaskDiff,
   TaskFlowStats,
-  TaskTimeline,
   TraceSummary,
   WorkdirSummary,
   WorkspaceProject,
@@ -203,7 +199,7 @@ import { loadPageSnapshot } from "./pageSnapshot";
 // P1 frontend split: pages/shared extracted from this file.
 import { PlanApprovalPanel } from "../components/delivery-trace/PlanApprovalPanel";
 import { BoardWorkbench } from "../components/kanban/BoardWorkbench";
-import { TaskDetail } from "../components/kanban/TaskDetail";
+import { TaskConversation } from "../components/kanban/TaskConversation";
 import {
   ProjectAdmissionModal,
   type ProjectAdmissionDraft,
@@ -213,7 +209,7 @@ import { AccountControls } from "../components/workspace/AccountControls";
 
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
-import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
+import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
 import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
 
 const REFRESH_EVENT_TYPES = new Set(["stream.gap"]);
@@ -276,16 +272,6 @@ interface NewChannelDraft {
 
 const SettingsRoute = lazy(() => import("../components/settings/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const TerminalDrawer = lazy(() => import("../components/terminal/TerminalDrawer"));
-
-interface RuntimeActionState {
-  actionReady: boolean;
-  actionState: string;
-  mutationEnabled: boolean;
-  passcodeRequired: boolean;
-  sessionActionReady: boolean;
-  showTokenRow: boolean;
-  tokenRequired: boolean;
-}
 
 interface HeadlessActionProposal {
   action: string;
@@ -476,7 +462,7 @@ function isNoiseTask(task: Task): boolean {
   const source = String(task.source ?? "").toLowerCase();
   if (["playwright", "e2e", "test", "tests"].includes(source)) return true;
   const title = `${task.title} ${task.id}`.toLowerCase();
-  return /^(drag move|locked drag|workbench drilldown|operator task rebind|kanban agent lifecycle probe)\b/.test(title)
+  return /^(drag move|locked drag|workbench drilldown|operator task rebind|(?:kanban|zaofu) agent lifecycle probe)\b/.test(title)
     || title.includes("playwright");
 }
 
@@ -585,39 +571,6 @@ function canonicalChatBackend(backend: OperatorBackend): OperatorBackend {
   return backend;
 }
 
-function runtimeActionState(
-  snapshot: Snapshot | null,
-  tokenPresent: boolean,
-  fallbackWebSession: RuntimeSummary["web_session"] | null,
-): RuntimeActionState {
-  const webSession = snapshot?.runtime.web_session ?? fallbackWebSession;
-  const mutationEnabled = webSession?.mode !== "read_only" && (Boolean(snapshot?.runtime.actions?.mutation_enabled)
-    || Boolean(webSession && webSession.mode !== "read_only")
-    || tokenPresent);
-  const sessionActionReady = Boolean(webSession?.actions_enabled);
-  const tokenFallbackAvailable = Boolean(tokenPresent)
-    || webSession?.mode === "token_required"
-    || Boolean(webSession?.token_fallback_enabled);
-  const passcodeRequired = webSession?.mode === "remote_passcode" && !sessionActionReady;
-  const showTokenRow = mutationEnabled && !sessionActionReady && tokenFallbackAvailable && !tokenPresent;
-  const tokenRequired = showTokenRow && !tokenPresent;
-  const actionReady = sessionActionReady || (mutationEnabled && tokenPresent);
-  const actionState = actionReady
-    ? "active"
-    : mutationEnabled
-      ? (passcodeRequired ? "passcode needed" : tokenRequired ? "token needed" : "locked")
-      : "read only";
-  return {
-    actionReady,
-    actionState,
-    mutationEnabled,
-    passcodeRequired,
-    sessionActionReady,
-    showTokenRow,
-    tokenRequired,
-  };
-}
-
 export function App() {
   const initial = useMemo(() => readInitialQuery(), []);
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProject[]>([]);
@@ -650,17 +603,15 @@ export function App() {
   const [channelLoadError, setChannelLoadError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initial.task);
   const [taskDetail, setTaskDetail] = useState<TaskDetailModel | null>(null);
-  const [taskDiff, setTaskDiff] = useState<TaskDiff | null>(null);
-  const [taskTimeline, setTaskTimeline] = useState<TaskTimeline | null>(null);
-  const [taskTimelineLoading, setTaskTimelineLoading] = useState(false);
-  const [taskTimelineError, setTaskTimelineError] = useState<string | null>(null);
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
   useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
   const boardBootstrap = useBoardBootstrap(activeProjectId, page === "board", snapshot);
   const boardSource = snapshot?.project.project_id === activeProjectId ? snapshot : boardBootstrap;
-  const [taskDrawerOpen, setTaskDrawerOpen] = useState(initial.page === "board" && Boolean(initial.task));
+  const [boardTaskOpen, setBoardTaskOpen] = useState(initial.page === "board" && Boolean(initial.task));
+  const readingTask = Boolean(selectedTaskId && (page === "task" || (page === "board" && boardTaskOpen)));
+  const taskRefresh = useRef<{ taskId: string; related: Set<string>; schedule: () => void } | null>(null);
+  const boardOpener = useRef<HTMLElement | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -683,6 +634,13 @@ export function App() {
   );
   const [agentPanelHasOpened, setAgentPanelHasOpened] = useState(initial.openAgent);
   const [commandOpen, setCommandOpen] = useState(false);
+  const pendingTerminalQuote = useRef<{ project: string; target: string; text: string } | null>(null);
+  const consumeTerminalQuote = useCallback((project: string, target: string) => {
+    const pending = pendingTerminalQuote.current;
+    if (!pending || pending.project !== project || pending.target !== target) return "";
+    pendingTerminalQuote.current = null;
+    return pending.text;
+  }, []);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [newChannelDraft, setNewChannelDraft] = useState<NewChannelDraft>(() => emptyNewChannelDraft());
@@ -711,7 +669,7 @@ export function App() {
       .catch(() => { if (!cancelled) setSessionError(true); });
     return () => { cancelled = true; };
   }, [sessionAttempt]);
-  const sessionMode = webSessionStatus?.mode ?? snapshot?.runtime.web_session?.mode;
+  const sessionMode = webSessionStatus?.mode;
   useEffect(() => {
     if (!sessionMode || sessionMode === "read_only") return;
     setWelcomeError(false);
@@ -773,14 +731,15 @@ export function App() {
     return null;
   }, [selectedTaskId, boardSource, taskDetail]);
   const actionGate = useMemo(
-    () => runtimeActionState(snapshot, webActionTokenPresent, webSessionStatus),
-    [snapshot, webActionTokenPresent, webSessionStatus],
+    () => dashboardActionAccess(webSessionStatus, webActionTokenPresent),
+    [webActionTokenPresent, webSessionStatus],
   );
   const activeProject = useMemo(
     () => workspaceProjects.find((project) => project.project_id === activeProjectId) ?? null,
     [activeProjectId, workspaceProjects],
   );
   const activeProjectReady = projectCanOpenBoard(activeProject);
+  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
 
   useEffect(() => {
     selectedChannelIdRef.current = selectedChannelId;
@@ -875,6 +834,18 @@ export function App() {
     }
     return next;
   }, [activeProjectId]);
+
+  useEffect(() => {
+    if (terminalOpen && projectToolsAvailable && actionGate.actionReady) {
+      void loadChannels().catch(() => undefined);
+    }
+  }, [terminalOpen, projectToolsAvailable, actionGate.actionReady, loadChannels]);
+
+  useEffect(() => {
+    if (terminalOpen && projectToolsAvailable && !snapshot) void loadSnapshot("light").catch(() => undefined);
+  }, [terminalOpen, projectToolsAvailable, snapshot, loadSnapshot]);
+
+  useEffect(() => { pendingTerminalQuote.current = null; }, [activeProjectId]);
 
   const loadEarlierChannelMessages = useCallback(async () => {
     const channelId = selectedChannelId || "ch-zaofu";
@@ -1131,10 +1102,10 @@ export function App() {
       if (statusFilter !== "all") params.set("status", statusFilter);
     }
     if (page === "channels") params.set("channel", selectedChannelId);
-    if (selectedTaskId && (page !== "board" || taskDrawerOpen)) params.set("task", selectedTaskId);
+    if (selectedTaskId && (page !== "board" || boardTaskOpen)) params.set("task", selectedTaskId);
     const planLocation = page === "inbox" && params.has("plan") ? window.location.hash : "";
-    window.history.replaceState(null, "", `?${params.toString()}${planLocation}`);
-  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, taskDrawerOpen, viewMode]);
+    window.history.replaceState(page === "board" && boardTaskOpen ? window.history.state : null, "", `?${params.toString()}${planLocation}`);
+  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, boardTaskOpen, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1300,6 +1271,11 @@ export function App() {
         if (!projectRequestScope.isCurrent(ticket)) return;
         if (seq) lastSeqRef.current = Math.max(lastSeqRef.current, seq);
         setEvents((current) => prependEvent(current, event));
+        const reader = taskRefresh.current;
+        if (!reader || !event.task_id || !isTaskBusinessEvent(event.type)) return;
+        // Creation and edits can add a new incoming dependency or child.
+        if (reader.taskId === event.task_id || reader.related.has(event.task_id)
+          || ["task.created", "task.updated", "task.contract.update"].includes(event.type)) reader.schedule();
       });
       eventBusRef.current = bus;
       bus.connect();
@@ -1320,13 +1296,9 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     setTaskDetail(null);
-    setTaskDiff(null);
-    setTaskTimeline(null);
-    setTaskTimelineLoading(false);
-    setTaskTimelineError(null);
     setActionResult(null);
     setTaskLoadError(null);
-    if (!selectedTaskId) return;
+    if (!selectedTaskId || !activeProjectId) return;
     const taskId = selectedTaskId;
 
     async function loadDetail() {
@@ -1334,56 +1306,45 @@ export function App() {
         const detail = await getTaskDetail(taskId, activeProjectId || undefined);
         if (cancelled) return;
         setTaskDetail(detail);
+        const reader = taskRefresh.current;
+        if (reader?.taskId === taskId && detail.properties) {
+          const { upstream, downstream, children, source } = detail.properties;
+          reader.related = new Set([...upstream, ...downstream, ...children].map(row => row.id));
+          if (source?.kind === "task") reader.related.add(source.id);
+        }
+        setTaskLoadError(null);
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
         setTaskLoadError(message);
-        setError(message);
       }
     }
 
-    async function loadDiff() {
-      try {
-        const diff = await getTaskDiff(taskId, activeProjectId || undefined);
-        if (cancelled) return;
-        setTaskDiff(diff);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setTaskDiff({
-          task_id: taskId,
-          base: "",
-          head: "",
-          files: [],
-          diff: "",
-          truncated: false,
-          error: message,
-        });
-      }
+    // A burst of task events may arrive while a slow projection is rebuilding.
+    // Finish the current read, then coalesce those events into a single follow-up.
+    let loading = false;
+    let pending = false;
+    let timer: number | undefined;
+    function schedule() {
+      pending = true;
+      if (!loading && timer === undefined) timer = window.setTimeout(reload, 1500);
     }
-
-    async function loadTimeline() {
-      setTaskTimelineLoading(true);
-      try {
-        const timeline = await getTaskTimeline(taskId, activeProjectId || undefined);
-        if (cancelled) return;
-        setTaskTimeline(timeline);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setTaskTimelineError(message);
-      } finally {
-        if (!cancelled) setTaskTimelineLoading(false);
-      }
+    async function reload() {
+      timer = undefined;
+      loading = true;
+      pending = false;
+      await loadDetail();
+      loading = false;
+      if (!cancelled && pending) schedule();
     }
-
-    void loadDetail();
-    void loadDiff();
-    void loadTimeline();
+    if (readingTask) taskRefresh.current = { taskId, related: new Set(), schedule };
+    void reload();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
+      taskRefresh.current = null;
     };
-  }, [activeProjectId, selectedTaskId]);
+  }, [activeProjectId, selectedTaskId, readingTask]);
 
   useProjectObservabilityData({
     activeProjectId,
@@ -1457,7 +1418,7 @@ export function App() {
     selectedChannelId, selectedChannelIdRef, setChannelDetail,
   });
 
-  useEffect(() => { if (page !== "board") setTaskDrawerOpen(false); }, [page]);
+  useEffect(() => { if (page !== "board") setBoardTaskOpen(false); }, [page]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1518,11 +1479,12 @@ export function App() {
 
   const orchestratorContext = useMemo<OrchestratorContext>(() => {
     const projection = projectionDetail ?? {};
+    const detail = taskDetail?.task?.id === selectedTaskId ? taskDetail : null;
     return {
       taskId: selectedTask?.id ?? selectedTaskId ?? "",
-      traceId: taskDetail?.links?.trace || taskDetail?.trace_id || selectedTask?.links?.trace || "",
-      pddId: taskDetail?.links?.candidate || selectedTask?.links?.candidate || "",
-      fanoutId: taskDetail?.links?.fanout || selectedTask?.links?.fanout || "",
+      traceId: detail?.links?.trace || detail?.trace_id || selectedTask?.links?.trace || "",
+      pddId: detail?.links?.candidate || selectedTask?.links?.candidate || "",
+      fanoutId: detail?.links?.fanout || selectedTask?.links?.fanout || "",
       stageId: page === "fanouts" ? textValue(projection.stage_id) : "",
       targetRef: page === "fanouts" ? textValue(projection.target_ref) : "",
       title: selectedTask?.title ?? "",
@@ -1666,7 +1628,7 @@ export function App() {
       await loadWorkspaceProjects();
       switchProject(projectId);
       if (recordValue(result.git_readiness)?.ready === false) {
-        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with the Kanban Agent, then approve initialization and retry preparation." });
+        setProjectSetupNotice({ projectId, message: "Project created. Workflow preparation needs a Git baseline: review an explicit source file list and exclusions with zaofu agent, then approve initialization and retry preparation." });
       }
       setProjectWizardOpen(false);
     } catch (err) {
@@ -1903,8 +1865,8 @@ export function App() {
   }
 
   function openTask(taskId: string) {
+    setAgentPanelMode("collapsed");
     setSelectedTaskId(taskId);
-    setDetailTab("Summary");
     setPage("task");
   }
 
@@ -1921,10 +1883,50 @@ export function App() {
     openChannel(channelId);
   }
 
+  function openBoardTask(taskId: string) {
+    if (!boardTaskOpen) boardOpener.current = document.activeElement as HTMLElement;
+    const url = new URL(window.location.href);
+    url.searchParams.set("task", taskId);
+    if (!boardTaskOpen) window.history.pushState({ boardTask: true }, "", url);
+    setSelectedTaskId(taskId);
+    setBoardTaskOpen(true);
+    setAgentPanelMode("collapsed");
+  }
+
+  useEffect(() => {
+    const restore = () => {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("page") !== "board" || url.searchParams.get("project") !== activeProjectId) return;
+      const id = url.searchParams.get("task");
+      setPage("board");
+      setBoardTaskOpen(Boolean(id));
+      setSelectedTaskId(id);
+      if (!id) requestAnimationFrame(() => boardOpener.current?.focus({ preventScroll: true }));
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [activeProjectId]);
+
   function backToBoard() {
-    if (taskDrawerOpen) setTaskDrawerOpen(false);
+    if (boardTaskOpen && window.history.state?.boardTask) {
+      window.history.back();
+      return;
+    }
+    setSelectedTaskId(null);
+    setBoardTaskOpen(false);
     setPage("board");
   }
+
+  useEffect(() => {
+    if (!boardTaskOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !(event.target as HTMLElement)?.closest("input,textarea,select,dialog,[role=dialog],[role=menu]")) {
+        backToBoard();
+      }
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [boardTaskOpen]);
 
   function saveWebActionToken(token: string) {
     const trimmed = normalizeWebActionToken(token);
@@ -1959,6 +1961,10 @@ export function App() {
 
   function openTaskAgent() {
     if (!selectProjectForTool()) return;
+    if (readingTask) {
+      setOrchestratorFocusSignal(value => value + 1);
+      return;
+    }
     setAgentPanelHasOpened(true);
     setAgentPanelMode((mode) => (mode === "fullscreen" ? "fullscreen" : "docked"));
     setOrchestratorFocusSignal((value) => value + 1);
@@ -2039,17 +2045,13 @@ export function App() {
     if (!projectId || projectId === activeProjectId) return;
     projectRequestScope.activate(projectId);
     setActiveProjectId(projectId);
-    setTaskDrawerOpen(false);
+    setBoardTaskOpen(false);
     void touchWorkspaceProject(projectId).then(() => loadWorkspaceProjects()).catch(() => {
       // Project selection must not fail just because recent-project metadata
       // could not be written.
     });
     setSelectedTaskId(null);
     setTaskDetail(null);
-    setTaskDiff(null);
-    setTaskTimeline(null);
-    setTaskTimelineLoading(false);
-    setTaskTimelineError(null);
     setProjectionDetail(null);
     setSearchResult(null);
     setEventFilter("");
@@ -2110,41 +2112,42 @@ export function App() {
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
 
-  const projectToolsAvailable = Boolean(activeProjectId && (!activeProject || activeProjectReady));
   const agentPanelVisible = projectToolsAvailable && agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
     : "docked";
 
   const taskDetailView = (
-    <TaskDetail
+    <TaskReaderRoute
       projectId={activeProjectId || undefined}
       actionReady={actionGate.actionReady}
       actionResult={actionResult}
       actionState={actionGate.actionState}
-      detail={taskDetail}
-      diff={taskDiff}
-      events={events}
+      key={JSON.stringify([activeProjectId, selectedTaskId])}
+      detail={taskDetail?.task?.id === selectedTaskId ? taskDetail : null}
       loadError={taskLoadError}
+      onRetry={() => taskRefresh.current?.schedule()}
       onAction={(action, payload) => void runTaskAction(action, payload)}
       onBackToBoard={backToBoard}
-      onOpenOrchestrator={() => { setTaskDrawerOpen(false); openTaskAgent(); }}
-      onOpenProjection={(kind, id) => void openProjection(kind, id)}
+      onOpenTask={page === "board" ? openBoardTask : openTask}
       selectedTaskId={selectedTaskId}
-      setTab={setDetailTab}
-      skillsSummary={snapshot?.skills ?? null}
-      tab={detailTab}
+      conversation={projectToolsAvailable && selectedTaskId && <TaskConversation
+        key={JSON.stringify([activeProjectId, selectedTaskId])}
+        consumeTerminalQuote={consumeTerminalQuote}
+        activeProjectId={activeProjectId} context={orchestratorContext} events={events} focusSignal={orchestratorFocusSignal}
+        onAction={submitAction} onLockSession={() => void lockSession()} onOpenChannelThread={openChannelThread}
+        onOpenTask={openTask} onSaveToken={saveWebActionToken} onUnlockSession={unlockSession}
+        snapshot={snapshot} access={actionGate} actionResult={actionResult}
+      />}
       task={selectedTask}
-      timeline={taskTimeline}
-      timelineError={taskTimelineError}
-      timelineLoading={taskTimelineLoading}
     />
   );
 
   const cloudSession = sessionMode === "controller_session" || Boolean(webSessionStatus?.controller_managed);
-  const localSettings = page === "settings" && Boolean(webSessionStatus?.local_account);
-  const accountControls = webSessionStatus?.local_account || cloudSession
-    ? <AccountControls username={webSessionStatus?.username} local={Boolean(webSessionStatus?.local_account)} />
+  const localAccount = sessionMode === "local_account" || Boolean(webSessionStatus?.local_account);
+  const localSettings = page === "settings" && localAccount;
+  const accountControls = localAccount || cloudSession
+    ? <AccountControls username={webSessionStatus?.username} local={localAccount} />
     : null;
   if (sessionError && !sessionMode) return <main role="alert">登录状态加载失败。
     <button type="button" onClick={() => retrySession(n => n + 1)}>重试</button></main>;
@@ -2179,7 +2182,6 @@ export function App() {
           {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
-          {cloudSession && accountControls}
           <div className="topbar-search-control">
             <input
               className="search-input"
@@ -2243,7 +2245,7 @@ export function App() {
 
       <main className={`workspace ${terminalOpen && projectToolsAvailable ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
-          accountControls={webSessionStatus?.local_account ? accountControls : null}
+          accountControls={accountControls}
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
@@ -2266,7 +2268,7 @@ export function App() {
         <section className="board-panel" data-page={page}>
           {page === "settings" ? (
             <Suspense fallback={<div role="status">{t("Settings")}</div>}>
-              <SettingsRoute snapshot={snapshot} localAccount={Boolean(webSessionStatus?.local_account)}
+              <SettingsRoute snapshot={snapshot} localAccount={localAccount}
                 canChangePassword={Boolean(webSessionStatus?.actions_enabled)} />
             </Suspense>
           ) : !activeProjectId ? (
@@ -2288,12 +2290,13 @@ export function App() {
               onOpenProjection={(kind, id) => void openProjection(kind, id)}
             />
           ) : page === "inbox" ? (
-            <PlanApprovalPanel readOnly={(snapshot?.runtime.web_session ?? webSessionStatus)?.mode === "read_only"} projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
+            <PlanApprovalPanel readOnly={sessionMode === "read_only"} projectId={activeProjectId} liveState={liveState} autoOpenPlanId={initial.plan} onInboxUpdate={(inbox) => {
               inboxCountEpoch.current += 1;
               setInboxPendingCount(inbox?.summary.unread ?? null);
             }} />
           ) : page === "channels" ? (
               <ChannelRoute
+                consumeTerminalQuote={consumeTerminalQuote}
                 actionReady={actionGate.actionReady}
                 actionResult={actionResult}
                 channels={channelsPage?.channels ?? []}
@@ -2352,6 +2355,7 @@ export function App() {
             </section>
           ) : page === "board" ? (
             <>
+              <div className="board-preserved" hidden={boardTaskOpen}>
               {boardBootstrap && <p className="muted" role="status" data-testid="board-tasks-loading-details">
                 {boardBootstrap.source === "projection"
                   ? boardBootstrap.read_projection.state === "error"
@@ -2382,7 +2386,7 @@ export function App() {
                 setPriorityFilter={setPriorityFilter}
                 setQuickFilter={setQuickFilter}
                 showTokenRow={actionGate.showTokenRow}
-                onOpenTask={(taskId) => { setSelectedTaskId(taskId); setDetailTab("Summary"); setTaskDrawerOpen(true); }}
+                onOpenTask={openBoardTask}
                 onNewTask={openTaskAgent}
                 onSaveToken={saveWebActionToken}
                 onUnlockSession={unlockSession}
@@ -2397,7 +2401,8 @@ export function App() {
                 onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
                 totalTaskCount={boardSource ? allBoardTasks(boardSource).length : 0}
               />
-              <TaskDrawer open={taskDrawerOpen} onClose={backToBoard}>{taskDetailView}{selectedTask?.route_summary && <RouteSummaryStrip route={selectedTask.route_summary} />}</TaskDrawer>
+              </div>
+              {boardTaskOpen && taskDetailView}
             </>
           ) : page === "task" ? (
             taskDetailView
@@ -2456,6 +2461,16 @@ export function App() {
         {terminalOpen && projectToolsAvailable && activeProjectId ? (
           <Suspense fallback={<div className="web-terminal-loading">Loading terminal UI…</div>}>
             <TerminalDrawer
+              quoteTargets={actionGate.actionReady ? [
+                ...(snapshot?.runtime.actions?.allowed?.includes("channel-post-message") ? channelsPage?.channels ?? [] : []).map(c => ({kind: "channel" as const, id: c.channel_id, title: c.name || c.channel_id})),
+                ...(snapshot?.runtime.actions?.allowed?.includes("chat-orchestrator") ? allBoardTasks(snapshot) : []).map(t => ({kind: "task" as const, id: t.id, title: t.title || t.id})),
+              ] : []}
+              onQuote={(target, text) => {
+                pendingTerminalQuote.current = { project: activeProjectId, target: target.kind + ":" + target.id, text };
+                setTerminalOpen(false);
+                if (target.kind === "channel") openChannel(target.id);
+                else openTask(target.id);
+              }}
               key={activeProjectId}
               projectId={activeProjectId}
               themeMode={themeMode}
@@ -2464,17 +2479,17 @@ export function App() {
           </Suspense>
         ) : null}
       </main>
-      {!agentPanelVisible ? (
+      {!agentPanelVisible && !readingTask ? (
         <button
           className="agent-fab"
           type="button"
-          aria-label="Open Kanban Agent"
+          aria-label="Open zaofu"
           onClick={openTaskAgent}
         >
           <MessageCircle size={20} strokeWidth={1.9} aria-hidden="true" />
         </button>
       ) : null}
-      {agentPanelHasOpened && projectToolsAvailable ? (
+      {agentPanelHasOpened && projectToolsAvailable && !readingTask ? (
         <div
           aria-hidden={agentPanelVisible ? undefined : true}
           className={`agent-page-shell ${renderedAgentPanelMode}`}
@@ -2497,7 +2512,7 @@ export function App() {
               onSaveToken={saveWebActionToken}
               onUnlockSession={unlockSession}
               snapshot={snapshot}
-              tokenPresent={webActionTokenPresent}
+              access={actionGate}
             />
         </div>
       ) : null}
@@ -2528,7 +2543,7 @@ export function App() {
           accessMode={
             actionGate.passcodeRequired
               ? "passcode"
-              : actionGate.mutationEnabled
+              : actionGate.showTokenRow
                 ? "token"
                 : "unavailable"
           }
@@ -2651,7 +2666,7 @@ function ProjectInitPanel({
       </div>
       {!actionReady ? (
         <p className="empty-text compact-error">
-          Set the Web action token before initializing this Project.
+          Project initialization requires a writable Dashboard session.
         </p>
       ) : null}
     </section>
@@ -3315,7 +3330,7 @@ function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="command-actions">
-            <button className="icon-button" type="button" onClick={onOpenAgent}>Kanban Agent</button>
+            <button className="icon-button" type="button" onClick={onOpenAgent}>zaofu</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("triage")}>Triage</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("board")}>Board</button>
           </div>

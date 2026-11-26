@@ -89,6 +89,9 @@ class RouteBackend:
             tab_rename=True,
         )
 
+    def list_agents(self, runtime):
+        return []
+
     def ensure_project_runtime(self, session_name: str) -> HerdrProjectRuntime:
         return HerdrProjectRuntime(session_name=session_name, server_pid=123)
 
@@ -600,3 +603,58 @@ def test_unverified_forwarded_origin_does_not_relax_standalone_terminal_policy()
         "x-forwarded-host": "workspace.example.test", "x-zf-access-context": "unverified"},
         url=SimpleNamespace(scheme="wss"), scope={"zf.access": {"origin": "https://workspace.example.test"}})
     assert _same_origin(ws, _config()) is False
+
+
+def test_host_capabilities_share_probe_across_projects_and_recheck_replaced_binary(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from zf.web import terminal_service
+    from zf.web.terminal_routes import TerminalServiceHub
+
+    clock = [1.0]
+    monkeypatch.setattr(terminal_service, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    binary = tmp_path / "herdr"
+    calls = tmp_path / "probes"
+    available = tmp_path / "schema-ready"
+
+    def install(version: str) -> None:
+        candidate = tmp_path / "next-herdr"
+        candidate.write_text(
+            '#!/bin/sh\n'
+            'case "$1" in\n'
+            f'--version) echo called >> "{calls}"; echo "herdr {version}";;\n'
+            f'api) test -f "{available}" && echo "{{}}";;\n'
+            '*) exit 0;;\nesac\n'
+        )
+        candidate.chmod(0o755)
+        candidate.replace(binary)
+
+    def project(name):
+        root = tmp_path / name
+        return SimpleNamespace(project_root=root, state_dir=root / "state", config=None)
+
+    hub = TerminalServiceHub(host_config=_config(herdr_binary=str(binary)))
+    services = [hub.service(name, project(name)) for name in ("one", "two")]
+    assert not services[0].capability().available
+    install("0.8.0")
+    assert not services[1].capability().available
+    assert len(calls.read_text().splitlines()) == 1
+    available.touch()
+    assert not services[0].capability().available
+    clock[0] += 2
+    gate = Barrier(8)
+
+    def fetch(index):
+        gate.wait(timeout=3)
+        return services[index % 2].capability()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(fetch, range(8)))
+    assert all(result.available and not result.mouse for result in results)
+    assert len(calls.read_text().splitlines()) == 2
+    install("0.9.5")
+    result = services[1].capability()
+    assert result.available and result.mouse
+    assert services[0].capability() == result
+    assert len(calls.read_text().splitlines()) == 3

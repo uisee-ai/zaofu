@@ -87,7 +87,7 @@ checks service readiness. Install and sign in to Codex or Claude Code separately
 before starting agent work.
 
 Open **http://127.0.0.1:8001/** and sign in with username `zaofu` and password `zaofu` on a new installation.
-Change your password under **Settings → Security → Password**, or sign out from the account menu at the bottom of the sidebar. Complete or skip the first-run wizard, then add a project.
+Change your password under **Settings → Security → Password**, or sign out from the account menu at the top right of the Dashboard. Complete or skip the first-run wizard, then add a project.
 If you expose this address with the default password, anyone who can reach it can use the writable terminal. For a remote node, forward the
 default port with `ssh -L 8001:127.0.0.1:8001 user@your-node`.
 

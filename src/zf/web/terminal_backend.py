@@ -40,6 +40,7 @@ class TerminalCapability:
     control_bridge: bool = False
     tab_rename: bool = False
     reason: str = ""
+    mouse: bool = False
 
     def projection(self) -> dict[str, object]:
         value = asdict(self)
@@ -60,6 +61,16 @@ class HerdrTerminalResource:
     pane_id: str
     terminal_id: str
     agent_name: str
+    native_id: str = ""
+
+
+@dataclass(frozen=True)
+class TerminalAgent:
+    terminal_id: str
+    name: str
+    provider: str
+    status: str
+    native_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,6 +79,7 @@ class TerminalBridgeSpec:
     mode: str
     cols: int
     rows: int
+    mouse: bool = False
 
 
 @dataclass
@@ -96,6 +108,7 @@ class TerminalSessionRecord:
     usage_binding_started_at_ns: int = 0
     stopped_at: str = ""
     diagnostics: list[str] = field(default_factory=list)
+    herdr_native_id: str = ""
 
     @classmethod
     def from_mapping(cls, value: dict[str, object]) -> "TerminalSessionRecord":
@@ -143,6 +156,8 @@ class TerminalBackend(Protocol):
         provider_args: tuple[str, ...],
         start_timeout_seconds: int,
     ) -> HerdrTerminalResource: ...
+
+    def list_agents(self, runtime: HerdrProjectRuntime) -> list[TerminalAgent]: ...
 
     def terminal_exists(self, *, runtime: HerdrProjectRuntime, tab_id: str) -> bool: ...
 

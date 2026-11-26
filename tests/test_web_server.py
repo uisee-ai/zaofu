@@ -392,7 +392,7 @@ spec:
         proposal = proposed.json()
         assert proposal["status"] == "queued_no_runtime"
         assert proposal["deprecated_route"] is True
-        assert "Leader -> Kanban Agent Plan" in proposal["replacement"]
+        assert "Leader -> zaofu agent Plan" in proposal["replacement"]
         event_types = [event.type for event in log.read_all()]
         assert "workflow.invoke.requested" not in event_types
         assert "task.created" not in event_types

@@ -1388,9 +1388,6 @@
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--card);
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
 }
 
 .headless-chat.welcome .headless-composer {

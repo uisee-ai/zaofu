@@ -1,10 +1,9 @@
 import { useUiPreferences } from "../../app/UiPreferences";
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, PanelLeft, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { Bot, CalendarClock, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, PanelLeft, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
 
@@ -68,7 +67,6 @@ export function WorkspaceRail({
     try { return localStorage.getItem(COLLAPSED_KEY) === "true"; }
     catch { return false; }
   });
-  const [systemOpen, setSystemOpen] = useState(true);
   const railRef = useRef<HTMLElement>(null);
   const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const toggleCollapsed = () => {
@@ -299,18 +297,14 @@ export function WorkspaceRail({
           </button>
         </div>
         </div>
-        <details className="rail-section" open={(collapsed && !mobileOpen) || systemOpen}>
-          <summary onClick={(event) => { event.preventDefault(); setSystemOpen((open) => !open); }}>
-            <span>{t("System settings")}</span>
-            <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
-          </summary>
-          <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} />
-        </details>
         {actionResult && shouldShowRailActionResult(actionResult) ? (
           <p className="empty-text compact-error">{actionResult.status}: {actionResult.reason}</p>
         ) : null}
       </div>
-      {accountControls && <footer className="rail-account">{accountControls}</footer>}
+      <footer className="rail-footer">
+        <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} />
+        {accountControls && <div className="rail-account">{accountControls}</div>}
+      </footer>
     </section>
     </>
   );

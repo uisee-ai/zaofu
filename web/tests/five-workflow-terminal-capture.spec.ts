@@ -72,7 +72,7 @@ test("captures a read-only terminal failure snapshot", async ({ page, request })
     fullPage: true,
     path: `${evidenceDir}/${captureName}.png`,
   });
-  const agentDialog = page.getByRole("dialog", { name: "Kanban Agent" });
+  const agentDialog = page.getByRole("dialog", { name: "zaofu" });
   if (await agentDialog.isVisible().catch(() => false)) {
     await agentDialog.screenshot({
       path: `${evidenceDir}/${captureName}-kanban-agent.png`,

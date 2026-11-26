@@ -5,7 +5,8 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 215；201–205 已在本地设计工作中占用，不复用。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 216；201–205 已在本地设计工作中占用，不复用。
+引用编号 212 的设计时请使用完整文件名。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
 
@@ -29,6 +30,7 @@
 | 208 | [按需 Critic 的输入范围与返修收敛](208-demand-critic-input-and-convergence.md) | implementing | 修复 none/STOP，减少无损包装重复，分离首次定向与历史增量，并以真实 Channel → Plan Preview 验证。 |
 | 211 | [Standalone 账号登录与云端个人工作台体验](211-standalone-login-and-cloud-workbench.md) | implemented | 定义本地默认账号、可选改密、旧 Token 迁移、云端 SSO 和登录页视觉对齐，列出两端工作台的实施与验收范围。 |
 | 212 | [Workflow artifact 读取与 Agent session 恢复规格](212-workflow-artifact-reading-and-session-resume.md) | candidate | 规定冻结输入的工作区读取、严格交付证据、断点选择和会话续行，以同合同三组对照及 8×8 中断场景验收。 |
+| 212 | [多会话 Web Terminal 与 Agent 待处理体验](212-ovis-web-terminal-and-agent-workflows.md) | implemented (A/B、C5) | 终端协作及宿主探测已接入。真实 PTY 慢端压测、Safari 真机待验范围和其余候选见规格。 |
 | 213 | [里程碑交接、独立验收与定时唤醒](specs/213-zaofu-antigravity-borrowings.md) | candidate | 根据 [Antigravity 调研](specs/antigravity-orchestration-review.zh-CN.md)，定义里程碑接手、验收缺口、事件与超时竞争，以及持久作业的重试和去重。 |
 | 214 | [Workflow Skill 任务评估与按需加载优化](../spec/214-workflow-skill-evaluation-and-optimization.md) | implemented（Task Verify 与 Planner 试点） | 项目决策表、客户端兼容性、加载与交互试验已接入。[8×8 与 Loshu FMS 复盘](../impl/214-workflow-skill-field-audit.md)覆盖 39 项当前方法及长契约读取对照。 |
 | 215 | [OA 按需组队与阶段执行工作台](specs/215-oa-stage-teams-and-execution-workbench.md) | 工程已实施，真实试点待验 | OA 按需组队与独立验收、阶段工作台和按需诊断已接入。固定与按需 Plan、两组真实 8×8 的对照待验。[实施与验收](../impl/215-oa-stage-team-implementation.md)。 |

@@ -55,7 +55,7 @@ def _prompt(raw: str) -> str:
     candidates = [
         text
         for text in strings
-        if "ZaoFu Kanban Agent turn" in text
+        if "zaofu agent turn" in text
         or "Use the zf-workflow-synthesis method." in text
     ]
     return max(candidates, key=len) if candidates else raw

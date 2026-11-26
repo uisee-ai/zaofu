@@ -24,7 +24,7 @@ Spec 按仓库约定忽略，不作为运行时配置。通用可写子 SOP 不�
 ## 当前接力责任
 
 `handoff_pipeline` 复用 `read_task_pipeline_projection`，不创建第二调度状态机。
-Task Pipeline 的接力摘要、任务详情 route 当前阶段和 run header 使用同一投影；
+Task Pipeline 的接力摘要、任务状态行和运行详情使用同一投影；
 当前活跃 operation 决定责任，阶段间等待、阻塞和终态沿现有 reconciler 解释。
 当前 Run 没有匹配的已接纳 generation 时显示未知，不借旧流程 `dev.build.done → static_gate` 映射猜测。
 旧流程保留原有映射。
@@ -33,9 +33,9 @@ Task Pipeline 的接力摘要、任务详情 route 当前阶段和 run header �
 旧完成事件及 Agent 自述仍可在历史中查看，不独立成为当前流程的完成证据。
 旧 resume packet 的 gate 缺口不移植到 Task Pipeline；当前输入缺口使用既有 `current_task_input_recovery`。
 
-任务详情新增可折叠“交接依据与恢复条件”：当前运行/尝试、代码目标、任务现场、输入绑定、读取缺口和现场保存。
-从该区域可进入既有 Evidence / Activity，再返回 Summary。查看不发送控制动作；部分输入失败不遮蔽其他状态。
-Evidence 优先使用当前 pipeline attempt，避免把 dispatch ID 当成输入 attempt ID。
+从任务属性栏打开“查看任务事件”，展开该任务的运行详情即可检查交接依据与恢复条件。
+其中列出当前运行和尝试、代码目标、任务现场、输入绑定、读取缺口与现场保存情况。
+“查看输入与成果”按当前 pipeline attempt 读取输入。“查看交接历史”展开执行路线与事件。个别输入读取失败时，其余交接信息仍然可读。
 展示历史已读时仍明确“当前会话保留未知”，不将保存、交付、读取、接纳和业务完成混为一谈。
 
 ## 显式续读试点
@@ -71,7 +71,7 @@ Evidence 优先使用当前 pipeline attempt，避免把 dispatch ID 当成输�
   核验阶段责任、返工代次、迟到旧结果、等待、终态和重新绑定；不会修改 canonical 状态。
 - `tests/test_artifact_required_resume.py` 从实际 CLI 与确定性 transcript fixture 核验跳过量、回退、关闭续读、
   多页、独立别名回执和正文重建；`test_task_scoped_plan_inputs.py` / `test_plan_input_review.py` 保持输入覆盖与冻结边界。
-- `web/tests/task-handoff.spec.ts` 覆盖现有 TaskDetail 组件的 Summary → Evidence → Summary → Activity 旅程，
+- `web/tests/task-handoff.spec.ts` 从任务详情进入该任务的事件页，检查交接依据、输入权限和重新展开时的最新绑定，
   并保留 `task-inputs.spec.ts` 的分页、权限、过期、部分/未知状态断言。浏览器 API 使用 fixture；后端数据合同独立测试。
 
 这些是确定性与本地浏览器层级，不是实际模型记忆、真实 Provider 业务质量或 token/费用收益证明。
@@ -124,3 +124,7 @@ Docker 内 12 项浏览器业务断言通过，使用已有镜像 mcp/playwright
 Chromium 149.0.7827.22 / Playwright 1.59.1。API 为 fixture，实际组件、截图/WebM/trace 保留。
 原始日志、基线对账与媒体保留于集成 worktree 的 reports/continuity-integration-20261117/；
 此次未新增真实 Provider 验收，不能据此扩大 R16 的资格范围。
+
+当前流程投影用 `operation_status` 区分预定、执行和暂停。已接纳结果携带阶段、语义裁决及结算时间。详情通过同一项目的 TaskStore、FeatureStore 与任务事件生成只读 properties 投影，包含上下游、子任务、来源和最近的阶段变化。宽屏属性栏与窄屏抽屉共用该投影；当前绑定决定执行者，任务对话固定在正文栏下方。页面行为见[看板任务详情规格](../specs/kanban-task-detail.md)。
+
+任务阅读页的「Task conversation」使用项目和任务绑定的 zaofu agent 会话。调整验收条目通过确认后的 `update-task` 提交，部分合同更新保留现有验证方式与验证层级。任务更新回执和执行者送达回执各自关联对应动作。见[任务详情与任务对话](../specs/kanban-task-detail.md)。
