@@ -240,6 +240,25 @@ def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
     )
 
 
+def test_runtime_evidence_array_reports_one_actionable_shape_error(tmp_path):
+    runtime, svc, args, result, assessments = case(tmp_path)
+    read_current_review_inputs(runtime, args["operation_id"])
+    assessment = assessments[0]
+    valid = assessment["runtime_evidence"]
+    assessment["runtime_evidence"] = [valid]
+    result["report"]["execution_assessments"] = assessments
+
+    errors = svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
+    assert [error["field"] for error in errors] == ["report.execution_assessments[0].runtime_evidence"]
+    message = errors[0]["message"]
+    assert "one citation object" in message
+    assert f"$.execution_comparisons.{assessment['comparison']}.facts" in message
+    assert "basis.requirement_evidence and basis.current_evidence" in message
+
+    assessment["runtime_evidence"] = valid
+    assert svc.validate_plan_candidate(**args, semantic_result=result)["status"] == "passed"
+
+
 @pytest.mark.parametrize("mode,legacy", [("full", True), ("targeted", False)])
 def test_old_and_targeted_requests_keep_their_review_contract(tmp_path, mode, legacy):
     runtime, svc, args, result, _ = case(tmp_path, mode=mode, legacy=legacy)

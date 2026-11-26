@@ -37,9 +37,10 @@ def review_claim_briefing(policy: str) -> list[str]:
         'verification_owner with its required first-stage checks. An unresolved contract has no selection yet. '
         'A host allowlist grants permission only. Reconcile every still-present comparison again after rework. '
         'Before any rejection, assess every frozen comparison marked before_rework; on approval assess all. '
-        'For each marked comparison include disposition (no_repair, repair_required, or needs_clarification), runtime_evidence with '
-        'an exact current field beneath $.execution_comparisons.<comparison>.facts, and the requirement/candidate '
-        'basis. Unmarked comparisons use conclusion and basis on approval; their optional fields impose no '
+        'For each marked comparison include disposition (no_repair, repair_required, or needs_clarification). '
+        'Set runtime_evidence to one citation object for an exact current field beneath '
+        '$.execution_comparisons.<comparison>.facts. Use arrays of citations for basis.requirement_evidence '
+        'and basis.current_evidence. Unmarked comparisons use conclusion and basis on approval; their optional fields impose no '
         'repair obligation. The runtime derives the comparison from the Task Map and policy. Give the author '
         'the disputed Task Map field, its observed value and the requirement it must meet. Revalidate the '
         'candidate to recompute the facts. Link fixes by fix_items[].comparison (other for a separate obligation) and unresolved questions by owner_decision_items[].comparison. A command owner selects acceptance and commands '
@@ -134,12 +135,15 @@ def review_claim_issues(
             if not isinstance(basis, Mapping) or not str(basis.get('obligation') or '').strip():
                 error(field, 'Name the existing requirement/approved obligation; advice cannot create one')
                 continue
-            if 'runtime_evidence' in row:
+            runtime_field = path + '.runtime_evidence'
+            # A malformed citation container already has a comparison-specific shape error.
+            if 'runtime_evidence' in row and (isinstance(row['runtime_evidence'], Mapping)
+                    or not any(issue['field'] == runtime_field for issue in issues)):
                 try:
                     _check_citation(state_dir, manifest, row['runtime_evidence'], current=None,
                                     role=str(request.get('role_instance') or ''))
                 except (ValueError, OSError, KeyError, TypeError) as exc:
-                    error(path + '.runtime_evidence', str(exc))
+                    error(runtime_field, str(exc))
             for name in ('requirement_evidence', 'current_evidence'):
                 citations = basis.get(name)
                 if not isinstance(citations, list) or not citations:

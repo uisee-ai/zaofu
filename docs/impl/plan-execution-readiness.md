@@ -257,7 +257,8 @@ Kernel 继续只传播显式声明。真实审查通过但遗漏声明时，页�
 完整审查遇到只读 Task Pipeline 入口时，冻结摘要分别列出每项任务的首站、实际选取的命令和验收，
 以及混合任务间的显式依赖。比较的 `before_rework` 标记适用于当前候选。独立 Critic 在
 `validate-plan` 和正式提交时用 `execution_assessments` 对这些比较逐项裁决。
-每项引用当前冻结摘要中与争议直接相关的子字段、需求和候选证据。`repair_required` 对应有同名 comparison
+每项的 `runtime_evidence` 是一个引用对象，包含冻结摘要的 `source_id`、`artifact_id`、`sha256`、对应 comparison 的事实子字段 `json_path`，以及该位置的 `observed_value` 或原文 `quote`。
+`basis.requirement_evidence` 与 `basis.current_evidence` 各为引用数组，可分别列出多条需求证据与候选证据。`repair_required` 对应有同名 comparison
 的修复项，`no_repair` 保留解释及反证，证据不足的 `needs_clarification` 关联 Owner 决策问题。运行时检查选择事实、证据绑定和覆盖，语义由 Critic 判断。
 
 新签的完整审查若发现只读首站已解析且选中零项必验 AC，且本轮有可对照的冻结需求，现有 `readonly_command_scope` 会给出已解析零项与尚未解析的任务计数和样本。

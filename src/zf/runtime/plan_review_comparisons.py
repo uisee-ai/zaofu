@@ -236,11 +236,15 @@ def _check_review_disposition(row, path, report, source, spec, *, rejected, erro
         error(path + ".disposition", "Bind missing authority or evidence to a blocking owner_decision_item for this comparison")
     citation = row.get("runtime_evidence")
     prefix = f"$.execution_comparisons.{comparison}.facts"
-    selector = citation.get("json_path") if isinstance(citation, Mapping) else None
-    if (not isinstance(citation, Mapping) or any(citation.get(k) != source[k]
-            for k in ("source_id", "artifact_id", "sha256")) or not isinstance(selector, str)
+    if not isinstance(citation, Mapping):
+        error(path + ".runtime_evidence",
+              f"Provide one citation object for a field under {prefix} in {source['source_id']}. "
+              "Use arrays of citations for basis.requirement_evidence and basis.current_evidence.")
+        return
+    selector = citation.get("json_path")
+    if (any(citation.get(k) != source[k] for k in ("source_id", "artifact_id", "sha256")) or not isinstance(selector, str)
             or not selector.startswith((prefix + ".", prefix + "["))):
-        error(path + ".runtime_evidence", "Cite a specific field under the frozen comparison facts")
+        error(path + ".runtime_evidence", f"Cite a specific field under {prefix} in {source['source_id']}")
     elif "initial_acceptance_review" in spec:
         check_initial_acceptance(row, path, spec, error)
     elif fields := spec.get("runtime_evidence_fields"):
