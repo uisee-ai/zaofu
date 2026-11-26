@@ -85,3 +85,9 @@ Judge 可在逐条结论的 `goal_coverage[].supporting_result_refs` 增补冻�
 ### Judge 重试后复核原 Goal 拒绝
 
 周期性 Goal 对账可复核一次只因 `verification_evidence_missing` 被拒的完成声明。复核要求当前 Judge 的重试因果、正式准入、签署正文、原冻结和每位 Candidate Reader 的签名可复验；原拒绝时与当前时刻必须绑定同一完整批次。新审批、替代或作废版本、活动任务、人门及其他正常交付条件继续约束原声明。核实成立后沿原交付策略发布请求，交付和终态记录原 `rechecked_rejection_event_id`。历史拒绝、重试计数和原 Judge 签单均保留。产品交付和 Judge 当次实际阅读在无人验收报告中分别计量。
+
+### Planner 与 Critic 交接的 JSON 原件
+
+Planner 的 `zf result validate` 和 `submit` 对实际交给下一角色的 JSON 文件使用与 Critic 相同的读取规则。重复键的反馈定位到文件与 JSON 路径，并区分同值与冲突值。作者可以修改自己工作区的来源、更新绑定的摘要并在原尝试提交。准备好评审副本后，内核在派发 Critic 前再次检查该版本。需 Owner 评审和仅诊断的计划也核对其实际交付的来源。原有文本附件继续支持文本读取，JSON 端口沿用既有大小限制。
+
+在真实 Run `prepare-TASK-9EEFCA-52b859f5ae02e2ca`，原先获准的任务图两次声明 `$.schema_version`。Critic 对冻结原件的读取失败，最终触发 Owner 门。以同一份请求和原件重放，新版预检会将具体字段返回 Planner。该样本的单版本结论保持为 Plan 阻塞；修复后从检查点继续取得的结果单独计量。[作者提交与冻结派发回归](../../tests/test_plan_handoff_json.py)

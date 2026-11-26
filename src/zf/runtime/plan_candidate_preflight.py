@@ -22,7 +22,7 @@ from zf.runtime.plan_artifact_ports import (
 from zf.runtime.plan_matrix_admission import plan_matrix_admission_errors
 from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_candidate_ports import (
-    PlanPortTooLarge, check_plan_port_size, read_plan_port_bytes,
+    PlanPortTooLarge, check_plan_port_size, handoff_json_errors, read_plan_port_bytes,
     plan_port_bodies as _plan_port_bodies,
     prepared_plan_port_path_errors,
 )
@@ -71,15 +71,15 @@ def evaluate_plan_candidate_preflight(
         bound_candidate_diagnosis, diagnosis_only_writer_error, diagnosis_review_preflight, owner_review_preflight,
     )
 
-    diagnosis = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
-    if diagnosis is not None:
-        return diagnosis
-    draft_review = owner_review_preflight(
-        candidates, state_dir=state_dir, project_root=project_root,
-    )
-    if draft_review is not None:
-        return draft_review
-    errors: list[dict[str, str]] = []
+    errors = handoff_json_errors(candidates, state_dir=state_dir, project_root=project_root)
+    review = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
+    if review is None:
+        review = owner_review_preflight(candidates, state_dir=state_dir, project_root=project_root)
+    if review is not None:
+        if errors:
+            review["errors"].extend(errors)
+            review["status"] = "failed"
+        return review
     if ports_materialized:
         errors.extend(prepared_plan_port_path_errors(candidates, state_dir=state_dir))
     from zf.runtime.workflow_read_result import workflow_read_finding_issues

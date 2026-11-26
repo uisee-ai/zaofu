@@ -55,6 +55,53 @@ def _producer_port_path(ref: str, *, state_dir: Path, project_root: Path) -> Pat
     return source
 
 
+def _handoff_json_bytes(path: Path, ref: str, *, json_port: bool) -> bytes | None:
+    if not path.is_file():
+        return None
+    if path.suffix.lower() == ".json" or json_port:
+        return read_plan_port_bytes(path, ref)
+    # Unstructured references can be Markdown, logs or binary attachments.
+    # Keep the reader's text fallback. Only sniff an unlabelled object/array
+    # when it fits the established hydration limit.
+    if path.stat().st_size > DEFAULT_HYDRATE_LIMIT_BYTES:
+        return None
+    with path.open("rb") as stream:
+        while chunk := stream.read(4096):
+            if prefix := chunk.lstrip():
+                if prefix[:1] in (b"{", b"["):
+                    return read_plan_port_bytes(path, ref)
+                break
+    return None
+
+
+def handoff_json_errors(
+    candidates: list[dict[str, Any]], *, state_dir: Path, project_root: Path,
+) -> list[dict[str, str]]:
+    """Validate the actual files offered as sources to the next Plan role."""
+    from zf.runtime.artifact_text_codec import decode_artifact_text
+    from zf.runtime.plan_synth_handoff import _child_artifact_refs
+
+    errors: list[dict[str, str]] = []
+    for index, candidate in enumerate(candidates):
+        typed_refs = {port.get("ref") for port in coerce_plan_port_descriptors(candidate.get("plan_ports"))
+                      if isinstance(port.get("ref"), str)}
+        typed_refs.update(str(candidate.get(key) or "") for key in ("task_map_ref", "source_index_ref"))
+        for ref in _child_artifact_refs(candidate):
+            try:
+                path = resolve_artifact_file(ref, project_root=project_root, state_dir=state_dir)
+                raw = _handoff_json_bytes(path, ref, json_port=ref in typed_refs)
+                if raw is not None:
+                    decode_artifact_text(raw, "$")
+            except OSError:
+                continue  # Existing resolution/required-port checks own unavailable refs.
+            except PlanPortTooLarge as exc:
+                _error(errors, "plan_port_too_large", f"report[{index}].artifacts", str(exc))
+            except ValueError as exc:
+                _error(errors, "plan_handoff_json_invalid", f"report[{index}].artifacts",
+                       f"{ref}: {exc}. Correct the source file and refresh any bound digest before submitting.")
+    return errors
+
+
 def prepared_plan_port_path_errors(
     candidates: list[dict[str, Any]], *, state_dir: Path,
 ) -> list[dict[str, str]]:

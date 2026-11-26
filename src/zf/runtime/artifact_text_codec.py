@@ -14,13 +14,41 @@ class _JsonDecimal:
     token: str
 
 
-def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"JSON artifact has duplicate key {key!r}")
-        result[key] = value
-    return result
+@dataclass(frozen=True)
+class _DuplicateKey:
+    key: str
+    first: Any
+    second: Any
+
+
+def _same_json_value(first: Any, second: Any) -> bool:
+    if type(first) in (int, _JsonDecimal) and type(second) in (int, _JsonDecimal):
+        return Decimal(first.token if isinstance(first, _JsonDecimal) else first) == Decimal(
+            second.token if isinstance(second, _JsonDecimal) else second)
+    if type(first) is not type(second):
+        return False
+    if isinstance(first, dict):
+        return first.keys() == second.keys() and all(_same_json_value(v, second[k]) for k, v in first.items())
+    if isinstance(first, list):
+        return len(first) == len(second) and all(_same_json_value(a, b) for a, b in zip(first, second))
+    return first == second
+
+
+def _locate_duplicate(value: Any, path: str) -> None:
+    if isinstance(value, _DuplicateKey):
+        key = value.key
+        location = f"{path}.{key}" if key.isidentifier() else f"{path}[{json.dumps(key)}]"
+        _locate_duplicate(value.first, location)
+        _locate_duplicate(value.second, location)
+        relationship = "identical values" if _same_json_value(value.first, value.second) else "conflicting values"
+        raise ValueError(f"JSON artifact has duplicate key {key!r} at {location} ({relationship})")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child = f"{path}.{key}" if key.isidentifier() else f"{path}[{json.dumps(key)}]"
+            _locate_duplicate(item, child)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _locate_duplicate(item, f"{path}[{index}]")
 
 
 def _integer_token(value: str) -> int | _JsonDecimal:
@@ -37,11 +65,27 @@ def decode_artifact_text(raw: bytes, json_path: str) -> Any:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError("artifact is not valid UTF-8 text") from exc
+    duplicate: _DuplicateKey | None = None
+
+    def object_without_duplicates(pairs: list[tuple[str, Any]]) -> Any:
+        nonlocal duplicate
+        obj: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in obj:
+                duplicate = _DuplicateKey(key, obj[key], value)
+                return duplicate
+            obj[key] = value
+        return obj
+
     try:
-        return json.loads(text, parse_float=_JsonDecimal, parse_int=_integer_token,
-                          parse_constant=_reject_constant,
-                          object_pairs_hook=_object_without_duplicate_keys)
+        parsed = json.loads(text, parse_float=_JsonDecimal, parse_int=_integer_token,
+                            parse_constant=_reject_constant, object_pairs_hook=object_without_duplicates)
+        if duplicate:
+            _locate_duplicate(parsed, "$")
+        return parsed
     except json.JSONDecodeError as exc:
+        if duplicate:
+            raise ValueError(f"JSON artifact has duplicate key {duplicate.key!r} and invalid JSON syntax") from exc
         if json_path != "$":
             raise ValueError("json_path requires a JSON artifact") from exc
         return text
