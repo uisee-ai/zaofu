@@ -56,6 +56,12 @@ Planner/critic 的事实使用当前派发配置及冻结的验证请求。
 不会自动阻断、批准、调整 task map、启用 pipeline 或执行 setup。
 Planner 的 validate 结果与 Critic 的输入使用相同事实生成器。
 
+Planner 执行 `zf result validate --operation <id> --scratch --summary` 时，
+摘要的 `execution_comparisons` 列出本次实际算出的比较项、各项任务总数和最多三个任务 ID。
+只读入口与标准空写集项显示运行时起始阶段，Candidate 命令项显示已登记命令数和仅宿主许可数。
+`before_rework: true` 表示完整 Critic 在退回修订前也要对账。移除 `--summary` 可查全部任务、原命令和逐项事实。
+缺少某个比较项时，摘要无法据此判断其余任务的执行模式。结构预检状态与审批流程各自沿用原合同。
+
 ### Critic 的执行对账
 
 新冻结的 `plan-execution-review.execution_comparisons` 是本轮待对照的执行事实。

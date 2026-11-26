@@ -172,9 +172,39 @@ def _validation_summary(outcome: dict) -> dict:
         }, "plan_input_contract_port_counts": {
             key: len(names) for key, names in outcome["plan_input_contract"].items() if isinstance(names, list)
         }} if isinstance(outcome.get("plan_input_contract"), dict) else {}),
+        **_execution_comparison_summary(outcome.get("execution_review")),
         "details_truncated": True,
         "full_report": "Rerun the same validation command without --summary for the complete report.",
     }
+
+
+def _execution_comparison_summary(review: dict | None) -> dict:
+    comparisons = review.get("execution_comparisons") if isinstance(review, dict) else None
+    if not comparisons:
+        return {}
+    summary = {}
+    for name, comparison in comparisons.items():
+        row = {}
+        task_ids = comparison.get("task_ids")
+        if "candidate_commands" in comparison:
+            commands = comparison["candidate_commands"]
+            task_ids = list(dict.fromkeys(
+                entry["task_id"] for entries in commands.values() for entry in entries
+            ))
+            row["candidate_command_count"] = len(commands)
+            row["host_permitted_only_count"] = len(comparison["host_permitted_only"])
+        if task_ids is not None:
+            row["task_count"] = len(task_ids)
+            row["sample_task_ids"] = [task_id for task_id in task_ids[:3] if len(task_id) <= 128]
+        if "before_rework" in comparison:
+            row["before_rework"] = comparison["before_rework"]
+        stages = {entry["first_stage_on_admission"]
+                  for entry in comparison.get("facts", {}).get("entries", [])
+                  if "first_stage_on_admission" in entry}
+        if stages:
+            row["first_stages_on_admission"] = sorted(stages)
+        summary[name] = row
+    return {"execution_comparisons": summary}
 
 
 def _run_submit(args: argparse.Namespace) -> int:
