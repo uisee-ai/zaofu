@@ -186,17 +186,17 @@ def validate_task_map_payload(
         elif owner_role:
             bundle_owner_roles[task_id] = owner_role
         try:
-            verification_commands = task_verification_commands(raw)
+            command_fields = task_map_verification_command_fields(raw)
         except VerificationCommandError as exc:
             errors.append(f"{task_id}.validation.commands {exc}")
-            verification_commands = []
+            command_fields = []
         if (
             require_task_verification
-            and not verification_commands
+            and not command_fields
             and not _string_list(raw.get("acceptance"))
         ):
             errors.append(f"{task_id} requires verification or acceptance")
-        for field_name, item in task_map_verification_command_fields(raw):
+        for field_name, item in command_fields:
             command = str(item["command"])
             for error in _verification_command_errors(command):
                 errors.append(f"{task_id}.{field_name} {error}")
@@ -764,7 +764,11 @@ def _shared_convention_errors(
     for raw in task_items:
         task_id = str(raw.get("task_id") or "?")
         refs = list(_string_list(raw.get("allowed_paths")))
-        for _field, item in task_map_verification_command_fields(raw):
+        try:
+            commands = task_verification_commands(raw)
+        except VerificationCommandError:
+            commands = []  # The task's command validation reports this once.
+        for item in commands:
             refs.extend(_command_path_refs(str(item["command"])))
         for ref in refs:
             norm = str(ref)
