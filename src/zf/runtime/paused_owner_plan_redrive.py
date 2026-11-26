@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.core.state.locks import locked_path
 from zf.runtime.fanout_identity import fanout_current_statuses
 from zf.runtime.run_admission import build_run_admission_projection
 from zf.runtime.run_scope import run_aliases
@@ -234,3 +235,13 @@ def apply_owner_redrive(service, requested, action, requested_action, payload):
             "stage_replan_generation": marker.payload["stage_replan_generation"],
         },
     )
+
+
+def apply_stage_replan(service, requested, action, requested_action, payload):
+    # The same lock serializes publication with Run pause, resume and competing owner generations.
+    with locked_path(service.state_dir / "locks" / "run-admission"):
+        if KEY in payload:
+            return apply_owner_redrive(service, requested, action, requested_action, payload)
+        return service._stage_replan_new_generation_action(
+            requested=requested, action=action, requested_action=requested_action, payload=payload
+        )
