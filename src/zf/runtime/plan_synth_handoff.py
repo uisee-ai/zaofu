@@ -225,6 +225,11 @@ def render_plan_synth_validation_section(
     ]
 
 
+def _source_binding(source: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    return (str(source.get("source_id") or ""), str(source.get("artifact_id") or ""),
+            str(source.get("ref") or ""), str(source.get("sha256") or ""))
+
+
 def build_plan_handoff_input_refs(
     *,
     state_dir: Path,
@@ -256,7 +261,7 @@ def build_plan_handoff_input_refs(
         **(payload.get("source_refs") if isinstance(payload.get("source_refs"), Mapping) else {}),
     }
     input_refs: list[dict[str, Any]] = []
-    seen_sources: set[tuple[str, str]] = set()
+    seen_sources: set[tuple[str, str, str, str]] = set()
     if binding:
         input_refs.append({**binding["requirement_amendment_ref"],
                            "source_id": "owner-requirement-amendment", "allowed_paths": ["$"]})
@@ -274,7 +279,7 @@ def build_plan_handoff_input_refs(
             source_id=source_id,
             kind=kind,
         )
-        identity = (source_id, str(source.get("sha256") or ""))
+        identity = _source_binding(source)
         if not source or identity in seen_sources:
             continue
         source.setdefault("allowed_paths", ["$"])
@@ -398,10 +403,7 @@ def build_plan_handoff_input_refs(
             "allowed_paths": list(allowed_paths),
             "access_scope": dict(access_scope),
         })
-        identity = (
-            str(source.get("source_id") or ""),
-            str(source.get("sha256") or ""),
-        )
+        identity = _source_binding(source)
         if identity not in seen_sources:
             input_refs.append(source)
             seen_sources.add(identity)
@@ -683,10 +685,7 @@ def build_plan_synth_call_payload(
         reports=reports,
     )
 
-    seen_sources = {
-        (str(item.get("source_id") or ""), str(item.get("sha256") or ""))
-        for item in input_refs
-    }
+    seen_sources = {_source_binding(item) for item in input_refs}
     diagnosis_events = None
     from zf.runtime.plan_candidate_diagnosis_inputs import frozen_diagnosis_events
 
@@ -700,10 +699,7 @@ def build_plan_synth_call_payload(
         source_event_id=trigger_event_id,
         read_events=(lambda: diagnosis_events) if diagnosis_events is not None else read_events,
     ):
-        identity = (
-            str(source.get("source_id") or ""),
-            str(source.get("sha256") or ""),
-        )
+        identity = _source_binding(source)
         if identity not in seen_sources:
             input_refs.append(source)
             seen_sources.add(identity)

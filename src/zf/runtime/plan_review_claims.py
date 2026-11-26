@@ -98,13 +98,23 @@ def review_claim_issues(
                           for child in children)}
         from zf.runtime.previous_preflight_delivery import matches_previous_preflight_binding
 
+        # A source_id groups related inputs. PRD text and RequirementSpec can both
+        # be "requirement"; every bound occurrence must resolve exactly once.
+        sources = manifest['sources']
+        remaining = {row['source_id']: [] for row in contract['source_bindings']}
+        for source in sources:
+            if source['source_id'] in remaining:
+                remaining[source['source_id']].append(source)
         for binding in contract['source_bindings']:
-            matches = [s for s in manifest['sources'] if s.get('source_id') == binding['source_id']]
-            if len(matches) != 1 or (
-                any(matches[0].get(k) != binding.get(k) for k in ('ref', 'sha256', 'artifact_id'))
-                and not matches_previous_preflight_binding(state_dir, manifest['sources'], binding, matches[0])
-            ):
+            group = remaining[binding['source_id']]
+            matches = [s for s in group if
+                       all(binding.get(k) and s.get(k) == binding[k] for k in ('ref', 'sha256', 'artifact_id'))
+                       or matches_previous_preflight_binding(state_dir, sources, binding, s)]
+            if len(matches) != 1:
                 raise ValueError('Review contract and source manifest bindings differ')
+            group.remove(matches[0])
+        if any(remaining.values()):
+            raise ValueError('Review contract and source manifest bindings differ')
         for path, row in rows:
             field = f'{path}.basis'
             basis = row.get('basis') if isinstance(row, Mapping) else None
