@@ -12,13 +12,17 @@ class JudgeAdmissionError(ValueError):
 
 
 def current_judge_admissions(events: list[ZfEvent], source: ZfEvent, *, run: str,
-                             candidate_ref: str, target: str, generation: str) -> dict | None:
+                             candidate_ref: str, target: str, generation: str,
+                             required_specialists: tuple[dict, ...] = (),
+                             advisory_specialists: tuple[dict, ...] = ()) -> dict | None:
     scoped = [e for e in events if (e.payload.get("workflow_run_id") or e.correlation_id) == run]
     by_id = {e.id: e for e in scoped}
     candidate = current_goal_candidate(scoped, candidate_ref=candidate_ref, target_commit=target)
     batch = bind_goal_candidate_batch(scoped, candidate, {
         "candidate_ref": candidate_ref, "target_commit": target, "task_map_generation": generation,
     }) if candidate else None
+    if required_specialists and (not batch or source.type != "flow.discovery.completed"):
+        raise JudgeAdmissionError("required Judge specialist opinions lack current Discovery publication")
     if batch is None:
         # A missing declaration cannot turn signed batch Reader votes into legacy independent Verify.
         for e in scoped:
@@ -40,6 +44,7 @@ def current_judge_admissions(events: list[ZfEvent], source: ZfEvent, *, run: str
         for child in batch.verification_member_event_ids
     ]
     discovery = []
+    advisory = []
     if source.id != batch.verification_batch_event_id:
         request_type = "flow.discovery.requested" if source.type == "flow.discovery.completed" else ""
         if is_module_parity_scan_completed_event(source.type):
@@ -49,18 +54,22 @@ def current_judge_admissions(events: list[ZfEvent], source: ZfEvent, *, run: str
         if (not request_type or not request or request.origin != "kernel" or request.type != request_type
                 or (request.payload.get("verification_event_id") or request.causation_id) != batch.verification_batch_event_id):
             raise JudgeAdmissionError("Discovery does not follow the current Candidate publication")
-        discovery = _discovery_admissions(scoped, by_id, source, request, fanout)
+        discovery = _discovery_admissions(scoped, by_id, source, request, fanout, required_specialists)
+        if advisory_specialists:
+            advisory = _advisory_admissions(scoped[:scoped.index(source)], request, advisory_specialists,
+                                            candidate_ref=candidate_ref, target=target, generation=generation)
     explicit_refs = {ref for key in ("artifact_refs", "evidence_refs", "regression_refs", "test_refs", "e2e_refs")
                      for ref in source.payload.get(key) or [] if isinstance(ref, str)}
     supporting = [e.id for e in scoped if e.origin == "kernel" and e.type == "workflow.call.result.admitted"
                   and any((e.payload.get(k) or {}).get("ref") in explicit_refs
                           for k in ("control_result_ref", "envelope_ref"))]
     return {"candidate_event_id": batch.candidate_event_id, "publication": batch.verification_batch_event_id,
-            "readers": readers, "discovery": discovery, "supporting": supporting}
+            "readers": readers, "discovery": discovery, "supporting": supporting,
+            **({"advisory": advisory} if advisory else {})}
 
 
 def _discovery_admissions(events: list[ZfEvent], by_id: dict[str, ZfEvent], source: ZfEvent,
-                          request: ZfEvent, fanout: str) -> list[str]:
+                          request: ZfEvent, fanout: str, required_specialists: tuple[dict, ...]) -> list[str]:
     aggregate = by_id.get(source.causation_id)
     if (not aggregate or aggregate.origin != "kernel" or aggregate.type != "fanout.aggregate.completed"
             or aggregate.payload.get("fanout_id") != fanout or aggregate.payload.get("status") != "completed"
@@ -78,20 +87,64 @@ def _discovery_admissions(events: list[ZfEvent], by_id: dict[str, ZfEvent], sour
                  if e.type in {"fanout.child.dispatched", "fanout.child.completed", "fanout.child.failed"}}
     if not roster or len(roster) != len(children) or set(terminals) != set(roster) or not all(roster.values()):
         raise JudgeAdmissionError("Discovery is missing a declared child")
+    if required_specialists:
+        obligations = [(c.get("role_instance"), (c.get("payload") or {}).get("stage_obligation"))
+                       for c in children]
+        if len(roster) != len(required_specialists) + 1 or len(set(roster.values())) != len(roster) or any(
+            (member["role"], member) not in obligations for member in required_specialists
+        ):
+            raise JudgeAdmissionError("Discovery lacks a required Judge specialist obligation")
     ids = []
     for child, terminal in terminals.items():
-        vote = by_id.get(terminal.causation_id)
-        admission = by_id.get(vote.payload.get("semantic_submit_admission_event_id")) if vote else None
-        if (terminal.type != "fanout.child.completed" or terminal.payload.get("role_instance") != roster[child]
-                or not vote or vote.type != (start.payload.get("aggregate") or {}).get("child_success_event")
-                or vote.payload.get("role_instance") != roster[child]
-                or vote.payload.get("operation_id") != terminal.payload.get("operation_id")
-                or vote.payload.get("fanout_id") != fanout or vote.payload.get("child_id") != child
-                or not admission or admission.type != "workflow.call.result.admitted" or admission.origin != "kernel"
-                or admission.payload.get("source_event_id") != vote.id or not admission.payload.get("envelope_ref")
-                or terminal.payload.get("admitted_call_result_ref") != admission.payload["envelope_ref"]
-                or not terminal.payload.get("operation_id")
-                or terminal.payload["operation_id"] != admission.payload.get("operation_id")):
+        admission = _signed_opinion(by_id, terminal, fanout, child, roster[child],
+                                    (start.payload.get("aggregate") or {}).get("child_success_event"))
+        if not admission:
             raise JudgeAdmissionError("Discovery child lacks its admitted result")
         ids.append(admission.id)
     return ids
+
+
+def _signed_opinion(by_id, terminal, fanout, child, role, success_event):
+    vote = by_id.get(terminal.causation_id)
+    admission = by_id.get(vote.payload.get("semantic_submit_admission_event_id")) if vote else None
+    if (terminal.type != "fanout.child.completed" or terminal.payload.get("role_instance") != role
+            or not vote or vote.type != success_event or vote.payload.get("role_instance") != role
+            or vote.payload.get("operation_id") != terminal.payload.get("operation_id")
+            or vote.payload.get("fanout_id") != fanout or vote.payload.get("child_id") != child
+            or not admission or admission.type != "workflow.call.result.admitted" or admission.origin != "kernel"
+            or admission.payload.get("source_event_id") != vote.id or not admission.payload.get("envelope_ref")
+            or terminal.payload.get("admitted_call_result_ref") != admission.payload["envelope_ref"]
+            or not terminal.payload.get("operation_id")
+            or terminal.payload["operation_id"] != admission.payload.get("operation_id")):
+        return None
+    return admission
+
+
+def _advisory_admissions(prior, request, members, *, candidate_ref, target, generation):
+    # Freeze advisory availability at the required Discovery publication. A late opinion cannot reopen a Judge.
+    starts = [e for e in prior if e.type == "fanout.started" and e.origin == "kernel"
+              and e.payload.get("stage_id") == "prd-judge-advisory" and e.payload.get("trigger_event_id") == request.id]
+    if len(starts) != 1:
+        return []
+    start = starts[0]
+    fanout = start.payload.get("fanout_id")
+    by_id = {e.id: e for e in prior}
+    roster = {c.get("child_id"): c for c in start.payload.get("expected_children") or [] if isinstance(c, dict)}
+    terminals = {e.payload.get("child_id"): e for e in prior[prior.index(start)+1:] if e.origin == "kernel"
+                 and e.payload.get("fanout_id") == fanout and e.type in {
+                     "fanout.child.dispatched", "fanout.child.completed", "fanout.child.failed"}}
+    signed = []
+    for child, row in roster.items():
+        member = (row.get("payload") or {}).get("stage_obligation")
+        role = row.get("role_instance")
+        terminal = terminals.get(child)
+        if not terminal or member not in members or member["role"] != role:
+            continue
+        admission = _signed_opinion(by_id, terminal, fanout, child, role, "workflow.child.completed")
+        if admission:
+            vote = by_id[terminal.causation_id].payload
+            if ((vote.get("candidate_ref") or vote.get("target_ref")) == candidate_ref
+                    and vote.get("target_commit") == target
+                    and same_task_map_generation(vote.get("task_map_generation") or "", generation)):
+                signed.append(admission.id)
+    return signed

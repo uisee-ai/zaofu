@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **70** 个顶层命令 family、**336** 条可寻址命令路径。
+当前共 **70** 个顶层命令 family、**349** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -41,6 +41,17 @@ Artifact manifest helpers
 | `zf artifact handoff-evidence` | Read causally bound predecessor tool observations without accepting them |
 | `zf artifact index` | Browse authorized attempt input locators without consuming bodies |
 | `zf artifact list` | List immutable inputs available to one provider attempt |
+| `zf artifact mailbox` | Exchange authorized messages and recover delivery receipts |
+| `zf artifact mailbox ack` | Acknowledge a verified delivery |
+| `zf artifact mailbox answer` | No parser summary. |
+| `zf artifact mailbox cancel` | No parser summary. |
+| `zf artifact mailbox claim` | No parser summary. |
+| `zf artifact mailbox handoff` | No parser summary. |
+| `zf artifact mailbox inbox` | List pending authorized message metadata without consuming a delivery |
+| `zf artifact mailbox pull` | Prepare an exact, replayable batch |
+| `zf artifact mailbox read-answer` | No parser summary. |
+| `zf artifact mailbox send` | Send to an admitted Run obligation or request OA guidance |
+| `zf artifact mailbox wait` | No parser summary. |
 | `zf artifact manifest` | Artifact manifest commands |
 | `zf artifact manifest create` | Create a deterministic artifact manifest JSON |
 | `zf artifact milestone` | Read the bound candidate milestone obligations and decision |
@@ -564,9 +575,10 @@ Recover deterministic runtime state from append-only events
 | `zf recover` | Recover deterministic runtime state from append-only events |
 | `zf recover assistance` | Attempt-bound read-only guidance |
 | `zf recover associate` | Admit evidence-bound recovery case relationships |
+| `zf recover candidate-registration` | Retry an untouched frozen Reader roster on its original Run |
 | `zf recover candidate-repair` | Recheck a cap-rejected OA Candidate repair on its original Run |
 | `zf recover fanout-terminal` | Preview or append a narrow fanout child terminal recovery |
-| `zf recover goal-evidence` | Re-review a hold with newly bound historical evidence |
+| `zf recover goal-evidence` | Re-review a hold with historical Candidate evidence or newly readable Task Verify results |
 | `zf recover host-assist` | Preview exact task host assistance without executing it |
 | `zf recover host-check` | Read-only host restart eligibility (exit 1 means do not restart) |
 | `zf recover host-unit` | Render or install an opt-in user systemd supervisor |
@@ -819,6 +831,7 @@ Inspect workflow topology
 | `zf workflow routes` | List active workflow routes bound to a Task |
 | `zf workflow schedule` | Inspect persistent job history or run a configured inspection |
 | `zf workflow start` | Preview, propose, or apply a Task-bound workflow route |
+| `zf workflow team` | Inspect approved stage work, attempts and handoffs |
 
 ## `zf workspace`
 

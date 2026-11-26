@@ -46,13 +46,22 @@ class GoalClosureBridgeMixin:
         source_payload = (
             source_event.payload if isinstance(source_event.payload, dict) else {}
         )
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+        metadata = flow_metadata_for(self.config, flow_kind=flow_kind)
+        judge_team = (metadata.get("stage_teams") or {}).get("judge") or {}
+        members = tuple({**member, "recipient": judge_team["author"]}
+                                     for member in judge_team.get("members", []) if not member.get("disposition"))
         try:
             identity = build_closure_identity(
                 events,
                 source_event=source_event,
                 payload={**source_payload, **payload},
                 state_dir=self.state_dir,
-                flow_kind=flow_kind,
+                flow_kind=flow_kind, required_specialists=tuple(m for m in members if m.get("required", True)),
+                advisory_specialists=tuple(m for m in members if not m.get("required", True)),
+                judge_mandate=({**{k: judge_team[k] for k in ("author", "reason", "objectives", "questions") if k in judge_team},
+                               "transferred_obligations": [m for m in judge_team["members"] if m.get("disposition")]}
+                              if judge_team else None),
             )
         except JudgeAdmissionError as exc:
             self._emit_goal_closure_identity_invalid(source_event, identity=dict(payload), reason=str(exc))
@@ -73,12 +82,10 @@ class GoalClosureBridgeMixin:
                 },
             ))
             return None
-        from zf.core.workflow.flow_metadata import flow_metadata_for
         from zf.runtime.artifact_package_policy import (
             effective_artifact_package_mode,
         )
 
-        metadata = flow_metadata_for(self.config, payload=payload)
         if effective_artifact_package_mode(
             state_dir=self.state_dir,
             payload={**source_payload, **payload},
@@ -315,6 +322,8 @@ class GoalClosureBridgeMixin:
         )
         batch = identity.get("judge_batch_admissions")
         selected = set(batch["readers"] + batch["discovery"] + batch["supporting"]) if batch else set()
+        advisory = set(batch.get("advisory", [])) if batch else set()
+        available_advisory = []
         remaining = set(selected)
         history = []
         admitted_refs: list[str] = []
@@ -367,6 +376,11 @@ class GoalClosureBridgeMixin:
             ref_text = str(descriptor.get("ref") or "").strip()
             digest = str(descriptor.get("sha256") or "").strip()
             if not ref_text or not digest or ref_text in admitted_refs:
+                continue
+            if event.id in advisory and event.id not in selected:
+                if result_target == identity.get("candidate_head_commit") and same_task_map_generation(
+                        result_generation, str(identity.get("task_map_generation") or "")):
+                    available_advisory.append((ref_text, digest))
                 continue
             if batch and event.id not in selected:
                 history.append((ref_text, digest))
@@ -704,9 +718,25 @@ class GoalClosureBridgeMixin:
             }
             for item in descriptors
         ]
+        # An on-time, admitted advisory is available to cite without adding a required read or sign-off.
+        for index, (ref, digest) in enumerate(available_advisory, 1):
+            admitted_refs.append(ref)
+            add_descriptor(ref=ref, digest=digest, source_id=f"judge-advisory-{index}", kind="judge_advisory_result")
         # Keep older signed results discoverable, outside both current acceptance and mandatory reads.
         for index, (ref, digest) in enumerate(history, 1):
             add_descriptor(ref=ref, digest=digest, source_id=f"historical-admission-{index}", kind="historical_call_result")
+        if identity.get("has_task_verify_evidence"):
+            fact = hydrate_sidecar_ref(self.state_dir, {"ref": identity["closure_fact_ref"],
+                "sha256": identity["closure_fact_digest"]}).payload
+            for row in fact["task_verify_evidence"]:
+                member = candidate_child_authorities.get(row["task_id"], {})
+                control = row["control_result"]
+                if (member.get("verification_event_id") != row["verification_event_id"]
+                        or member.get("verification_result_ref") != control["ref"]
+                        or member.get("verification_result_digest") != control["sha256"]):
+                    raise JudgeAdmissionError("Task Verify evidence no longer matches the current Candidate reader")
+                add_descriptor(ref=control["ref"], digest=control["sha256"], source_id=row["source_id"],
+                               kind="task_verification_result")
         # The compact summary is already a required part of closure-fact.
         if detail := identity.get("candidate_lifecycle_input"):
             from zf.runtime.milestone_task_lifecycles import SOURCE

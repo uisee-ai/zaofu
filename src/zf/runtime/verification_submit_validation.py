@@ -1,6 +1,7 @@
 """Read-only verifier schema, contract and Product Acceptance preflight."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,6 +24,7 @@ def validate_verification_submission(
     revision: str,
     delivery: Mapping[str, Any],
     events: list | None = None,
+    goal_checker: Callable[[Mapping[str, Any]], list] | None = None,
 ) -> dict[str, Any]:
     """Reuse admission validators without creating sidecars or consuming a lease.
 
@@ -66,6 +68,7 @@ def validate_verification_submission(
     adapted = bind_product_acceptance_report(
         adapted, state_dir=state_dir,
         operation={**dict(operation), "result_identity": identity, "output_profile_id": profile_id,
+                   "judge_specialist_obligation": request.get("judge_specialist_obligation"),
                    "fanout_id": request.get("fanout_id"), "candidate_reader_scope": request.get("candidate_reader_scope"),
                    "canonical_success_event": request.get("canonical_success_event", "")},
         source_event_id="", persist=False, events=events or (),
@@ -82,6 +85,8 @@ def validate_verification_submission(
             policy = hydrate_sidecar_ref(state_dir, request['input_consumption_policy_ref']).payload
         errors.extend(recovery_input_issues(state_dir, policy=policy,
             schema=adapted.schema_version, result=adapted.payload))
+    if goal_checker is not None:
+        errors.extend(goal_checker(adapted.payload))
     return {
         "schema_version": "semantic-result-preflight.v1",
         "status": "failed" if errors else "passed",

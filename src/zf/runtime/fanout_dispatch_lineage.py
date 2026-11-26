@@ -144,8 +144,12 @@ def apply_stage_result_semantics(stage: Any, children: list[Any]) -> None:
     result_semantics = str(
         getattr(stage, "result_semantics", "") or ""
     ).strip()
-    if result_semantics:
-        for child in children:
+    specialists = {member.role_instance for member in (getattr(stage, "children", []) or [])
+                   if stage.id == "prd-post-verify-discovery" and member.payload.get("stage_obligation")}
+    for child in children:
+        if specialists and getattr(child, "role_instance", "") in specialists:
+            child.payload["result_semantics"] = "artifact_production"
+        elif result_semantics:
             child.payload["result_semantics"] = result_semantics
 
 

@@ -17,6 +17,7 @@ from typing import Any
 from zf.runtime import verification_command_safety
 from zf.runtime.task_map_assembly import (
     assembly_ownership_errors as _assembly_ownership_errors,
+    read_only_verification_ids,
 )
 from zf.runtime.task_map_goal_coverage import validate_goal_coverage
 from zf.runtime.plan_modules import plan_module_errors
@@ -185,17 +186,17 @@ def validate_task_map_payload(
         elif owner_role:
             bundle_owner_roles[task_id] = owner_role
         try:
-            verification_commands = task_verification_commands(raw)
+            command_fields = task_map_verification_command_fields(raw)
         except VerificationCommandError as exc:
             errors.append(f"{task_id}.validation.commands {exc}")
-            verification_commands = []
+            command_fields = []
         if (
             require_task_verification
-            and not verification_commands
+            and not command_fields
             and not _string_list(raw.get("acceptance"))
         ):
             errors.append(f"{task_id} requires verification or acceptance")
-        for field_name, item in task_map_verification_command_fields(raw):
+        for field_name, item in command_fields:
             command = str(item["command"])
             for error in _verification_command_errors(command):
                 errors.append(f"{task_id}.{field_name} {error}")
@@ -244,13 +245,12 @@ def validate_task_map_payload(
         if not isinstance(value, bool):
             errors.append(f"{field_name} must be a boolean when present")
 
-    errors.extend(_shared_convention_errors(
-        payload,
-        [raw for raw in tasks_raw if isinstance(raw, dict)],
-    ))
+    items = [raw for raw in tasks_raw if isinstance(raw, dict)]
+    errors.extend(_shared_convention_errors(payload, items))
+    readonly = read_only_verification_ids(items)
     errors.extend(_assembly_ownership_errors(
         assembly_owner_roles=assembly_owner_roles, bundle_owner_roles=bundle_owner_roles,
-        task_dependencies=task_dependencies,
+        task_dependencies=task_dependencies, read_only_task_ids=readonly,
     ))
     goal_coverage, goal_coverage_errors = validate_goal_coverage(
         payload,
@@ -268,7 +268,7 @@ def validate_task_map_payload(
         "tasks_by_wave": task_count_by_wave,
         "exclusive_file_count": len(exclusive_claims),
         "tasks_missing_allowed_paths_reason": missing_allowed_path_reason,
-        "bundle_owner_count": len(set(bundle_owner_roles.values())),
+        "bundle_owner_count": len({owner for task, owner in bundle_owner_roles.items() if task not in readonly}),
         "assembly_task_count": len(assembly_owner_roles),
         "goal_coverage": goal_coverage,
         "topological_order": topological_order,
@@ -343,6 +343,7 @@ def validate_source_index_payload(
     *,
     task_map: dict[str, Any] | None = None,
     require_canonical: bool = True,
+    task_map_validation: TaskMapValidationResult | None = None,
 ) -> TaskMapValidationResult:
     """Validate task_id -> source provenance coverage for a task-map.
 
@@ -409,12 +410,8 @@ def validate_source_index_payload(
 
     missing: list[str] = []
     if task_map is not None:
-        validation = validate_task_map_payload(
-            task_map,
-            require_task_verification=False,
-        )
-        if not validation.passed:
-            errors.extend(f"task_map: {item}" for item in validation.errors)
+        validation = task_map_validation or validate_task_map_payload(task_map, require_task_verification=False)
+        errors.extend(f"task_map: {item}" for item in validation.errors)
         for raw in task_map.get("tasks") or []:
             if not isinstance(raw, dict):
                 continue
@@ -767,7 +764,11 @@ def _shared_convention_errors(
     for raw in task_items:
         task_id = str(raw.get("task_id") or "?")
         refs = list(_string_list(raw.get("allowed_paths")))
-        for _field, item in task_map_verification_command_fields(raw):
+        try:
+            commands = task_verification_commands(raw)
+        except VerificationCommandError:
+            commands = []  # The task's command validation reports this once.
+        for item in commands:
             refs.extend(_command_path_refs(str(item["command"])))
         for ref in refs:
             norm = str(ref)

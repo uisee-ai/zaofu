@@ -245,3 +245,35 @@ def test_explicit_same_ac_binding_matches_in_preflight_and_package(case, tmp_pat
     else:
         assert admitted is not None
         assert not _rejections(case)
+
+
+@pytest.mark.parametrize("declare", [False, True])
+def test_flow_required_and_produced_ports_need_a_task_map_selection_contract(case, declare):
+    data = deepcopy(case.body)
+    data["tasks"][0]["evidence_contract"] = {"plan_input_selection": {
+        "schema_version": "task-plan-input-selection.v1",
+        "implementation": ["task_execution_input", "requirement_spec"], "task-verify": ["task_execution_input"],
+    }}
+    case.ports += [
+        {"logical_name": "execution_spec", "body": {"tasks": [{"task_id": "TASK-1"}]}},
+        {"logical_name": "real_e2e_matrix", "body": {"rows": []}},
+        {"logical_name": "task_execution_input", "body": {"schema_version": "task-scoped-plan-input.v1",
+         "shared": {}, "tasks": [{"task_id": "TASK-1", "body": {"required": "the approved sample"}}]}},
+    ]
+    global_names = [port["logical_name"] for port in case.ports]
+    case.runtime.config.workflow.flow_metadata["artifact_package"]["required_ports"] = [
+        "requirement_spec", "task_map", "planning_result", "goal_claim_set", *global_names,
+    ]
+    if declare:
+        # Existing producer spelling is canonicalized by the immutable Package.
+        data["required_plan_ports"] = ["prd_ref", *global_names]
+    else:
+        data.pop("required_plan_ports")
+    admitted = _admit(case, _ready(case, body=data))
+    if declare:
+        assert admitted is not None, [e.payload.get("reason") for e in _rejections(case)]
+        assert admitted.payload["plan_artifact_package_digest"]
+    else:
+        assert admitted is None
+        reason = _rejections(case)[-1].payload["reason"]
+        assert "task_map.required_plan_ports" in reason and "unbound ports: requirement_spec, task_execution_input" in reason

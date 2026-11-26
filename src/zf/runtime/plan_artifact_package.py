@@ -724,6 +724,12 @@ def prepare_plan_artifact_package(
                 "task_map_generation": generation,
             },
         )
+        candidate_team = ((metadata or {}).get("stage_teams") or {}).get("candidate_verify")
+        if candidate_team:
+            rows = product_acceptance_spec.get("candidate_reader_assignments") or []
+            pool = metadata["task_pipeline"]["pools"]["verify"]["role_instances"]
+            if len(rows) != candidate_team["width"] or any(r["role_instance"] not in pool for r in rows):
+                raise PlanArtifactPackageError("Candidate Reader roster must match the approved width and Reader seats")
         if "candidate_reader_assignments" in product_acceptance_spec:
             from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
 

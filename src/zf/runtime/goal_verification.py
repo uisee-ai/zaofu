@@ -48,7 +48,10 @@ def bind_canonical_goal_verification(
 
     from zf.runtime.goal_candidate_batch import bind_goal_candidate_batch
 
-    batch = bind_goal_candidate_batch(events, candidate_event, claim_payload)
+    from zf.runtime.goal_rejected_candidate_signal import original_candidate_after_rejected_signal
+
+    native = original_candidate_after_rejected_signal(events, candidate_event, claim_payload)
+    batch = bind_goal_candidate_batch(events, native or candidate_event, claim_payload)
     if batch is not None:
         return batch
 

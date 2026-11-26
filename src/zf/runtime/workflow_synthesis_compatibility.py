@@ -33,6 +33,11 @@ def synthesis_compatibility_blockers(
         mismatches.append(
             f"lanes requested {requested_lanes}, compiled {actual_lanes or 'none'}"
         )
+    if "stage_teams" in parameters:
+        from zf.core.config.stage_teams import normalize_stage_teams
+        actual_teams = source_spec.get("stageTeams", source_spec.get("stage_teams"))
+        if actual_teams != normalize_stage_teams(parameters["stage_teams"]):
+            mismatches.append("compiled stage_teams differ from the admitted division of work")
     if "plan_review" in parameters:
         if resolve_plan_review(parameters) != resolve_plan_review(source_spec):
             mismatches.append("plan_review differs from the selected review policy")
@@ -75,9 +80,11 @@ def synthesis_compatibility_blockers(
         )
 
     roles = {
-        str(item.get("name") or item.get("instance_id") or "")
+        str(identity)
         for item in closure.get("roles", [])
         if isinstance(item, Mapping)
+        for identity in (item.get("name"), item.get("instance_id"))
+        if identity
     }
     skills = {
         str(skill)

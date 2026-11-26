@@ -1,9 +1,10 @@
+import { WorkflowTeamRoster } from './WorkflowTeamRoster';
 import { useEffect, useState } from 'react';
 import { statusLabels, type SdlcEdge, type SdlcNode } from './sdlcGraphModel';
 
-export default function WorkflowTaskDetails({ task, nodes, edges, operations, onTask, onOperation, onFocus }: {
+export default function WorkflowTaskDetails({ task, nodes, edges, operations, onReplay, onTask, onOperation, onFocus }: {
   task: SdlcNode; nodes: SdlcNode[]; edges: SdlcEdge[]; operations: SdlcNode[];
-  onTask: (id: string) => void; onOperation: (id: string) => void; onFocus: () => void;
+  onReplay: (seq: number) => void; onTask: (id: string) => void; onOperation: (id: string) => void; onFocus: () => void;
 }) {
   const [limit, setLimit] = useState(12);
   useEffect(() => setLimit(12), [task.id]);
@@ -16,6 +17,7 @@ export default function WorkflowTaskDetails({ task, nodes, edges, operations, on
     <p>上游依赖：{upstream.length ? '' : '未声明'}</p>{upstream.map(edge => <button type="button" key={edge.id} onClick={() => onTask(edge.source)}>← {relation(edge.source)}</button>)}
     <p>下游影响：{downstream.length ? '' : '未声明'}</p>{downstream.map(edge => <button type="button" key={edge.id} onClick={() => onTask(edge.target)}>→ {relation(edge.target)}</button>)}
     <button type="button" onClick={onFocus}>聚焦任务上下游</button>
+    {((task.data.team_stages as SdlcNode[] | undefined) || nodes).filter(node => node.kind === 'workflow' && node.data.team).map(node => <WorkflowTeamRoster key={node.id} node={node} task={String(task.data.task_id)} details onReplay={onReplay} onSelect={onOperation} />)}
     <h4>关联执行 · {operations.length} 条</h4>
     <p className="sdlc-activity-hint">选择具体记录查看；多次执行不代表多个活跃 Worker。</p>
     {operations.length ? operations.slice(0, limit).map(op => <button key={op.id} type="button" onClick={() => onOperation(op.id)}>

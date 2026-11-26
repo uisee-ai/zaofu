@@ -75,3 +75,10 @@ def test_unbound_or_failed_revalidation_keeps_continuation(case, monkeypatch, in
     else:
         events = events[:-2]
     assert len(pending(service, config, events)) == 1
+
+
+@pytest.mark.parametrize("change", [{"command_id": "second-obligation"}, {"tier": "different-tier"}])
+def test_another_obligation_does_not_retire_the_original_repair(case, monkeypatch, change):
+    service, config, events, failure, _ = repaired(case, monkeypatch)
+    history = _later_receipt(service, events[:-2], failure, code=0, command=change)
+    assert len(pending(service, config, history)) == 1

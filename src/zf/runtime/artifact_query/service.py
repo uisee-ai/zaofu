@@ -575,6 +575,10 @@ class ArtifactQueryService(ArtifactObjectViewMixin, ArtifactNavigationMixin):
             "access_scope": occurrence["access_scope"],
             "retention": occurrence["retention"],
         }
+        from zf.runtime.sidecar_refs import sidecar_path
+        if sidecar_path(self.state_dir, descriptor["ref"]).is_relative_to(
+                self.state_dir.resolve() / "artifacts" / "durable-mailbox"):
+            raise ArtifactQueryError("artifact hydrate requires an authorized mailbox consumer")
         return hydrate_sidecar_ref(
             self.state_dir,
             descriptor,

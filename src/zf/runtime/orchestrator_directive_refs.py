@@ -80,6 +80,13 @@ def validate_orchestrator_submission(
         directives = delta.get("directives") or []
         run_plan = decision.get("run_plan")
         run_plan = run_plan if isinstance(run_plan, Mapping) else {}
+        if run_plan and decision.get("decision") == "adopt":
+            from zf.runtime.oa_task_verify_assignment import validate_verify_units
+            try:
+                validate_verify_units(None, run_plan, request)
+            except OrchestratorAgentContractError as exc:
+                errors.append({"field": "run_plan", "code": "invalid_verification_team", "message": str(exc),
+                               "required_change": "Correct the verification team against the bound checkpoint and resubmit."})
         if directives or run_plan:
             allowed_refs = operation_source_descriptors(state_dir, request)
             errors.extend(context_route_ref_errors(run_plan, allowed_refs))

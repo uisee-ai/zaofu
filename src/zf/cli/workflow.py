@@ -45,6 +45,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sub = parser.add_subparsers(dest="workflow_cmd")
     from zf.cli.workflow_prepare import register as register_prepare
     register_prepare(sub)
+    from zf.cli.workflow_team import register as register_team
+    register_team(sub)
     from zf.cli.workflow_schedule import register as register_schedule
 
     register_schedule(sub)

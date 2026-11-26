@@ -99,6 +99,12 @@ def reader_rebuild_error(state_dir: Path, events: list[ZfEvent], payload: dict[s
     if config is not None:
         from zf.runtime.recovery_authorization import reader_grant_error
 
+        if (operation.get("attempt_domain") == "plan" and failed.payload.get("result_semantics") == "artifact_production"
+                and failed.payload.get("control_result_schema") == "workflow-read-result.v1"):
+            successors = {e.payload.get("operation_id") for e in children
+                          if e.type == "fanout.child.dispatched" and (e.payload.get("payload") or {}).get("retry_of_operation_id")}
+            if len(successors) >= config.workflow.orchestration.max_plan_revisions:
+                return "Plan producer recovery reached the configured Plan revision limit"
         return reader_grant_error(config, events, payload["workflow_run_id"], state_dir=state_dir,
                                   operation=operation, failed=failed)
     return ""
@@ -146,14 +152,41 @@ def _settled_execution_failure(state_dir: Path, events: list[ZfEvent],
         return False
     try:
         result = hydrate_sidecar_ref(state_dir, ref).payload
-        return (result.get("schema_version") == "verification-result.v1"
-            and result.get("execution_status") == "failed" and result.get("verdict") == "abstained"
+        schema = result.get("schema_version")
+        if schema == "workflow-read-result.v1":
+            if not _abstaining_plan_author(state_dir, operation, failed, result):
+                return False
+        elif schema != "verification-result.v1":
+            return False
+        return (result.get("execution_status") == "failed" and result.get("verdict") == "abstained"
             and result.get("failure_class") in {"reader_execution_failure", "verifier_execution_failure"}
             and result.get("attempt_id") == operation.get("active_attempt_id")
             and all(result.get(k) == operation.get(k) == failed.payload.get(k)
                 for k in ("operation_id", "request_hash", "workflow_run_id", "task_id")))
     except (OSError, ValueError, TypeError):
         return False
+
+
+def _abstaining_plan_author(state_dir: Path, operation: dict, failed: ZfEvent, result: dict) -> bool:
+    """Only a frozen Plan artifact producer may return to its own unfinished work."""
+    if (failed.payload.get("control_result_schema") != "workflow-read-result.v1"
+            or operation.get("operation_type") != "fanout_reader_child"
+            or result.get("failure_class") != "reader_execution_failure"
+            or operation.get("attempt_domain") != "plan"
+            or not operation.get("role_instance")
+            or any(not isinstance(item, dict) or item.get("blocking") is not False
+                   for item in result.get("owner_decision_items", []))):
+        return False
+    request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
+    identity = request.get("result_identity") or {}
+    return (request.get("output_profile_id") == "workflow-read"
+            and identity.get("result_semantics") == "artifact_production"
+            and result.get("attempt_domain") == request.get("attempt_domain") == "plan"
+            and result.get("role_instance") == request.get("role_instance") == operation["role_instance"]
+            and bool(result.get("stage_id")) and result["stage_id"] == request.get("stage_id")
+            and identity.get("attempt_domain") == "plan" and failed.payload.get("attempt_domain", "plan") == "plan"
+            and all(result.get(k) == failed.payload.get(k) == identity.get(k)
+                    for k in ("role_instance", "stage_id", "result_semantics")))
 
 
 def reader_rebuild_effect_matches(event: ZfEvent, action: dict[str, Any],

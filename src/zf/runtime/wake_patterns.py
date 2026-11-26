@@ -92,6 +92,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "workflow.fragment.proposed",
     "workflow.reconcile.requested",
     "fanout.aggregate.rebuild.requested",
+    "fanout.plan.extension.requested",
     # Provider terminals may be emitted after the transport callback cycle.
     # Wake fanout reconciliation so a failed reader cannot strand its child.
     "workflow.operation.failed",
@@ -104,6 +105,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "diagnosis.requested",
     "diagnosis.completed",
     "worker.assistance.requested",
+    "workflow.mailbox.question",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.

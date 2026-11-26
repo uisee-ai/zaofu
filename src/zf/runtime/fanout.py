@@ -332,7 +332,10 @@ class FanoutManifestProjector:
         self.state_dir = state_dir
 
     def project_event(self, event_log: EventLog, event: ZfEvent) -> dict | None:
-        if not event.type.startswith("fanout."):
+        if (not event.type.startswith("fanout.")
+                or event.type in {"fanout.plan.extension.requested", "fanout.plan.extension.rejected"}
+                or event.type in {"fanout.plan.member.admitted", "fanout.plan.source.rejected",
+                                  "fanout.plan.source.rebound"} and event.origin != "kernel"):
             return None
         fanout_id = _payload_str(event.payload, "fanout_id")
         if not fanout_id:
@@ -536,6 +539,18 @@ class FanoutManifestProjector:
                             children[child_id],
                             children[child_id]["payload"],
                         )
+            elif event.type in {"fanout.plan.source.rejected", "fanout.plan.source.rebound"} and event.origin == "kernel":
+                from zf.runtime.plan_source_recovery import project_source_event
+
+                project_source_event(manifest, children, event)
+            elif event.type == "fanout.plan.member.admitted" and event.origin == "kernel":
+                child_id = payload.get("child_id")
+                if (manifest["stage_id"] == "prd-scan" and child_id and child_id not in children
+                        and (manifest["workflow_run_id"] or manifest["trace_id"]) == payload.get("workflow_run_id")
+                        and payload.get("child_payload")):
+                    children[child_id] = {"child_id": child_id, "role_instance": payload["role_instance"],
+                        "target_ref": manifest["target_ref"], "payload": dict(payload["child_payload"]),
+                        "status": "pending", "run_id": "", "extension_event_id": event.id}
             elif event.type == "fanout.child.queued":
                 child = _child(children, payload)
                 child.update({
@@ -627,6 +642,13 @@ class FanoutManifestProjector:
                     manifest.update(status="running", cancelled_critic_retry_event_id=event.id,
                                     cancelled_critic_checkpoint=payload["prior_critic_checkpoint"])
                 if (event.origin == "kernel" and event.actor == "zf-cli"
+                        and payload.get("recovery_kind") == "repaired_plan_first_review"
+                        and prior_aggregate.get("status") == "pending"
+                        and prior_aggregate.get("recovered_from_event_id") == payload.get("original_aggregate_event_id")
+                        and (manifest.get("synth") or {}).get("last_event_id") == payload.get("prior_synth_event_id")):
+                    manifest.pop("synth")
+                    manifest.update(status="running", recovered_plan_reader_event_id=event.id)
+                if (event.origin == "kernel" and event.actor == "zf-cli"
                         and payload.get("recovery_kind") == "diagnosis_critic_handoff_retry"
                         and (manifest.get("synth") or {}).get("last_event_id") == payload.get("retry_critic_handoff_event_id")):
                     manifest.pop("synth", None)
@@ -634,6 +656,7 @@ class FanoutManifestProjector:
                 if (event.origin == 'kernel' and payload.get('recovery_kind') == 'plan_critic_reassessment'
                         and payload.get('review_checkpoint_ref')):
                     manifest.pop('synth', None)
+                    manifest.pop('recovered_plan_reader_event_id', None)
                     manifest.update(status='running', review_key=payload['review_key'],
                         review_checkpoint_ref=payload['review_checkpoint_ref'], review_request_event_id=event.id)
                 manifest["aggregate"] = {
@@ -691,7 +714,8 @@ class FanoutManifestProjector:
                 _apply_synth_handoff_metadata(manifest["synth"], payload)
                 manifest["status"] = "synth_dispatched"
             elif event.type == "fanout.synth.completed":
-                if checkpoint := manifest.get("cancelled_critic_retry_event_id") or manifest.get("critic_handoff_retry_event_id"):
+                if checkpoint := (manifest.get("cancelled_critic_retry_event_id") or manifest.get("critic_handoff_retry_event_id")
+                                  or manifest.get("recovered_plan_reader_event_id")):
                     from zf.runtime.plan_critic_reassessment import review_result_matches
                     current = manifest.get("synth") or {}
                     if not review_result_matches(checkpoint, current if current.get("operation_id") else None, event):

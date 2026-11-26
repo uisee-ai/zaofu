@@ -41,7 +41,7 @@ def _root_paths(item: dict) -> list[str]:
 
 def _assembly_check(items: list[dict]) -> tuple[bool | None, str]:
     """Project the same owner/dependency topology used by Task Map admission."""
-    from zf.runtime.task_map_assembly import assembly_ownership_errors
+    from zf.runtime.task_map_assembly import assembly_ownership_errors, read_only_verification_ids
 
     ids = [str(item.get("task_id") or "") for item in items]
     if (not items or not all(ids) or len(set(ids)) != len(ids)
@@ -58,7 +58,7 @@ def _assembly_check(items: list[dict]) -> tuple[bool | None, str]:
         target = assemblies if str(item.get("root_owner_class") or "").strip().lower() == "assembly" else bundles
         target[task_id] = str(item["owner_role"]).strip()
     errors = assembly_ownership_errors(assembly_owner_roles=assemblies,
-        bundle_owner_roles=bundles, task_dependencies=dependencies)
+        bundle_owner_roles=bundles, task_dependencies=dependencies, read_only_task_ids=read_only_verification_ids(items))
     if errors:
         return False, "; ".join(errors)
     if assemblies:

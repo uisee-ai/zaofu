@@ -1,0 +1,108 @@
+import {test, expect} from '@playwright/test';
+
+// The live API fixture is seeded with the real Proposal compiler and kernel approval.
+test('read-only dashboard and CLI observe the same approved team on the live API', async ({page, request}, info) => {
+  const project = process.env.ZF_E2E_STAGE_TEAM_PROJECT;
+  test.skip(!project, 'Requires an isolated project with an approved PRD stage team');
+  const api = `/api/projects/${encodeURIComponent(project!)}/workflow-requests/req-1/graph`;
+  const structure = await request.get(api + '/structure');
+  expect(structure.ok()).toBeTruthy();
+  const snapshot = await structure.json();
+  const exec = await request.get(api + '/execution', {headers:{'X-ZF-Structure-Generation': snapshot.generation}});
+  const execution = await exec.json();
+  const team = execution.nodes.find((n: {id:string}) => n.id === 'workflow:stage:prd-plan').data.team;
+  expect(team.members.map((m:{role:string}) => m.role)).toEqual(['product-scan','tech-scan','planner']);
+  expect(team.required_total).toBe(3);
+  await page.goto('/tests/inbox-workflow.html?surface=graph-refresh&project=' + encodeURIComponent(project!));
+  await page.locator('#root').evaluate(el => {el.style.height='100vh';});
+  const card = page.locator('.react-flow__node[data-id="workflow:stage:prd-plan"]');
+  await expect(card).toContainText('已准入 0/3 项义务');
+  for (const m of team.members) await expect(card.getByText(m.role,{exact:true})).toBeVisible();
+  await card.click();
+  const detail = page.getByRole('complementary', {name:'图节点详情'});
+  await expect(detail.getByLabel('阶段分工')).toContainText('plan-author');
+  await detail.getByText(/check-tech-scan · prd-scan · 查看交接/).click();
+  await expect(detail).toContainText('预定接收人：planner');
+  await expect(detail).toContainText('Findings from tech-scan');
+  await page.screenshot({path:info.outputPath('live-plan-team.png')});
+});
+
+test('live Task deep link and exact member history stay bound to one Run', async ({page,request}, info) => {
+  const project=process.env.ZF_E2E_TASK_TEAM_PROJECT;
+  test.skip(!project, 'Requires independent Tasks with frozen roles, Board receipts and a confirmed interruption');
+  const base=`/api/projects/${encodeURIComponent(project!)}/workflow-requests/req-1/graph`;
+  const structure=await (await request.get(base+'/structure')).json();
+  const headers={'X-ZF-Structure-Generation':structure.generation};
+  const source=await (await request.get(base+'/node?node_id=task%3AT-A',{headers})).json();
+  const member=source.node.data.team_stages[0].data.team.members[0];
+  expect(member.status).toBe('suspended');
+  expect(member.attempt_count).toBe(1);
+  const errors:string[]=[];
+  const fullGraphReads:string[]=[];
+  page.on('pageerror', e=>errors.push(e.message));
+  page.on('request', r=>{const u=new URL(r.url()); if(u.pathname.endsWith('/graph')) fullGraphReads.push(u.search);});
+  await page.goto('/?page=workflows&request=req-1&node=task%3AT-A&project='+encodeURIComponent(project!));
+  const detail=page.getByRole('complementary',{name:'图节点详情'});
+  await expect(detail.getByLabel('阶段分工')).toContainText('transport lost');
+  await expect(detail.getByLabel('阶段分工')).toContainText('心跳');
+  await expect(detail.getByText('verification · T-A · 查看交接')).toBeVisible();
+  expect(fullGraphReads).toEqual([]);
+  await detail.getByText('沟通关系 · 1 条交接').click();
+  await expect(detail.getByText('planner',{exact:true})).toBeVisible();
+  await expect(detail.getByText('verify-lane-1',{exact:true})).toHaveCount(0);
+  await detail.getByText('verification · T-A · 查看交接').click();
+  await expect(detail).toContainText('attempt-T-A');
+  await detail.getByRole('button',{name:`回看状态之前 · #${member.source_seq-1}`}).click();
+  await expect(detail.getByLabel('阶段分工')).toContainText('执行中');
+  await expect(detail.getByLabel('阶段分工')).not.toContainText('transport lost');
+  await detail.getByRole('button',{name:'返回实时分工'}).click();
+  await expect(detail.getByLabel('阶段分工')).toContainText('transport lost');
+  await page.screenshot({path:info.outputPath('task-receipts-replayed.png')});
+
+  await page.goto('/?page=workflows&request=req-1&node=workflow%3Astage%3Aprd-lanes-impl&project='+encodeURIComponent(project!));
+  await detail.getByLabel('筛选成员').selectOption('instance:verify-lane-1');
+  await expect(detail.getByText('verification · T-B · 查看交接')).toBeVisible();
+  await expect(detail.getByText('verification · T-A · 查看交接')).toHaveCount(0);
+  await detail.getByText('沟通关系 · 1 条交接').click();
+  const published=detail.getByRole('button',{name:/回看发布/});
+  await published.click();
+  await expect(detail.getByLabel('筛选成员')).toHaveValue('instance:verify-lane-1');
+  await detail.getByRole('button',{name:'返回实时分工'}).click();
+  await expect(detail.getByLabel('筛选成员')).toHaveValue('instance:verify-lane-1');
+  expect(fullGraphReads).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.screenshot({path:info.outputPath('member-filter-live.png')});
+});
+
+test('mail addressed to an unassigned member stays private across live and historical views', async ({page, request}, info) => {
+  const project = process.env.ZF_E2E_MAILBOX_PROJECT;
+  test.skip(!project, 'Requires an isolated approved team and real mailbox posts');
+  const base = `/api/projects/${encodeURIComponent(project!)}/workflow-requests/req-1/graph`;
+  const read = async (cursor: number) => {
+    const response = await request.get(base + '/structure', {params: {as_of: cursor}});
+    expect(response.ok()).toBe(true);
+    return await response.json();
+  };
+  const current = await read(0);
+  type Stage = {id:string; data:{team:{members:{role:string; instance:string; mailbox?:{pending:number}}[]}}};
+  const members = (graph: {nodes: Stage[]}) => graph.nodes.find(n => n.id === 'workflow:stage:prd-plan')!.data.team.members;
+  const member = members(current).find(m => m.role === 'tech-scan')!;
+  expect(member.instance).toBe('');
+  expect(member.mailbox?.pending).toBe(1);
+  const previous = await read(Number(process.env.ZF_E2E_MAILBOX_BEFORE));
+  expect(members(previous).every(m => !m.mailbox)).toBe(true);
+  const address = '/tests/inbox-workflow.html?surface=graph-refresh&project=' + encodeURIComponent(project!);
+  await page.goto(address);
+  await page.locator('#root').evaluate(el => {el.style.height='100vh';});
+  const node = page.locator('.react-flow__node[data-id="workflow:stage:prd-plan"]');
+  await expect(node).toContainText('待接手 1');
+  await node.click();
+  const team = page.getByRole('complementary', {name:'图节点详情'}).getByLabel('阶段分工');
+  await expect(team).toContainText('邮件责任人 tech-scan');
+  await expect(team).not.toContainText('private text');
+  await page.screenshot({path:info.outputPath('unassigned-mail.png')});
+  const ledger = await request.get(`/api/projects/${encodeURIComponent(project!)}/events`, {params:{prefix:'workflow.mailbox.',require_fresh:true}});
+  const items: {type:string; payload:Record<string,unknown>}[] = (await ledger.json()).items;
+  expect(items.map(i => i.type)).toEqual(['workflow.mailbox.accepted','workflow.mailbox.accepted']);
+  expect(items.every(i => i.payload.content_visibility === 'restricted' && !('body_ref' in i.payload))).toBe(true);
+});

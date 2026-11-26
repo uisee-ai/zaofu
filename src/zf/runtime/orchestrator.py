@@ -966,6 +966,10 @@ class WorkflowRuntimeCoordinator(
         self._recover_unstarted_reader_fanouts()
         from zf.runtime.plan_critic_reassessment import reconcile_reassessments
         reconcile_reassessments(self, events)
+        from zf.runtime.plan_team_extension import resume_extensions
+        resume_extensions(self, events)
+        from zf.runtime.plan_source_recovery import reconcile_source_rejections
+        reconcile_source_rejections(self, events)
 
     def _emit_decision_recorded(
         self,
@@ -2462,6 +2466,11 @@ class WorkflowRuntimeCoordinator(
             # lost. Hook never blocks compaction.
             self._handle_precompact_signal(event)
 
+            if event.type == "fanout.plan.extension.requested":
+                from zf.runtime.plan_team_extension import reconcile_request
+                reconcile_request(self, event)
+                self._processed_event_ids.add(event.id)
+                continue
             if self._handle_fanout_aggregate_rebuild(event):
                 continue
             # Candidate/PDD-level judge.passed (PRD/issue/refactor fanout)

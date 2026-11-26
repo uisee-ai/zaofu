@@ -88,7 +88,7 @@ def should_stop_loop(
       4. converged        — 2 consecutive passed + improved
       5. otherwise        — keep running
     """
-    if state.cost_usd_so_far >= cfg.budget_usd:
+    if cfg.budget_usd is not None and state.cost_usd_so_far >= cfg.budget_usd:
         return LoopTerminationDecision(
             should_stop=True,
             final_status="budget_exhausted",
@@ -505,6 +505,7 @@ def run_loop(
     backlog_fn: Callable[[Path], list[dict[str, Any]]],
     wait_for_fix_fn: Callable[..., bool],
     screenshot_fn: Callable[..., ScreenshotResult] | None = None,
+    stop_disposition: Callable[[], str] | None = None,
 ) -> LoopResult:
     """Drive the autoresearch ↔ eval ↔ reflect closed loop.
 
@@ -543,6 +544,9 @@ def run_loop(
         _cost_baseline_usd = 0.0
 
     for i in range(1, cfg.max_iterations + 1):
+        if stop_disposition and (disposition := stop_disposition()):
+            final_status = disposition
+            break
         scenario = cfg.scenarios[(i - 1) % len(cfg.scenarios)]
         run_id = _default_run_id(i, scenario)
         started_at = _now_iso()
@@ -554,6 +558,9 @@ def run_loop(
             run_id=run_id,
             cfg=cfg,
         )
+        if stop_disposition and (disposition := stop_disposition()):
+            final_status = disposition
+            break
         iteration_state_dir = _metrics_state_dir(ar, parent_state_dir)
 
         # b. eval snapshot
@@ -623,6 +630,9 @@ def run_loop(
             curr=record_in_progress, prev=prev,
             git_diff=diff, open_backlog=backlog,
         )
+        if stop_disposition and (disposition := stop_disposition()):
+            final_status = disposition
+            break
         reflect = reflect_fn(prompt, backend=cfg.reflect_backend)
 
         # g. finalize record + summary

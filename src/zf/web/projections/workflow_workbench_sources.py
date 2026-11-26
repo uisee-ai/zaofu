@@ -37,7 +37,8 @@ def scope_events(events, *, request_id: str, run_id: str, tasks, generations=Non
                         for item in requested] if isinstance(requested, list) else []
             candidate_receipts_owned = bool(receipts) and all(ref and ref in matched for ref in receipts)
             explicit_run = str(p.get("workflow_run_id") or "")
-            explicit_request = str(p.get("request_id") or "")
+            # Mailbox request IDs identify idempotent sends/reads, not workflow intake.
+            explicit_request = "" if event.type.startswith("workflow.mailbox.") else str(p.get("request_id") or "")
             task_id = str(event.task_id or p.get("task_id") or "")
             if explicit_run and explicit_run != run_id:
                 continue

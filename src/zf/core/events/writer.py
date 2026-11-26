@@ -7,6 +7,7 @@ from dataclasses import asdict, replace
 from typing import TYPE_CHECKING
 
 from zf.core.events.log import EventLog
+from zf.core.events.offset import EventOffset
 from zf.core.events.model import ZfEvent
 from zf.core.events.projectors import EventProjector, ProjectorResult, ProjectorRunner
 
@@ -84,7 +85,8 @@ class EventWriter:
         self._projector_runner = projector_runner or default_projector_runner()
         self.projector_diagnostics: list[ProjectorResult] = []
 
-    def append(self, event: ZfEvent) -> ZfEvent:
+    def append(self, event: ZfEvent, *, expected_offset: EventOffset | None = None,
+               allow_intervening: frozenset[str] = frozenset()) -> ZfEvent:
         self.projector_diagnostics = []
         if self.default_origin and not getattr(event, "origin", ""):
             event.origin = self.default_origin
@@ -101,17 +103,21 @@ class EventWriter:
                 if self._schema_mode == "blocking":
                     return self._emit_discriminator_failed(enriched, violations)
                 # warning mode: write original first, then write the warning
-                self._append_with_projectors(enriched)
+                self._append_with_projectors(enriched, expected_offset, allow_intervening)
                 self._emit_schema_violated_warning(enriched, violations)
                 return enriched
 
-        self._append_with_projectors(enriched)
+        self._append_with_projectors(enriched, expected_offset, allow_intervening)
         return enriched
 
     # --------------------------------------------------------------- helpers
 
-    def _append_with_projectors(self, event: ZfEvent) -> None:
-        self.event_log.append(event)
+    def _append_with_projectors(self, event: ZfEvent, expected_offset: EventOffset | None = None,
+                                allow_intervening: frozenset[str] = frozenset()) -> None:
+        if expected_offset is None:
+            self.event_log.append(event)
+        else:
+            self.event_log.append(event, expected_offset=expected_offset, allow_intervening=allow_intervening)
         self.projector_diagnostics.extend(
             self._projector_runner.run(self.event_log, event)
         )
@@ -207,6 +213,8 @@ class EventWriter:
             correlation_id = _new_trace_id()
 
         parent: ZfEvent | None = None
+        if causation_id is not None and correlation_id is not None:
+            return event if correlation_id == event.correlation_id else replace(event, correlation_id=correlation_id)
         if causation_id is not None:
             parent = self._event_by_id(causation_id)
         elif event.task_id is not None and event.type != "task.created":

@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 from zf.autoresearch.bug_candidates import (
@@ -39,6 +40,9 @@ from zf.autoresearch.loop import (
     invoke_reflection_llm,
     run_loop,
 )
+from zf.autoresearch.diagnosis_resource_policy import ExplicitLoopSetting, loop_resource_settings
+from zf.autoresearch.loop_iteration import parent_role_provider_settings
+from zf.autoresearch.loop_reflect import reflection_provider_options
 from zf.autoresearch.orchestrator import (
     AutoresearchRunConfig, cleanup_autoresearch_run,
     default_run_id,
@@ -349,7 +353,7 @@ def register(subparsers) -> None:
         help="Parent runtime state dir (default: project.state_dir from zf.yaml)",
     )
     loop.add_argument("--max-iterations", type=int, default=10)
-    loop.add_argument("--budget-usd", type=float, default=200.0)
+    loop.add_argument("--budget-usd", type=float, default=200.0, action=ExplicitLoopSetting)
     loop.add_argument(
         "--output-dir", type=Path, default=None,
         help=(
@@ -359,10 +363,10 @@ def register(subparsers) -> None:
     )
     loop.add_argument(
         "--reflect-backend",
-        default=os.environ.get(REFLECT_BACKEND_ENV, DEFAULT_REFLECT_BACKEND),
+        default=None,
         help=(
             "LLM backend for the reflection step "
-            f"(default: ${REFLECT_BACKEND_ENV} or {DEFAULT_REFLECT_BACKEND})"
+            f"(default: parent Run Manager policy, then ${REFLECT_BACKEND_ENV} or {DEFAULT_REFLECT_BACKEND})"
         ),
     )
     loop.add_argument(
@@ -373,7 +377,7 @@ def register(subparsers) -> None:
     )
     loop.add_argument("--fix-wait-timeout", type=int, default=1800)
     loop.add_argument(
-        "--config", dest="config_template", type=Path,
+        "--config", dest="config_template", type=Path, action=ExplicitLoopSetting,
         default=Path(
             "examples/prod/controller/prd-task-pipeline-v4-canary.yaml"
         ),
@@ -916,27 +920,22 @@ def _run_loop(args) -> int:
         if args.output_dir is not None
         else parent_state_dir / "autoresearch" / "loop"
     )
+    parent = context.config if parent_limits is not None else None
+    reflect_backend, reflect_options = reflection_provider_options(
+        args.reflect_backend, parent.runtime.run_manager if parent else None,
+    )
+    resources, budget = loop_resource_settings(args, parent_state_dir, parent)
     cfg = LoopConfig(
         scenarios=list(args.scenarios),
         worktree=args.worktree,
         parent_state_dir=parent_state_dir,
         max_iterations=args.max_iterations,
-        budget_usd=min(
-            [args.budget_usd] + [cap for cap in (
-                (parent_limits.cost_budget_usd, context.config.global_budget_usd)
-                if parent_limits is not None else ()
-            ) if cap is not None and cap > 0]
-        ),
+        budget_usd=budget,
+        diagnostic_resources=resources,
         token_budget=parent_limits.token_budget if parent_limits is not None else None,
-        role_provider_settings={
-            role.name: {"backend": role.backend, "model": role.model,
-                        "model_reasoning_effort": role.model_reasoning_effort,
-                        **({"sandbox": role.provider_session.sandbox}
-                           if role.provider_session and role.provider_session.sandbox else {})}
-            for role in (context.config.roles if parent_limits is not None else [])
-        },
+        role_provider_settings=parent_role_provider_settings(parent),
         output_dir=output_dir,
-        reflect_backend=args.reflect_backend,
+        reflect_backend=reflect_backend,
         fix_wait_strategy=args.fix_wait_strategy,
         fix_wait_timeout=args.fix_wait_timeout,
         config_template=args.config_template,
@@ -952,11 +951,14 @@ def _run_loop(args) -> int:
         backlog_on_failure=args.backlog_on_failure,
     )
     inner_fn = bypass_inner_run if args.bypass_autoresearch else _real_autoresearch_fn
+    from zf.autoresearch.diagnosis_disposition import resident_loop_stop
+    stop_disposition = resident_loop_stop(parent_state_dir, cfg.worktree, cfg.seed_text)
     result = run_loop(
         cfg,
+        **({"stop_disposition": stop_disposition} if stop_disposition else {}),
         autoresearch_fn=inner_fn,
         eval_collector_fn=_real_eval_collector,
-        reflect_fn=invoke_reflection_llm,
+        reflect_fn=partial(invoke_reflection_llm, **reflect_options),
         git_head_fn=_real_git_head,
         git_diff_fn=_real_git_diff,
         backlog_fn=_real_backlog_reader,

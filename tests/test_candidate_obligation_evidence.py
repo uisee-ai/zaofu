@@ -76,7 +76,7 @@ def test_obligation_admission_binds_real_consumer_evidence(evidence, monkeypatch
 
 
 @pytest.mark.parametrize('evidence', ['', 'nonzero'], indirect=True)
-@pytest.mark.parametrize('fault', ['', 'cross_generation', 'different_command'])
+@pytest.mark.parametrize('fault', ['', 'cross_generation', 'different_command', 'different_command_id', 'different_tier'])
 def test_unknown_observation_resolution_preserves_product_verdict(evidence, monkeypatch, fault):
     from zf.runtime.candidate_obligation_evidence import validate_obligation_evidence
     from zf.runtime.sidecar_refs import write_sidecar_json
@@ -87,8 +87,9 @@ def test_unknown_observation_resolution_preserves_product_verdict(evidence, monk
     if fault:
         finding['original_start_event_id'] = 'prior-generation-start'
         original = dict(receipt['manifest'])
-        if fault == 'different_command':
-            original['command'] = {**original['command'], 'command': 'other command'}
+        if fault.startswith('different_'):
+            field = fault.removeprefix('different_')
+            original['command'] = {**original['command'], field: 'other-' + field}
         finding['original_manifest_ref'] = write_sidecar_json(runtime.state_dir,
             'artifacts/old-manifest.json', original, kind='task_host_manifest',
             schema_version='task-host-manifest.v1', created_by='kernel')
@@ -102,7 +103,7 @@ def test_unknown_observation_resolution_preserves_product_verdict(evidence, monk
             'finding_id': finding['finding_id'], 'status': 'resolved', 'rationale': 'A known observation is available.',
             'resolution_event_id': completed.id, 'evidence_refs': [{
                 'ref': payload['target_snapshot_ref'], 'sha256': payload['target_snapshot_digest']}]}]}
-    if fault == 'different_command':
+    if fault.startswith('different_'):
         with pytest.raises(ValueError, match='exact original'):
             validate_obligation_evidence(runtime.state_dir, result, contract, runtime.event_log.read_all())
     else:

@@ -348,12 +348,14 @@ def blocking_decisions_for_action(
     task_id = str(action.get("task_id") or "")
     related = {task_id, *map(str, action.get("blocked_by") or [])}
     from zf.runtime.task_orphan_recovery import orphan_allows_candidate_review
+    from zf.runtime.autoresearch_failure_handoff import failed_diagnosis_belongs_to_gate
 
     blockers = []
     for decision in _blocking_human_decisions(value):
         if (_probe_budget_allows_diagnosis(decision, action, events)
                 or _host_effect_allows_diagnosis(decision, action, events)
-                or orphan_allows_candidate_review(decision, action, events)):
+                or orphan_allows_candidate_review(decision, action, events)
+                or failed_diagnosis_belongs_to_gate(decision, action, events)):
             continue
         scope = str(decision.get("blocking_scope") or "run").strip().lower()
         owner = str(decision.get("task_id") or "")

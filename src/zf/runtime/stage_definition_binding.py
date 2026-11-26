@@ -93,7 +93,7 @@ def bound_operation_stage(
     if not operation_id:
         return None
     operation = load_workflow_operation(event_log, operation_id)
-    if not operation or operation.get("operation_type") != "dynamic_read_only_workflow":
+    if not operation or operation.get("operation_type") not in {"dynamic_read_only_workflow", "task_verify_specialist"}:
         return None
     from zf.runtime.dynamic_continuation_lifecycle import parent_fence
     from zf.runtime.workflow_operation import reduce_workflow_operations
@@ -107,6 +107,11 @@ def bound_operation_stage(
     for key in ("workflow_run_id", "task_id", "pattern_id"):
         if str(request.get(key) or "") != str(payload.get(key) or ""):
             raise ValueError(f"stage binding identity mismatch: {key}")
+    if operation["operation_type"] == "task_verify_specialist":
+        if payload.get("verify_specialist_obligation") != request["verify_specialist_obligation"]:
+            raise ValueError("specialist obligation differs from its admitted operation")
+        if payload.get("target_ref") != request["target_ref"]:
+            raise ValueError("specialist target differs from its admitted operation")
     descriptor = request.get("stage_definition_ref")
     if not descriptor:
         return None  # Pre-binding operations keep their existing recovery path.

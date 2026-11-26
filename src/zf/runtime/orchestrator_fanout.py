@@ -168,6 +168,7 @@ _HANDOFF_REF_FIELDS = (
 )
 
 _CONTRACT_HANDOFF_KEYS = (
+    "verify_specialist_obligation",
     "contract_authority_revision",
     "execution_owner",
     "workflow_request_id",
@@ -240,6 +241,7 @@ def _lane_child_scope(affinity_tag: str, task_id: str) -> str:
 
 
 _DURABLE_CALL_TRIGGER_KEYS = tuple(dict.fromkeys((
+    "verify_specialist_obligation",
     "task_id",
     "workflow_run_id",
     "workflow_input_manifest_ref",
@@ -831,7 +833,7 @@ class FanoutCoordinationMixin(
         for position, event in enumerate(events):
             if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
                     and event.actor == "zf-cli" and event.payload.get("recovery_kind") in {
-                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry",
+                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry", "repaired_plan_first_review",
                     }):
                 fanout = event.payload.get("fanout_id")
                 retry_floor[fanout] = position
@@ -2386,10 +2388,14 @@ class FanoutCoordinationMixin(
             return False
         from zf.runtime.fanout import FanoutChild, FanoutContext
 
+        from zf.runtime.plan_team_handoff import plan_member_inputs_admitted, plan_team_generation_started
+        from zf.runtime.plan_team_transfer import approved_current_transfers
         started_any = False
         for stage in stages:
-            if self._fanout_started(stage.id, event.id):
+            if self._fanout_started(stage.id, event.id) or plan_team_generation_started(self, stage, event):
                 started_any = True
+                continue
+            if not approved_current_transfers(self, stage, event) or not plan_member_inputs_admitted(self, stage, event):
                 continue
             if suppress_handled_stall_trigger(self, trigger_event=event, stage_id=stage.id):
                 continue
@@ -5687,7 +5693,11 @@ class FanoutCoordinationMixin(
             if not all_terminal:
                 return
             if self._fanout_synth_dispatched(manifest):
-                return
+                from zf.runtime.repaired_plan_review import open_first_review
+
+                if failed or not open_first_review(self, manifest):
+                    return
+                manifest = self._fanout_manifest(fanout_id)
             self._dispatch_fanout_synth(fanout_id, manifest, mode, synth_role)
             return
         if mode == "any_failed_fail" and failed:

@@ -170,3 +170,106 @@ def test_scoped_readers_require_blocking_discovery_admission(tmp_path, monkeypat
     runtime.config.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"]["workflow-read"] = "shadow"
     assert candidate_reader_stages(runtime, runtime.event_log.read_all()[-1]) == []
     assert "blocking" in runtime.event_log.read_all()[-1].payload["error"]
+
+def test_legacy_frozen_reader_contract_can_replay_its_pre_oa_optional_coverage():
+    from zf.runtime.candidate_reader_assignments import scope_reader_contract
+
+    spec = {"candidate_reader_assignments": _assignments()}
+    criteria = [{"source_task_id": "TASK-1", "source_acceptance_id": ac,
+                 "acceptance_id": candidate_acceptance_id("TASK-1", ac), "mandatory": ac != "legacy-optional"}
+                for ac in ("AC-1", "AC-2", "legacy-optional")]
+    frozen = {"acceptance_criteria": criteria, "candidate_event_id": "freeze", "plan_artifact_package_digest": "a"*64,
+              "contract_revision": "legacy", "verification_commands": []}
+    with pytest.raises(ValueError, match="coverage mismatch"):
+        scope_reader_contract(dict(frozen), spec, role="reader-a", target="a"*40)
+    scope = scope_reader_contract(frozen, spec, role="reader-a", target="a"*40, all_declared=False)
+    assert scope["acceptance_ids"] == [candidate_acceptance_id("TASK-1", "AC-1")]
+
+
+@pytest.mark.parametrize(("update", "error_field"), [
+    ({"observable_assertion": "unexpected"}, "unexpected fields: observable_assertion"),
+    ({"assertion": None}, ".assertion"),
+    ({"check_id": " "}, ".check_id"),
+    ({"task_ids": ["T1"]}, "at least two distinct tasks"),
+    ({"task_ids": ["T1", "T1"]}, "duplicate task IDs"),
+    ({"task_ids": ["T1", 2]}, ".task_ids"),
+])
+def test_candidate_integration_errors_identify_the_actual_field(update, error_field):
+    from zf.runtime.candidate_reader_assignments import integration_checks
+
+    row = {"check_id": "C1", "assertion": "A consumer reads the created output.",
+           "task_ids": ["T1", "T2"], **update}
+    with pytest.raises(ValueError) as failure:
+        integration_checks({"integration_checks": [row]})
+    assert "integration_checks[0]" in str(failure.value)
+    assert error_field in str(failure.value)
+
+
+def test_candidate_integration_error_distinguishes_missing_fields_and_duplicate_checks():
+    from zf.runtime.candidate_reader_assignments import integration_checks
+
+    row = {"check_id": "C1", "assertion": "Read created output.", "task_ids": ["T1", "T2"]}
+    assert integration_checks({"integration_checks": [row]}) == {"C1": row}
+    with pytest.raises(ValueError, match="missing fields: assertion"):
+        integration_checks({"integration_checks": [{k:v for k,v in row.items() if k!="assertion"}]})
+    with pytest.raises(ValueError, match="duplicate check ID"):
+        integration_checks({"integration_checks": [row, row]})
+
+
+def test_wrong_reader_assignment_fields_do_not_report_duplicate_unique_roles():
+    rows = _assignments()
+    rows[1] = {
+        "assignment_id": "reader-b", "role_instance": "reader-b",
+        "task_qualified_acceptance_ids": ["AC-2"], "mandatory_journey_ids": [],
+        "required_plan_reads": ["task_map"], "integration_check_ids": [],
+    }
+    with pytest.raises(ValueError) as failure:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    message = str(failure.value)
+    assert "candidate_reader_assignments[1]" in message
+    assert "missing fields: acceptance, journey_ids" in message
+    assert "unexpected fields: assignment_id, mandatory_journey_ids, required_plan_reads, task_qualified_acceptance_ids" in message
+    assert "duplicate" not in message and "unique role" not in message
+
+
+@pytest.mark.parametrize(("change", "expected"), [
+    ("duplicate", "duplicate role_instance 'reader-a'"),
+    ("blank", ".role_instance must be a nonempty trimmed string"),
+    ("missing", "missing fields: role_instance"),
+    ("not_object", "must be an object"),
+])
+def test_reader_role_errors_name_only_the_failing_row(change, expected):
+    rows = _assignments()
+    if change == "not_object":
+        rows[1] = "reader-b"
+    elif change == "missing":
+        del rows[1]["role_instance"]
+    else:
+        rows[1]["role_instance"] = "reader-a" if change == "duplicate" else " "
+    with pytest.raises(ValueError) as failure:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    assert "candidate_reader_assignments[1]" in str(failure.value)
+    assert expected in str(failure.value)
+
+
+def test_plan_reads_rejects_all_invalid_selections_without_echoing_document_values():
+    rows = _assignments()
+    rows[0]["plan_reads"] = {
+        "task_map": "private selector text",
+        "test_matrix": ["$.tasks[*]", {"private": "document"}, "$.a", "$.a"],
+        " invalid body ": {},
+    }
+    rows[1]["plan_reads"] = []
+    with pytest.raises(ValueError) as rejected:
+        validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})
+    message = str(rejected.value)
+    for word in ("candidate_reader_assignments[0].plan_reads", "reader-a", "task_map",
+                 "test_matrix[0]", "test_matrix[1]", "duplicate JSONPath", "test_matrix[3]",
+                 "port at index 2", "candidate_reader_assignments[1].plan_reads", "reader-b",
+                 '{"task_map":["$.tasks[0]"]}'):
+        assert word in message
+    for private in ("private selector text", "invalid body", "document", "$.tasks[*]"):
+        assert private not in message
+    rows[0]["plan_reads"] = {"task_map": ["$", "$.tasks[0]", "$.a-b_c"], "test_matrix": []}
+    rows[1]["plan_reads"] = {}
+    validate_reader_assignments({**product._spec(), "candidate_reader_assignments": rows})

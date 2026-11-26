@@ -149,6 +149,8 @@ def read_agent_output_artifact(
 ) -> dict[str, Any]:
     rel_path = _safe_raw_ref(raw_ref)
     path = sidecar_path(state_dir, rel_path)
+    if not path.is_relative_to(Path(state_dir).resolve() / "artifacts" / "agent-session-output"):
+        raise ValueError("raw_ref must identify an agent session output")
     if not path.exists() or not path.is_file():
         raise FileNotFoundError(raw_ref)
     offset = max(0, int(offset or 0))

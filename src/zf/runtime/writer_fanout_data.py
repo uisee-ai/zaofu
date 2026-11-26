@@ -152,6 +152,8 @@ class WriterFanoutDataMixin:
         success_event: str,
         child_success_event: str = "",
     ) -> bool:
+        if stage_id == "prd-scan":
+            return False
         haystack = " ".join([
             stage_id,
             success_event,
@@ -176,7 +178,7 @@ class WriterFanoutDataMixin:
             "When a task map is produced, include `task_map_ref`; when source coverage is available, include `source_index_ref`.",
             "Prefer exactly one Task Map producer: `task_map_ref` pointing to the workdir-relative JSON artifact. Do not duplicate the full Task Map inline in `task_map` or a `plan_ports` task-map descriptor unless the output contract explicitly requires another representation. If more than one representation is returned, every copy MUST contain identical JSON; Runtime rejects stale copies as `task_map_producer_mismatch`. Do not manually diff or print Task Map producers; the pre-submit validator performs the identity check. `exclusive_files` has exactly one owner even when tasks are serialized. Writer `allowed_paths` are writable scopes and cannot overlap across tasks or waves; keep sibling-owned read-only files out of another task's allowed_paths.",
             "When implementation must start from a non-default existing target, put its immutable git commit in top-level `task_map.target_commit`; do not leave the only baseline binding under metadata or prose.",
-            "If the plan splits work across more than one parallel bundle (distinct `owner_role` bundles running concurrently), it MUST include one separate task with `root_owner_class: \"assembly\"` that owns the shared entrypoint/wiring and merges the bundles. The writer fanout admission rejects a multi-bundle task_map lacking it and forces a replan — declare the assembly task up front.",
+            "If the plan splits work across more than one parallel bundle of writers (exclude verify-only tasks with write_free=true and empty write scope), it MUST include one separate task with `root_owner_class: \"assembly\"` that owns the shared entrypoint/wiring and merges the bundles. The writer fanout admission rejects a multi-bundle task_map lacking it and forces a replan — declare the assembly task up front.",
             "Set task_map.workspace_root_owner_required=true only when this delivery must change or validate a root-level scaffold/entrypoint; then assign that root path to one task. Do not infer it from a local leaf patch.",
             "Each task_map validation.commands[] tier must use the canonical vocabulary `static`, `runtime`, `e2e`, or `manual_evidence`. Common producer aliases are normalized at admission, but unknown tiers fail closed; use `static` for setup/install/build checks rather than inventing a `setup` tier.",
             "When the active v4 Task Pipeline requires rolling smoke, every task must mark at least one cheap deterministic reusable `static` or `runtime` command with JSON boolean `rolling_smoke: true`; `rolling_smoke` is a command selector, never a tier.",
@@ -247,19 +249,16 @@ class WriterFanoutDataMixin:
                 or payload.get("verification_owner") == "candidate_verify"
             ):
                 payload["candidate_currentness_required"] = True
+        if success_event == "prd.scan.completed":
+            from zf.runtime.plan_team_handoff import plan_member_results
+            if results := plan_member_results(manifest):
+                payload["stage_member_results"] = results
         if str(payload.get("flow_kind") or "") == "workflow":
-            admitted_input_refs: list[str] = []
-            for child in manifest.get("children", []) or []:
-                if not isinstance(child, dict):
-                    continue
-                ref = call_result_envelope_ref(
-                    child.get("admitted_call_result_ref")
-                )
-                if ref:
-                    admitted_input_refs.append(ref)
-            payload["input_result_refs"] = self._dedupe_strings(
-                admitted_input_refs
-            )
+            admitted_inputs = [
+                call_result_envelope_ref(child.get("admitted_call_result_ref"))
+                for child in manifest.get("children", []) or [] if isinstance(child, dict)
+            ]
+            payload["input_result_refs"] = self._dedupe_strings([ref for ref in admitted_inputs if ref])
         plan_ports = first_normalized_plan_ports(payloads)
         if plan_ports:
             payload["plan_ports"] = plan_ports

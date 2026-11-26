@@ -34,6 +34,14 @@ class ProductAcceptanceError(ValueError):
     """A Product Acceptance artifact cannot be admitted mechanically."""
 
 
+class ReaderPlanReadsError(ProductAcceptanceError):
+    """Field-specific plan_reads diagnostics suitable for the bounded CLI summary."""
+
+    def __init__(self, issues: list[tuple[str, str]]):
+        self.issues = issues
+        super().__init__("; ".join(f"{field}: {message}" for field, message in issues))
+
+
 def bind_product_acceptance_spec_identity(
     spec: Mapping[str, Any], *, workflow_run_id: str, flow_kind: str,
     plan_revision: str, task_map_generation: str,
@@ -146,11 +154,13 @@ def validate_product_acceptance_spec(
                 "required provider qualification must declare ttl_seconds"
             )
 
-    if "candidate_reader_assignments" in spec:
+    if "candidate_reader_assignments" in spec or "integration_checks" in spec:
         from zf.runtime.candidate_reader_assignments import validate_reader_assignments
 
         try:
             validate_reader_assignments(spec)
+        except ReaderPlanReadsError:
+            raise
         except ValueError as exc:
             raise ProductAcceptanceError(str(exc)) from exc
 
@@ -444,9 +454,15 @@ def bind_product_acceptance_report(
         and operation.get("output_profile_id") == "workflow-read"
         and operation.get("canonical_success_event") == "flow.discovery.child.completed"
     )
+    result = dict(getattr(adapted, "payload", {}) or {})
+    if schema == "workflow-read-result.v1" and operation.get("judge_specialist_obligation"):
+        if result.get("verdict") == "passed" and not (result.get("evidence_refs") or result.get("artifact_refs")):
+            return replace(adapted, issues=(*adapted.issues, {"field": "control_result.evidence_refs",
+                                  "code": "missing_required", "message": "Judge specialist must cite its supporting evidence"}))
+        if not any(result.get(k) for k in ("product_acceptance_report", "product_acceptance_report_ref")):
+            return adapted
     if schema != "verification-result.v1" and not is_discovery:
         return adapted
-    result = dict(getattr(adapted, "payload", {}) or {})
     # An execution failure makes no product judgment. Admit its abstention
     # without inventing a full evaluation; supplied reports still get checked.
     if (

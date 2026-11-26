@@ -7,7 +7,7 @@ from pathlib import Path
 from zf.core.config.schema import ZfConfig
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
-from zf.core.security.redaction import redact_obj
+from zf.core.security.redaction import public_event_metadata, redact_obj
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.workdirs import WorkdirManager
@@ -381,7 +381,7 @@ def _worker_signal_index(
     config: ZfConfig | None = None,
 ) -> dict[str, dict]:
     from zf.web.projections.source_cache import read_source_projection
-    return read_source_projection(state_dir, "worker-signals", [],
+    return read_source_projection(state_dir, "worker-signals.v2", [],
                                   lambda: _build_worker_signal_index(state_dir, config), config=config)
 
 
@@ -395,6 +395,7 @@ def _build_worker_signal_index(state_dir: Path, config: ZfConfig | None = None) 
         payload = getattr(event, "payload", {}) or {}
         if not isinstance(payload, dict):
             payload = {}
+        payload = public_event_metadata(event_type, payload)
         record = out.setdefault(str(actor), {})
         record["last_event_seq"] = seq
         record["last_event_type"] = event_type

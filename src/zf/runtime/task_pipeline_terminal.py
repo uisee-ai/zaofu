@@ -484,6 +484,16 @@ def _freeze_generation(
         "task_integration_receipt_refs": receipt_refs,
         "status": "frozen",
     }
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    if (flow_metadata_for(getattr(runtime, "config", None), flow_kind).get("stage_teams") or {}).get("candidate_verify"):
+        from zf.runtime.candidate_reader_assignments import approved_roster_ref, assigned_spec
+        try:
+            receipt["candidate_reader_approval"] = approved_roster_ref(
+                Path(runtime.state_dir), events, context, assigned_spec(Path(runtime.state_dir), context))
+        except ValueError as exc:
+            from zf.runtime.task_pipeline_candidate_readers import reject_candidate_assignment
+            reject_candidate_assignment(runtime, latest_event, "candidate-freeze", str(exc))
+            return False
     descriptor = write_immutable_json_sidecar(
         Path(runtime.state_dir),
         receipt,

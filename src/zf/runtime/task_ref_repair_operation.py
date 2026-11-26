@@ -280,11 +280,9 @@ def render_task_ref_repair_section(
         "Do not commit, delete, add git excludes for, or declare "
         "`worktree_dirty` because of those paths. Use the rejection's "
         "`dirty_files` list as the repair scope.\n"
-        "- Do not commit generated Codex hook state. If the only dirty "
-        "file is `.codex/hooks.json`, either clean it before emitting or "
-        "declare `worktree_dirty: true`, "
-        "`dirty_files: [\".codex/hooks.json\"]`, and a "
-        "`dirty_scope_note`.\n"
+        "- Codex telemetry lives in the linked worker's private CODEX_HOME. "
+        "Preserve a dirty `.codex/hooks.json` in the checkout and report it "
+        "for owner review if it falls outside the task scope.\n"
     )
 
 

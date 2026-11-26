@@ -65,7 +65,7 @@ def _current_request(runtime: Any, operation: Mapping[str, Any], events: list[Zf
         execution_decision_rejection, task_execution_binding,
     )
     from zf.runtime.orchestrator_agent_plan_binding import (
-        current_checkpoint_plan_package, semantic_failure_target_task_id,
+        current_checkpoint_plan_package, checkpoint_target_task_id,
     )
 
     try:
@@ -81,7 +81,7 @@ def _current_request(runtime: Any, operation: Mapping[str, Any], events: list[Zf
         # extend this recovery into a new plan revision.
         if request.get("checkpoint") == "plan_candidate":
             return False
-        target = semantic_failure_target_task_id(runtime.state_dir, request)
+        target = checkpoint_target_task_id(runtime.state_dir, request)
         current = current_checkpoint_plan_package(
             events, workflow_run_id=operation["workflow_run_id"], task_id=target,
         )

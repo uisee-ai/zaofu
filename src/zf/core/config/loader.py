@@ -703,6 +703,7 @@ _ORCHESTRATION_CHECKPOINTS = frozenset({
     "pre_impl",
     "plan_candidate",
     "stage_barrier",
+    "plan_source",
     "semantic_failure",
     "goal_revision",
     "pre_closeout",
@@ -799,6 +800,10 @@ def _build_orchestration_flow_policy(
             f"{path} checkpoint policy requires the checkpoint to be declared: "
             + ", ".join(undeclared)
         )
+    if "plan_source" in checkpoints and (
+        path != "workflow.orchestration.flow_policies.prd" or policies.get("plan_source", "blocking") != "blocking"
+    ):
+        raise ConfigError(f"{path}.plan_source requires a blocking PRD flow checkpoint")
     if mode == "exception_advisor" and checkpoints:
         raise ConfigError(f"{path}.checkpoints require mode=semantic_control")
     if mode == "semantic_control" and not checkpoints:
@@ -830,9 +835,9 @@ def _build_orchestration_flow_policy(
             f"{path} blocking rollout is restricted to an explicit full "
             "Product Flow pilot"
         )
-    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout"}:
+    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout", "plan_source"}:
         raise ConfigError(
-            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; "
+            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; plan_source is also supported for PRD scans; "
             f"got {', '.join(blocking)}"
         )
     if pilot_id and not blocking:
@@ -2715,7 +2720,8 @@ def _load_profile_source_documents(
     return documents, sources
 
 
-def load_config(path: Path) -> ZfConfig:
+def load_config(path: Path, *, source_text: str | None = None) -> ZfConfig:
+    """Resolve relative inputs at path when loading from disk or a supplied YAML body."""
     import sys
     from zf.core.events.known_types import validate_role_event_names
 
@@ -2723,7 +2729,7 @@ def load_config(path: Path) -> ZfConfig:
         raise ConfigError(f"Config file not found: {path}")
 
     env = _config_env_map(path)
-    text = _expand_env_vars(path.read_text(encoding="utf-8"), env)
+    text = _expand_env_vars(path.read_text(encoding="utf-8") if source_text is None else source_text, env)
     try:
         documents = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
     except yaml.YAMLError as e:
@@ -3300,6 +3306,13 @@ def load_config(path: Path) -> ZfConfig:
         raise ConfigError(str(exc)) from exc
     _validate_orchestration_blocking_pilot_tiers(cfg)
     _validate_orchestration_oa_profile(cfg)
+    for metadata in flow_metadata_values:
+        if (metadata or {}).get("stage_teams"):
+            from zf.core.config.stage_teams import validate_effective_teams
+            try:
+                validate_effective_teams(cfg, metadata, path.parent)
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
     cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 
@@ -3897,9 +3910,11 @@ def _build_runtime(
     ar_terminal_policy = autoresearch_resident_raw.get("on_parent_terminal", "preserve")
     if ar_terminal_policy not in {"cancel", "preserve", "continue"}:
         raise ConfigError("runtime.autoresearch_resident.on_parent_terminal must be cancel, preserve or continue")
+    from zf.core.config.durable_mailbox import parse_durable_mailbox
     from zf.core.config.host_verification import parse_host_verification
     from zf.core.config.task_publication import parse_task_publication
     try:
+        durable_mailbox = parse_durable_mailbox(data.get("durable_mailbox"))
         host_verification = parse_host_verification(data.get("host_verification"))
         if (host_verification.enabled and host_watchdog_seconds
                 and host_watchdog_seconds <= host_verification.timeout_seconds):
@@ -4282,6 +4297,7 @@ def _build_runtime(
             lock_file=str(skills_raw.get("lock_file", ".zf/skills.lock.json")),
             strict=bool(skills_raw.get("strict", False)),
         ),
+        durable_mailbox=durable_mailbox,
         host_verification=host_verification,
         task_publication=task_publication,
         run_manager=RuntimeRunManagerConfig(
@@ -5120,7 +5136,7 @@ _KNOWN_GOAL_KEYS = frozenset({
     "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
 })
 _KNOWN_OBSERVABILITY_KEYS = frozenset({
-    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller",
+    "provider_telemetry", "metrics", "runtime_logs", "otlp_exporter", "alerts", "controller", "workflow_session_excerpts",
 })
 _KNOWN_PROVIDER_TELEMETRY_KEYS = frozenset({
     "mode", "profile_id", "endpoint_env", "enable_traces",
@@ -5266,8 +5282,12 @@ def _build_observability(data: object) -> ObservabilityConfig:
         raise ConfigError(
             "observability.alerts.cooldown_seconds must be 30..86400"
         )
+    excerpts = data.get("workflow_session_excerpts", False)
+    if type(excerpts) is not bool:
+        raise ConfigError("observability.workflow_session_excerpts must be a boolean")
     return ObservabilityConfig(
         controller=controller,
+        workflow_session_excerpts=excerpts,
         provider_telemetry=ProviderTelemetryConfig(
             mode=mode,
             profile_id=str(

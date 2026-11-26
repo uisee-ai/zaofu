@@ -22,7 +22,9 @@ Read only the refs supplied by the briefing:
 
 - the original objective and accepted planning result;
 - the canonical `goal-claim-set.v1` ref and digest;
-- admitted task/candidate verification result refs;
+- the current Candidate and Discovery envelopes named by the closure fact;
+- its optional `task-verify-<task_id>` sources when a claim needs the
+  independent Task Verify result;
 - the exact current Product Acceptance Spec/Report refs and digests when the
   Plan Artifact Package declares that port required;
 - admitted waiver or human-decision refs, when present;
@@ -62,12 +64,12 @@ Return one top-level `goal_closure_result` object:
     "product_acceptance_verdict": "passed|rejected|blocked",
     "provider_qualification_required": true,
     "provider_qualification_status": "passed|missing|expired|waiting_external|not_required",
-    "input_result_refs": ["<admitted result ref>"],
+    "input_result_refs": ["<copy the exact current closure batch refs>"],
     "goal_coverage": [
       {
         "goal_claim_id": "<exact canonical id>",
         "status": "closed|open|blocked|waived",
-        "supporting_result_refs": ["<admitted result ref>"],
+        "supporting_result_refs": ["<admitted envelope for this claim>"],
         "waiver_ref": "<required when waived>"
       }
     ],
@@ -90,6 +92,17 @@ historical report can contain individually passing assertions and open gaps.
 Cover every mandatory canonical claim exactly once. A `closed` claim requires
 at least one admitted supporting result ref. A `waived` claim requires a
 waiver ref.
+
+Copy the current closure batch into top-level `input_result_refs`. To
+corroborate a closed claim with independent Task Verify, read that Task’s
+complete `task-verify-<task_id>` body through this attempt’s input index.
+Compare the result to the claim. If relevant, put the exact `envelope.ref`
+from that entry of `closure-fact.task_verify_evidence` in the claim’s
+`supporting_result_refs` alongside a current admitted Candidate or Discovery
+envelope supporting that claim. The Task control body provides the facts.
+Its raw path, a previous attempt’s read and the Task envelope alone cannot
+close a claim. Keep the Task citation at the claim level. If the independent
+result is required and cannot be evaluated, record the gap truthfully.
 
 ## Verdict Rules
 

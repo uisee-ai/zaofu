@@ -125,6 +125,9 @@ def test_failed_critic_preserves_checkpoint_without_passing(tmp_path, mode, monk
 def test_critic_semantic_judgment_still_requires_reads(tmp_path, change):
     runtime, prepared, service, token, _ = _setup(tmp_path)
     semantic = _failure() | change
+    preflight = service.validate_plan_candidate(operation_id=prepared.operation_id,
+        role_instance='plan-critic', credential=token, semantic_result=semantic)
+    assert 'required_read_missing' in {issue['code'] for issue in preflight['errors']}
     with pytest.raises(ResultSubmitError, match='required_read_missing'):
         service.submit(operation_id=prepared.operation_id, role_instance='plan-critic',
                        credential=token, semantic_result=semantic)

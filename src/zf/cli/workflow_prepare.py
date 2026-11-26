@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from zf.core.config.project_context import resolve_project_context
+from zf.core.config.schema import ZfConfig
 from zf.core.events import ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
@@ -44,7 +45,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Let the Web/runtime consumer run Synthesis",
     )
     prepare.add_argument("--allow-missing-env", action="store_true")
-    prepare.add_argument("--retry-failed", action="store_true", help="Create a new preparation attempt after repairing a failed one")
+    prepare.add_argument("--retry-failed", action="store_true", help="Resume failed proposal assembly or retry failed preparation")
     prepare.add_argument("--state-dir")
     prepare.add_argument("--format", choices=["md", "json"], default="md")
     prepare.set_defaults(func=run_prepare)
@@ -57,7 +58,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     preview.set_defaults(func=run_preview)
 
 
-def request_preview(state_dir: Path, request_id: str, *, project_root: Path | None = None) -> dict:
+def request_preview(
+    state_dir: Path, request_id: str, *, project_root: Path | None = None, config: ZfConfig | None = None,
+) -> dict:
     request = load_workflow_request(state_dir, request_id)
     if not request:
         raise ValueError(f"Workflow Request not found: {request_id}")
@@ -72,20 +75,16 @@ def request_preview(state_dir: Path, request_id: str, *, project_root: Path | No
                 artifacts[name] = hydrate_sidecar_ref(
                     state_dir, proposal[f"{name}_ref"]
                 ).payload
-    from zf.core.events.log import EventLog
-    from zf.runtime.workflow_operation import load_workflow_operation
-
-    operation = (
-        load_workflow_operation(
-            EventLog(state_dir / "events.jsonl"),
-            str(request.get("synthesis_operation_id") or ""),
-        )
-        or {}
-    )
-    from zf.runtime.workflow_preparation_view import preparation_view
     from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
-    preparation = preparation_view(request, operation, git_blockers=(
-        preparation_git_diagnostics(project_root) if project_root else []))
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    from zf.runtime.workflow_preparation_view import preparation_view, proposal_failure
+
+    events = event_log_from_project(state_dir, config=config).read_all()
+    operation = reduce_workflow_operations(events).get(request.get("synthesis_operation_id"), {})
+    preparation = preparation_view(
+        request, operation, failure=proposal_failure(events, request, operation),
+        git_blockers=preparation_git_diagnostics(project_root) if project_root else [],
+    )
     failed = preparation["status"] in {"preparation_failed", "preparation_blocked", "cancelled"}
     return redact_obj(
         {
@@ -140,7 +139,7 @@ def run_preview(args: argparse.Namespace) -> int:
         context = resolve_project_context(
             explicit_state_dir=args.state_dir, load_config_with_explicit=True
         )
-        result = request_preview(context.state_dir, args.request, project_root=context.project_root)
+        result = request_preview(context.state_dir, args.request, project_root=context.project_root, config=context.config)
         _print(result, args.format)
         return 0 if result["ok"] else 1
     except ValueError as exc:
@@ -235,7 +234,10 @@ def run_prepare(args: argparse.Namespace) -> int:
                     "request_id": args.request,
                 }
         else:
-            payload.update(task_id=args.task or "", objective=args.objective or "")
+            if args.task:
+                payload.update(task_id=args.task, prepare_workflow=True)
+            else:
+                payload["objective"] = args.objective
             requested = writer.append(
                 ZfEvent(
                     type="control.action.requested",
@@ -260,19 +262,51 @@ def run_prepare(args: argparse.Namespace) -> int:
         if not result.get("ok"):
             _print(result, args.format)
             return 1
-        if result.get("status") == "synthesis_queued" and not args.enqueue_only:
+        if result.get("status") in {"synthesis_queued", "proposal_retry_pending"} and not args.enqueue_only:
             from zf.runtime.workflow_synthesis_consumer import (
+                WorkflowSynthesisConsumerBusy,
                 consume_workflow_synthesis_operations,
             )
 
-            consume_workflow_synthesis_operations(
-                state_dir=context.state_dir,
-                project_root=context.project_root,
-                config=context.config,
-                writer=writer,
-                request_id=result["request_id"],
-            )
-        preview = request_preview(context.state_dir, result["request_id"], project_root=context.project_root)
+            replay = result.get("status") == "proposal_retry_pending"
+            try:
+                consume_workflow_synthesis_operations(
+                    state_dir=context.state_dir,
+                    project_root=context.project_root,
+                    config=context.config,
+                    writer=writer,
+                    request_id=result["request_id"],
+                    replay_operation_id=result["synthesis_operation_id"] if replay else "",
+                )
+            except WorkflowSynthesisConsumerBusy:
+                _print(
+                    {
+                        "request_id": result["request_id"],
+                        "ok": False,
+                        "status": "preparation_busy",
+                        "can_retry": True,
+                        "reason": "Another consumer owns the preparation lease. Retry after its turn.",
+                    },
+                    args.format,
+                )
+                return 1
+            except ValueError as exc:
+                if not replay:
+                    raise
+                _print(
+                    {
+                        "request_id": result["request_id"],
+                        "ok": False,
+                        "status": "preparation_failed",
+                        "can_retry": False,
+                        "reason": str(exc),
+                    },
+                    args.format,
+                )
+                return 1
+        preview = request_preview(
+            context.state_dir, result["request_id"], project_root=context.project_root, config=context.config
+        )
         _print(preview, args.format)
         return 0 if preview["ok"] else 1
     except ValueError as exc:

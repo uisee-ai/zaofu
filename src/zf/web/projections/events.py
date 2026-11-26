@@ -14,7 +14,7 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.segments import iter_event_records, list_event_segments
 from zf.core.security.redaction import redact_event
-from zf.core.security.redaction import redact_obj
+from zf.core.security.redaction import public_event_metadata, redact_obj
 from zf.core.task.store import TaskStore
 from zf.core.trace.diagnostics import _safe_trace_id
 from zf.runtime.execution_route import project_execution_route
@@ -552,13 +552,13 @@ def payload_search_texts(state_dir, config=None) -> list[str]:
 
     def build():
         return [
-            _payload_search_text(getattr(event, "payload", {}) or {})
+            _payload_search_text(public_event_metadata(event.type, event.payload))
             for _, event in _events_with_seq(state_dir, config=config)
         ]
 
     def fold(old: list, tail) -> list:
         return old + [
-            _payload_search_text(getattr(event, "payload", {}) or {})
+            _payload_search_text(public_event_metadata(event.type, event.payload))
             for _, event in tail
         ]
 

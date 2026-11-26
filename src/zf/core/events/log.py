@@ -114,8 +114,22 @@ class EventLog:
         """Archive sibling directory: .zf/events/ for .zf/events.jsonl."""
         return self.path.parent / self.path.stem
 
-    def append(self, event: ZfEvent) -> None:
+    def append(self, event: ZfEvent, *, expected_offset: EventOffset | None = None,
+               allow_intervening: frozenset[str] = frozenset()) -> None:
         with locked_path(self.path):
+            if expected_offset is not None:
+                actual = self.current_offset()
+                if actual != expected_offset or actual.identity != expected_offset.identity:
+                    safe = False
+                    if (allow_intervening and actual.identity == expected_offset.identity
+                            and 0 < actual - expected_offset <= 256 * 1024):
+                        tail, consumed = self._parse_tail(self.path, expected_offset, actual)
+                        safe = (consumed == actual - expected_offset and bool(tail) and
+                                all(row.type in allow_intervening for row in tail))
+                    if not safe:
+                        raise ValueError("event ledger advanced before conditional append; retry the same request")
+            from zf.core.events.append_witness import observe_append, signature, witness_path
+            observed = signature(self.path) if witness_path(self.path).exists() else None
             self.path.parent.mkdir(parents=True, exist_ok=True)
             rotate_by_date(self.path)
             self._rotate_by_size_if_needed()
@@ -137,6 +151,8 @@ class EventLog:
                 if self.durable_observer is not None:
                     f.flush()
                     os.fsync(f.fileno())
+            if observed is not None:
+                observe_append(self.path, observed)
             if self.durable_observer is not None:
                 # Required configured observation is not a best-effort diagnostic projector.
                 # A failed queue append leaves the occurrence replayable and propagates failure.

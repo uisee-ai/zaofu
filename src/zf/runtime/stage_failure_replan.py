@@ -540,6 +540,7 @@ def plan_reader_stage_replan(
     ):
         rejected_plan = None
     origin_payload: dict[str, Any] = {}
+    retry_entry_types = {trigger_type}
     prior_trigger: ZfEvent | None = None
     if failure_payload.get("failure_scope") == "plan_admission" and not failure_fanout_id:
         # Operator amendments may have no reader fanout. Their rejected ready
@@ -547,6 +548,10 @@ def plan_reader_stage_replan(
         if rejected_plan is None:
             return None, "reader_origin_missing"
         origin_payload = dict(rejected_plan.payload)
+        from zf.runtime.plan_team_handoff import admission_replan_entry
+
+        trigger_type, retry_entry_types = admission_replan_entry(
+            config, stage, events, rejected_plan, failure_event, state_dir, origin_payload)
     else:
         for _, event in index.rows(trigger_type):
             if (
@@ -674,19 +679,19 @@ def plan_reader_stage_replan(
         return None, "stale_failure"
         # 本失败已 replan 过?(replay/echo 安全)
     if authorized_generation:
-        for _, event in index.rows(trigger_type):
+        for _, event in index.ordered(retry_entry_types):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if (
-                event.type == trigger_type
+                _same_run(event, failure_run_id)
                 and str(payload.get("stage_replan_generation") or "")
                 == authorized_generation
             ):
                 return None, "generation_already_started"
         prior_failures = 0
     else:
-        for _, event in index.rows(trigger_type):
+        for _, event in index.ordered(retry_entry_types):
             if (
-                event.type == trigger_type
+                _same_run(event, failure_run_id)
                 and str(event.causation_id or "") == failure_event.id
             ):
                 return None, "already_replanned"

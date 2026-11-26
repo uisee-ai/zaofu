@@ -53,7 +53,7 @@ def test_loop_defaults() -> None:
     ])
     assert args.max_iterations == 10
     assert args.budget_usd == 200.0
-    assert args.reflect_backend == "claude-code"
+    assert args.reflect_backend is None
     assert args.fix_wait_strategy == "head_change"
     assert args.fix_wait_timeout == 1800
     assert args.parent_state_dir is None
@@ -70,7 +70,9 @@ def test_loop_reflect_backend_defaults_from_env(monkeypatch) -> None:
         "--worktree", "/tmp/wt",
     ])
 
-    assert args.reflect_backend == "codex"
+    from zf.autoresearch.loop_reflect import reflection_provider_options
+
+    assert reflection_provider_options(args.reflect_backend, None) == ("codex", {})
 
 
 def test_loop_reflect_backend_cli_overrides_env(monkeypatch) -> None:

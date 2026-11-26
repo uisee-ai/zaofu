@@ -77,7 +77,7 @@ def plan_matrix_admission_errors(
                     errors,
                     "command_id_duplicate",
                     field,
-                    f"command id {command_id!r} has multiple task producers",
+                    _duplicate_command_reason(command_id, task_commands[command_id][1], command),
                 )
                 continue
             command_body = str(command.get("command") or command.get("cmd") or "").strip()
@@ -273,6 +273,18 @@ def plan_matrix_admission_errors(
 
     _source_index_extra_errors(errors, source_index, set(task_by_id))
     return errors
+
+
+def _duplicate_command_reason(command_id: str, original: Mapping[str, Any], duplicate: Mapping[str, Any]) -> str:
+    from zf.runtime.candidate_command_identity import conflicting_tiers_message
+
+    first = str(original.get("tier") or "task_non_smoke").strip()
+    second = str(duplicate.get("tier") or "task_non_smoke").strip()
+    original_command = str(original.get("command") or original.get("cmd") or "").strip()
+    duplicated_command = str(duplicate.get("command") or duplicate.get("cmd") or "").strip()
+    if first != second and original_command == duplicated_command:
+        return conflicting_tiers_message(command_id, first, second)
+    return f"command id {command_id!r} has multiple task producers"
 
 
 def _matrix_readiness_errors(

@@ -256,7 +256,7 @@ async def test_signed_events_forwarded_as_plain_events(state_dir):
 async def test_sse_redacts_obvious_secrets(state_dir):
     log = EventLog(state_dir / "events.jsonl")
     log.append(ZfEvent(
-        type="agent.tool.result",
+        type="dev.build.done",
         actor="dev",
         payload={"output": "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz"},
     ))
@@ -330,3 +330,25 @@ async def test_disconnect_terminates_stream(state_dir):
             pytest.fail("generator did not terminate on disconnect")
     # Generator returned cleanly
     assert True
+
+
+@pytest.mark.asyncio
+async def test_sse_omits_private_worker_bodies_during_replay_and_live_append(state_dir):
+    log = EventLog(state_dir / "events.jsonl")
+    prior = "Prior discussion of customer acceptance"
+    following = "Subsequent assistant reply on the same dispatch"
+    log.append(ZfEvent(type="agent.text", id="prior", payload={"text": prior, "dispatch_id": "D"}))
+    stream = _tail_events(state_dir, _FakeRequest(disconnect_after=12), event_log=log, cursor=0)
+    try:
+        await anext(stream)
+        replay = await anext(stream)
+        assert prior.encode() not in replay and b'"restricted"' in replay and b'"D"' in replay
+        log.append(ZfEvent(type="agent.text", id="live", payload={"text": following, "dispatch_id": "D"}))
+        while True:
+            live = await asyncio.wait_for(anext(stream), timeout=3)
+            if b"data: " in live:
+                break
+        assert following.encode() not in live and b'"live"' in live and b'"restricted"' in live
+    finally:
+        await stream.aclose()
+    assert [event.payload["text"] for event in log.read_all()] == [prior, following]

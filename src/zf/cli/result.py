@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -135,8 +136,26 @@ def _validation_summary(outcome: dict) -> dict:
     """Bound model-facing diagnostics without changing the actual preflight."""
     raw_errors = outcome.get("errors")
     errors = raw_errors if isinstance(raw_errors, list) else []
+    # Round-robin distinct reasons/field patterns so repeats on many tasks do not hide another repair.
+    groups = {}
+    for item in errors:
+        if isinstance(item, dict):
+            key = (str(item.get("code") or ""), re.sub(r"\[\d+\]", "[]", str(item.get("field") or "")))
+        else:
+            key = ("", "")
+        groups.setdefault(key, []).append(item)
+    first_per_code = {}
+    for group in groups:
+        first_per_code.setdefault(group[0], group)
+    ordered = [*first_per_code.values(), *(g for g in groups if g != first_per_code[g[0]])]
+    representatives = []
+    limit = 12
+    for index in range(max((len(items) for items in groups.values()), default=0)):
+        representatives.extend(groups[g][index] for g in ordered if index < len(groups[g]))
+        if len(representatives) >= limit:
+            break
     shown = []
-    for item in errors[:12]:
+    for item in representatives[:limit]:
         if isinstance(item, dict):
             shown.append({key: str(item.get(key) or "")[:512] for key in ("code", "field", "message")})
         else:
@@ -147,6 +166,12 @@ def _validation_summary(outcome: dict) -> dict:
         "error_count": len(errors) if isinstance(raw_errors, list) else None,
         "errors": shown,
         "errors_omitted": max(0, len(errors) - len(shown)),
+        **({"plan_input_contract": {
+            key: [str(name)[:128] for name in names[:12]]
+            for key, names in outcome["plan_input_contract"].items() if isinstance(names, list)
+        }, "plan_input_contract_port_counts": {
+            key: len(names) for key, names in outcome["plan_input_contract"].items() if isinstance(names, list)
+        }} if isinstance(outcome.get("plan_input_contract"), dict) else {}),
         "details_truncated": True,
         "full_report": "Rerun the same validation command without --summary for the complete report.",
     }

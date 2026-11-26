@@ -145,3 +145,87 @@ def test_nested_ar_prompt_retains_exact_dispatch_locators(tmp_path):
     assert str(root / 'instructions/plan-critic.md') in prompt
     assert 'do not reconstruct' in prompt
     assert 'original dispatch' in prompt
+
+
+@pytest.mark.parametrize("reflection", ["wait", "failed", "unavailable"])
+def test_unresolved_followup_escalates_with_actual_reflection_evidence(tmp_path, reflection):
+    from tests.test_run_manager import _reflect_config, _state
+    from tests.test_run_manager_reflection import _wait
+    from zf.core.events import EventWriter
+    from zf.runtime.run_manager import run_manager_tick
+
+    state, log, _ = _state(tmp_path)
+    writer = EventWriter(log, default_origin="kernel")
+    config = _reflect_config()
+    config.runtime.run_manager.resident_agent.enabled = False
+    config.runtime.run_manager.reflect.enabled = reflection != "unavailable"
+    run = "test-run"
+    original = writer.emit("run.manager.autoresearch.requested", actor="run-manager",
+        correlation_id=run, payload={"request_id": "ar-owner", "workflow_run_id": run})
+    problem = writer.emit("autoresearch.loop.failed", correlation_id=run, payload={
+        "run_manager_request_id": "ar-owner", "workflow_run_id": run,
+        "diagnosis": {"status": "incomplete", "failure_class": "missing_report"}})
+    calls = []
+
+    def decide(prompt, **kwargs):
+        calls.append(1)
+        if reflection == "failed":
+            raise RuntimeError("fixture provider failure")
+        return {"verdict": "best_so_far", "recommended_route": "wait"}
+
+    def tick():
+        run_manager_tick(state_dir=state, writer=writer, config=config, event_log=log,
+                         project_root=tmp_path, spawn_repairs=False,
+                         reflect_fn=decide if reflection != "unavailable" else None)
+
+    tick()
+    if reflection != "unavailable":
+        _wait(lambda: any(e.type == "run.manager.reflect.completed" for e in log.read_all()))
+    tick()
+    tick()
+    events = log.read_all()
+    blocked, = [e for e in events if e.type == "run.manager.action.blocked"
+                and e.payload.get("failure_class") == "autoresearch_diagnosis_incomplete"]
+    human, = [e for e in events if e.type == "human.escalate" and e.causation_id == blocked.id]
+    assert human.payload["reason"] == blocked.payload["reason"]
+    assert original.id in human.payload["source_event_ids"] and problem.id in human.payload["source_event_ids"]
+    assert sum(e.type == "run.manager.autoresearch.requested" for e in events) == 1
+    assert not any(e.type == "run.manager.action.applied" for e in events)
+    if reflection == "unavailable":
+        assert not calls
+        assert "available Run Manager decision owner" in human.payload["reason"]
+        return
+    assert len(calls) == 1
+    requested, = [e for e in events if e.type == "run.manager.reflect.requested"]
+    receipt, = [e for e in events if e.type == "run.manager.reflect.completed"]
+    assert blocked.causation_id == receipt.id
+    for event in (blocked, human):
+        assert {requested.id, receipt.id} <= set(event.payload["source_event_ids"])
+    phrase = "recommended waiting" if reflection == "wait" else "reflection failed"
+    assert phrase in human.payload["reason"]
+
+
+@pytest.mark.parametrize("mismatch", [
+    "workflow_run_id", "checkpoint_id", "operation_id", "request_id", "source_event_ids",
+    "apply_policy", "actor", "origin", "correlation_id", "reordered",
+])
+def test_followup_escalation_cannot_attribute_an_unbound_reflection(mismatch):
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.autoresearch_failure_handoff import followup_escalation
+
+    request_id = "rmrf-test"
+    p = {"workflow_run_id": "run-1", "checkpoint_id": "cp-1", "request_id": request_id,
+         "operation_id": "wop-" + request_id, "source_event_ids": ["source"],
+         "apply_policy": "proposal_only"}
+    attrs = {"actor": "run-manager", "origin": "kernel", "correlation_id": request_id}
+    request = ZfEvent(type="run.manager.reflect.requested", **attrs, payload=p.copy())
+    completion = {**p, "recommended_route": "wait"}
+    if mismatch in attrs:
+        attrs[mismatch] = "unrelated"
+    elif mismatch != "reordered":
+        completion[mismatch] = ["other"] if mismatch == "source_event_ids" else "unrelated"
+    receipt = ZfEvent(type="run.manager.reflect.completed", **attrs, payload=completion)
+    events = [receipt, request] if mismatch == "reordered" else [request, receipt]
+    action, reason, cause = followup_escalation(p, events, request_id=request_id, cause="tick")
+    assert "no matching outcome" in reason
+    assert cause == request.id and action["source_event_ids"] == ["source", request.id]

@@ -30,18 +30,23 @@ def candidate_reader_stages(runtime: Any, event: ZfEvent) -> list[WorkflowStageC
         try:
             selected.append(_assigned_reader_stage(runtime, stage, event))
         except ValueError as exc:
-            prior = runtime.event_log.read_all()
-            if not any(e.type == "task.fanout.rejected" and e.causation_id == event.id
-                       and e.payload.get("stage_id") == stage.id for e in prior):
-                runtime.event_writer.append(ZfEvent(
-                    type="task.fanout.rejected", actor="zf-cli", origin="kernel",
-                    task_id=event.task_id, causation_id=event.id, correlation_id=event.correlation_id,
-                    payload={"reason": "invalid_candidate_reader_assignment", "error": str(exc),
-                             "stage_id": stage.id, "source_event_id": event.id,
-                             "workflow_run_id": event.payload.get("workflow_run_id") or event.correlation_id,
-                             "recovery_owner": "run_manager", "diagnosis_status": "required"},
-                ))
+            reject_candidate_assignment(runtime, event, stage.id, str(exc))
     return selected
+
+
+def reject_candidate_assignment(runtime: Any, source: ZfEvent, stage_id: str, error: str) -> None:
+    events = runtime.event_log.read_all()
+    if any(e.type == "task.fanout.rejected" and e.causation_id == source.id
+           and e.payload.get("stage_id") == stage_id for e in events):
+        return
+    runtime.event_writer.append(ZfEvent(
+        type="task.fanout.rejected", actor="zf-cli", origin="kernel", task_id=source.task_id,
+        causation_id=source.id, correlation_id=source.correlation_id,
+        payload={"reason": "invalid_candidate_reader_assignment", "error": error,
+                 "stage_id": stage_id, "source_event_id": source.id,
+                 "workflow_run_id": source.payload.get("workflow_run_id") or source.correlation_id,
+                 "recovery_owner": "run_manager", "diagnosis_status": "required"},
+    ))
 
 
 def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEvent) -> WorkflowStageConfig:
@@ -52,6 +57,9 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
     if (event.type != "candidate.ready" or stage.topology != "fanout_reader"
             or stage.aggregate.success_event not in {"test.passed", "verify.passed"}):
         return stage
+    metadata = flow_metadata_for(runtime.config, payload=event.payload)
+    teams = metadata.get("stage_teams") or {}
+    strategy = teams.get("candidate_verify")
     body = event.payload
     if body.get("candidate_snapshot_event_id"):
         from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
@@ -62,23 +70,32 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
             raise ValueError("Candidate Reader retrigger lacks its frozen candidate")
         body = native.payload
     if body.get("schema_version") != CANDIDATE_FREEZE_RECEIPT_SCHEMA:
+        if strategy:
+            raise ValueError("approved Candidate team requires a frozen Task Pipeline receipt")
         return stage
     spec = assigned_spec(Path(runtime.state_dir), body)
     if not spec:
+        if strategy:
+            raise ValueError("frozen candidate lacks the required Candidate Reader assignments")
         return stage
-    metadata = flow_metadata_for(runtime.config, payload=event.payload)
+    if strategy and len(spec["candidate_reader_assignments"]) != strategy["width"]:
+        raise ValueError("frozen Candidate Reader roster differs from approved verification width")
     kind = spec["flow_kind"]
     discovery = next((s for s in runtime.config.workflow.stages if s.id == f"{kind}-post-verify-discovery"
                       and s.trigger == "flow.discovery.requested" and s.topology == "fanout_reader"
                       and s.aggregate.child_success_event == "flow.discovery.child.completed"
                       and s.aggregate.success_event == "flow.discovery.completed"), None)
     discovery_roles = runtime._fanout_roles(discovery.roles) if discovery else []
+    specialists = [m for m in (teams.get("judge") or {}).get("members", []) if not m.get("disposition")]
+    required_roles = {row["role"] for row in specialists if row.get("required", True)}
+    discovery_ids = {r.instance_id for r in discovery_roles}
     if (kind not in {"prd", "issue"} or metadata.get("flow_kind") != kind
             or metadata.get("post_verify_discovery") != "product_completeness" or discovery is None
-            or stage.children or discovery.children or discovery.assignment.strategy != "static_index"
+            or stage.children or (discovery.children and not specialists) or discovery.assignment.strategy != "static_index"
             or stage.aggregate.review_strategy not in {"", "all_approve_or_one_rejects"}
-            or stage.aggregate.mode != "wait_for_all" or len(discovery_roles) != 1):
-        raise ValueError("assigned Candidate readers require wait_for_all and one wired product_completeness Reader")
+            or stage.aggregate.mode != "wait_for_all" or not required_roles <= discovery_ids
+            or len(discovery_ids) != 1 + len(required_roles)):
+        raise ValueError("assigned Candidate readers require wait_for_all and a wired independent product_completeness Reader")
     submit_modes = (metadata.get("result_protocol") or {}).get("semantic_submit_profiles") or {}
     if (result_protocol_mode(runtime.config, body) != "blocking"
             or any(submit_modes.get(profile) != "blocking" for profile in ("candidate-verify", "workflow-read"))):
@@ -87,8 +104,15 @@ def _assigned_reader_stage(runtime: Any, stage: WorkflowStageConfig, event: ZfEv
         eligible = {r.instance_id for _, r in runtime._fanout_affinity_lane_roles(stage)}
     else:
         eligible = {r.instance_id for r in runtime._fanout_roles(stage.roles)}
+    if strategy:
+        from zf.runtime.candidate_reader_assignments import approved_roster_ref
+        binding = approved_roster_ref(Path(runtime.state_dir), runtime.event_log.read_all(), body, spec)
+        if body.get("candidate_reader_approval") != binding:
+            raise ValueError("Candidate Reader approval differs from the frozen decision")
+        pool = metadata["task_pipeline"]["pools"]["verify"]["role_instances"]
+        eligible = {r.instance_id for r in runtime.config.roles if r.role_kind == "reader" and r.instance_id in pool}
     roles = [r["role_instance"] for r in spec["candidate_reader_assignments"]]
-    if set(roles) - eligible or discovery_roles[0].instance_id in roles:
+    if set(roles) - eligible or (discovery_ids | {m["role"] for m in specialists}).intersection(roles):
         raise ValueError("assigned Candidate Reader requires a configured seat and independent discovery")
     return replace(stage, roles=roles, assignment=FanoutAssignmentConfig())
 

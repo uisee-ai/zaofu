@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_command_identity import candidate_command_ids
 from zf.runtime.candidate_reader_assignments import candidate_acceptance_id
 from zf.runtime.candidate_freeze_recovery_identity import frozen_candidate_occurrences, native_freeze_for_recovery
 from zf.runtime.candidate_result_binding import (
@@ -311,7 +312,9 @@ def prepare_candidate_verification_authority(
     spec = assigned_spec(Path(runtime.state_dir), body)
     if spec:
         scope = scope_reader_contract(aggregate, spec, role=str(payload.get("role_instance") or ""),
-                                      target=candidate_head)
+                                      target=candidate_head,
+                                      # Before OA roster approval, old immutable freezes only guaranteed mandatory ACs.
+                                      all_declared=bool(body.get("candidate_reader_approval") or spec.get("integration_checks")))
         payload["candidate_reader_scope"] = scope
         contract_revision = aggregate["contract_revision"]
     contract_descriptor = write_task_contract_snapshot(
@@ -502,7 +505,14 @@ def _aggregate_contract_snapshot(
     package_identity: Mapping[str, str],
 ) -> dict[str, Any]:
     criteria: list[dict[str, Any]] = []
-    commands_by_digest: dict[str, dict[str, Any]] = {}
+    try:
+        aggregate_ids = candidate_command_ids(
+            command for snapshot in snapshots for command in snapshot.get("verification_commands") or []
+            if isinstance(command, Mapping)
+        )
+    except ValueError as exc:
+        raise CandidateVerificationAuthorityError(str(exc)) from exc
+    commands_by_id: dict[str, dict[str, Any]] = {}
     allowed_paths: list[str] = []
     protected_paths: list[str] = []
     required_source_outputs: list[str] = []
@@ -524,17 +534,10 @@ def _aggregate_contract_snapshot(
                 continue
             digest = str(item.get("command_digest") or "")
             command = str(item.get("command") or "")
-            aggregate_id = f"candidate-cmd-{digest[:20]}"
-            existing = commands_by_digest.get(digest)
-            if existing is not None and str(existing.get("command") or "") != command:
-                raise CandidateVerificationAuthorityError(
-                    "candidate verification command digest collision"
-                )
             tier = str(item.get("tier") or "integration")
-            if existing is not None and existing["tier"] != tier:
-                raise CandidateVerificationAuthorityError("same candidate command has conflicting verification tiers")
+            aggregate_id = aggregate_ids[digest, tier]
             command_ids[str(item.get("command_id") or "")] = aggregate_id
-            row = commands_by_digest.setdefault(digest, {
+            row = commands_by_id.setdefault(aggregate_id, {
                 "command_id": aggregate_id,
                 "command": command,
                 "command_digest": digest,
@@ -572,10 +575,7 @@ def _aggregate_contract_snapshot(
                 if str(command_id) in command_ids
             ]
             for command_id in mapped_commands:
-                command = next(
-                    row for row in commands_by_digest.values()
-                    if row["command_id"] == command_id
-                )
+                command = commands_by_id[command_id]
                 command["acceptance_ids"] = _unique([
                     *command.get("acceptance_ids", []),
                     aggregate_id,
@@ -604,7 +604,7 @@ def _aggregate_contract_snapshot(
         )
 
     commands = sorted(
-        commands_by_digest.values(),
+        commands_by_id.values(),
         key=lambda item: str(item.get("command_id") or ""),
     )
     criteria.sort(key=lambda item: str(item.get("acceptance_id") or ""))

@@ -57,7 +57,7 @@ def candidate(case):
                             'stage_id': 'verify', 'run_id': 'reader-attempt', 'target_ref': 'candidate/test'}),
                         ('workflow.call.result.admitted', {'semantic_verdict': 'blocked', 'control_result_ref': result}),
                         ('workflow.operation.settled', {})]:
-        service.writer.append(ZfEvent(type=kind, payload={**identity, **extra}))
+        service.writer.append(ZfEvent(type=kind, origin='kernel', payload={**identity, **extra}))
     return service, root, identity, frozen
 
 
@@ -87,6 +87,39 @@ def test_candidate_probe_accepts_only_bound_transport_retry_lineage(candidate, c
         manifest = preview(service, operation_id='candidate-1', kind='verify', command_id='contract-verification')
         assert manifest['operation_id'] == 'candidate-1'
         assert manifest['head'] == request['target_commit']
+
+
+def test_operator_web_probe_produces_kernel_facts_for_successor_reader(candidate, monkeypatch):
+    from dataclasses import replace
+
+    from zf.runtime.task_host_evidence import host_execution_facts
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+    from zf.web.server import _web_action
+
+    service, _, _, _ = candidate
+    manifest = preview(service, operation_id='candidate-1', kind='verify', command_id='contract-verification')
+    monkeypatch.setenv('ZF_WEB_ACTION_TOKEN', 'test-operator-token')
+    payload = {'manifest': manifest, 'reviewed_digest': manifest['manifest_digest'],
+               'approval_ref': 'owner:review-test'}
+    result = _web_action(service.state_dir, 'task-host-assist', payload=payload,
+                         project_root=service.project_root, config=service.config,
+                         authorization=None, x_zf_web_token='test-operator-token')
+    assert result['ok'] and result['status'] == 'completed'
+    events = service.writer.event_log.read_all()
+    source = reduce_workflow_operations(events)['candidate-1']
+    facts = host_execution_facts(service.state_dir, source, events)
+    assert len(facts) == 1
+    assert facts[0]['receipt_ref'] == result['receipt_ref']
+    assert facts[0]['command_id'] == manifest['command']['command_id']
+    assert facts[0]['execution_origin'] == 'operator_authorized_host'
+    assert facts[0]['exit_code'] == 0 and 'probe passed' in facts[0]['output']
+    effect = next(e for e in events if e.id == facts[0]['event_id'])
+    start = next(e for e in events if e.id == effect.causation_id)
+    assert effect.actor == start.actor == 'web'
+    assert effect.origin == start.origin == 'kernel'
+    for event_id in (start.id, effect.id):
+        unattributed = [replace(e, origin='') if e.id == event_id else e for e in events]
+        assert host_execution_facts(service.state_dir, source, unattributed) == []
 
 
 def test_candidate_probe_executes_on_exact_detached_target_without_product_verdict(candidate):

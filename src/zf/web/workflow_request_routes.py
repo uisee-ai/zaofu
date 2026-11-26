@@ -33,7 +33,7 @@ from zf.web.projections.request_util import _request_json
 from zf.web.projections.workflow_yaml import project_workflow_yaml
 from zf.web.projections.workspace import _resolve_api_project
 from zf.runtime.workflow_git_readiness import preparation_git_diagnostics
-from zf.runtime.workflow_preparation_view import preparation_view
+from zf.runtime.workflow_preparation_view import preparation_view, proposal_failure
 
 
 def workflow_request_strings(value: object) -> list[str]:
@@ -86,6 +86,7 @@ def build_workflow_request_router(
     default_project_root: Path,
     mutation_auth_error: Callable[..., dict | None],
     session_cookie: Callable[[Request], str | None],
+    read_only: bool = False,
 ) -> APIRouter:
     router = APIRouter()
     from zf.web.workflow_preparation_worker import WorkflowPreparationWorker
@@ -458,8 +459,10 @@ def build_workflow_request_router(
             "queue_position": int(admission.get("queue_position") or 0),
             "run_admission": admission,
         }
-        preparation = preparation_view(effective_result, operation,
-                                       git_blockers=preparation_git_diagnostics(context.project_root))
+        preparation = preparation_view(
+            effective_result, operation, failure=proposal_failure(events, effective_result, operation),
+            git_blockers=preparation_git_diagnostics(context.project_root),
+        )
         effective_result["status"] = preparation["status"]
         body = redact_obj({
             "ok": True,
@@ -531,8 +534,9 @@ def build_workflow_request_router(
                 )
                 projected = {**value, "status": _request_status(value, admission, operation),
                              "run_id": str(admission.get("run_id") or value.get("run_id") or "")}
-                preparation = preparation_view(projected, operation,
-                                               git_blockers=git_blockers)
+                preparation = preparation_view(
+                    projected, operation, failure=proposal_failure(events, projected, operation), git_blockers=git_blockers,
+                )
                 items.append({
                     **value,
                     "task_id": project_request_task_id(context.state_dir, value),
@@ -745,6 +749,8 @@ def build_workflow_request_router(
     router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
     from zf.web.workflow_workbench_routes import build_workbench_router
     router.include_router(build_workbench_router(resolve=resolve, detail=read_workflow_request_detail))
+    from zf.web.workflow_session_routes import member_session_router
+    router.include_router(member_session_router(resolve, read_workflow_request_detail, auth_response, read_only))
     from zf.web.plan_artifact_review_routes import build_plan_artifact_review_router
     router.include_router(build_plan_artifact_review_router(resolve=resolve, auth_response=auth_response))
     return router

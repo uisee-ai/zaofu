@@ -24,7 +24,7 @@ const tasks = [task,
 
 function Fixture() {
   const surface = new URLSearchParams(location.search).get("surface") || "workflow";
-  const [project, setProject] = useState("a");
+  const [project, setProject] = useState(new URLSearchParams(location.search).get("project") || "a");
   const [mode, setMode] = useState<"board" | "list" | "table">("board");
   const [selected, setSelected] = useState<string | null>(null);
   const [actions, setActions] = useState<unknown[]>([]);

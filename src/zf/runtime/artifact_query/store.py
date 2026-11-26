@@ -580,6 +580,10 @@ def descriptor_record(
     ).strip()
     if not ref:
         return None
+    # The mailbox alone can fence recipients. A second event mentioning its
+    # immutable file must never turn that file into a public catalog object.
+    if Path(ref).parts[:2] == ("artifacts", "durable-mailbox"):
+        return None
     sha256 = str(descriptor.get("sha256") or "").strip()
     object_id = (
         f"sha256:{sha256}"

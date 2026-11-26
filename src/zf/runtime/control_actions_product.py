@@ -764,6 +764,9 @@ class ProductActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        if "plan_member" in payload:
+            from zf.runtime.plan_team_extension import request_extension
+            return request_extension(self, requested, action, requested_action, payload)
         stage_id = str(payload.get("stage_id") or "")
         stage = _workflow_stage(self.config, stage_id)
         topology = str(getattr(stage, "topology", "") or "")

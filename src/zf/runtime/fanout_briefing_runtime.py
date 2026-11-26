@@ -410,6 +410,13 @@ class FanoutBriefingMixin:
             if stage is not None else []
         )
         stage_instruction_lines: list[str] = []
+        if is_goal_closure and trigger_payload.get("has_judge_mandate"):
+            stage_instruction_lines.append("Read judge_mandate in the required closure-fact. Resolve its objectives, named questions and transferred coverage against the current evidence in your signed judgment.")
+        if child_payload.get("judge_specialist_obligation"):
+            stage_instruction_values = [
+                "Submit the assigned independent opinion, supporting evidence refs, and any dissent to the formal Judge.",
+                "Completing the opinion and accepting the reviewed subject are separate fields in your report.",
+            ]
         if stage_instruction_values:
             stage_instruction_lines.extend([
                 "## Stage Intent",
@@ -425,6 +432,36 @@ class FanoutBriefingMixin:
                 if str(item).strip()
             )
             stage_instruction_lines.append("")
+        if stage is not None:
+            from zf.core.config.stage_teams import briefing_obligation_lines
+            stage_instruction_lines.extend(briefing_obligation_lines(
+                stage, role.instance_id, assigned=child_payload.get("stage_obligation")))
+            if stage.id == "prd-plan" and stage.children and stage.children[0].role_instance == role.instance_id:
+                for member in stage.children[0].payload.get("transferred_obligations", []):
+                    stage_instruction_lines.append(
+                        f"- You own the reassigned coverage of {member['obligation_id']}: {member['question']} "
+                        f"Deliver {member['expected_output']} using {', '.join(member['input_refs'])}. "
+                        f"Reason: {member['disposition']['reason']}"
+                    )
+            if (stage.id == "prd-plan" and stage.trigger == "prd.scan.completed" and stage.children
+                    and stage.children[0].payload.get("stage_obligation", {}).get("obligation_id") == "plan-author"):
+                for result in trigger_payload.get("stage_member_results") or []:
+                    stage_instruction_lines.append(
+                        f"- {result['obligation_id']} from {result['role_instance']}: "
+                        f"receipt {result['result_event_id']}. Read the corresponding bound report through your artifact input index."
+                    )
+        specialist = trigger_payload.get("verify_specialist_obligation")
+        if specialist and specialist.get("role") == role.instance_id:
+            stage_instruction_lines.extend([
+                "## Task Verify specialist evidence",
+                f"Task: {specialist['task_id']} at {specialist['target_commit']}",
+                f"Obligation: {specialist['obligation_id']} — {specialist['question']}",
+                *([f"Selected because: {specialist['selection_reason']}"] if specialist.get("selection_reason") else []),
+                *([f"Completion condition: {specialist['completion_condition']}"] if specialist.get("completion_condition") else []),
+                "Input scope: " + ", ".join(specialist["input_refs"]),
+                "Expected evidence: " + specialist["expected_output"],
+                "Submit the independent specialist evidence to the task verifier.", "",
+            ])
         from zf.runtime.research_adaptive_contract import apply_child_contract
 
         apply_child_contract(
@@ -580,6 +617,10 @@ class FanoutBriefingMixin:
             controlled_inputs = render_attempt_source_briefing(
                 child_payload, state_dir=self.state_dir, role_name=role.name,
             ).strip()
+            from zf.runtime.mailbox_briefing import mailbox_hint
+            inbox = mailbox_hint(getattr(self, "config", None), self.state_dir, child_payload.get("attempt_id") or child_payload.get("run_id"))
+            if inbox:
+                payload_section.extend([inbox, ""])
             if controlled_inputs:
                 payload_section.extend([*controlled_inputs.splitlines(), ""])
             instruction = str(

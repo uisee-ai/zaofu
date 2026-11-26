@@ -66,17 +66,25 @@ def dispatch_advisory_turn(
     )
     try:
         runtime._record_skill_provenance(role=orch_role, task_id=primary.task_id)
+        mailbox_notice = bool(guidance and primary.payload.get("durable_mailbox"))
         context = runtime._dispatch_context(
             role=orch_role,
             briefing_path=briefing_path,
             task_id=primary.task_id,
             trace_id=primary.correlation_id,
+            mailbox_notice=mailbox_notice,
         )
         from zf.runtime.orchestrator_agent_role import orchestrator_instance_id
 
-        runtime._send_transport_task(
-            orchestrator_instance_id(runtime), briefing_path, prompt, context
-        )
+        if mailbox_notice:
+            from zf.runtime.assistance_mailbox import send_notice
+
+            # Keep control keys out of the pointer itself on line-oriented terminals.
+            pointer = f"Read the bounded worker guidance briefing at {str(briefing_path)!r}."
+            send_notice(runtime, primary, lambda: runtime._send_transport_task(
+                orchestrator_instance_id(runtime), briefing_path, pointer, context))
+        else:
+            runtime._send_transport_task(orchestrator_instance_id(runtime), briefing_path, prompt, context)
     except Exception as exc:
         payload = {
             "trigger_event_id": primary.id,

@@ -131,7 +131,7 @@ worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须
 主checkout，实验本地 `.codex/hooks.json` 因而可能不被读取。SpawnCoordinator
 对关联实验在各角色独立 `CODEX_HOME/hooks.json` 安装相同的受控bridge和trust；
 只在该私有home中禁用继承的ZaoFu bridge以防重复/跨state写入，保留自定义hooks，
-不修改共享主checkout。普通独立仓库沿用原项目hook路径。native hooks/list与
+不修改共享主checkout。运行时按 worker 实际工作目录判断是否为 linked worktree。即使控制项目是普通 checkout，linked writer 的托管 hooks 也落在其私有 home 中，产品工作目录里的用户 hooks 纳入正常 Git 交接检查。普通独立仓库沿用原项目hook路径。native hooks/list与
 实际PostToolUse事件是独立验证层，不能用静态hash测试代替真实执行证明。
 
 候选验证 `verification-result.v1` 的 `blocked`/`abstain` 表示未能认证产品，

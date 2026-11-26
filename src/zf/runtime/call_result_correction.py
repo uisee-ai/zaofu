@@ -25,6 +25,15 @@ def repair_instruction(issue: Mapping[str, Any]) -> str:
             "Finish all pages before resubmitting; never edit required_reads, "
             "input_consumption, or the read ledger to manufacture evidence."
         )
+    if code in {"result_not_admitted", "candidate_support_required"} and field.endswith(".supporting_result_refs"):
+        return (
+            "For a closed claim, cite a current admitted Candidate or Discovery envelope supporting it. "
+            "To corroborate it with Task Verify, fully read the relevant task-verify-<task_id> body "
+            "in this attempt and add its exact envelope.ref from the frozen closure fact's task_verify_evidence. "
+            "Keep the Task citation at claim level. If a required fact is unavailable, report the gap."
+        )
+    if code == "result_not_admitted" and field.endswith("input_result_refs"):
+        return "Copy the exact input_result_refs of the current closure batch. Put eligible Task corroboration on its claim."
     if code == "missing_required":
         return f"Provide a non-empty value at {field}."
     if code == "workflow_output_missing":

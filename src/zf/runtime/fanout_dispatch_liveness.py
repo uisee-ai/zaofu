@@ -248,24 +248,45 @@ class FanoutDispatchLivenessMixin:
         # stop is no longer evidence that the child disappeared. A later stop
         # or transport loss still follows the existing bounded recovery path.
         original = dispatch_event.payload
+        call = original.get("payload")
+        call = call if isinstance(call, dict) else {}
+        operation_id = str(original.get("operation_id") or "")
+        request_hash = original.get("request_hash") or call.get("request_hash")
         identity = {
-            "operation_id": str(original.get("operation_id") or ""),
-            "request_hash": str(original.get("request_hash") or ""),
+            "operation_id": operation_id,
+            "request_hash": str(request_hash or ""),
             "dispatch_id": str(original.get("run_id") or original.get("dispatch_id") or ""),
-            "role_instance": str(original.get("role_instance") or ""),
+            "role_instance": role_instance,
         }
-        if all(identity.values()):
+        bindings_match = (
+            call.get("operation_id", operation_id) == operation_id
+            and call.get("request_hash", request_hash) == request_hash
+        )
+        workflow_run_id = original.get("workflow_run_id") or dispatch_event.correlation_id
+        repair = None
+        if bindings_match and all(identity.values()):
             for index in range(len(events) - 1, dispatch_index, -1):
                 event = events[index]
-                if event.type != "workflow.call.result.repair.dispatched":
-                    continue
-                if all(str(event.payload.get(key) or "") == value
-                       for key, value in identity.items()):
+                if (event.type == "workflow.call.result.repair.dispatched"
+                        and event.actor == "zf-cli" and event.origin in {"", "kernel"}
+                        and (not workflow_run_id or workflow_run_id == event.payload.get("workflow_run_id")
+                             or (original.get("request_hash") and not event.payload.get("workflow_run_id")))
+                        and all(str(event.payload.get(key) or "") == value
+                                for key, value in identity.items())):
                     dispatch_index = index
+                    repair = event
                     break
+        source_turn = None
         for index, event in reversed(role_events):
-            if index > dispatch_index:
-                return event
+            if index <= dispatch_index:
+                break
+            if repair and event.type == "provider.turn.closed":
+                if source_turn is None:
+                    source_turn = _turn_that_requested_correction(events, repair, role_instance)
+                if (source_turn.get("turn_id") and event.payload.get("turn_id") == source_turn["turn_id"]
+                        and event.payload.get("session_id", source_turn["session_id"]) == source_turn["session_id"]):
+                    continue
+            return event
         return None
 
     @staticmethod
@@ -914,3 +935,19 @@ def _iso_epoch(value: object) -> float | None:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
     except (TypeError, ValueError):
         return None
+
+
+def _turn_that_requested_correction(events: list[ZfEvent], repair: ZfEvent, role: str) -> dict:
+    """Identify a late provider close when Stop and close wake different runtime ticks."""
+    from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
+
+    for index, event in enumerate(events):
+        if event.id != repair.causation_id:
+            continue
+        if (event.type == "workflow.call.result.repair.requested"
+                and event.payload.get("operation_id") == repair.payload.get("operation_id")
+                and event.payload.get("request_hash") == repair.payload.get("request_hash")
+                and event.payload.get("correction_ref") == repair.payload.get("correction_ref")):
+            return active_codex_turn_from_events(events[:index], role, require_unique=True) or {}
+        break
+    return {}

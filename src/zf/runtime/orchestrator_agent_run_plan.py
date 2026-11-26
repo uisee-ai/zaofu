@@ -68,8 +68,11 @@ def pre_impl_checkpoint_state(
         getattr(loaded, "plan_artifact_package_digest", "") or ""
     )
     generation = str(getattr(loaded, "task_map_generation", "") or "")
+    from zf.runtime.task_pipeline_reconciler import task_pipeline_policy
+    controller = task_pipeline_policy(runtime.config, flow_kind=flow_kind) or {}
+    strict = bool(controller.get("verify_assignment_mode") or (controller.get("candidate") or {}).get("require_oa_assignments"))
     admitted = current_run_plan_admission(
-        runtime.event_log.read_all(),
+        runtime.event_log.read_all(), require_kernel=strict,
         workflow_run_id=workflow_run_id,
         plan_artifact_package_ref=package_ref,
         plan_artifact_package_digest=package_digest,
@@ -137,6 +140,17 @@ def pre_impl_checkpoint_state(
         "run_contract_sha256": str(package.get("run_contract_sha256") or ""),
         "run_contract_digest": str(package.get("run_contract_digest") or ""),
     }
+    if (controller.get("candidate") or {}).get("require_oa_assignments"):
+        from zf.runtime.candidate_reader_assignments import assigned_spec
+        from zf.runtime.call_result_envelope import canonical_json_sha256
+        roster = assigned_spec(runtime.state_dir, payload).get("candidate_reader_assignments")
+        if not roster:
+            raise OrchestratorAgentContractError("Candidate Reader assignments missing from Plan")
+        payload["candidate_reader_assignments_digest"] = canonical_json_sha256(roster)
+    if controller.get("verify_assignment_mode") == "oa_run_plan":
+        from zf.runtime.oa_task_verify_assignment import verify_seats
+        payload["verify_assignment_mode"] = "oa_run_plan"
+        payload["verify_assignment_seats"] = sorted(verify_seats(runtime))
     prepared = request_orchestrator_agent_checkpoint(
         runtime,
         checkpoint="pre_impl",
@@ -180,6 +194,8 @@ def validate_run_plan_admission(
                 f"run_plan identity mismatch for {key}"
             )
     _validate_delegation(runtime, run_plan)
+    from zf.runtime.oa_task_verify_assignment import validate_verify_units
+    validate_verify_units(runtime, run_plan, request)
     source_manifest = _request_source_manifest(runtime, request)
     allowed = {
         (str(row.get("ref") or ""), str(row.get("sha256") or ""))
@@ -259,6 +275,9 @@ def compile_run_plan_admission(
     )
     execution_plan = {
         "schema_version": EXECUTION_PLAN_SCHEMA,
+        **({"verify_assignment_mode": "oa_run_plan"} if request.get("verify_assignment_mode") == "oa_run_plan" else {}),
+        **({"candidate_reader_assignments_digest": request["candidate_reader_assignments_digest"]}
+           if request.get("candidate_reader_assignments_digest") else {}),
         "identity": {
             **dict(run_plan.get("identity") or {}),
             "task_map_generation": str(
@@ -293,6 +312,7 @@ def compile_run_plan_admission(
     )
     payload = {
         "schema_version": "orchestrator-run-plan-admission.v1",
+        **{k: request[k] for k in ("verify_assignment_task", "verify_assignment_revision", "candidate_reader_assignments_digest") if request.get(k)},
         "workflow_run_id": str(decision_identity.get("workflow_run_id") or ""),
         "goal_id": str(run_plan.get("identity", {}).get("goal_id") or ""),
         "operation_id": str(outcome.get("operation_id") or ""),
@@ -335,11 +355,15 @@ def current_run_plan_admission(
     plan_artifact_package_ref: str,
     plan_artifact_package_digest: str,
     task_map_generation: str,
+    verify_task: str = "",
+    require_kernel: bool = False,
 ) -> dict[str, Any]:
     for event in reversed(events):
-        if event.type != RUN_PLAN_ADMITTED:
+        if event.type != RUN_PLAN_ADMITTED or (require_kernel and event.origin != "kernel"):
             continue
         payload = event.payload if isinstance(event.payload, Mapping) else {}
+        if payload.get("verify_assignment_task") and payload["verify_assignment_task"] != verify_task:
+            continue
         if all((
             str(payload.get("workflow_run_id") or "") == workflow_run_id,
             str(payload.get("plan_artifact_package_ref") or "")
@@ -374,6 +398,8 @@ def admitted_context_route_sources(
         plan_artifact_package_ref=plan_artifact_package_ref,
         plan_artifact_package_digest=plan_artifact_package_digest,
         task_map_generation=task_map_generation,
+        verify_task=task_id if stage_id in {"verify", "prd-lanes-verify"} else "",
+        require_kernel=True,
     )
     descriptor = admitted.get("execution_plan_ref")
     if not isinstance(descriptor, Mapping):
@@ -423,12 +449,18 @@ def _selected_work_units(
     stage_id: str,
 ) -> set[str]:
     selected: set[str] = set()
+    verify_stages = {"verify", "prd-lanes-verify"}
+    scoped = execution_plan.get("verify_assignment_mode") == "oa_run_plan"
     for row in execution_plan.get("work_units") or []:
         if not isinstance(row, Mapping):
             continue
         unit_id = str(row.get("work_unit_id") or "")
         task_ids = _strings(row.get("task_ids"))
         stage_ids = _strings(row.get("stage_ids"))
+        if scoped and (stage_id in verify_stages or verify_stages.intersection(stage_ids)):
+            if stage_id in verify_stages and task_id in task_ids and verify_stages.intersection(stage_ids):
+                selected.add(unit_id)
+            continue
         if (
             unit_id in {task_id, stage_id}
             or (task_id and task_id in task_ids)

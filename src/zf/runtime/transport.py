@@ -60,6 +60,13 @@ class WorkerLifecycleSnapshot:
 
 
 @dataclass(frozen=True)
+class MailboxPointerWrite:
+    """The selected adapter observed submitting this pointer to its named endpoint."""
+
+    role_instance: str
+
+
+@dataclass(frozen=True)
 class DispatchContext:
     """Stable context for one task delivery through a transport/provider."""
 
@@ -87,6 +94,9 @@ class DispatchContext:
     continuation_id: str | None = None
     # In-process binding for operator guidance addressed to an existing operation.
     worker_reply_request_hash: str | None = None
+    # Kernel-selected delivery policy, local to the transport call.
+    mailbox_notice: bool = False
+    mailbox_pointer_write: MailboxPointerWrite | None = None
 
     def to_payload(self) -> dict[str, str]:
         payload: dict[str, str] = {}
@@ -169,8 +179,8 @@ class TransportAdapter(ABC):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
-        """Deliver a task briefing as a user-turn prompt."""
+    ) -> MailboxPointerWrite | None:
+        """Deliver a task briefing; an optional mailbox receipt attests only the pointer write."""
 
     def compact_context(self, role_name: str, command: str) -> bool:
         """Request provider-native context compaction when supported."""
@@ -453,7 +463,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
+    ) -> MailboxPointerWrite | None:
         alive, dead_reason = self._agent_process_liveness(role_name)
         if not alive:
             command = self.pane_current_command(role_name).strip()
@@ -470,6 +480,9 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        if context and context.mailbox_notice:
+            self._send_admitted_task(role_name, briefing_path, prompt, context=context)
+            return None if self.tmux.dry_run else MailboxPointerWrite(role_name)
         backend = context.backend if context else self.pane_current_command(role_name).strip()
         if backend == "codex":
             from zf.runtime.provider_interaction import (
@@ -489,14 +502,20 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     def _send_admitted_task(self, role_name: str, briefing_path: Path, prompt: str,
                             *, context: DispatchContext | None = None) -> None:
         backend = context.backend if context else self.pane_current_command(role_name).strip()
+        submit_options = {}
+        if context and context.mailbox_notice:
+            self._assert_mailbox_notice_screen(role_name, input_started=False)
+            submit_options["before_submit"] = lambda: self._assert_mailbox_notice_screen(
+                role_name, input_started=True
+            )
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
         paste = getattr(self.tmux, "send_paste", None)
         if backend == "codex" and callable(paste):
-            paste(role_name, prompt)
+            paste(role_name, prompt, **submit_options)
             return
-        self.tmux.send_keys(role_name, prompt)
+        self.tmux.send_keys(role_name, prompt, **submit_options)
 
     def compact_context(self, role_name: str, command: str) -> bool:
         if not command:
@@ -707,8 +726,8 @@ class CompositeTransport(TransportAdapter):
         prompt: str,
         *,
         context: DispatchContext | None = None,
-    ) -> None:
-        self.for_role(role_name).send_task(
+    ) -> MailboxPointerWrite | None:
+        return self.for_role(role_name).send_task(
             role_name, briefing_path, prompt, context=context,
         )
 
@@ -875,6 +894,7 @@ def make_transport(config: ZfConfig, *, dry_run: bool = False) -> TransportAdapt
                     telemetry=telemetry,
                     operations_metrics=operations_metrics,
                     runtime_logs_enabled=runtime_logs_enabled,
+                    workflow_session_excerpts=getattr(observability, "workflow_session_excerpts", False),
                 )
             sj_transport.register_role(role)
             by_role[role.instance_id] = sj_transport

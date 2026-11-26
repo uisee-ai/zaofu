@@ -83,7 +83,7 @@ def _diagnosed_child(events: list[ZfEvent], sources: set[str], run_id: str) -> Z
 
 
 def diagnosis_reader_rebuild(
-    state_dir: Path, events: list[ZfEvent], diagnosis: dict[str, Any],
+    state_dir: Path, events: list[ZfEvent], diagnosis: dict[str, Any], *, config=None,
 ) -> dict[str, Any]:
     if diagnosis.get("request_kind") != "recovery_diagnosis":
         return {}
@@ -117,7 +117,14 @@ def diagnosis_reader_rebuild(
                "task_id": operation.get("task_id")}
     result: dict[str, Any] = {"failure_event_id": failure.id, "dispatch_event_id": dispatch.id,
               "transport_run_id": dispatch.payload.get("run_id"), "as_of_event_id": events[-1].id}
-    error = reader_rebuild_error(state_dir, events, payload)
+    call = dispatch.payload.get("payload") or {}
+    result["attempt_identity"] = {
+        "transport_task_attempt_id": dispatch.payload.get("attempt_id"),
+        "durable_operation_active_attempt_id": operation.get("active_attempt_id"),
+        "dispatch_call_attempt_id": call.get("attempt_id"),
+        "durable_request_hash": operation.get("request_hash"),
+    }
+    error = reader_rebuild_error(state_dir, events, payload, config=config)
     result["binding_preflight"] = "blocked" if error else "passed"
     if error:
         result["reason"] = error

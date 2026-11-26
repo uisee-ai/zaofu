@@ -494,3 +494,56 @@ def test_secret_scan_does_not_read_task_skill_names_as_api_keys():
         with pytest.raises(WorkflowConfigApplyError) as error:
             _validate_no_inline_secrets(content)
         assert error.value.code == 'candidate_inline_secret'
+
+
+@pytest.mark.parametrize(("change_source", "legacy_snapshot"), [
+    ("", False), ("policy", False), ("bytes_only", False), ("policy", True), ("", True),
+])
+def test_apply_private_candidate_uses_bound_project_profile(tmp_path, monkeypatch, change_source, legacy_snapshot):
+    from tests import test_workflow_config_apply as fixtures
+    from zf.runtime import workflow_proposal
+
+    if legacy_snapshot:
+        write_sidecar = workflow_proposal.write_immutable_json_sidecar
+
+        def write_legacy_snapshot(state, body, **kwargs):
+            if kwargs.get("kind") == "effective_config_snapshot":
+                body = {k: v for k, v in body.items() if k != "profile_sources"}
+            return write_sidecar(state, body, **kwargs)
+
+        monkeypatch.setattr(workflow_proposal, "write_immutable_json_sidecar", write_legacy_snapshot)
+
+    profile = tmp_path / "controller" / "profiles.yaml"
+    profile.parent.mkdir()
+    profile.write_text(
+        "apiVersion: zaofu.dev/v1\nkind: ConfigProfile\nmetadata: {name: approval/v1}\n"
+        "spec: {workflow: {plan_approval: true}}\n", encoding="utf-8",
+    )
+    write_config = fixtures._config
+
+    def config_with_source(path, *, lanes):
+        write_config(path, lanes=lanes)
+        with path.open("a", encoding="utf-8") as output:
+            output.write("  profile_sources: [controller/profiles.yaml]\n  uses: [approval/v1]\n")
+
+    monkeypatch.setattr(fixtures, "_config", config_with_source)
+    proposal, ref, validation = _proposal(tmp_path)
+    service = WorkflowConfigApplyService(state_dir=tmp_path / ".zf", project_root=tmp_path)
+    private = service._private_candidate(proposal)
+    # A file beside the archived YAML is not the approved deployment input.
+    decoy = private.parent / "controller" / "profiles.yaml"
+    decoy.parent.mkdir()
+    decoy.write_text("invalid: [", encoding="utf-8")
+    base = (tmp_path / "zf.yaml").read_bytes()
+    payload = _apply_payload(proposal, ref, validation)
+    if change_source:
+        contents = profile.read_text(encoding="utf-8")
+        changed = contents.replace("true", "false") if change_source == "policy" else contents + "# revised\n"
+        profile.write_text(changed, encoding="utf-8")
+        with pytest.raises(WorkflowConfigApplyError, match="profile sources changed"):
+            service.apply(payload)
+        assert (tmp_path / "zf.yaml").read_bytes() == base
+    else:
+        receipt = service.apply(payload)
+        assert receipt.target_config_digest == proposal["target_config"]["sha256"]
+        assert (tmp_path / "zf.yaml").read_bytes() == private.read_bytes()

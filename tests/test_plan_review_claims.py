@@ -7,7 +7,7 @@ from zf.runtime.plan_review_claims import POLICY
 from zf.runtime.result_submit import ResultSubmitError
 
 
-def _case(tmp_path, *, policy=POLICY, old_body=None):
+def _case(tmp_path, *, policy=POLICY, old_body=None, paired_requirement=""):
     state = tmp_path / 'project/.zf'
     def source(name, value):
         ref = write_immutable_json_sidecar(state, value, root='claim-inputs', kind='test',
@@ -16,15 +16,23 @@ def _case(tmp_path, *, policy=POLICY, old_body=None):
     current = source('child-artifact-planner-map', {'decision': {'status': 'confirmed'}})
     old = source('previous-plan-candidate-1', old_body or {'decision': {'status': 'pending'}})
     requirement = source('requirement', {'rule': 'Apply the confirmed owner decision'})
+    bound, delivered = [current, old, requirement], [current, old, requirement]
+    if paired_requirement:
+        spec = {**source('requirement', {'rule': 'Frozen requirement specification', 'second_rule': 'Independent output clause'}),
+                'artifact_id': 'revision-0002.json'}
+        if paired_requirement != 'extra':
+            bound.append(spec)
+        if paired_requirement != 'missing':
+            delivered.append(spec if paired_requirement != 'substituted' else dict(requirement))
     contract = source('plan-synth-contract', {
         'child_bindings': [{'child_id': 'planner'}],
-        'source_bindings': [current, old, requirement],
+        'source_bindings': bound,
     })
     runtime, prepared, service, token = _running_plan_synth_operation(tmp_path, verdict_only=True,
         extra_payload={'plan_review_evidence_policy': policy,
             'plan_synth_contract_ref': contract['ref'], 'plan_synth_contract_digest': contract['sha256'],
             'reviewed_plan_candidate_digest': contract['sha256'],
-            'input_refs': [current, old, requirement, contract]})
+            'input_refs': [*delivered, contract]})
     cite = {k: current[k] for k in ('source_id', 'artifact_id', 'sha256')}
     cite.update(json_path='$.decision.status', observed_value='pending')
     req = {k: requirement[k] for k in ('source_id', 'artifact_id', 'sha256')}
@@ -42,7 +50,7 @@ def test_preflight_and_submit_reject_false_current_value(tmp_path):
     before = [e.id for e in runtime.event_log.read_all()]
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
-    assert any(e['code'] == 'plan_review_evidence_invalid' for e in check['errors']), check
+    assert {e['code'] for e in check['errors']} >= {'plan_review_evidence_invalid', 'required_read_missing'}, check
     with pytest.raises(ResultSubmitError, match='output binding failed'):
         service.submit(operation_id=prepared.operation_id, semantic_result=result,
                        role_instance='plan-critic', credential=token)
@@ -65,7 +73,10 @@ def test_preflight_identifies_the_exact_failed_citation_in_the_submitted_result(
 
 
 def test_legacy_frozen_request_preserves_old_contract_and_exposes_original_gap(tmp_path):
-    _, prepared, service, token, result, _ = _case(tmp_path, policy='')
+    from tests.test_plan_review_comparisons import read_current_review_inputs
+
+    runtime, prepared, service, token, result, _ = _case(tmp_path, policy='')
+    read_current_review_inputs(runtime, prepared.operation_id)
     check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
         role_instance='plan-critic', credential=token)
     assert not check['errors'], check  # Old admission bound identities, but not the claimed current value.
@@ -171,3 +182,32 @@ def test_review_binds_only_the_lossless_previous_preflight_view(tmp_path, fault)
             matches_previous_preflight_binding(state, sources, binding, view)
         return
     assert not matches_previous_preflight_binding(state, sources, binding, view)
+
+
+@pytest.mark.parametrize("pair", ["bound", "missing", "extra", "substituted"])
+def test_prd_and_requirement_spec_keep_distinct_frozen_bindings_in_preflight(tmp_path, pair):
+    import json
+
+    runtime, prepared, service, token, result, _ = _case(tmp_path, paired_requirement=pair)
+    basis = result["report"]["fix_items"][0]["basis"]
+    basis["current_evidence"][0]["observed_value"] = "confirmed"
+    manifest = json.loads(next((runtime.state_dir / "artifacts/attempts" / prepared.attempt_id /
+                                "source-manifests").glob("*.json")).read_bytes())
+    if pair == "bound":
+        spec = next(s for s in manifest["sources"] if s["artifact_id"] == "revision-0002.json")
+        for field, quote in (("rule", "Frozen requirement specification"), ("second_rule", "Independent output clause")):
+            basis["requirement_evidence"].append({
+                **{k: spec[k] for k in ("source_id", "artifact_id", "sha256")},
+                "json_path": f"$.{field}", "quote": quote,
+            })
+    check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
+                                            role_instance="plan-critic", credential=token)
+    errors = [row for row in check["errors"] if row["code"] == "plan_review_evidence_invalid"]
+    if pair == "bound":
+        assert not errors, errors
+        basis["requirement_evidence"][-1]["quote"] = "Frozen requirement specification"
+        broken = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=result,
+                                                 role_instance="plan-critic", credential=token)
+        assert any(e["field"].endswith("requirement_evidence[2]") for e in broken["errors"]), broken
+    else:
+        assert any("contract and source manifest bindings differ" in e["message"] for e in errors), errors

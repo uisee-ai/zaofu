@@ -143,16 +143,9 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         from zf.runtime.input_delivery_contract import admission_delivery_policy
 
         policy, policy_issues = admission_delivery_policy(self.state_dir, self.event_log.read_all(), operation or {}, policy)
-        from zf.runtime.task_input_failure import incomplete_task_input_failure
+        from zf.runtime.task_input_failure import permits_incomplete_input
 
-        reader_failed = adapted.payload.get("execution_status") == "failed" and (
-            (adapted.schema_version == "workflow-read-result.v1"
-             and adapted.payload.get("verdict") == "abstained")
-            or (adapted.schema_version == "plan-synthesis-result.v1"
-                and adapted.payload.get("failure_class") == "reader_execution_failure"
-                and adapted.payload.get("verdict") == "rejected")
-        )
-        reader_failed = reader_failed or incomplete_task_input_failure(adapted.schema_version, adapted.payload)
+        reader_failed = permits_incomplete_input(adapted.schema_version, adapted.payload)
         ledger_descriptor: dict[str, Any] = {}
         read_issues: list[dict[str, str]] = []
         if policy:
@@ -263,7 +256,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
         ))
         issues.extend(currentness_issues)
         if adapted.schema_version == "goal-closure-result.v1":
-            issues.extend(self._goal_closure_issues(adapted.payload))
+            issues.extend(self._goal_closure_issues(adapted.payload, ledger_descriptor=ledger_descriptor))
         if adapted.schema_version == "artifact-delivery-result.v1":
             from zf.runtime.artifact_delivery_result import (
                 artifact_delivery_admission_issues,

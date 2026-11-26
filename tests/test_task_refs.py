@@ -916,8 +916,9 @@ def test_task_ref_manager_rejects_dirty_workdir_handoff(tmp_path: Path):
     assert not (state_dir / "refs" / "task-index.json").exists()
 
 
-def test_task_ref_manager_accepts_ignorable_harness_dirty_handoff(
-    tmp_path: Path,
+@pytest.mark.parametrize("declared_dirty", [True, False])
+def test_task_ref_manager_preserves_unowned_codex_hook_at_handoff(
+    tmp_path: Path, declared_dirty: bool,
 ) -> None:
     head = _init_repo(tmp_path)
     state_dir = tmp_path / ".zf"
@@ -946,7 +947,7 @@ def test_task_ref_manager_accepts_ignorable_harness_dirty_handoff(
             "source_commit": head,
             "source_branch": "worker/dev",
             "workdir": str(workdir),
-            "worktree_dirty": True,
+            "worktree_dirty": declared_dirty,
             "dirty_files": [".codex/hooks.json"],
             "dirty_scope_note": "Untracked Codex/ZaoFu hook config only",
         },
@@ -959,12 +960,9 @@ def test_task_ref_manager_accepts_ignorable_harness_dirty_handoff(
     ).process_dev_build_done(event)
 
     assert result is not None
-    assert result.status == "updated"
-    assert _git(tmp_path, "rev-parse", "refs/heads/task/TASK-1") == head
-    index = json.loads((state_dir / "refs" / "task-index.json").read_text())
-    diagnostics = index["TASK-1"]["diagnostics"]
-    assert diagnostics["ignored_dirty_files"] == [".codex/hooks.json"]
-    assert "hook config" in diagnostics["dirty_scope_note"]
+    assert result.status == "rejected"
+    assert not (state_dir / "refs" / "task-index.json").exists()
+    assert hooks.read_text() == "{}\n"
 
 
 def test_task_ref_manager_ignores_undeclared_runtime_materialized_dirty(

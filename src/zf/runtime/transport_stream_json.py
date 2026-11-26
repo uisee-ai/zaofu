@@ -150,6 +150,7 @@ class StreamJsonTransport(TransportAdapter):
         telemetry: ProviderTelemetryRuntime | None = None,
         operations_metrics: OperationsMetricsRegistry | None = None,
         runtime_logs_enabled: bool = True,
+        workflow_session_excerpts: bool = False,
     ) -> None:
         self.state_dir = state_dir
         self.registry = registry
@@ -163,6 +164,7 @@ class StreamJsonTransport(TransportAdapter):
         self._telemetry = telemetry
         self._operations_metrics = operations_metrics
         self._runtime_logs_enabled = runtime_logs_enabled
+        self._workflow_session_excerpts = workflow_session_excerpts
         self._messages: dict[str, list[Any]] = {}
         self._roles: dict[str, RoleConfig] = {}
         self._cwd_by_role: dict[str, Path] = {}
@@ -424,15 +426,15 @@ class StreamJsonTransport(TransportAdapter):
                 role_env.update(resource_environment(environment_plan))
                 from zf.runtime.stream_turn_lifecycle import run_stream_turn
 
-                return stream_turn(lambda: run_stream_turn(self.state_dir, context, sid, lambda: asyncio.run(
-                    self._turn_cancellation.drain(role_name, lambda: self._drain(
-                        prompt=prompt, session_id=sid,
-                        role=role, is_resume=resume,
-                        cwd=role_cwd,
-                        env=role_env,
-                    ))
-                )), root=role_cwd, context=context, role=role, session_id=sid,
-                    cancel=lambda: self._turn_cancellation.cancel_and_join(role_name, None))
+                def query():
+                    return asyncio.run(self._turn_cancellation.drain(role_name, lambda: self._drain(
+                        prompt=prompt, session_id=sid, role=role, is_resume=resume,
+                        cwd=role_cwd, env=role_env,
+                    )))
+
+                return stream_turn(lambda: run_stream_turn(self.state_dir, context, sid, query,
+                    publish_excerpt=self._workflow_session_excerpts), root=role_cwd, context=context,
+                    role=role, session_id=sid, cancel=lambda: self._turn_cancellation.cancel_and_join(role_name, None))
 
         try:
             messages, status = _drain_once(session_id, is_resume)

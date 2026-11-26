@@ -14,6 +14,7 @@ from typing import Any, Mapping
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
+from zf.core.state.locks import locked_path
 
 
 ARTIFACT_READ_CREDENTIAL_SCHEMA = "artifact-read-role-credential.v1"
@@ -28,6 +29,10 @@ class ArtifactReadCapabilityError(ValueError):
         self.code = code
 
 
+def role_credential_lock(state_dir: Path, role_instance: str):
+    return locked_path(Path(state_dir) / "private" / "artifact-read" / "roles" / f"{_safe_component(role_instance)}.guard")
+
+
 def provision_role_artifact_read_credential(
     state_dir: Path,
     role_instance: str,
@@ -38,39 +43,49 @@ def provision_role_artifact_read_credential(
 ) -> Path:
     """Issue one role-scoped bearer without publishing its plaintext."""
 
-    role = _safe_component(role_instance)
-    root = Path(state_dir) / "private" / "artifact-read" / "roles"
-    root.mkdir(parents=True, exist_ok=True)
-    _chmod(root, 0o700)
-    metadata_path = root / f"{role}.json"
-    token_path = root / f"{role}.token"
-    current = _read_json(metadata_path)
-    if not rotate and token_path.is_file() and current:
-        return token_path
-    generation = int(current.get("generation") or 0) + 1
-    token = secrets.token_urlsafe(32)
-    atomic_write_text(token_path, token + "\n")
-    _chmod(token_path, 0o600)
-    atomic_write_text(
-        metadata_path,
-        json.dumps(
-            {
-                "schema_version": ARTIFACT_READ_CREDENTIAL_SCHEMA,
-                "role_instance": str(role_instance),
-                "role_name": str(role_name),
-                "provider": str(provider),
-                "generation": generation,
-                "token_sha256": _digest(token),
-                "token_ref": str(token_path),
-            },
-            sort_keys=True,
-            indent=2,
+    with role_credential_lock(state_dir, role_instance):
+        role = _safe_component(role_instance)
+        root = Path(state_dir) / "private" / "artifact-read" / "roles"
+        root.mkdir(parents=True, exist_ok=True)
+        _chmod(root, 0o700)
+        metadata_path = root / f"{role}.json"
+        current = _read_json(metadata_path)
+        old_generation = int(current.get("generation") or 0)
+        legacy_path = root / f"{role}.token"
+        previous_path = root / f"{role}.g{old_generation}.token"
+        if current.get("token_ref") == str(legacy_path):
+            previous_path = legacy_path
+        if not rotate and current and previous_path.is_file():
+            return previous_path
+        generation = old_generation + 1
+        # A provider process inherits this filename at launch. Replacing the bytes at
+        # the same path would silently grant the old process its replacement's credential.
+        token_path = legacy_path if generation == 1 else root / f"{role}.g{generation}.token"
+        token = secrets.token_urlsafe(32)
+        atomic_write_text(token_path, token + "\n")
+        _chmod(token_path, 0o600)
+        atomic_write_text(
+            metadata_path,
+            json.dumps(
+                {
+                    "schema_version": ARTIFACT_READ_CREDENTIAL_SCHEMA,
+                    "role_instance": str(role_instance),
+                    "role_name": str(role_name),
+                    "provider": str(provider),
+                    "generation": generation,
+                    "token_sha256": _digest(token),
+                    "token_ref": str(token_path),
+                },
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n",
         )
-        + "\n",
-    )
-    _chmod(metadata_path, 0o600)
-    _reissue_attempt_bindings(Path(state_dir), str(role_instance), generation)
-    return token_path
+        _chmod(metadata_path, 0o600)
+        _reissue_attempt_bindings(Path(state_dir), str(role_instance), generation)
+        if current and previous_path != token_path:
+            previous_path.unlink(missing_ok=True)
+        return token_path
 
 
 def bind_attempt_artifact_read_capability(
@@ -84,52 +99,65 @@ def bind_attempt_artifact_read_capability(
 ) -> None:
     """Bind a role credential to one immutable source manifest."""
 
-    metadata = _credential_metadata(Path(state_dir), role_instance)
-    if not metadata:
-        return
-    manifest_attempt = str(manifest.get("attempt_id") or "")
-    if not attempt_id or manifest_attempt != attempt_id:
-        raise ArtifactReadCapabilityError(
-            "attempt_mismatch",
-            "artifact read binding does not match the source manifest attempt",
-        )
-    ttl = max(1, int(ttl_seconds))
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
-    path = _binding_path(Path(state_dir), attempt_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _chmod(path.parent, 0o700)
-    binding = {
-        "schema_version": ARTIFACT_READ_BINDING_SCHEMA,
-        "workflow_run_id": str(manifest.get("workflow_run_id") or ""),
-        "task_id": str(manifest.get("task_id") or ""),
-        "operation_id": str(operation_id),
-        "attempt_id": str(attempt_id),
-        "role_instance": str(role_instance),
-        "role_name": str(metadata.get("role_name") or ""),
-        "provider": str(metadata.get("provider") or ""),
-        "purpose": str(manifest.get("read_purpose") or ""),
-        "manifest_digest": canonical_source_manifest_digest(manifest),
-        "credential_generation": int(metadata.get("generation") or 0),
-        "expires_at": expires_at.isoformat(),
-    }
-    existing = _read_json(path)
-    if existing:
-        stable_keys = (
-            "workflow_run_id",
-            "task_id",
-            "operation_id",
-            "attempt_id",
-            "role_instance",
-            "purpose",
-            "manifest_digest",
-        )
-        if any(existing.get(key) != binding.get(key) for key in stable_keys):
+    with role_credential_lock(state_dir, role_instance):
+        metadata = _credential_metadata(Path(state_dir), role_instance)
+        if not metadata:
+            return
+        manifest_attempt = str(manifest.get("attempt_id") or "")
+        if not attempt_id or manifest_attempt != attempt_id:
             raise ArtifactReadCapabilityError(
-                "binding_divergent",
-                f"artifact read binding diverged for attempt {attempt_id}",
+                "attempt_mismatch",
+                "artifact read binding does not match the source manifest attempt",
             )
-    atomic_write_text(path, json.dumps(binding, sort_keys=True, indent=2) + "\n")
-    _chmod(path, 0o600)
+        ttl = max(1, int(ttl_seconds))
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        path = _binding_path(Path(state_dir), attempt_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _chmod(path.parent, 0o700)
+        binding = {
+            "schema_version": ARTIFACT_READ_BINDING_SCHEMA,
+            "workflow_run_id": str(manifest.get("workflow_run_id") or ""),
+            "task_id": str(manifest.get("task_id") or ""),
+            "operation_id": str(operation_id),
+            "attempt_id": str(attempt_id),
+            "role_instance": str(role_instance),
+            "role_name": str(metadata.get("role_name") or ""),
+            "provider": str(metadata.get("provider") or ""),
+            "purpose": str(manifest.get("read_purpose") or ""),
+            "manifest_digest": canonical_source_manifest_digest(manifest),
+            "credential_generation": int(metadata.get("generation") or 0),
+            "expires_at": expires_at.isoformat(),
+        }
+        existing = _read_json(path)
+        if existing:
+            stable_keys = (
+                "workflow_run_id",
+                "task_id",
+                "operation_id",
+                "attempt_id",
+                "role_instance",
+                "purpose",
+                "manifest_digest",
+            )
+            if any(existing.get(key) != binding.get(key) for key in stable_keys):
+                raise ArtifactReadCapabilityError(
+                    "binding_divergent",
+                    f"artifact read binding diverged for attempt {attempt_id}",
+                )
+        atomic_write_text(path, json.dumps(binding, sort_keys=True, indent=2) + "\n")
+        _chmod(path, 0o600)
+
+
+def dispatch_mailbox_attempt(state_dir: Path, attempt: Mapping[str, Any]) -> str:
+    """Select the operation's issued inbox address for a scheduler delivery."""
+    dispatch = attempt["dispatch_id"]
+    binding = _read_json(_binding_path(state_dir, dispatch))
+    expected = {"workflow_run_id": attempt["run_id"], "task_id": attempt["task_id"],
+                "role_instance": attempt["instance_id"], "operation_id": attempt["operation_id"],
+                "attempt_id": dispatch}
+    if all(value and binding.get(key) == value for key, value in expected.items()):
+        return dispatch
+    return attempt["attempt_id"]
 
 
 def authorize_artifact_read_from_environment(
@@ -153,13 +181,8 @@ def authorize_artifact_read_from_environment(
         raise
 
 
-def _authorize_artifact_read_from_environment(
-    state_dir: Path,
-    *,
-    manifest: Mapping[str, Any],
-    event_log: EventLog,
-    use_artifact_context: bool = False,
-) -> dict[str, str]:
+def authenticate_role_from_environment(state_dir: Path) -> dict[str, Any]:
+    """Verify the provisioned resident credential, without granting any Run or operation scope."""
     role_instance = str(os.environ.get("ZF_ROLE_INSTANCE") or "").strip()
     token = str(os.environ.get("ZF_ARTIFACT_READ_TOKEN") or "").strip()
     if not token:
@@ -188,6 +211,18 @@ def _authorize_artifact_read_from_environment(
             "capability_invalid",
             "artifact read credential is invalid or stale",
         )
+    return metadata
+
+
+def _authorize_artifact_read_from_environment(
+    state_dir: Path,
+    *,
+    manifest: Mapping[str, Any],
+    event_log: EventLog,
+    use_artifact_context: bool = False,
+) -> dict[str, str]:
+    metadata = authenticate_role_from_environment(state_dir)
+    role_instance = str(metadata["role_instance"])
     attempt_id = str(manifest.get("attempt_id") or "")
     binding = _read_json(_binding_path(Path(state_dir), attempt_id))
     if not binding:
@@ -390,4 +425,6 @@ __all__ = [
     "bind_attempt_artifact_read_capability",
     "canonical_source_manifest_digest",
     "provision_role_artifact_read_credential",
+    "authenticate_role_from_environment",
+    "role_credential_lock",
 ]

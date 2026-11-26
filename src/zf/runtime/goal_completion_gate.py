@@ -77,7 +77,7 @@ def maybe_complete_run_goal(runtime: Any, event: ZfEvent) -> None:
             if claim is not None:
                 runtime.event_writer.append(claim)
                 events = list(read_runtime_events(runtime.event_log, runtime.state_dir))
-        _evaluate_active_claims(runtime, events)
+        _evaluate_active_claims(runtime, events, recheck_rejected=event.type == "run.delivery.settled")
     except Exception:
         # Fail closed. Supervisor/Run Manager observe a missing Goal terminal;
         # no exception may manufacture a completion event.
@@ -94,7 +94,7 @@ def reconcile_run_goal_completion(runtime: Any) -> None:
     from zf.runtime.run_scope import resolve_run_for_completion_cause
 
     events = list(read_runtime_events(runtime.event_log, runtime.state_dir))
-    _evaluate_active_claims(runtime, events)
+    _evaluate_active_claims(runtime, events, recheck_rejected=True)
     events = list(read_runtime_events(runtime.event_log, runtime.state_dir))
 
     seen_run_ids: set[str] = set()
@@ -136,14 +136,14 @@ def _pre_closeout_allows_claim(
     return not state.enabled or not state.blocking or state.satisfied
 
 
-def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
+def _evaluate_active_claims(runtime: Any, events: list[ZfEvent], *, recheck_rejected: bool = False) -> None:
     from zf.core.state.locks import locked_path
 
     with locked_path(runtime.state_dir / "locks" / "goal-completion.lock"):
-        _evaluate_locked_claims(runtime, list(runtime.event_log.read_all()))
+        _evaluate_locked_claims(runtime, list(runtime.event_log.read_all()), recheck_rejected=recheck_rejected)
 
 
-def _evaluate_locked_claims(runtime: Any, events: list[ZfEvent]) -> None:
+def _evaluate_locked_claims(runtime: Any, events: list[ZfEvent], *, recheck_rejected: bool = False) -> None:
     from zf.runtime.run_contract import load_run_contract
     from zf.runtime.run_manager import (
         RUN_GOAL_COMPLETION_CLAIMED,
@@ -160,11 +160,14 @@ def _evaluate_locked_claims(runtime: Any, events: list[ZfEvent]) -> None:
         if str(item).strip()
     ]
     goal_protocol = protocols.get("goal_closure") if isinstance(protocols.get("goal_closure"), dict) else {}
+    from zf.runtime.goal_claim_recheck import recheckable_rejection
+
     terminals = {
         str((event.payload or {}).get("claim_id") or "")
         for event in events
         if event.type in {"run.goal.completed", RUN_GOAL_COMPLETION_REJECTED}
         and isinstance(event.payload, dict)
+        and not (recheck_rejected and recheckable_rejection(event))
     }
     claims: dict[str, ZfEvent] = {}
     for candidate in events:

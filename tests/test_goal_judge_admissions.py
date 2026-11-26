@@ -10,7 +10,7 @@ from zf.runtime.call_result_envelope import normalize_call_result_envelope, writ
 from zf.runtime.goal_closure_bridge import GoalClosureBridgeMixin
 
 
-def closure(tmp_path, fault=""):
+def closure(tmp_path, fault="", *, judge_members=(), advisory_state="", judge_mandate=None):
     bridge = GoalClosureBridgeMixin()
     bridge.state_dir = bridge.project_root = tmp_path
     bridge.config = ZfConfig()
@@ -52,6 +52,43 @@ def closure(tmp_path, fault=""):
     source = event("flow.discovery.completed", "disc-source", cause=agg.id, fanout_id=fan,
                    candidate_head_commit=TARGET, candidate_ref=REF, task_map_generation=GEN)
     events += [request, start, vote, disc, terminal, agg, source]
+    if judge_members or judge_mandate:
+        bridge.config.workflow.flow_metadata = {"stage_teams": {"judge": {"author": "judge", "members": list(judge_members), **(judge_mandate or {})}}}
+        prior = []
+        late = []
+        for member in judge_members:
+            role = member["role"]
+            obligation = {**member, "recipient": "judge"}
+            child = {"child_id": role, "role_instance": role, "payload": {"stage_obligation": obligation}}
+            required = member.get("required", True)
+            if required:
+                start.payload["expected_children"].append(child)
+                if fault == "missing-specialist":
+                    continue
+            else:
+                prior.append(event("fanout.started", "advisory-start", fanout_id="advisory", stage_id="prd-judge-advisory",
+                                   trigger_event_id="old-req" if advisory_state == "old-request" else request.id,
+                                   expected_children=[child]))
+                if advisory_state == "waiting":
+                    continue
+            opinion = {**body, "fanout_id": fan if required else "advisory", "child_id": role, "role_instance": role,
+                       "operation_id": "op-" + role, "attempt_id": "attempt-" + role}
+            if not required and advisory_state == "wrong-target":
+                opinion["target_commit"] = "b"*40
+            if not required and advisory_state == "wrong-generation":
+                opinion["task_map_generation"] = "old-generation"
+            if not required and advisory_state == "wrong-run":
+                opinion["workflow_run_id"] = "other-run"
+            if not required and advisory_state == "declined":
+                kind, terminal_kind = "workflow.child.failed", "fanout.child.failed"
+            else:
+                kind, terminal_kind = ("flow.discovery.child.completed" if required else "workflow.child.completed"), "fanout.child.completed"
+            destination = late if not required and advisory_state == "late" else prior
+            destination.extend([event(kind, role+"-vote", semantic_submit_admission_event_id=role+"-adm", **opinion),
+                                event("workflow.call.result.admitted", role+"-adm", source_event_id=role+"-vote", **opinion),
+                                event(terminal_kind, role+"-terminal", cause=role+"-vote", **opinion)])
+        events[events.index(agg):events.index(agg)] = prior
+        events.extend(late)
     by_source = {e.causation_id: e for e in events if e.type in {"fanout.child.completed","fanout.child.failed"}}
     for e in events:
         if e.type != "workflow.call.result.admitted":
@@ -112,8 +149,8 @@ def test_old_independent_verify_contract_retains_its_admitted_results(tmp_path):
     assert old["sha256"] in {r["artifact_sha256"] for r in closed.payload["required_reads"]}
 
 
-@pytest.mark.parametrize("cite_history", [False, True])
-def test_judge_submission_requires_current_support_for_closed_claims(tmp_path, cite_history):
+@pytest.mark.parametrize("cite_history, kind", [(False, "readers"), (False, "advisory"), (True, "readers")])
+def test_judge_submission_requires_current_support_for_closed_claims(tmp_path, cite_history, kind):
     from zf.core.events import ZfEvent
     from tests.test_call_result_admission import _append_admitted_upstream, _goal_closure_payload, _runtime
 
@@ -127,7 +164,7 @@ def test_judge_submission_requires_current_support_for_closed_claims(tmp_path, c
     result = payload["goal_closure_result"]
     operations.event_log.append(ZfEvent(type="flow.goal.closed", origin="kernel", correlation_id="run-1", payload={
         **result, "candidate_head_commit": result["target_commit"], "input_result_refs": [active],
-        "judge_batch_admissions": {"readers": [admitted.id], "discovery": [], "supporting": []},
+        "judge_batch_admissions": {"readers": [], "discovery": [], "supporting": [], kind: [admitted.id]},
     }))
     op = operations.ensure_operation(workflow_run_id="run-1", operation_id="judge", operation_type="agent",
                                      request={"goal": "GOAL-1"})
@@ -139,3 +176,34 @@ def test_judge_submission_requires_current_support_for_closed_claims(tmp_path, c
     if cite_history:
         fields = {i["field"] for i in verdict.issues if i["code"] == "result_not_admitted"}
         assert fields == {"control_result.input_result_refs", "goal_coverage[0].supporting_result_refs"}
+
+
+@pytest.mark.parametrize("state", ["waiting", "declined", "on-time", "late", "old-request", "wrong-target", "wrong-generation", "wrong-run"])
+def test_formal_judge_only_waits_for_required_opinions_and_freezes_advisory_at_publication(tmp_path, state):
+    members = [{"obligation_id": "must", "role": "risk-reviewer"},
+               {"obligation_id": "may", "role": "advisor", "required": False}]
+    closed, events, _ = closure(tmp_path, judge_members=members, advisory_state=state)
+    assert closed and closed.type == "flow.goal.closed"
+    batch = closed.payload["judge_batch_admissions"]
+    assert set(batch["discovery"]) == {"disc-adm", "risk-reviewer-adm"}
+    assert batch.get("advisory", []) == (["advisor-adm"] if state == "on-time" else [])
+    options = [r for r in closed.payload["input_refs"] if r["kind"] == "judge_advisory_result"]
+    assert len(options) == int(state == "on-time")
+    if options:
+        assert options[0]["ref"] in closed.payload["input_result_refs"]
+        assert all(r["artifact_sha256"] != options[0]["sha256"] for r in closed.payload["required_reads"])
+    other = tmp_path / "missing-required"
+    other.mkdir()
+    blocked, ledger, _ = closure(other, "missing-specialist", judge_members=members, advisory_state=state)
+    assert blocked is None and ledger[-1].type == "goal.closure.identity.invalid"
+
+def test_formal_judge_has_immutable_oa_objectives_and_disputes_without_specialists(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    mandate = {"reason": "Decide release criteria", "objectives": ["Assess the frozen CLI delivery"],
+               "questions": [{"question_id": "CLI-1", "question": "Does the offline evidence justify delivery?"}]}
+    closed, _, _ = closure(tmp_path, judge_mandate=mandate)
+    desc = next(r for r in closed.payload["input_refs"] if r["source_id"] == "closure-fact")
+    fact = hydrate_sidecar_ref(tmp_path, desc).payload
+    assert fact["judge_mandate"] == {**mandate, "author": "judge", "transferred_obligations": []}
+    assert any(r["artifact_sha256"] == desc["sha256"] for r in closed.payload["required_reads"])

@@ -28,6 +28,7 @@ from zf.runtime.artifact_native_delivery import NATIVE_CODEX_VERSION
 from zf.runtime.artifact_query import ArtifactQueryService
 from zf.runtime.artifact_read_capability import (
     authorize_artifact_read_from_environment,
+    role_credential_lock,
     _binding_path,
 )
 from zf.runtime.artifact_read_requirements import required_reads_for_attempt
@@ -61,7 +62,10 @@ def run_workspace(args):
         peer_identity(os.getpid(), group)
         config_stat = ctx.config_path.stat().st_mtime_ns
 
-        def epoch():
+        def epoch(expected_generation=None):
+            generation = json.loads(_binding_path(state, args.attempt).read_text())["credential_generation"]
+            if expected_generation is not None and generation != expected_generation:
+                raise ValueError("mounted input lease expired")
             registry = RoleSessionRegistry(
                 state / "role_sessions.yaml", ctx.project_root
             )
@@ -86,19 +90,16 @@ def run_workspace(args):
                     raise ValueError(
                         "provider session header does not match its bound rollout"
                     )
-            return (
-                sid,
-                json.loads(_binding_path(state, args.attempt).read_text())[
-                    "credential_generation"
-                ],
-            )
+            return sid, generation
 
-        original = epoch()
+        with role_credential_lock(state, identity["actor"]):
+            original = epoch()
 
         def check():
-            if epoch() != original:
-                raise ValueError("mounted input lease expired")
-            return original[1]
+            with role_credential_lock(state, identity["actor"]):
+                if epoch(original[1]) != original:
+                    raise ValueError("mounted input lease expired")
+                return original[1]
 
         events = artifact_context_events(log)
         required = required_reads_for_attempt(

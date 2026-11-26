@@ -163,31 +163,10 @@ def case(tmp_path, *, mode="full", legacy=False):
     return runtime, svc, args, result, assessments
 
 
-def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
-    runtime, svc, args, result, assessments = case(tmp_path)
-    assert any(
-        e["field"] == "report.execution_assessments"
-        for e in svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
-    )
-    with pytest.raises(ResultSubmitError):
-        svc.submit(**args, semantic_result=result)
-    wrong = deepcopy(assessments)
-    wrong[0]["task_ids"] = ["other"]
-    wrong[1]["basis"]["current_evidence"][0]["observed_value"] = "test-all"
-    result["report"]["execution_assessments"] = wrong
-    errors = svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
-    assert {e["field"] for e in errors} >= {
-        "report.execution_assessments[0].task_ids",
-        "report.execution_assessments[1].basis.current_evidence[0]",
-    }
-    result["report"]["execution_assessments"] = assessments
-    assert (
-        svc.validate_plan_candidate(**args, semantic_result=result)["status"]
-        == "passed"
-    )
+def read_current_review_inputs(runtime, operation_id):
     from zf.runtime.artifact_read_ledger import read_attempt_artifact
 
-    op = reduce_workflow_operations(runtime.event_log.read_all())[args["operation_id"]]
+    op = reduce_workflow_operations(runtime.event_log.read_all())[operation_id]
     request = hydrate_sidecar_ref(runtime.state_dir, op["request_ref"]).payload[
         "request"
     ]
@@ -209,6 +188,31 @@ def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
             artifact_id=row["artifact_id"],
             json_path=row["json_path"],
         )
+
+
+def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
+    runtime, svc, args, result, assessments = case(tmp_path)
+    assert any(
+        e["field"] == "report.execution_assessments"
+        for e in svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
+    )
+    with pytest.raises(ResultSubmitError):
+        svc.submit(**args, semantic_result=result)
+    wrong = deepcopy(assessments)
+    wrong[0]["task_ids"] = ["other"]
+    wrong[1]["basis"]["current_evidence"][0]["observed_value"] = "test-all"
+    result["report"]["execution_assessments"] = wrong
+    errors = svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
+    assert {e["field"] for e in errors} >= {
+        "report.execution_assessments[0].task_ids",
+        "report.execution_assessments[1].basis.current_evidence[0]",
+    }
+    result["report"]["execution_assessments"] = assessments
+    read_current_review_inputs(runtime, args["operation_id"])
+    assert (
+        svc.validate_plan_candidate(**args, semantic_result=result)["status"]
+        == "passed"
+    )
     svc.submit(**args, semantic_result=result)
     op = reduce_workflow_operations(runtime.event_log.read_all())[args["operation_id"]]
     body = hydrate_sidecar_ref(
@@ -223,7 +227,8 @@ def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
 
 @pytest.mark.parametrize("mode,legacy", [("full", True), ("targeted", False)])
 def test_old_and_targeted_requests_keep_their_review_contract(tmp_path, mode, legacy):
-    _, svc, args, result, _ = case(tmp_path, mode=mode, legacy=legacy)
+    runtime, svc, args, result, _ = case(tmp_path, mode=mode, legacy=legacy)
+    read_current_review_inputs(runtime, args["operation_id"])
     assert (
         svc.validate_plan_candidate(**args, semantic_result=result)["status"]
         == "passed"

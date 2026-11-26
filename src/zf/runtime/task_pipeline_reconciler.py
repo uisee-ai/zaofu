@@ -106,6 +106,12 @@ class TaskPipelineReconciler:
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
         ]
+        if policy.get("verify_assignment_mode") == "oa_run_plan":
+            from zf.runtime.oa_task_verify_assignment import VERIFY_WAIT
+            for view in task_views:
+                if view["stage"] == "verify_ready" and not (oa_delegations or {}).get(view["task_id"], {}).get("verify"):
+                    view["stage"] = "verify_assignment_waiting"
+                    view["blockers"].append(VERIFY_WAIT)
         active_attempts = [
             row
             for row in normalized_attempts
@@ -206,6 +212,12 @@ class TaskPipelineReconciler:
             candidates.sort(key=lambda view: (oa_delegations or {}).get(
                 view["task_id"], {}
             ).get(stage_name, {}).get("dispatch_rank", float("inf")))
+            if stage_name == "verify":
+                # A pending evidence wave does not reserve the formal signer.
+                pending_specialists = {op["task_id"] for op in normalized_operations
+                                       if op.get("operation_type") == "task_verify_specialist"
+                                       and op["status"] in {"requested", "running"}}
+                candidates.sort(key=lambda view: view["task_id"] in pending_specialists)
             if stage_name == "impl":
                 candidates = _bounded_rework_order(candidates)
             fresh_impl_dispatched = 0
@@ -254,6 +266,7 @@ class TaskPipelineReconciler:
                 if delegation is not None:
                     preferred = list(delegation.get("preferred_roles") or [])
                     assignment["orchestration_assignment"] = {
+                        **{key: delegation[key] for key in ("contract_revision", "verification_scope", "specialists") if key in delegation},
                         "execution_plan_ref": dict(delegation["execution_plan_ref"]),
                         "work_unit_id": str(delegation["work_unit_id"]),
                         "preferred_roles": preferred,

@@ -13,7 +13,7 @@ from zf.runtime.orchestrator_agent_contracts import (
 from zf.runtime.orchestrator_agent_plan_binding import (
     current_checkpoint_plan_package,
     plan_candidate_rejected,
-    semantic_failure_target_task_id,
+    checkpoint_target_task_id,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import load_workflow_operation
@@ -123,12 +123,17 @@ def admit_orchestrator_agent_decision(
         envelope_ref
     ):
         return _reject("settled_result_ref_mismatch", operation_id=operation_id)
+    if expected["checkpoint"] == "plan_source":
+        from zf.runtime.call_result_runtime import hydrate_admitted_control_result
+
+        if decision_raw != hydrate_admitted_control_result(runtime.state_dir, settled_ref):
+            return _reject("source_selection_differs_from_admitted_result", operation_id=operation_id)
     if plan_candidate_rejected(runtime.event_log.read_all(), request):
         return _reject("plan_candidate_rejected", operation_id=operation_id)
     workflow_run_id = expected["workflow_run_id"]
     package_digest = expected["plan_artifact_package_digest"]
     if package_digest:
-        target_task_id = semantic_failure_target_task_id(runtime.state_dir, request)
+        target_task_id = checkpoint_target_task_id(runtime.state_dir, request)
         current = current_checkpoint_plan_package(
             runtime.event_log.read_all(),
             workflow_run_id=workflow_run_id,

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from zf.autoresearch.resident_commands import _command_for_request
+from zf.autoresearch.runtime_cleanup import finalize_resident_worktree as _finalize_resident_worktree
 from zf.autoresearch.loop_requests import (
     LOOP_ACCEPTED,
     LOOP_COMPLETED,
@@ -60,6 +61,7 @@ class ResidentAction:
     reason: str
     command: list[str]
     kind: str = "loop_request"
+    parent_run_id: str = ""
     fingerprint: str = ""
     attempt: int = 0
     research_mode: str = "debug"
@@ -303,6 +305,7 @@ def plan_resident_actions(
         actions.append(ResidentAction(
             loop_request_id=request_id,
             action="run_loop",
+            parent_run_id=str(payload.get("workflow_run_id") or payload.get("run_id") or ""),
             reason=str(payload.get("reason") or "autoresearch loop requested"),
             command=command,
             research_mode=mode,
@@ -503,6 +506,14 @@ def run_resident_once(
             continue
         # ACCEPTED was already emitted as the queue acknowledgement above;
         # execution adds the STARTED anchor.
+        from zf.autoresearch.diagnosis_disposition import bound_parent_stop
+        parent_stop = bound_parent_stop(state_dir, action.parent_run_id, action.loop_request_id)
+        disposition = parent_stop() if parent_stop else {}
+        if disposition:
+            writer.emit(LOOP_SKIPPED, actor="zf-autoresearch-resident",
+                causation_id=disposition["parent_event_id"], correlation_id=action.parent_run_id,
+                payload=disposition)
+            continue
         from zf.autoresearch.interrupted_checkpoint import checkpoint_started
         diagnosis_start = checkpoint_started(writer, state_dir=Path(state_dir),
             request_id=action.loop_request_id, command=action.command,
@@ -523,6 +534,7 @@ def run_resident_once(
                 from zf.autoresearch.child_supervision import run_supervised
                 proc, diagnosis = run_supervised(
                     action.command, worktree=resident_worktree, timeout_s=timeout_s,
+                    parent_stop=parent_stop, should_stop=should_stop,
                 )
             else:
                 proc = runner(action.command, capture_output=True, text=True,
@@ -558,12 +570,14 @@ def run_resident_once(
                 f"diagnostics/autoresearch/{action.loop_request_id}-partial.json", diagnosis,
                 kind="autoresearch_partial_diagnosis", schema_version="autoresearch-partial-diagnosis.v1",
                 created_by="zf-autoresearch-resident", required=True)
+        disposition = diagnosis.get("status") if diagnosis.get("status") in {"preserved", "cancelled"} else ""
         archive_outcome = _archive_resident_run(
             state_dir=Path(state_dir),
             worktree=resident_worktree,
             output_dir=Path(output_root) / action.loop_request_id,
             action=action,
             proc=proc,
+            disposition=disposition,
         )
         archive_ready = archive_outcome.get("status") == "archived"
         event_type = (
@@ -572,11 +586,16 @@ def run_resident_once(
             and archive_outcome.get("status") in {"archived", "not_required"}
             else LOOP_FAILED
         )
+        if disposition and archive_outcome.get("status") in {"archived", "not_required"}:
+            event_type = LOOP_SKIPPED
         if runtime_cleanup["status"] == "retained":
             event_type = LOOP_FAILED
             worktree_outcome = {"status": "retained", "reason": "runtime_cleanup_failed",
                                 "worktree": str(resident_worktree),
                                 "event_type": "autoresearch.worktree.retained"}
+        elif disposition == "preserved" and resident_worktree.is_dir():
+            worktree_outcome = {"loop_request_id": action.loop_request_id, "status": "retained", "reason": "parent_policy_preserve",
+                                "worktree": str(resident_worktree), "event_type": "autoresearch.worktree.retained"}
         else:
             worktree_outcome = _finalize_resident_worktree(
                 worktree=resident_worktree,
@@ -593,8 +612,11 @@ def run_resident_once(
         writer.append(ZfEvent(
             type=event_type,
             actor="zf-autoresearch-resident",
+            causation_id=diagnosis.get("parent_event_id") or diagnosis_start.id,
+            correlation_id=action.parent_run_id or None,
             payload={
                 "loop_request_id": action.loop_request_id,
+                **({"disposition": disposition, "reason": diagnosis["reason"]} if disposition else {}),
                 "checkpoint_ref": diagnosis_start.payload["checkpoint_ref"],
                 "interrupted": proc.returncode < 0,
                 "mode": action.research_mode,
@@ -626,121 +648,6 @@ def run_resident_once(
     return actions
 
 
-def _finalize_resident_worktree(
-    *,
-    worktree: Path,
-    loop_request_id: str,
-    archive_required: bool = False,
-    archive_manifest: Path | None = None,
-) -> dict[str, Any]:
-    """Remove only clean terminal worktrees; retain every candidate diff."""
-
-    path = Path(worktree).resolve()
-    base = {
-        "loop_request_id": loop_request_id,
-        "worktree": str(path),
-    }
-    if not path.exists():
-        return {**base, "status": "missing"}
-    if archive_required and (
-        archive_manifest is None or not Path(archive_manifest).is_file()
-    ):
-        return {
-            **base,
-            "status": "retained",
-            "reason": "archive_missing",
-            "event_type": "autoresearch.worktree.retained",
-        }
-    from zf.autoresearch.worktree_preparation import (
-        cleanup_interrupted_prepared_worktree,
-    )
-
-    preparation_cleanup = cleanup_interrupted_prepared_worktree(worktree=path)
-    if preparation_cleanup.get("status") not in {"not_prepared", "not_needed"}:
-        base["preparation_cleanup"] = preparation_cleanup
-
-    status = subprocess.run(
-        ["git", "-C", str(path), "status", "--porcelain=v1", "--untracked-files=all"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if status.returncode != 0:
-        return {
-            **base,
-            "status": "retained",
-            "reason": "git_status_failed",
-            "stderr_tail": (status.stderr or "")[-1000:],
-            "event_type": "autoresearch.worktree.retained",
-        }
-    branch_proc = subprocess.run(
-        ["git", "-C", str(path), "branch", "--show-current"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    branch = (branch_proc.stdout or "").strip()
-    dirty = [line for line in status.stdout.splitlines() if line.strip()]
-    if dirty:
-        return {
-            **base,
-            "status": "retained",
-            "reason": "candidate_diff_present",
-            "branch": branch,
-            "dirty_paths": dirty[:100],
-            "event_type": "autoresearch.worktree.retained",
-        }
-
-    common_proc = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    common_dir = (common_proc.stdout or "").strip()
-    if common_proc.returncode != 0 or not common_dir:
-        return {
-            **base,
-            "status": "retained",
-            "reason": "git_common_dir_unresolved",
-            "branch": branch,
-            "event_type": "autoresearch.worktree.retained",
-        }
-    removed = subprocess.run(
-        ["git", "--git-dir", common_dir, "worktree", "remove", str(path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if removed.returncode != 0:
-        return {
-            **base,
-            "status": "retained",
-            "reason": "clean_worktree_remove_failed",
-            "branch": branch,
-            "stderr_tail": (removed.stderr or "")[-1000:],
-            "event_type": "autoresearch.worktree.retained",
-        }
-
-    branch_deleted = False
-    if branch:
-        deleted = subprocess.run(
-            ["git", "--git-dir", common_dir, "branch", "-d", branch],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        branch_deleted = deleted.returncode == 0
-    return {
-        **base,
-        "status": "cleaned",
-        "reason": "terminal_worktree_clean",
-        "branch": branch,
-        "branch_deleted": branch_deleted,
-        "event_type": "autoresearch.worktree.cleaned",
-    }
-
-
 def _archive_resident_run(
     *,
     state_dir: Path,
@@ -748,6 +655,7 @@ def _archive_resident_run(
     output_dir: Path,
     action: ResidentAction,
     proc: subprocess.CompletedProcess,
+    disposition: str = "",
 ) -> dict[str, Any]:
     if not worktree.exists():
         return {
@@ -779,12 +687,14 @@ def _archive_resident_run(
             ).project_root
         except ConfigError:
             project_root = state_dir.parent
+        from zf.autoresearch.owned_runtime_state import owned_runtime_state
+        live_state_dir = owned_runtime_state(worktree) if (worktree / "zf.yaml").exists() else worktree / ".zf"
         result = archive_run(
             project_root=project_root,
             state_dir=state_dir,
-            live_state_dir=worktree / ".zf",
+            live_state_dir=live_state_dir,
             run_id=archive_id,
-            status="passed" if proc.returncode == 0 else "failed",
+            status="cancelled" if disposition else ("passed" if proc.returncode == 0 else "failed"),
             scenario_id=",".join(
                 _string_list(
                     (action.artifact_envelope or {}).get("scenarios")
@@ -796,6 +706,7 @@ def _archive_resident_run(
                 "loop_request_id": action.loop_request_id,
                 "research_mode": action.research_mode,
                 "evidence_complete": evidence_complete,
+                **({"disposition": disposition} if disposition else {}),
             },
             provider=_resident_provider_metadata(action, output_dir),
             supplemental_files=supplemental,
@@ -830,13 +741,13 @@ def _archive_resident_run(
         "manifest": str(result.manifest_path),
         "manifest_digest": result.manifest_digest,
         "run_yaml": str(result.run_yaml_path),
-        "loop_report": str(archived_loop_report),
-        "journal": str(archived_journal),
+        **({"loop_report": str(archived_loop_report)} if archived_loop_report.is_file() else {}),
+        **({"journal": str(archived_journal)} if archived_journal.is_file() else {}),
         "inner_reports": [str(report) for report in archived_inner_reports],
     }
     return {
-        "status": "archived" if evidence_complete else "incomplete",
-        "reason": "" if evidence_complete else "required_reports_missing",
+        "status": "archived" if evidence_complete or disposition else "incomplete",
+        "reason": "" if evidence_complete else "partial_diagnosis_archived" if disposition else "required_reports_missing",
         "manifest": str(result.manifest_path),
         "refs": refs,
     }

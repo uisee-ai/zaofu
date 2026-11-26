@@ -831,3 +831,46 @@ def test_async_synthesis_operation_is_queryable_without_reposting(
     ).json()
     assert detail["result"]["revision"] > queued["request_revision"]
     assert detail["status"] != "cancelled"
+
+
+def test_web_frozen_plan_detail_and_live_source_checks_at_approval(tmp_path, monkeypatch):
+    _, state = _prd_client(tmp_path, monkeypatch)
+    base = tmp_path / "zf.yaml"
+    docs = list(yaml.safe_load_all(base.read_text()))
+    docs[0]["spec"]["stageTeams"] = {"plan": {"reason": "Read the current inputs", "author": "planner",
+        "members": [{"obligation_id": "plan-task-entry", "role": "tech-scan", "question": "Inspect the plan input",
+                     "expected_output": "Scoped finding", "input_refs": ["docs/prd/slice.md#selected"]}]}}
+    base.write_text(yaml.safe_dump_all(docs))
+    source = tmp_path / "docs/prd/slice.md"
+    source.write_text("# Selected\nLocal evidence.\n")
+    request_id = "REQ-WEB-PLAN-SOURCE"
+    intake = build_flow_intake(kind="prd", request_id=request_id, source_ref="docs/prd/request.md",
+        objective="Build the confirmed product.", target_root=str(tmp_path), backend="mock",
+        acceptance=("Verify the product.",), output=tmp_path / "docs/intake/request.md")
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    revise_workflow_request(state, Path(intake["workflow_input_manifest_ref"]), actor="test", confirm=True, writer=writer)
+    preview = build_flow_submit_preview(config_path=base, intake_path=Path(intake["intake_ref"]),
+                                        flow_kind="prd", allow_missing_env=True)
+    proposal = preview["proposal"]
+    assert proposal["approval_status"] == "approvable", preview["blockers"]
+    client = TestClient(create_app(state, config=load_config(base), project_root=tmp_path))
+    source.write_text("# Different\n")
+    detail = client.get(f"/api/projects/default/workflow-requests/{request_id}").json()
+    assert detail["proposal"]["approval_status"] == "approvable"
+    assert detail["proposal"]["proposal_digest"] == proposal["proposal_digest"]
+    headers = {"x-zf-web-token": "test-token"}
+    payload = {"intake_ref": intake["intake_ref"], "request_id": request_id, "kind": "prd", "allow_missing_env": True,
+               "proposal_ref": preview["proposal_ref"], "proposal_digest": proposal["proposal_digest"]}
+    for apply in (False, True):
+        response = client.post("/api/projects/default/workflow-submit", headers=headers, json={**payload, "apply": apply})
+        assert response.status_code == 409, response.text
+        result = response.json()
+        blockers = result.get("result", result)["blockers"]
+        assert any(b["kind"] == "plan_input_invalid" and "missing or ambiguous section" in b["message"] for b in blockers)
+    action = client.post("/api/projects/default/actions/workflow-submit",
+        headers={**headers, "x-idempotency-key": "reject-stale-plan-source"},
+        json=_action_body("reject-stale-plan-source", payload))
+    assert action.status_code == 409, action.text
+    assert any(b["kind"] == "plan_input_invalid" for b in action.json()["blockers"])
+    assert not writer.event_log.query(type="workflow.request.approved")
+    assert not writer.event_log.query(type="workflow.invoke.requested")

@@ -34,7 +34,7 @@ def _verify_assignment(
     spec: Mapping[str, Any], scope: Mapping[str, Any], role: str,
     target: str, package_digest: str,
 ) -> set[str]:
-    from zf.runtime.candidate_reader_assignments import candidate_acceptance_id
+    from zf.runtime.candidate_reader_assignments import candidate_acceptance_id, integration_acceptance_id
 
     assignments = spec.get("candidate_reader_assignments") or []
     assignment = next((row for row in assignments if row["role_instance"] == role), None)
@@ -46,7 +46,9 @@ def _verify_assignment(
         raise ValueError("Candidate Reader assignment does not match the frozen target, Plan or owner")
     expected = {candidate_acceptance_id(row["task_id"], row["acceptance_id"])
                 for row in assignment["acceptance"]}
-    if (set(scope.get("acceptance_ids") or []) != expected
+    integrations = set(assignment.get("integration_check_ids", []))
+    expected.update(integration_acceptance_id(i) for i in integrations)
+    if (set(scope.get("integration_check_ids", [])) != integrations or set(scope.get("acceptance_ids") or []) != expected
             or set(scope.get("journey_ids") or []) != set(assignment["journey_ids"])):
         raise ValueError("Candidate Reader scope does not match its approved acceptance or journeys")
     return expected
@@ -67,6 +69,13 @@ def bind_scoped_report(
             or any(not isinstance(row, Mapping) for row in rows)
             or {row.get("acceptance_id") for row in rows} != assigned):
         raise ValueError("Candidate Reader result must cover exactly its assigned acceptance IDs")
+    from zf.runtime.candidate_reader_assignments import integration_acceptance_id
+
+    checks = {integration_acceptance_id(key) for key in scope.get("integration_check_ids", [])}
+    if any(row["acceptance_id"] in checks and row.get("status") == "passed"
+           and not (isinstance(row.get("evidence_refs"), list) and any(isinstance(ref, str) and ref.strip()
+                    for ref in row["evidence_refs"])) for row in rows):
+        raise ValueError("passed Candidate integration checks must cite evidence for their own assertion")
     if result.get("verdict") == "passed" and any(row.get("status") != "passed" for row in rows):
         raise ValueError("passed Candidate Reader requires passing evidence for every assigned acceptance ID")
     if any(result.get(key) for key in ("product_acceptance_report_ref", "product_acceptance_report_digest")):

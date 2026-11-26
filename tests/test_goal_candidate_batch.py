@@ -300,3 +300,96 @@ def test_reverification_uses_the_original_native_freeze_and_the_current_batch():
         "native",
         "pub-reattempt",
     )
+
+
+def _retried_judge():
+    rows = batch("current", NEW)
+    publication = "pub-current"
+    identity = dict(
+        **IDENTITY,
+        goal_id=GOAL_ID,
+        closure_identity="closure",
+        closure_fact_digest="facts",
+        plan_artifact_package_digest="package",
+        candidate_head_commit=TARGET,
+        source_event_id=publication,
+    )
+    trigger = event("flow.goal.closed", "close0", cause=publication, **identity)
+    rows.append(trigger)
+    for n in range(2):
+        f = f"judge-{n}"
+        rows.append(
+            event(
+                "fanout.started",
+                "start" + f,
+                cause=trigger.id,
+                fanout_id=f,
+                stage_id="final",
+                trigger_event_id=trigger.id,
+            )
+        )
+        aggregate = event(
+            "fanout.aggregate.completed",
+            "aggregate" + f,
+            fanout_id=f,
+            stage_id="final",
+            status="failed",
+            failure_event="goal.closure.synthesis.failed",
+        )
+        failure = event(
+            "goal.closure.synthesis.failed",
+            "failed" + f,
+            cause=aggregate.id,
+            stage_id="final",
+            status="failed",
+            fanout_id=f,
+        )
+        trigger = event(
+            "flow.goal.closed",
+            f"close{n + 1}",
+            cause=failure.id,
+            rework_of=failure.id,
+            rework_attempt=n + 1,
+            **identity,
+        )
+        rows.extend([aggregate, failure, trigger])
+    final = event("goal.closure.synthesized", "passed", fanout_id="admitted-final")
+    rows.extend(
+        [
+            event(
+                "fanout.started", "last-start", fanout_id="admitted-final", trigger_event_id=trigger.id
+            ),
+            final,
+        ]
+    )
+    return rows, {**IDENTITY, "source_event_id": final.id}
+
+
+def test_judge_stage_retries_bind_the_original_verified_candidate_cohort():
+    rows, claim = _retried_judge()
+    proof = bind_canonical_goal_verification(rows, claim_payload=claim)
+    assert (proof.status, proof.candidate_event_id, proof.verification_batch_event_id) == (
+        "exact",
+        "current",
+        "pub-current",
+    )
+
+
+@pytest.mark.parametrize(
+    "target,field,value",
+    [
+        ("close1", "closure_identity", "other"),
+        ("close0", "candidate_head_commit", "other"),
+        ("close0", "plan_artifact_package_digest", "other"),
+        ("close1", "source_event_id", "different-publication"),
+        ("close2", "rework_of", "failedjudge-0"),
+        ("failedjudge-1", "workflow_run_id", "other"),
+        ("aggregatejudge-1", "status", "completed"),
+        ("aggregatejudge-0", "fanout_id", "other"),
+        ("startjudge-1", "trigger_event_id", "close2"),
+    ],
+)
+def test_judge_retry_cannot_borrow_an_unrelated_or_unproven_publication(target, field, value):
+    rows, claim = _retried_judge()
+    next(e for e in rows if e.id == target).payload[field] = value
+    assert bind_canonical_goal_verification(rows, claim_payload=claim).status == "missing"

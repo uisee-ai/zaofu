@@ -151,7 +151,14 @@ def _read_matches(row: Mapping[str, Any], requirement: Mapping[str, Any]) -> boo
 
 def required_read_satisfied(rows: Iterable[Mapping[str, Any]], requirement: Mapping[str, Any]) -> bool:
     """Accept a whole read or complete, gap-free pages of one selected value."""
-    rows = list(rows)
+    binding = requirement.get("consumer_binding")
+    if binding:
+        if not isinstance(binding, Mapping):
+            return False
+        rows = [row for row in rows if row.get("production_status") in {"mounted_file_read", "stdout_flushed"}
+                and all(row.get(key) == value for key, value in binding.items())]
+    else:
+        rows = list(rows)
     if any(_read_matches(row, requirement) for row in rows):
         return True
     if int(requirement.get("max_items") or 0) or int(requirement.get("max_chars") or 0):

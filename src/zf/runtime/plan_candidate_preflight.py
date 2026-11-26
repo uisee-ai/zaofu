@@ -22,7 +22,7 @@ from zf.runtime.plan_artifact_ports import (
 from zf.runtime.plan_matrix_admission import plan_matrix_admission_errors
 from zf.runtime.call_result_envelope import canonical_json_bytes
 from zf.runtime.plan_candidate_ports import (
-    PlanPortTooLarge, check_plan_port_size, read_plan_port_bytes,
+    PlanPortTooLarge, check_plan_port_size, handoff_json_errors, read_plan_port_bytes,
     plan_port_bodies as _plan_port_bodies,
     prepared_plan_port_path_errors,
 )
@@ -71,14 +71,16 @@ def evaluate_plan_candidate_preflight(
         bound_candidate_diagnosis, diagnosis_only_writer_error, diagnosis_review_preflight, owner_review_preflight,
     )
 
-    diagnosis = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
-    if diagnosis is not None:
-        return diagnosis
-    draft_review = owner_review_preflight(
-        candidates, state_dir=state_dir, project_root=project_root,
-    )
-    if draft_review is not None:
-        return draft_review
+    handoff_errors = handoff_json_errors(candidates, state_dir=state_dir, project_root=project_root,
+                                         ports_materialized=ports_materialized)
+    review = diagnosis_review_preflight(candidates, trigger=trigger, state_dir=state_dir, project_root=project_root)
+    if review is None:
+        review = owner_review_preflight(candidates, state_dir=state_dir, project_root=project_root)
+    if review is not None:
+        if handoff_errors:
+            review["errors"].extend(handoff_errors)
+            review["status"] = "failed"
+        return review
     errors: list[dict[str, str]] = []
     if ports_materialized:
         errors.extend(prepared_plan_port_path_errors(candidates, state_dir=state_dir))
@@ -131,6 +133,7 @@ def evaluate_plan_candidate_preflight(
                 f"required plan artifact port {canonical!r} has no producer",
             )
 
+    plan_input_diagnostics: dict[str, dict[str, str]] = {}
     if task_map:
         from zf.runtime.plan_candidate_input_lineage import validate_input_body_partitions
 
@@ -183,12 +186,15 @@ def evaluate_plan_candidate_preflight(
         from zf.runtime.task_map_required_ports import plan_input_declaration_errors, selected_input_body_errors
 
         binding_errors = plan_input_declaration_errors(
-            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS,
+            dict(task_map), available_ports=available | _KERNEL_DERIVED_PORTS, diagnostics=plan_input_diagnostics,
             require_selection=(metadata or {}).get("artifact_package", {}).get("task_input_policy") == "task-scoped-v1",
         )
         binding_errors.extend(selected_input_body_errors(dict(task_map), port_bodies))
         for message in dict.fromkeys([*validation.errors, *binding_errors]):
-            _error(errors, "task_map_invalid", "task_map", message)
+            if message in plan_input_diagnostics:
+                errors.append(plan_input_diagnostics[message])
+            else:
+                _error(errors, "task_map_invalid", "task_map", message)
         for diagnostic in validation.summary.get("goal_coverage", {}).get(
             "diagnostics", []
         ):
@@ -277,10 +283,12 @@ def evaluate_plan_candidate_preflight(
         source_validation = validate_source_index_payload(
             source_index,
             task_map=dict(task_map),
-            require_canonical=True,
+            require_canonical=True, task_map_validation=validation,
         )
+        already_reported = {f"task_map: {item}" for item in validation.errors}
         for message in source_validation.errors:
-            _error(errors, "source_index_invalid", "source_index", message)
+            if message not in already_reported:
+                _error(errors, "source_index_invalid", "source_index", message)
 
     if task_map:
         from zf.runtime.source_index_gate import evaluate_source_index_gate
@@ -326,6 +334,8 @@ def evaluate_plan_candidate_preflight(
 
     from zf.runtime.plan_candidate_input_cost import candidate_input_cost
 
+    if handoff_errors:
+        errors = handoff_errors + [issue for issue in errors if issue not in handoff_errors]
     return {
         "schema_version": SCHEMA_VERSION,
         "input_cost": candidate_input_cost(task_map or {}, port_bodies, review_input_limits),
@@ -344,6 +354,10 @@ def evaluate_plan_candidate_preflight(
         "task_map_producer": producer,
         "required_ports": required_with_source,
         "available_ports": sorted(available),
+        **({"plan_input_contract": {
+            "flow_required_ports": required_plan_ports(flow_kind=flow_kind, metadata=metadata),
+            "task_map_required_plan_ports": task_map.get("required_plan_ports", []),
+        }} if plan_input_diagnostics else {}),
         "errors": errors,
         "summary": {
             "error_count": len(errors),
@@ -369,6 +383,7 @@ def _product_acceptance_spec_errors(
 
     from zf.runtime.product_acceptance import (
         PRODUCT_ACCEPTANCE_SPEC_SCHEMA,
+        ReaderPlanReadsError,
         validate_product_acceptance_spec,
     )
 
@@ -424,6 +439,12 @@ def _product_acceptance_spec_errors(
             from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
 
             validate_plan_assignment_coverage(normalized, task_map)
+    except ReaderPlanReadsError as exc:
+        return [
+            {"code": "product_acceptance_spec_invalid",
+             "field": f"plan_ports.product_acceptance_spec.{field}", "message": message}
+            for field, message in exc.issues
+        ]
     except ValueError as exc:
         rows: list[dict[str, str]] = []
         _error(

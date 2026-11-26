@@ -71,6 +71,12 @@ event schema or recovery state machine.
   Reader actually executed with their own evidence, not copied host observations.
   An unavailable host fact cannot become a passing probe by changing its label
   or downgrading its finding. Preserve the original source and consumption status.
+- For a candidate-owned command with `reusable: false`, check the current
+  contract and input index. When it authorizes a local check and supplies no
+  applicable shared host receipt, run the exact command on the frozen candidate.
+  Capture its native exit code and output together. Use the
+  [fresh probe evidence procedure](references/fresh-candidate-probe.md) to
+  bind the actual command evidence to this dispatch and the relevant criteria.
 - Historical process evidence: a publication or reassessment attempt may contain
   only GREEN while the original implementation's RED remains in pinned predecessor
   handoffs. Before claiming it is absent, use known command event IDs as lookup

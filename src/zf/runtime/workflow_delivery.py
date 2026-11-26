@@ -308,7 +308,7 @@ def build_flow_submit_preview(
     proposal_ref: dict[str, Any] = {}
     if request_projection and resolved_kind != "auto":
         from zf.runtime.workflow_proposal import (
-            build_workflow_proposal,
+            WorkflowPlanSourceError, build_workflow_proposal,
             cleanup_synthesized_workflow_candidate,
         )
         try:
@@ -327,6 +327,8 @@ def build_flow_submit_preview(
                 actor=requested_by or "zf-cli",
                 writer=request_writer,
             )
+        except WorkflowPlanSourceError as exc:
+            blockers.append({"severity": "STOP", "kind": "plan_input_invalid", "message": str(exc)})
         finally:
             cleanup_synthesized_workflow_candidate(
                 effective_config_path,

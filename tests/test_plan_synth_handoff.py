@@ -714,3 +714,27 @@ def test_plan_rework_context_pins_current_task_and_delivery_checkpoint(
     assert current["latest_blocking_fact"]["failure_class"] == (
         "contract_scope_base_conflict"
     )
+
+
+def test_same_bytes_in_two_requirement_files_preserve_both_review_bindings(tmp_path):
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    state = tmp_path / ".zf"
+    state.mkdir()
+    for name in ("prd.md", "spec.json"):
+        (tmp_path / name).write_text('{"a":"check input","b":"check output"}')
+    payload = build_plan_synth_call_payload(
+        state_dir=state, project_root=tmp_path,
+        manifest={"fanout_id": "f", "trace_id": "run", "stage_id": "prd-plan",
+                  "trigger_event_id": "trigger", "source_ref": "prd.md",
+                  "target_ref": "prd.md", "requirement_spec_ref": "spec.json"},
+        reports=[{"child_id": "planner", "report": {"status": "passed"}}],
+        run_id="run-critic", role_instance="plan-critic",
+    )
+    refs = [s for s in payload["input_refs"] if s["source_id"] == "requirement"]
+    assert {s["artifact_id"] for s in refs} == {"prd.md", "spec.json"}
+    assert len(refs) == 2 and len({s["sha256"] for s in refs}) == 1
+    contract = hydrate_sidecar_ref(state, {
+        "ref": payload["plan_synth_contract_ref"], "sha256": payload["plan_synth_contract_digest"],
+    }).payload
+    assert {b["ref"] for b in contract["source_bindings"] if b["source_id"] == "requirement"} == {s["ref"] for s in refs}

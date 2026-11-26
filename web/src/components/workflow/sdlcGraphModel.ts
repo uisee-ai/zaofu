@@ -2,7 +2,8 @@ export type GraphView = "lifecycle" | "modules" | "workflow" | "trace" | "delive
 export interface SdlcNode { id: string; kind: string; label: string; status: string; views: GraphView[]; data: Record<string, unknown> }
 export interface SdlcEdge { id: string; source: string; target: string; relation: string; views: GraphView[]; event?: string; collapsedVia?: string[]; presentation?: "goal" | "scope" | "outcome" }
 export interface SdlcGraph {
-  scope: { request_id: string; revision: number; run_id: string; proposal_digest: string; source_seq: number; head_seq: number; historical: boolean; execution_started?: boolean };
+  generation?: string;
+  scope: { project_id?: string; request_id: string; revision: number; run_id: string; proposal_digest: string; source_seq: number; head_seq: number; historical: boolean; execution_started?: boolean };
   nodes: SdlcNode[]; edges: SdlcEdge[]; diagnostics: string[];
   capabilities: Record<string, { status: string; reason?: string }>;
   goal_coverage?: { identity?: { goal_id?: string; workflow_run_id?: string } };

@@ -408,6 +408,7 @@ full 415494 → incremental 442000 bytes（增加 6.38%）；诊断存在 11 项
 ### 复评后修复：摘要、审批首屏与无收益回退
 
 机械 digest 的 assembly 结论与 Task Map 准入共用 `assembly_ownership_errors`。
+验证任务保留其独立审核 owner。当其入口为 `verify_only`、明确 `write_free: true` 且写范围为空时，准入与摘要均只统计实际写入角色。审核任务及其依赖仍保留在完整任务图。
 单 owner 或有依赖的串行拓扑不要求专门 assembly 任务；多个独立并行 bundle 缺
 assembly、assembly 与所依赖 bundle 共用 owner 等错误仍保留。缺 owner/任务/依赖
 身份显示未知，不按名字含 ASSEMBLY 或根文件数量推定集成责任已满足。该检查只

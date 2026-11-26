@@ -27,6 +27,25 @@
         ]
       }
     ],
+    "integration_checks": [
+      {
+        "check_id": "save-and-view",
+        "task_ids": ["TASK-SAVE", "TASK-ASSEMBLY"],
+        "assertion": "重新打开页面时，显示的内容与已保存值一致"
+      }
+    ],
+    "candidate_reader_assignments": [
+      {
+        "role_instance": "candidate-reader",
+        "acceptance": [
+          {"task_id": "TASK-SAVE", "acceptance_id": "AC-PERSIST"},
+          {"task_id": "TASK-ASSEMBLY", "acceptance_id": "AC-DISPLAY"}
+        ],
+        "journey_ids": ["journey-save"],
+        "plan_reads": {"task_map": ["$.tasks[0]", "$.tasks[1]"]},
+        "integration_check_ids": ["save-and-view"]
+      }
+    ],
     "provider_qualification": {
       "required_for_goal": false,
       "providers": [],

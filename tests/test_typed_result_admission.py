@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -681,3 +683,35 @@ def test_legacy_reader_admission_repairs_placeholder_result_before_accepting(tmp
     assert "placeholder" in rejected.issues[0]["message"]
     assert not any(event.type == "workflow.call.result.admitted" for event in log.read_all())
     assert submit(valid).admitted
+
+
+@pytest.mark.parametrize(("first", "second", "separate_execution"), [
+    ("0a1377", "exec-output:0a1377", False),
+    ("exec-output:0a1377", "6fff83", True),
+    ("0a1377", "./0a1377", False),
+    ("file://{state}/0a1377", "exec-output:0a1377", True),
+    ("reports/0a1377", "exec-output:0a1377", True),
+    ("event:evt-1", "event:evt-1", False),
+    ("event:evt-1", "evt-1", False),
+    ("logs/probes.txt#run-1", "file://{state}/logs/./probes.txt#run-1", False),
+    ("logs/probes.txt#run-1", "logs/probes.txt#run-2", True),
+    ("event:evt-1", "event:evt-2", True),
+])
+def test_distinct_candidate_tiers_require_individually_referenced_native_outputs(
+    tmp_path, first, second, separate_execution,
+):
+    from zf.runtime.typed_result_admission import _passed_verification_command_issue
+    from zf.runtime.verification_commands import command_digest
+
+    commands = [{"command_id": name, "command": "python hello.py", "command_digest": command_digest("python hello.py"),
+                 "tier": tier, "owner": "candidate_verify"} for name, tier in [("smoke", "runtime"), ("end", "e2e")]]
+    contract = {"task_id": "hello", "verification_commands": commands,
+                "acceptance_criteria": [{"mandatory": True, "verification_command_ids": ["smoke", "end"]}]}
+    probes = [{**command, "target_commit": "c", "exit_code": 0, "status": "passed",
+               "evidence_refs": ["event:summary", ref.format(state=tmp_path)]}
+              for command, ref in zip(commands, (first, second), strict=True)]
+    issue = _passed_verification_command_issue(
+        {"probe_receipts": probes}, contract=contract, target={"target_commit": "c"},
+        reused_receipts=[], host_commands=[], verification_owner="candidate_verify", state_dir=tmp_path,
+    )
+    assert (issue or {}).get("code") == (None if separate_execution else "verification_probe_execution_evidence_shared")

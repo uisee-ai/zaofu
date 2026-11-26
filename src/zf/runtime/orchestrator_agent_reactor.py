@@ -77,6 +77,13 @@ class OrchestratorAgentReactorMixin:
                 role="orchestrator",
                 reason="admitted run plan source event is missing",
             )
+        task = event.payload.get("verify_assignment_task")
+        if task and event.origin == "kernel":
+            from zf.runtime.task_pipeline_runtime import prepare_task_pipeline_dispatch
+            decisions, _ = prepare_task_pipeline_dispatch(self, candidate_task_ids=[task])
+            return next((decision for decision in decisions if decision.task_id == task),
+                        WorkflowRuntimeDecision(action="observe", task_id=task, role="orchestrator",
+                            reason="WRC reconciled the corrected Verify assignment"))
         self._maybe_start_writer_fanout(source)
         return WorkflowRuntimeDecision(
             action="dispatch",

@@ -128,11 +128,21 @@ def request_orchestrator_agent_checkpoint(
             operation=existing,
         )
         if prepared is not None:
+            # The source-recovery reconciler holds the incident lock. Restore a notice lost
+            # after operation registration using the original persisted context and identity.
+            if (checkpoint == "plan_source" and prepared.status == "requested" and not any(
+                    e.origin == "kernel" and e.type == CHECKPOINT_REQUESTED and e.payload.get("operation_id") == operation_id
+                    for e in runtime.event_log.read_all())):
+                _publish_checkpoint(runtime, prepared, source_event, checkpoint_source_event_id, candidate_key, [])
             return replace(
                 prepared,
                 should_dispatch=prepared.status == "requested",
                 replay_hit=True,
             )
+    if checkpoint == "pre_impl" and payload.get("verify_assignment_mode") == "oa_run_plan":
+        from zf.runtime.task_verify_specialists import specialist_catalog
+
+        payload = {**payload, "verify_specialist_patterns": specialist_catalog(runtime.config)}
     context = build_orchestrator_agent_context(
         runtime,
         checkpoint=checkpoint,
@@ -243,6 +253,10 @@ def request_orchestrator_agent_checkpoint(
         "result_scratch_ref": result_scratch_ref,
         "result_identity": result_identity,
     }
+    if checkpoint == "pre_impl":
+        request.update({k: payload[k] for k in ("verify_assignment_mode", "verify_assignment_task",
+                                                "verify_assignment_seats", "verify_specialist_patterns", "verify_assignment_acceptance", "verify_specialist_incident",
+                                                "verify_assignment_revision", "candidate_reader_assignments_digest") if k in payload})
     service = workflow_operation_service(runtime)
     ensured = service.ensure_operation(
         workflow_run_id=workflow_run_id,
@@ -267,46 +281,7 @@ def request_orchestrator_agent_checkpoint(
             operation_id=operation_id,
             source_event=source_event,
         )
-    if ensured.created:
-        bind_attempt_artifact_read_capability(
-            runtime.state_dir,
-            operation_id=operation_id,
-            attempt_id=attempt_id,
-            role_instance=role_instance,
-            manifest=context.source_manifest,
-        )
-        bind_operation_submit_capability(
-            runtime.state_dir,
-            operation_id=operation_id,
-            role_instance=role_instance,
-            attempt_id=attempt_id,
-            lease_id=attempt_id,
-        )
-    if ensured.created:
-        runtime.event_writer.append(ZfEvent(
-            type=CHECKPOINT_REQUESTED,
-            actor="zf-cli",
-            origin="kernel",
-            payload={
-                "schema_version": "orchestrator-agent-checkpoint-request.v1",
-                "workflow_run_id": workflow_run_id,
-                "operation_id": operation_id,
-                "request_hash": ensured.request_hash,
-                "attempt_id": attempt_id,
-                "checkpoint": checkpoint,
-                "checkpoint_policy": checkpoint_policy,
-                "checkpoint_input_ref": context.input_ref,
-                "source_manifest_ref": context.source_manifest_ref,
-                "input_consumption_policy_ref": context.read_policy_ref,
-                "stage_execution_card_ref": context.stage_card_ref,
-                "source_event_id": checkpoint_source_event_id,
-                "checkpoint_candidate_key": candidate_key,
-                "supersedes_operation_ids": superseded_operation_ids,
-            },
-            causation_id=source_event.id,
-            correlation_id=source_event.correlation_id or workflow_run_id,
-        ))
-    return PreparedOrchestratorAgentOperation(
+    prepared = PreparedOrchestratorAgentOperation(
         workflow_run_id=workflow_run_id,
         operation_id=operation_id,
         request_hash=ensured.request_hash,
@@ -320,6 +295,51 @@ def request_orchestrator_agent_checkpoint(
         status=ensured.status,
         replay_hit=ensured.replay_hit,
     )
+    if ensured.created:
+        _publish_checkpoint(runtime, prepared, source_event, checkpoint_source_event_id, candidate_key, superseded_operation_ids)
+    return prepared
+
+
+def _publish_checkpoint(
+    runtime: Any,
+    prepared: PreparedOrchestratorAgentOperation,
+    source_event: ZfEvent,
+    source_id: str,
+    candidate_key: str,
+    superseded: list[str],
+) -> None:
+    context = prepared.context
+    if context is None:
+        raise ValueError("Cannot publish an OA checkpoint without its persisted context")
+    bind_attempt_artifact_read_capability(
+        runtime.state_dir, operation_id=prepared.operation_id, attempt_id=prepared.attempt_id,
+        role_instance=prepared.role_instance, manifest=context.source_manifest,
+    )
+    bind_operation_submit_capability(
+        runtime.state_dir, operation_id=prepared.operation_id, role_instance=prepared.role_instance,
+        attempt_id=prepared.attempt_id, lease_id=prepared.attempt_id,
+    )
+    runtime.event_writer.append(ZfEvent(
+        type=CHECKPOINT_REQUESTED, actor="zf-cli", origin="kernel",
+        payload={
+            "schema_version": "orchestrator-agent-checkpoint-request.v1",
+            "workflow_run_id": prepared.workflow_run_id,
+            "operation_id": prepared.operation_id,
+            "request_hash": prepared.request_hash,
+            "attempt_id": prepared.attempt_id,
+            "checkpoint": prepared.checkpoint,
+            "checkpoint_policy": prepared.checkpoint_policy,
+            "checkpoint_input_ref": context.input_ref,
+            "source_manifest_ref": context.source_manifest_ref,
+            "input_consumption_policy_ref": context.read_policy_ref,
+            "stage_execution_card_ref": context.stage_card_ref,
+            "source_event_id": source_id,
+            "checkpoint_candidate_key": candidate_key,
+            "supersedes_operation_ids": superseded,
+        },
+        causation_id=source_event.id,
+        correlation_id=source_event.correlation_id or prepared.workflow_run_id,
+    ))
 
 
 def _record_shadow_checkpoint_skip(
@@ -399,12 +419,20 @@ def orchestrator_agent_checkpoint_revision(
             return candidate_key
         return ":".join((revision, source_event_id))
     if checkpoint == "pre_impl":
+        if payload.get("verify_assignment_task"):
+            from zf.runtime.call_result_envelope import canonical_json_sha256
+            key = [payload.get("task_map_generation"), payload.get("plan_artifact_package_digest"),
+                   payload["verify_assignment_task"], payload["verify_assignment_revision"]]
+            incident = payload.get("verify_specialist_incident")
+            if incident:
+                key.extend((incident["source_event_id"], incident["operation_id"]))
+            return canonical_json_sha256(key)
         return str(
             payload.get("task_map_generation")
             or payload.get("plan_artifact_package_digest")
             or revision
         )
-    if checkpoint in {"stage_barrier", "goal_revision", "pre_closeout"}:
+    if checkpoint in {"stage_barrier", "goal_revision", "pre_closeout", "plan_source"}:
         return ":".join((revision, source_event_id))
     if checkpoint == "semantic_failure":
         return ":".join((

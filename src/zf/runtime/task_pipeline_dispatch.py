@@ -197,6 +197,16 @@ def dispatch_task_pipeline_stage(
         ),
         operation_generation=operation_generation,
     )
+    specialist_sources = []
+    delegation = assignment.get("orchestration_assignment") or {}
+    if stage == "verify" and delegation.get("specialists"):
+        from zf.runtime.task_verify_specialists import specialist_inputs
+
+        specialist_sources = specialist_inputs(
+            runtime, delegation, context=generation_context, task_id=task_id,
+            target_commit=target_fields["target_commit"], signer=role,
+            contract_ref=contract_descriptor, generation=operation_generation,
+        )
     stage_operation_ids = {
         str(row.get("operation_id") or "")
         for row in operation_rows
@@ -321,6 +331,13 @@ def dispatch_task_pipeline_stage(
         **package_identity,
         **target_fields,
     }
+    if specialist_sources:
+        operation_payload["input_refs"] = specialist_sources
+        operation_payload["required_reads"] = [
+            {"source_id": source["source_id"], "artifact_id": source["artifact_id"],
+             "artifact_sha256": source["sha256"], "json_path": "$", "min_returned_bytes": 1}
+            for source in specialist_sources
+        ]
     if policy.get("role_binding_resolution"):
         operation_payload["role_binding_resolution"] = dict(
             policy["role_binding_resolution"]

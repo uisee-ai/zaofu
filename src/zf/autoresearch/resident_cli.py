@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import os
 import signal
 import sys
 import threading
@@ -68,8 +69,16 @@ def _run_resident_loop(args: Any, *, state_dir: Path) -> int:
             print(actions_json(actions), flush=True)
             from zf.runtime.autoresearch_parent_exit import parent_completed
             from zf.core.events.factory import event_log_from_project
-            if not actions and parent_completed(event_log_from_project(state_dir).read_all()):
-                break  # continue policy drains its finite queue, then releases ownership
+            # A watcher may admit another Run after one goal completes. Only a
+            # handed-off (or standalone) resident drains its finite queue and exits.
+            launcher = os.environ.get("ZF_AUTORESEARCH_LAUNCHER_PID")
+            if not actions and launcher != str(os.getppid()):
+                log = event_log_from_project(state_dir)
+                try:
+                    if parent_completed(log.read_all()):
+                        break
+                finally:
+                    log.close()
             if shutdown_requested.is_set() or not getattr(args, "watch", False):
                 break
             shutdown_requested.wait(interval)

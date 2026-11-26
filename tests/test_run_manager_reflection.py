@@ -52,6 +52,40 @@ def test_slow_reflection_does_not_hold_tick_and_cannot_duplicate_diagnosis(tmp_p
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("backend, expected_model", [("codex", "gpt-6-luna"), ("claude-code", "")])
+def test_on_demand_reflect_uses_matching_rm_model_in_provider_command(tmp_path, monkeypatch, backend, expected_model):
+    from subprocess import CompletedProcess
+
+    state, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state)
+    config = _reflect_config()
+    manager = config.runtime.run_manager
+    manager.backend = "codex"
+    manager.reflect.backend = backend
+    manager.resident_agent.enabled = False
+    manager.resident_agent.model = "gpt-6-luna"
+    manager.resident_agent.model_reasoning_effort = "high"
+    received = []
+
+    def provider(cmd, **kwargs):
+        received.append((cmd, kwargs["backend"], kwargs["model"]))
+        return CompletedProcess(cmd, 0, '{"verdict":"best_so_far","risk":"low"}', "")
+
+    monkeypatch.setattr("zf.integrations.controller.helper.run_provider", provider)
+    tick = run_manager_tick(state_dir=state, writer=writer, config=config,
+                            project_root=tmp_path, spawn_repairs=False)
+    assert tick.reflect_requested == 1
+    _wait(lambda: any(e.type == COMPLETED for e in log.read_all()))
+    assert len(received) == 1
+    cmd, actual_backend, model = received[0]
+    assert (actual_backend, model) == (backend, expected_model)
+    if expected_model:
+        assert cmd[cmd.index("--model") + 1] == expected_model
+        assert 'model_reasoning_effort="high"' in cmd
+    else:
+        assert "--model" not in cmd and "--effort" not in cmd
+
+
 def test_deadline_settles_once_and_rejects_late_result(tmp_path):
     state, log, writer = _state(tmp_path)
     release, returned = Event(), Event()

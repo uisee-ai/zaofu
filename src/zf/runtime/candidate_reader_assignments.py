@@ -22,21 +22,121 @@ def _identifier(value: Any) -> bool:
     return isinstance(value, str) and bool(value) and value == value.strip()
 
 
+def _row_fields(row: Any, path: str, *, required: set[str], optional: tuple[str, ...] = ()) -> None:
+    if not isinstance(row, dict):
+        raise ValueError(f"{path} must be an object")
+    missing = required - row.keys()
+    unexpected = row.keys() - required - set(optional)
+    issues = []
+    if missing:
+        issues.append("missing fields: " + ", ".join(sorted(missing)))
+    if unexpected:
+        issues.append("unexpected fields: " + ", ".join(sorted(str(k) for k in unexpected)))
+    if issues:
+        raise ValueError(f"{path} " + ". ".join(issues))
+
+
+def integration_checks(spec: Mapping[str, Any]) -> dict[str, dict]:
+    rows = spec.get("integration_checks", [])
+    if not isinstance(rows, list):
+        raise ValueError("Candidate integration_checks must be a list")
+    checks = {}
+    for index, row in enumerate(rows):
+        path = f"Candidate integration_checks[{index}]"
+        _row_fields(row, path, required={"check_id", "task_ids", "assertion"})
+        if not _identifier(row["check_id"]):
+            raise ValueError(f"{path}.check_id must be a nonempty trimmed string")
+        if row["check_id"] in checks:
+            raise ValueError(f"{path}.check_id is a duplicate check ID")
+        if not _identifier(row["assertion"]):
+            raise ValueError(f"{path}.assertion must be a nonempty trimmed string")
+        tasks = row["task_ids"]
+        if not isinstance(tasks, list) or not all(_identifier(t) for t in tasks):
+            raise ValueError(f"{path}.task_ids must be a list of nonempty trimmed task IDs")
+        if len(set(tasks)) != len(tasks):
+            raise ValueError(f"{path}.task_ids contains duplicate task IDs")
+        if len(tasks) < 2:
+            raise ValueError(f"{path}.task_ids requires at least two distinct tasks. For a single-task Plan use "
+                             "integration_checks: [] and integration_check_ids: [] on each Reader assignment. "
+                             "Keep its acceptance and journey coverage.")
+        checks[row["check_id"]] = row
+    return checks
+
+
+def integration_acceptance_id(check_id: str) -> str:
+    return "candidate-integration-" + canonical_json_sha256(check_id)[:16]
+
+
+_JSON_PATH = re.compile(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*")
+_PLAN_READS_EXAMPLE = 'Example for a task_map port: {"task_map":["$.tasks[0]"]}.'
+
+
+def _diagnostic_name(value: Any, fallback: str) -> str:
+    # Only display identifier-like names. A malformed key may contain document text.
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value) else fallback
+
+
+def _plan_read_issues(row: dict, field: str) -> list[tuple[str, str]]:
+    reads = row.get("plan_reads", {})
+    role = _diagnostic_name(row["role_instance"], "see role_instance")
+    if not isinstance(reads, dict):
+        return [(field, f"Reader {role} requires an object mapping Plan port names to arrays of JSONPath "
+                        f"strings. {_PLAN_READS_EXAMPLE}")]
+    problems: dict[str, list[str]] = {}
+    for index, (port, paths) in enumerate(reads.items()):
+        label = _diagnostic_name(port, f"port at index {index}")
+        if not _identifier(port):
+            problems.setdefault("expected nonempty trimmed port names", []).append(label)
+        if not isinstance(paths, list):
+            received = "string" if isinstance(paths, str) else type(paths).__name__
+            reason = f"expected a JSON array of distinct JSONPath strings per port, received {received}"
+            problems.setdefault(reason, []).append(label)
+            continue
+        seen = set()
+        for pos, path in enumerate(paths):
+            location = f"{label}[{pos}]"
+            if not isinstance(path, str) or not _JSON_PATH.fullmatch(path):
+                reason = "expected a JSONPath rooted at $ with .field or [index] steps"
+            elif path in seen:
+                reason = "duplicate JSONPath within the port"
+            else:
+                seen.add(path)
+                continue
+            problems.setdefault(reason, []).append(location)
+    return [(field, f"Reader {role}: {reason} at {', '.join(names)}. {_PLAN_READS_EXAMPLE}")
+            for reason, names in problems.items()]
+
+
 def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
+    checks = integration_checks(spec)
     if "candidate_reader_assignments" not in spec:
+        if checks:
+            raise ValueError("Candidate integration checks lack an assigned Reader")
         return
     rows = spec["candidate_reader_assignments"]
     if not isinstance(rows, list) or not rows:
         raise ValueError("candidate_reader_assignments requires at least one Reader")
     roles: set[str] = set()
     journeys: set[str] = set()
-    for row in rows:
-        if (not isinstance(row, dict) or set(row) - {"role_instance", "acceptance", "journey_ids", "plan_reads"}
-                or not _identifier(row.get("role_instance")) or row["role_instance"] in roles):
-            raise ValueError("candidate_reader_assignments requires unique role instances")
-        roles.add(row["role_instance"])
+    allocated = set()
+    read_issues: list[tuple[str, str]] = []
+    for index, row in enumerate(rows):
+        path = f"candidate_reader_assignments[{index}]"
+        _row_fields(row, path, required={"role_instance", "acceptance", "journey_ids"},
+                    optional=("plan_reads", "integration_check_ids"))
+        role = row["role_instance"]
+        if not _identifier(role):
+            raise ValueError(f"{path}.role_instance must be a nonempty trimmed string")
+        if role in roles:
+            raise ValueError(f"{path}.role_instance is a duplicate role_instance {role!r}")
+        roles.add(role)
+        check_ids = row.get("integration_check_ids", [])
+        if (not isinstance(check_ids, list) or not all(_identifier(i) and i in checks for i in check_ids)
+                or len(set(check_ids)) != len(check_ids)):
+            raise ValueError("Candidate Reader requires registered distinct integration_check_ids")
+        allocated.update(check_ids)
         acceptance = row.get("acceptance")
-        if not isinstance(acceptance, list) or not acceptance:
+        if not isinstance(acceptance, list) or not (acceptance or check_ids):
             raise ValueError("each Candidate Reader needs explicit task-qualified acceptance")
         keys = set()
         for item in acceptance:
@@ -52,14 +152,13 @@ def validate_reader_assignments(spec: Mapping[str, Any]) -> None:
                 or len(set(ids)) != len(ids)):
             raise ValueError("Candidate Reader journey_ids must be a list of distinct IDs")
         journeys.update(ids)
-        reads = row.get("plan_reads", {})
-        if not isinstance(reads, dict):
-            raise ValueError("Candidate Reader plan_reads must map Plan port names to JSON paths")
-        for port, paths in reads.items():
-            if (not _identifier(port) or not isinstance(paths, list) or
-                    not all(isinstance(p, str) and re.fullmatch(r"\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*", p)
-                            for p in paths) or len(set(paths)) != len(paths)):
-                raise ValueError("Candidate Reader plan_reads contains invalid paths")
+        read_issues.extend(_plan_read_issues(row, f"{path}.plan_reads"))
+    if read_issues:
+        from zf.runtime.product_acceptance import ReaderPlanReadsError
+
+        raise ReaderPlanReadsError(read_issues)
+    if set(checks) != allocated:
+        raise ValueError("Candidate integration checks lack an assigned Reader")
     if not isinstance(spec.get("user_journeys"), list) or any(
         not isinstance(j, dict) or not _identifier(j.get("journey_id")) for j in spec["user_journeys"]
     ):
@@ -86,12 +185,34 @@ def assigned_spec(state: Path, freeze: Mapping[str, Any]) -> dict:
     return spec
 
 
-def validate_acceptance_coverage(rows: list[dict], criteria: list[dict]) -> None:
+def approved_roster_ref(state_dir: Path, events, freeze: Mapping[str, Any], spec: Mapping[str, Any]) -> dict:
+    from zf.runtime.orchestrator_agent_run_plan import current_run_plan_admission
+
+    admitted = current_run_plan_admission(events, require_kernel=True, **{k: str(freeze.get(k) or "") for k in
+        ("workflow_run_id", "task_map_generation", "plan_artifact_package_ref", "plan_artifact_package_digest")})
+    digest = canonical_json_sha256(spec.get("candidate_reader_assignments", []))
+    ref = admitted.get("execution_plan_ref") or {}
+    if not ref.get("sha256") or not ref.get("ref") or admitted.get("candidate_reader_assignments_digest") != digest:
+        raise ValueError("frozen Candidate Reader roster lacks the current OA decision")
+    from zf.runtime.orchestrator_agent_run_plan import EXECUTION_PLAN_SCHEMA
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    frozen_plan = hydrate_sidecar_ref(state_dir, ref).payload
+    identity = frozen_plan.get("identity", {}) if isinstance(frozen_plan, dict) else {}
+    if (not identity or frozen_plan.get("schema_version") != EXECUTION_PLAN_SCHEMA
+            or frozen_plan.get("candidate_reader_assignments_digest") != digest
+            or any(identity.get(k) != freeze.get(k) for k in ("workflow_run_id", "task_map_generation",
+                                                               "plan_artifact_package_ref", "plan_artifact_package_digest"))):
+        raise ValueError("immutable OA execution plan differs from its Candidate Reader approval")
+    return {"candidate_reader_assignments_digest": digest, "execution_plan_ref": ref}
+
+
+def validate_acceptance_coverage(rows: list[dict], criteria: list[dict], *, all_declared: bool = True) -> None:
     assigned = {(ac["task_id"], ac["acceptance_id"]) for row in rows for ac in row["acceptance"]}
     known = {(r["source_task_id"], r["source_acceptance_id"]) for r in criteria}
     if len(known) != len(criteria):
         raise ValueError("Candidate Reader cannot bind duplicate source AC identities")
-    required = {(r["source_task_id"], r["source_acceptance_id"]) for r in criteria if r.get("mandatory", True)}
+    required = known if all_declared else {
+        (r["source_task_id"], r["source_acceptance_id"]) for r in criteria if r.get("mandatory", True)}
     if assigned - known or required - assigned:
         raise ValueError(f"Candidate Reader AC coverage mismatch: missing={sorted(required-assigned)}, "
                          f"unknown={sorted(assigned-known)}")
@@ -119,14 +240,17 @@ def validate_plan_assignment_coverage(spec: Mapping[str, Any], task_map: Mapping
                 raise ValueError(f"scoped Candidate plan needs stable acceptance IDs for {task_id}")
             criteria.append({"source_task_id": task_id, "source_acceptance_id": ac_id,
                              "mandatory": ac.get("mandatory", True)})
+    known_tasks = {r["source_task_id"] for r in criteria}
+    if any(set(c["task_ids"]) - known_tasks for c in integration_checks(spec).values()):
+        raise ValueError("Candidate integration check names a task outside the Plan")
     validate_acceptance_coverage(spec["candidate_reader_assignments"], criteria)
 
 
-def scope_reader_contract(aggregate: dict, spec: dict, *, role: str, target: str) -> dict:
+def scope_reader_contract(aggregate: dict, spec: dict, *, role: str, target: str, all_declared: bool = True) -> dict:
     """Narrow the authenticated snapshot before the attempt's target and input manifest are pinned."""
     rows = spec["candidate_reader_assignments"]
     criteria = aggregate["acceptance_criteria"]
-    validate_acceptance_coverage(rows, criteria)
+    validate_acceptance_coverage(rows, criteria, all_declared=all_declared)
     row = next((r for r in rows if r["role_instance"] == role), None)
     if row is None:
         raise ValueError(f"Candidate Reader {role!r} lacks an approved assignment")
@@ -141,8 +265,18 @@ def scope_reader_contract(aggregate: dict, spec: dict, *, role: str, target: str
             raise ValueError("scoped Candidate commands require an explicit AC binding: " + command["command_id"])
         if linked & ids:
             commands.append({**command, "acceptance_ids": sorted(linked & ids)})
+    checks = integration_checks(spec)
+    assigned_checks = [checks[i] for i in row.get("integration_check_ids", [])]
+    for check in assigned_checks:
+        if not set(check["task_ids"]) <= {a["source_task_id"] for a in criteria}:
+            raise ValueError("Candidate integration check references a task outside the frozen contract")
+        check_ac = integration_acceptance_id(check["check_id"])
+        selected.append({"acceptance_id": check_ac, "statement": check["assertion"], "text": check["assertion"], "mandatory": True,
+                         "verification_owner": "candidate_verify", "verification_tier": "integration",
+                         "integration_check_id": check["check_id"], "task_ids": check["task_ids"]})
+        ids.add(check_ac)
     scope = {
-        "role_instance": role, "task_ids": sorted({a["task_id"] for a in row["acceptance"]}),
+        **({"integration_check_ids": list(row["integration_check_ids"])} if assigned_checks else {}),        "role_instance": role, "task_ids": sorted({a["task_id"] for a in row["acceptance"]} | {t for c in assigned_checks for t in c["task_ids"]}),
         "acceptance_ids": sorted(ids), "journey_ids": list(row["journey_ids"]),
         "candidate_event_id": aggregate["candidate_event_id"], "target_commit": target,
         "plan_artifact_package_digest": aggregate["plan_artifact_package_digest"],

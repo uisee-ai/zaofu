@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from zf.core.config.durable_mailbox import DurableMailboxConfig
 from zf.core.config.host_verification import HostVerificationConfig
 from zf.core.config.task_publication import TaskPublicationConfig
 
@@ -1608,6 +1609,7 @@ class RuntimeWebTerminalConfig:
 
 @dataclass
 class RuntimeConfig:
+    durable_mailbox: DurableMailboxConfig = field(default_factory=DurableMailboxConfig)
     host_watchdog_seconds: float = 0.0  # opt-in external main-loop watchdog
     host_verification: HostVerificationConfig = field(default_factory=HostVerificationConfig)
     task_publication: TaskPublicationConfig = field(default_factory=TaskPublicationConfig)
@@ -2043,6 +2045,7 @@ class ObservabilityConfig:
     alerts: ObservabilityAlertConfig = field(
         default_factory=ObservabilityAlertConfig
     )
+    workflow_session_excerpts: bool = False
 
 
 @dataclass

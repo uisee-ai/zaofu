@@ -8,9 +8,11 @@ from uuid import uuid4
 from zf.core.events import EventLog, EventWriter, ZfEvent
 
 
-def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], Any]):
+def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], Any], *, publish_excerpt: bool = False):
     fields = context.to_payload()
     required = ("run_id", "task_id", "operation_id", "attempt_id", "dispatch_id", "lease_id", "instance_id", "task_pipeline_stage")
+    if publish_excerpt:
+        required = tuple(k for k in required if k not in {"task_pipeline_stage", "task_id"})
     if not all(fields.get(key) for key in required):
         return invoke()  # Legacy/non-task calls retain their existing recovery route.
     writer = EventWriter(EventLog(state_dir / "events.jsonl"))
@@ -18,8 +20,8 @@ def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], An
                 "session_id": session_id, "turn_id": str(uuid4()), "transport": "stream-json"}
     def emit(kind, payload):
         return writer.append(ZfEvent(type=kind, origin="kernel", actor=fields["instance_id"],
-            task_id=fields["task_id"], correlation_id=fields["run_id"], payload={**identity, **payload}))
-    emit("provider.turn.opened", {})
+            task_id=fields.get("task_id"), correlation_id=fields["run_id"], payload={**identity, **payload}))
+    opened = emit("provider.turn.opened", {})
     try:
         messages, status = invoke()
     except BaseException as exc:
@@ -44,7 +46,16 @@ def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], An
                     unknown = True
             if hasattr(block, "tool_use_id"):
                 pending.discard(block.tool_use_id)
-    emit("provider.turn.closed", {"provider_status": "completed" if completed else "incomplete",
+    excerpt = {}
+    if publish_excerpt and completed and len(final) == 1 and session_id and getattr(final[0], "session_id", "") == session_id:
+        from zf.runtime.workflow_session_excerpt import capture_public_reply
+        body = getattr(final[0], "result", None)
+        if isinstance(body, str) and body.strip():
+            try:
+                excerpt = {"operator_excerpt_ref": capture_public_reply(state_dir, opened, body)}
+            except (OSError, ValueError):
+                pass  # Observing a reply must never affect its execution or settlement.
+    emit("provider.turn.closed", {**excerpt, "provider_status": "completed" if completed else "incomplete",
         "drain_status": getattr(status, "value", str(status)), "pending_tool_ids": sorted(pending),
         "tool_identity_unknown": unknown, "business_completed": False,
         "recovery_owner": "kernel" if completed and not pending and not unknown else "run_manager",
@@ -52,7 +63,7 @@ def run_stream_turn(state_dir, context, session_id: str, invoke: Callable[[], An
     return messages, status
 
 
-def open_stream_turn(events, actor: str) -> ZfEvent | None:
+def open_stream_turn(events, actor: str, *, require_unique: bool = False) -> ZfEvent | None:
     """An unclosed durable invocation prevents another automatic continuation."""
     opened = {}
     for event in events:
@@ -63,7 +74,9 @@ def open_stream_turn(events, actor: str) -> ZfEvent | None:
             opened[key] = event
         elif event.type == "provider.turn.closed":
             opened.pop(key, None)
-    return next(reversed(opened.values()), None) if opened else None
+    if require_unique and len(opened) != 1:
+        return None
+    return next(reversed(opened.values()), None)
 
 
 def current_stream_turn_matches(events, event, attempt) -> bool:

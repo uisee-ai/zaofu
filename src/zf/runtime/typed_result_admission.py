@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.runtime.host_probe_provenance import probe_execution_reference_keys
 from zf.runtime.impl_self_check import (
     ImplSelfCheckError,
     hydrate_impl_self_check,
@@ -408,6 +409,7 @@ def _verification_issues(
         reused_receipts=reused_receipts,
         host_commands=host_commands,
         verification_owner=expected_owner,
+        state_dir=state_dir,
     )
     return [command_issue] if command_issue else []
 
@@ -420,6 +422,7 @@ def _passed_verification_command_issue(
     reused_receipts: list[dict[str, Any]],
     host_commands: list[dict[str, Any]],
     verification_owner: str,
+    state_dir: Path = Path('.'),
 ) -> dict[str, str] | None:
     specs = {
         str(item.get("command_id") or ""): item
@@ -444,6 +447,7 @@ def _passed_verification_command_issue(
         for item in [*reused_receipts, *host_commands]
         if str(item.get("command_id") or "")
     }
+    local_evidence: dict[tuple[str, str], dict[str, set[frozenset[str]]]] = {}
     probes = result.get("probe_receipts")
     probes = probes if isinstance(probes, list) else []
     expected_target = str(target.get("target_commit") or "")
@@ -501,6 +505,26 @@ def _passed_verification_command_issue(
                 action="result_repair",
             )
         covered.add(command_id)
+        if verification_owner == "candidate_verify":
+            group = local_evidence.setdefault((bindings["command"], bindings["command_digest"]), {})
+            group.setdefault(command_id, set()).update(
+                probe_execution_reference_keys(state_dir, ref) for ref in _strings(raw.get("evidence_refs"))
+            )
+    for group in local_evidence.values():
+        for command_id, refs in group.items():
+            other_tiers = [evidence for other, evidence in group.items()
+                           if specs[other].get("tier") != specs[command_id].get("tier")]
+            if not other_tiers:
+                continue
+            other_keys = {key for evidence in other_tiers for reference in evidence for key in reference}
+            if not any(reference.isdisjoint(other_keys) for reference in refs):
+                return _issue(
+                    field="control_result.probe_receipts",
+                    code="verification_probe_execution_evidence_shared",
+                    message=f"Candidate command {command_id!r} requires its own execution evidence. "
+                            "Cite its exact output or event when the same command has distinct verification tiers.",
+                    owner="candidate_verify", action="result_repair",
+                )
     missing = sorted(required - covered)
     if missing:
         return _issue(

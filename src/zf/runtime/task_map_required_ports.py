@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from zf.runtime.plan_artifact_ports import canonical_plan_port_name
@@ -46,38 +47,73 @@ def required_plan_port_errors(value: Any) -> list[str]:
     return errors
 
 
-def plan_input_selection_shape_errors(policy: Any, *, prefix: str) -> list[str]:
-    """Check the shared selection schema before package binding is available."""
+_MATRICES = {"execution_spec", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
+_SCOPED = {"execution_spec", "task_execution_input"}
+_STAGES = ("implementation", "task-verify")
+
+
+def _names(values: Iterable[str]) -> str:
+    return ", ".join(sorted(values)) or "(none)"
+
+
+def _selection_shape(policy: Any) -> Iterator[tuple[str, str, str]]:
+    """Yield relative field, reason and guidance, including independent stage errors."""
     if (not isinstance(policy, dict)
-            or set(policy) != {"schema_version", "implementation", "task-verify"}
+            or set(policy) != {"schema_version", *_STAGES}
             or policy.get("schema_version") != "task-plan-input-selection.v1"):
-        return [f"{prefix} has invalid schema; expected exactly schema_version, "
-                "implementation, task-verify with schema_version=task-plan-input-selection.v1"]
-    errors: list[str] = []
-    for stage in ("implementation", "task-verify"):
+        yield "", "schema", ("has invalid schema; expected exactly schema_version, implementation, "
+                             "task-verify with schema_version=task-plan-input-selection.v1")
+        return
+    for stage in _STAGES:
         values = policy[stage]
         if (not isinstance(values, list) or not values or
                 any(not isinstance(x, str) or not x.strip() or x != x.strip() for x in values)):
-            errors.append(f"{prefix}.{stage} must be a non-empty port list")
-        elif (len(values) != len(set(values))
-              or not {"execution_spec", "task_execution_input"}.intersection(values)):
-            errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
-    return errors
+            yield f".{stage}", "port_list", 'must be a non-empty port list, e.g. ["execution_spec"]'
+            continue
+        seen = set()
+        duplicates = set()
+        for port in values:
+            if port in seen:
+                duplicates.add(port)
+            seen.add(port)
+        if duplicates:
+            yield f".{stage}", "duplicate", f"contains duplicate ports: {_names(duplicates)}; include each name once"
+        if not _SCOPED.intersection(values):
+            yield f".{stage}", "scope_missing", ('requires a task-scoped input: execution_spec or task_execution_input; '
+                                                'e.g. ["execution_spec"] with a task-scoped-plan-input.v1 body')
+
+
+def plan_input_selection_shape_errors(policy: Any, *, prefix: str) -> list[str]:
+    return [f"{prefix}{suffix} {detail}" for suffix, _, detail in _selection_shape(policy)]
 
 
 def plan_input_declaration_errors(
     payload: dict[str, Any], *, available_ports: Iterable[str] | None = None,
-    require_selection: bool = False,
+    require_selection: bool = False, diagnostics: dict[str, dict[str, str]] | None = None,
 ) -> list[str]:
-    """Validate optional task selections before admitting a Plan."""
+    """Validate explicit Task Map declarations; a produced port alone does not select it."""
+    def record(field: str, code: str, detail: str, *, task: tuple[int, str] | None = None) -> None:
+        prefix = f"{task[1]}." if task else ""
+        text = f"{prefix}{field} {detail}"
+        errors.append(text)
+        if diagnostics is not None:
+            path = f"task_map.tasks[{task[0]}].{field}" if task else f"task_map.{field}"
+            diagnostics[text] = {
+                "code": f"task_plan_inputs_{code}", "field": path,
+                "message": f"{task[1]}: {detail}" if task else detail,
+            }
+
     declared = payload.get("required_plan_ports")
     errors = required_plan_port_errors(declared)
-    available = set(declared) if isinstance(declared, list) and all(isinstance(x, str) for x in declared) else set()
+    available = {canonical_plan_port_name(x) for x in declared if isinstance(x, str)} if isinstance(declared, list) else set()
     bound = set(available_ports) if available_ports is not None else None
-    for task in payload.get("tasks", []) if isinstance(payload.get("tasks"), list) else []:
+    missing_matrix_reported = False
+    tasks = payload.get("tasks")
+    for index, task in enumerate(tasks if isinstance(tasks, list) else []):
         if not isinstance(task, dict):
             continue
         task_id = str(task.get("task_id") or task.get("id") or "")
+        row = (index, task_id)
         evidence = task.get("evidence_contract")
         evidence = evidence if isinstance(evidence, dict) else {}
         local = evidence.get("required_plan_ports")
@@ -85,27 +121,38 @@ def plan_input_declaration_errors(
             f"{task_id}.evidence_contract.{error}"
             for error in (required_plan_port_errors(local) if local not in (None, "", []) else [])
         )
-        local_ports = {canonical_plan_port_name(x) for x in local} if isinstance(local, list) and all(isinstance(x, str) for x in local) else set()
+        local_ports = {canonical_plan_port_name(x) for x in local if isinstance(x, str)} if isinstance(local, list) else set()
         if bound is not None and (missing := local_ports - bound):
-            errors.append(f"{task_id}.evidence_contract.required_plan_ports contains unbound ports: " + ", ".join(sorted(missing)))
-        selectable = available | local_ports
+            record("evidence_contract.required_plan_ports", "unbound",
+                   f"contains unbound ports: {_names(missing)}; publish their plan_ports descriptors; "
+                   f"available package ports: {_names(bound)}", task=row)
         policy = evidence.get("plan_input_selection")
+        field = "evidence_contract.plan_input_selection"
         if policy is None:
             if require_selection:
-                errors.append(f"{task_id}.evidence_contract.plan_input_selection is required by task-scoped-v1")
+                record(field, "required", "is required by task-scoped-v1", task=row)
             continue
-        prefix = f"{task_id}.evidence_contract.plan_input_selection"
-        shape_errors = plan_input_selection_shape_errors(policy, prefix=prefix)
-        if shape_errors:
-            errors.extend(shape_errors)
+        if not missing_matrix_reported and (missing := _MATRICES - available):
+            record("required_plan_ports", "matrices_missing",
+                   f"requires complete plan matrix ports; missing from task_map.required_plan_ports: {_names(missing)}; "
+                   f"declared: {_names(available)}. Root example: "
+                   + json.dumps({"required_plan_ports": sorted(_MATRICES)}))
+            missing_matrix_reported = True
+        for suffix, code, detail in _selection_shape(policy):
+            record(field + suffix, code, detail, task=row)
+        if not isinstance(policy, dict):
             continue
-        full = {"execution_spec", "acceptance_matrix", "test_matrix", "real_e2e_matrix"}
-        if not full.issubset(available):
-            errors.append(f"{prefix} requires complete plan matrix ports")
-        for stage in ("implementation", "task-verify"):
+        selectable = available | local_ports
+        for stage in _STAGES:
             values = policy.get(stage)
-            if not set(values).issubset(selectable):
-                errors.append(f"{prefix}.{stage} contains duplicate, unbound or missing scoped input")
+            if not isinstance(values, list):
+                continue
+            unknown = {v for v in values if isinstance(v, str) and v.strip()} - selectable
+            if unknown:
+                record(f"{field}.{stage}", "undeclared",
+                       f"contains unbound ports: {_names(unknown)}. Declare shared names in task_map.required_plan_ports "
+                       f"or task-only names in this task's evidence_contract.required_plan_ports; "
+                       f"selectable declarations: {_names(selectable)}.", task=row)
     return errors
 
 

@@ -3,7 +3,7 @@
 from typing import Any, Mapping
 
 from zf.runtime.orchestrator_agent_plan_binding import (
-    current_checkpoint_plan_package, semantic_failure_target_task_id,
+    current_checkpoint_plan_package, checkpoint_target_task_id,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import WorkflowOperationService, reduce_workflow_operations
@@ -34,7 +34,7 @@ def reconcile_obsolete_checkpoint_operations(
             # candidate-key supersession protocol.
             if request.get("checkpoint") == "plan_candidate":
                 continue
-            target = semantic_failure_target_task_id(service.state_dir, request)
+            target = checkpoint_target_task_id(service.state_dir, request)
             from zf.runtime.orchestrator_agent_execution_policy import checkpoint_operation_rejection
             operation_stale = checkpoint_operation_rejection(service.state_dir, events, request)
             current = current_checkpoint_plan_package(

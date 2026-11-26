@@ -149,6 +149,8 @@ def claim_set_issues(
     *,
     admitted_result_refs: set[str] | None = None,
     claim_set_descriptor_digest: str = "",
+    auxiliary_refs: set[str] | None = None,
+    candidate_refs: set[str] | None = None,
 ) -> list[dict[str, str]]:
     """Compare Judge coverage to the immutable canonical claim set."""
 
@@ -197,10 +199,20 @@ def claim_set_issues(
         })
     if admitted_result_refs is not None:
         for index, item in enumerate(coverage):
-            if not isinstance(item, Mapping) or str(item.get("status") or "") != "closed":
+            if not isinstance(item, Mapping):
                 continue
-            for ref in _strings(item.get("supporting_result_refs")):
-                if ref not in admitted_result_refs:
+            closed = item.get("status") == "closed"
+            if not closed and auxiliary_refs is None:
+                continue  # Legacy claim sets validated evidence only for successful claims.
+            refs = set(_strings(item.get("supporting_result_refs")))
+            if closed and refs.intersection(auxiliary_refs or ()) and not refs.intersection(candidate_refs or ()):
+                issues.append({
+                    "field": f"goal_coverage[{index}].supporting_result_refs",
+                    "code": "candidate_support_required",
+                    "message": "A closed claim citing Task Verify also requires a current admitted Candidate or Discovery result.",
+                })
+            for ref in sorted(refs):
+                if ref not in admitted_result_refs and ref not in (auxiliary_refs or ()):
                     issues.append({
                         "field": f"goal_coverage[{index}].supporting_result_refs",
                         "code": "result_not_admitted",

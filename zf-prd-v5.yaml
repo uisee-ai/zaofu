@@ -258,12 +258,13 @@ spec:
         prd:
           mode: semantic_control
           pilot_id: oa-wrc-prd-v5
-          checkpoints: [pre_impl, semantic_failure]
+          checkpoints: [pre_impl, semantic_failure, plan_source]
           checkpoint_policies:
             # WRC is the normal frontier owner.  pre_impl remains sampled
             # advisory telemetry; only semantic failures may block/rework.
             pre_impl: shadow
             semantic_failure: blocking
+            plan_source: blocking
           shadow_sample_percent: 100
           autonomous_actions: [delegate, continue, rework, reassess_reader_evidence]
           review_blocked_tasks: true

@@ -33,24 +33,26 @@ def admitted_pipeline_delegations(
     A retained task from a partial replan keeps its own admitted generation.
     """
     events = runtime.event_log.read_all()
-    plans: dict[tuple[str, ...], tuple[dict, dict]] = {}
+    plans: dict[tuple[str, ...], dict] = {}
     result: dict[str, dict[str, dict[str, Any]]] = {}
     roles = list(getattr(runtime.config, "roles", []) or [])
     for task_id, context in generation_contexts.items():
         identity = {key: str(context.get(key) or "") for key in _IDENTITY}
         if not all(identity.values()):
             continue
-        key = tuple(identity.values())
-        if key not in plans:
-            admission = current_run_plan_admission(events, **identity)
+        strict_verify = policy.get("verify_assignment_mode") == "oa_run_plan"
+        full = current_run_plan_admission(events, **identity, require_kernel=strict_verify)
+        correction = current_run_plan_admission(events, **identity, verify_task=task_id, require_kernel=True) if strict_verify else {}
+        if not correction.get("verify_assignment_task"):
+            correction = {}
+        for scoped, admission in ((False, full), (True, correction)):
             if not admission:
-                plans[key] = ({}, {})
-            else:
-                descriptor = admission.get("execution_plan_ref")
-                if not isinstance(descriptor, Mapping):
-                    raise OrchestratorAgentContractError(
-                        "OA execution plan ref missing"
-                    )
+                continue
+            descriptor = admission.get("execution_plan_ref")
+            if not isinstance(descriptor, Mapping):
+                raise OrchestratorAgentContractError("OA execution plan ref missing")
+            key = (*identity.values(), str(descriptor.get("sha256")))
+            if key not in plans:
                 plan = hydrate_sidecar_ref(runtime.state_dir, dict(descriptor)).payload
                 if (
                     not isinstance(plan, Mapping)
@@ -64,68 +66,84 @@ def admitted_pipeline_delegations(
                     raise OrchestratorAgentContractError(
                         "OA execution plan identity mismatch"
                     )
-                plans[key] = (dict(plan), dict(descriptor))
-        plan, descriptor = plans[key]
-        units = {row["work_unit_id"]: row for row in plan.get("work_units", [])}
-        for delegation in plan.get("delegation", []):
-            unit_id = str(delegation["work_unit_id"])
-            unit = units[unit_id]
-            task_ids = unit.get("task_ids") or []
-            stage_ids = unit.get("stage_ids") or []
-            if task_ids and task_id not in task_ids:
-                continue
-            if not task_ids and unit_id != task_id and not stage_ids:
-                continue
-            preferred = []
-            for ref in delegation.get("preferred_role_refs", []):
-                matches = [
-                    role for role in roles if ref in {role.name, role.instance_id}
-                ]
-                if len(matches) != 1:
-                    raise OrchestratorAgentContractError(
-                        f"OA delegation role missing or ambiguous: {ref}"
-                    )
-                preferred.append(matches[0].instance_id)
-            required = set(delegation.get("capability_refs") or [])
-            for stage, pool in (policy.get("pools") or {}).items():
-                # Exact pipeline stage names, or the configured flow's generated stage id.
-                aliases = {stage, f"{context.get('flow_kind', '')}-lanes-{stage}"}
-                if stage == "impl":
-                    aliases.add("implementation")
-                if stage_ids and not aliases.intersection(stage_ids):
+                plans[key] = dict(plan)
+            plan = plans[key]
+            units = {row["work_unit_id"]: row for row in plan.get("work_units", [])}
+            for delegation in plan.get("delegation", []):
+                unit_id = str(delegation["work_unit_id"])
+                unit = units[unit_id]
+                task_ids = unit.get("task_ids") or []
+                stage_ids = unit.get("stage_ids") or []
+                if task_ids and task_id not in task_ids:
                     continue
-                pool_roles = set(pool.get("role_instances") or [])
-                stage_preferred = [ref for ref in preferred if ref in pool_roles]
-                if not stage_preferred and not stage_ids:
+                if not task_ids and unit_id != task_id and not stage_ids:
                     continue
-                profiles = {
-                    row["role"]: set(row.get("capabilities") or [])
-                    for row in pool.get("worker_profiles", [])
-                }
-                eligible = sorted(
-                    role.instance_id
-                    for role in roles
-                    if role.instance_id in pool_roles
-                    and required
-                    <= (
-                        _role_capabilities(role)
-                        | profiles.get(
-                            role.instance_id, set(pool.get("capabilities") or [])
+                preferred = []
+                for ref in delegation.get("preferred_role_refs", []):
+                    matches = [
+                        role for role in roles if ref in {role.name, role.instance_id}
+                    ]
+                    if len(matches) != 1:
+                        if strict_verify and stage_ids in (["verify"], ["prd-lanes-verify"]):
+                            continue
+                        raise OrchestratorAgentContractError(
+                            f"OA delegation role missing or ambiguous: {ref}"
+                        )
+                    preferred.append(matches[0].instance_id)
+                required = set(delegation.get("capability_refs") or [])
+                for stage, pool in (policy.get("pools") or {}).items():
+                    if (stage == "verify" and bool(correction) != scoped) or (stage != "verify" and scoped):
+                        continue
+                    # Exact pipeline stage names, or the configured flow's generated stage id.
+                    aliases = {stage, f"{context.get('flow_kind', '')}-lanes-{stage}"}
+                    if stage == "impl":
+                        aliases.add("implementation")
+                    if stage_ids and not aliases.intersection(stage_ids):
+                        continue
+                    pool_roles = set(pool.get("role_instances") or [])
+                    stage_preferred = [ref for ref in preferred if ref in pool_roles]
+                    if not stage_preferred and not stage_ids:
+                        continue
+                    profiles = {
+                        row["role"]: set(row.get("capabilities") or [])
+                        for row in pool.get("worker_profiles", [])
+                    }
+                    eligible = sorted(
+                        role.instance_id
+                        for role in roles
+                        if role.instance_id in pool_roles
+                        and required
+                        <= (
+                            _role_capabilities(role)
+                            | profiles.get(
+                                role.instance_id, set(pool.get("capabilities") or [])
+                            )
                         )
                     )
-                )
-                row = {
-                    "preferred_roles": stage_preferred,
-                    "eligible_roles": eligible,
-                    "execution_plan_ref": descriptor,
-                    "work_unit_id": unit_id,
-                }
-                if "dispatch_rank" in delegation:
-                    row["dispatch_rank"] = delegation["dispatch_rank"]
-                previous = result.setdefault(task_id, {}).get(stage)
-                if previous is not None and previous != row:
-                    raise OrchestratorAgentContractError(
-                        f"overlapping OA delegations: {task_id}/{stage}"
-                    )
-                result[task_id][stage] = row
+                    binding = {}
+                    if stage == "verify" and strict_verify:
+                        from zf.runtime.oa_task_verify_assignment import current_scope
+                        if not task_ids or not stage_ids or not stage_preferred:
+                            continue
+                        readers = {r.instance_id for r in roles if r.role_kind == "reader"}
+                        writers = set(policy["pools"]["impl"].get("role_instances") or [])
+                        eligible = [r for r in eligible if r in stage_preferred and r in readers - writers]
+                        binding = current_scope(runtime, task_id, context, admission, unit, eligible)
+                        if binding is None:
+                            continue
+                    row = {
+                        **binding,
+                        "preferred_roles": stage_preferred,
+                        "eligible_roles": eligible,
+                        "execution_plan_ref": descriptor,
+                        "work_unit_id": unit_id,
+                    }
+                    if "dispatch_rank" in delegation:
+                        row["dispatch_rank"] = delegation["dispatch_rank"]
+                    previous = result.setdefault(task_id, {}).get(stage)
+                    if previous is not None and previous != row:
+                        raise OrchestratorAgentContractError(
+                            f"overlapping OA delegations: {task_id}/{stage}"
+                        )
+                    result[task_id][stage] = row
     return result

@@ -232,7 +232,8 @@ def _write_codex_hook_settings(
     payload routes through the same bridge as Claude hooks but under a
     distinct event namespace the reactor can dispatch separately.
     """
-    write_codex_hook_settings(state_dir, project_root=project_root)
+    if not ((project_root or state_dir.parent) / ".git").is_file():
+        write_codex_hook_settings(state_dir, project_root=project_root)
 
 
 def _build_event_signer(config) -> object | None:

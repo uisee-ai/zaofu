@@ -74,16 +74,15 @@ def run_replay_sweep(
 
 
 def _recover_reader_results_and_goal(runtime: Any, *, replay_readers: bool = True) -> None:
+    from zf.runtime.call_result_repair_reconciliation import reconcile_call_result_repairs
+
     try:
+        # The submitting turn must stop before its bound correction can be sent.
+        reconcile_call_result_repairs(runtime)
+    finally:
         if replay_readers:
             runtime._recover_unrecorded_reader_fanout_results()
             runtime._reconcile_run_goal_completion()
-    finally:
-        # The existing result replay also drains semantic-submit corrections;
-        # rejected submissions have no legacy terminal event to replay.
-        from zf.runtime.call_result_repair_reconciliation import reconcile_call_result_repairs
-
-        reconcile_call_result_repairs(runtime)
 
 
 def run_context_sweep(runtime: Any) -> None:
@@ -124,7 +123,10 @@ def run_post_dispatch_sweep(
 
         runtime._safe_housekeeping("workflow_board", lambda: deliver_mentions(runtime))
     if periodic_sweep:
+        from zf.runtime.durable_mailbox import reconcile_mailbox
         from zf.runtime.workflow_schedule import reconcile_schedules
+
+        runtime._safe_housekeeping("durable_mailbox", lambda: reconcile_mailbox(runtime))
 
         runtime._safe_housekeeping("workflow_schedules", lambda: reconcile_schedules(runtime))
         runtime._safe_housekeeping("orphaned_tasks", runtime._check_orphaned_tasks)

@@ -58,6 +58,7 @@ def controller_catalog() -> dict[str, dict[str, Any]]:
         config = load_config(path)
         flow = flows[0]
         from zf.runtime.workflow_proposal_projection import completion_profile
+        from zf.core.config.stage_teams import authorized_judges
         completion = completion_profile({}, {"effective_flow_metadata": config.workflow.flow_metadata})
         result[entry.id] = {
             "id": entry.id, "digest": _digest(documents),
@@ -66,6 +67,8 @@ def controller_catalog() -> dict[str, dict[str, Any]]:
             "lanes": flow["spec"].get("lanes"),
             "task_pipeline": flow["spec"].get("taskPipeline", {}),
             "roles": sorted({str(r.instance_id or r.name) for r in config.roles}),
+            "authorized_judges": authorized_judges(config),
+            "reader_roles": sorted({str(r.instance_id or r.name) for r in config.roles if r.role_kind == "reader"}),
             "skills": sorted({str(s) for r in config.roles for s in r.skills}),
             "profiles": sorted(execution_profile_catalog(config)),
             "completion_profile": {
@@ -110,6 +113,19 @@ def admit_capabilities(
     roles: list[str], skills: list[str], profiles: list[str],
 ) -> None:
     allowed = selected_controller(parameters, family=family, catalog=catalog.get("registered_controllers", {})) or catalog
+    if "stage_teams" in parameters:
+        from zf.core.config.stage_teams import normalize_stage_teams, team_roles
+
+        if family != "PrdFlow":
+            raise ValueError("stage_teams requires PrdFlow")
+        teams = normalize_stage_teams(parameters["stage_teams"])
+        if "judge" in teams and teams["judge"]["author"] not in allowed.get("authorized_judges", []):
+            raise ValueError("judge.author requires a registered authorized Judge")
+        chosen = team_roles(teams)
+        if chosen - set(allowed.get("reader_roles", [])):
+            raise ValueError("stage_teams selections require registered reader instances")
+        if chosen - set(roles):
+            raise ValueError("stage_teams roles must be included in requested_roles")
     for label, requested in (("role", roles), ("skill", skills), ("profile", profiles)):
         unknown = sorted(set(requested) - set(allowed[label + "s"]))
         if unknown:
@@ -216,7 +232,8 @@ def assemble_controller(
     require_git_baseline(root)
     from zf.runtime.workflow_controller_skills import SOURCE_NAME, controller_skill_source
     base_config = load_config(base_path)
-    package = controller_skill_source(root=root, base=base_config, template=load_config(path))
+    template = load_config(path)
+    package = controller_skill_source(root=root, base=base_config, template=template)
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
     if "plan_critic_enabled" in parameters:
@@ -231,12 +248,18 @@ def assemble_controller(
         flow["spec"]["planReview"] = resolve_plan_review(parameters)
         for key in ("planCriticEnabled", "plan_critic_enabled", "plan_review"):
             flow["spec"].pop(key, None)
+    if "stage_teams" in parameters:
+        from zf.core.config.stage_teams import normalize_stage_teams
+        flow["spec"]["stageTeams"] = normalize_stage_teams(parameters["stage_teams"])
+        flow["spec"].pop("stage_teams", None)
     if "candidate_verify_width" in parameters:
         flow["spec"]["taskPipeline"].setdefault("candidate", {})["verifyWidth"] = parameters["candidate_verify_width"]
     config_docs = [d for d in documents if d.get("kind") == "ZfConfig"]
     if len(config_docs) != 1:
         raise ValueError("registered controller requires exactly one ZfConfig")
     spec = config_docs[0]["spec"]
+    from zf.runtime.workflow_controller_candidate import bind_verification_checkpoint
+    bind_verification_checkpoint(documents, flow["spec"].get("stageTeams") or {}, template)
     from zf.runtime.workflow_approval_requirements import validate_approval_requirements
     approval = validate_approval_requirements(parameters, requirement)
     if approval.get("plan") == "required":
@@ -246,8 +269,10 @@ def assemble_controller(
     spec.pop("profile_sources", None)
     spec["project"] = copy.deepcopy(base["project"])
     spec["session"] = copy.deepcopy(base["session"])
-    # Resident operators belong to the project, not to a selected Flow template.
-    for key in ("run_manager", "autoresearch_resident"):
+    # These project policies bind real host effects and accepted handoffs.
+    # Keep the complete scope (including disabled policies) in the reviewed proposal.
+    for key in ("run_manager", "autoresearch_resident", "durable_mailbox",
+                "host_verification", "task_publication", "host_watchdog_seconds"):
         spec.setdefault("runtime", {})[key] = copy.deepcopy(base["runtime"][key])
     sources = copy.deepcopy(base.get("skill_sources") or [])
     sources = [s for s in sources if s["name"] != SOURCE_NAME]

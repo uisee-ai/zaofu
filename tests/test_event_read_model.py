@@ -1219,3 +1219,52 @@ def test_payload_slim_keeps_worker_state_identity_and_transition() -> None:
     assert slim["instance_id"] == "delivery_worker"
     assert slim["from"] == "idle"
     assert slim["to"] == "busy"
+
+
+def test_public_routes_omit_worker_conversations_from_ledger_and_historical_index(tmp_path):
+    from fastapi.testclient import TestClient
+    from zf.core.task.schema import Task
+    from zf.core.task.store import TaskStore
+    from zf.web.server import create_app
+    from zf.web.projections.agents import _worker_signal_index
+
+    state = tmp_path / ".zf"
+    state.mkdir()
+    TaskStore(state / "kanban.json").add(Task(id="T-1", title="Review"))
+    log = EventLog(state / "events.jsonl")
+    private = "Design discussion from the earlier customer interview"
+    public = "Customer acceptance checklist published"
+    for kind, body in (
+        ("agent.text", {"text": private}),
+        ("agent.thinking", {"text": private}),
+        ("agent.tool.use", {"input": {"query": private}}),
+        ("agent.tool.result", {"content": private}),
+    ):
+        log.append(ZfEvent(type=kind, id=kind, actor="worker-1", task_id="T-1", correlation_id="trace-1",
+                           payload={"operation_id": "op-1", **body}))
+    log.append(ZfEvent(type="dev.build.done", id="public", task_id="T-1", correlation_id="trace-1",
+                       payload={"summary": public}))
+
+    read_model.rebuild(state)
+    with sqlite3.connect(read_model.db_path(state)) as conn:
+        # A server upgrade may still have both slim columns from the previous projection.
+        for table in ("event_index", "task_timeline"):
+            conn.execute(f"UPDATE {table} SET payload_slim=?,summary=? WHERE event_id='agent.text'",
+                         (json.dumps({"text": private, "operation_id": "op-1"}), private))
+
+    client = TestClient(create_app(state, project_root=tmp_path, read_only=True))
+    project_id = client.get("/api/workspace/projects").json()["server_default_project_id"]
+    base = f"/api/projects/{project_id}"
+
+    for path in (f"{base}/events", f"{base}/tasks/T-1/timeline", f"{base}/traces/trace-1",
+                 f"{base}/traces/trace-1?contract=v2", "/api/views/recent"):
+        response = client.get(path)
+        assert response.status_code == 200, response.text
+        assert private not in response.text and public in response.text, path
+
+    for kind in ("agent.text", "agent.thinking", "agent.tool.use", "agent.tool.result"):
+        row = client.get(f"{base}/events/{kind}").json()["event"]
+        assert row["type"] == kind and row["payload"] == {"operation_id": "op-1", "content_visibility": "restricted"}
+    assert private not in json.dumps(_worker_signal_index(state))
+    assert read_model.hydrate_event_by_id(state, "agent.text")[1].payload["text"] == private
+    assert client.get(f"{base}/events/public").json()["event"]["payload"]["summary"] == public

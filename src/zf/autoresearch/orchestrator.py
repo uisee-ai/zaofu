@@ -22,6 +22,8 @@ from typing import Any
 
 import yaml
 
+from zf.autoresearch.diagnosis_resource_policy import DiagnosticResourcePolicy
+
 from zf.autoresearch.review_gate import (
     normalize_review_gate_mode,
     prepare_review_gate_summary,
@@ -68,6 +70,9 @@ DEFAULT_CONTROLLER_TEMPLATE = Path(
 DEFAULT_FLOW_SOURCE_REF = "docs/prd/autoresearch.md"
 
 
+RESIDENT_PROVIDER_KEY = "runtime.run_manager.resident_agent"
+
+
 @dataclass(frozen=True)
 class AutoresearchRunConfig:
     scenario_name: str = "self-eval-backlog"
@@ -77,7 +82,7 @@ class AutoresearchRunConfig:
     seed_file: Path | None = None
     expected_done: int | None = None
     timeout_seconds: int | None = None
-    budget_usd: float = 500.0
+    budget_usd: float | None = 500.0
     token_budget: int | None = None
     role_provider_settings: dict[str, dict[str, str]] = field(default_factory=dict)
     confirm: bool = False
@@ -101,6 +106,7 @@ class AutoresearchRunConfig:
     sync_dirty: bool = True
     review_gate: str = "off"
     diagnostic_context: str = ""
+    diagnostic_resources: DiagnosticResourcePolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -229,7 +235,8 @@ def _apply_autoresearch_controller_overrides(
     data.setdefault("session", {})["tmux_session"] = (
         f"zf-autoresearch-{run_id}"
     )
-    data["global_budget_usd"] = cfg.budget_usd
+    if cfg.diagnostic_resources is None:
+        data["global_budget_usd"] = cfg.budget_usd
     for role in data.get("roles", []):
         selected = cfg.role_provider_settings.get(role.get("name", ""), {})
         if selected.get("backend") != role.get("backend"):
@@ -242,6 +249,14 @@ def _apply_autoresearch_controller_overrides(
             role["provider_session"] = {
                 **(role.get("provider_session") or {}), "sandbox": "workspace-write",
             }
+
+    manager = data.get("runtime", {}).get("run_manager", {})
+    resident = manager.get("resident_agent")
+    selected = cfg.role_provider_settings.get(RESIDENT_PROVIDER_KEY)
+    if isinstance(resident, dict) and selected and selected.get("backend") == manager.get("backend"):
+        for key in ("model", "model_reasoning_effort"):
+            if selected.get(key):
+                resident[key] = selected[key]
 
     # The outer Autoresearch process owns diagnosis and consumption. Starting
     # another executing resident inside an experiment can recursively create
@@ -281,11 +296,16 @@ def _apply_autoresearch_controller_overrides(
             cfg.flow_kind
         ] = flow_policy
 
-    run_limits = workflow.get("run_limits")
-    if isinstance(run_limits, dict):
-        run_limits["cost_budget_usd"] = cfg.budget_usd
-    if cfg.token_budget is not None:
-        workflow.setdefault("run_limits", {})["token_budget"] = cfg.token_budget
+    if cfg.diagnostic_resources is not None:
+        from zf.autoresearch.diagnosis_resource_policy import apply_diagnostic_resource_policy
+
+        apply_diagnostic_resource_policy(data, cfg.diagnostic_resources, cfg.budget_usd)
+    else:
+        run_limits = workflow.get("run_limits")
+        if isinstance(run_limits, dict):
+            run_limits["cost_budget_usd"] = cfg.budget_usd
+        if cfg.token_budget is not None:
+            workflow.setdefault("run_limits", {})["token_budget"] = cfg.token_budget
 
     # The diagnostic checkout owns the tested source version. Reusing the
     # launcher checkout's skills adds a second candidate beside project skills.

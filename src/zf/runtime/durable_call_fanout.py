@@ -291,6 +291,11 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         run_id = f"run-{context.fanout_id}-{child.child_id}"
         if retry_attempt:
             run_id += f"-retry-{retry_attempt}"
+        if child.payload.get("source_rebind_event_id"):
+            from zf.runtime.run_admission import run_dispatch_block_reason
+
+            if run_dispatch_block_reason(self, run_id=child.payload.get("workflow_run_id") or context.trace_id):
+                return {"skip": True, "run_id": run_id}
         if not self._ensure_fanout_role_dispatchable(
             role=role, fanout_id=context.fanout_id, stage_id=context.stage_id,
             child_id=child.child_id, run_id=run_id, trace_id=context.trace_id,
@@ -320,12 +325,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             "success_event",
         )
         workdir_write_scopes: list[str] = []
-        if self._is_plan_artifact_stage(
+        plan_artifact_stage = self._is_plan_artifact_stage(
             role=role,
             stage_id=context.stage_id,
             success_event=aggregate_success_event,
             child_success_event=child_success_event,
-        ):
+        )
+        if plan_artifact_stage:
             from zf.runtime.fanout_artifact_refs import (
                 plan_artifact_workdir_write_scopes,
             )
@@ -349,6 +355,15 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         prepared_call = None
         from zf.runtime.call_result_admission import result_protocol_mode
 
+        if context.stage_id in {"prd-scan", "prd-plan"} and child.payload.get("stage_obligation"):
+            from zf.runtime.plan_team_inputs import bind_plan_team_inputs
+
+            bind_plan_team_inputs(self, child, context.stage_id, str(child.payload.get("workflow_run_id") or context.trace_id),
+                                  predecessor=child.payload.get("retry_of_operation_id", "") if retry_attempt else "")
+        if plan_artifact_stage and retry_attempt and child.payload.get("retry_of_operation_id"):
+            from zf.runtime.planner_reader_recovery import attach_diagnosis
+
+            attach_diagnosis(self, child.payload, child.payload["retry_of_operation_id"])
         call_mode = result_protocol_mode(self.config, child.payload)
         if call_mode != "shadow" or bool(child.payload.get("durable_operation")):
             from zf.runtime.call_result_runtime import prepare_call_operation
@@ -544,6 +559,11 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             except Exception as exc:
                 from zf.runtime.candidate_registration_failure import cancel_shared_registration
 
+                from zf.runtime.plan_source_recovery import defer_source_rejection
+
+                if defer_source_rejection(self, context, child, causation_id, exc):
+                    prepared[child.child_id] = {"skip": True, "run_id": run_id}
+                    continue
                 if not any(item.get("prepared_call") for item in prepared.values()) and cancel_shared_registration(
                     self, context, causation_id, exc,
                 ):
@@ -563,8 +583,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                         "failure_class": "reader_execution_failure",
                         "failure_scope": "operation_preregistration",
                         "reason": f"durable operation preregistration failed: {exc}",
+                        **({"source_event_id": child.payload["source_rejection_id"],
+                            "source_resolution_event_id": child.payload["source_rebind_event_id"],
+                            "workflow_run_id": child.payload.get("workflow_run_id") or context.trace_id,
+                            "recovery_owner": "run_manager"}
+                           if child.payload.get("source_rejection_id") and child.payload.get("source_rebind_event_id") else {}),
                     },
-                    causation_id=causation_id,
+                    causation_id=child.payload.get("source_rebind_event_id") or causation_id,
                     correlation_id=context.trace_id,
                 ))
                 prepared[child.child_id] = {"skip": True, "run_id": run_id}

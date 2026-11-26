@@ -108,6 +108,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     recover_cmd.set_defaults(func=run_input_recovery)
     from zf.cli.artifact_board import register as register_board
     register_board(sub)
+    from zf.cli.artifact_mailbox import register as register_mailbox
+    register_mailbox(sub)
     from zf.cli.artifact_milestone import run_milestone
 
     milestone = sub.add_parser("milestone", help="Read the bound candidate milestone obligations and decision")

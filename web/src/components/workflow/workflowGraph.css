@@ -136,3 +136,10 @@
 .sdlc-node.selected .execution-context { outline:2px solid var(--brand); outline-offset:2px; }
 .sdlc-status-done .execution-context-result strong,.sdlc-status-completed .execution-context-result strong { color:var(--ok-strong); }
 .sdlc-status-failed .execution-context-result strong,.sdlc-status-blocked .execution-context-result strong { color:var(--err-strong); }
+
+.stage-team-roster { padding-block:6px; font-size:var(--text-11); overflow-wrap:anywhere; }
+.stage-team-roster p { margin:4px 0; color:var(--text-secondary); }
+.stage-team-members { max-height:125px; overflow:auto; }
+.stage-team-members > div { padding-block:3px; border-top:1px solid var(--line); }
+
+.stage-team-roster .team-member-facts { display:block; margin-top:2px; color:var(--text-secondary); }

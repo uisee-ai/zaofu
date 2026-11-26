@@ -87,6 +87,43 @@ class WorkflowProposalError(ValueError):
     pass
 
 
+class WorkflowPlanSourceError(WorkflowProposalError):
+    """A concrete Plan member input cannot be opened as selected."""
+
+
+def _check_proposal_plan_sources(plan: dict, root: Path, state: Path, requirement: dict,
+                                 *, frozen_file_refs=()) -> list[str]:
+    from zf.runtime.plan_team_inputs import validate_plan_project_sources
+
+    try:
+        return validate_plan_project_sources(plan, root, state, requirement, frozen_file_refs=frozen_file_refs)
+    except ValueError as exc:
+        raise WorkflowPlanSourceError(str(exc)) from exc
+
+
+def recheck_proposal_plan_sources(state: Path, proposal: Mapping[str, Any], root: Path) -> None:
+    """Revalidate existing physical inputs while a frozen PRD proposal still awaits approval."""
+    if str(proposal.get("flow_family")).lower() not in {"prd", "prdflow", "feat"}:
+        return
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_requests import hydrate_workflow_requirement
+
+    try:
+        if str(root) != (proposal.get("project_identity") or {}).get("root"):
+            raise ValueError("workflow proposal belongs to a different project")
+        snapshot = hydrate_sidecar_ref(state, proposal["effective_config_ref"]).payload
+        workflow = snapshot["config"]["workflow"]
+        metadata = (workflow.get("_flow_metadata_by_kind") or {}).get("prd", workflow.get("_flow_metadata") or {})
+        plan = (metadata.get("stage_teams") or {}).get("plan")
+        if not plan:
+            return
+        requirement = hydrate_workflow_requirement(state, {**proposal, "revision": proposal["request_revision"]})
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        raise WorkflowProposalError(str(exc)) from exc
+    _check_proposal_plan_sources(plan, root, state, requirement,
+                                 frozen_file_refs=snapshot.get("plan_project_file_refs", ()))
+
+
 def build_workflow_proposal(
     state_dir: Path,
     *,
@@ -120,7 +157,7 @@ def build_workflow_proposal(
     )
 
     try:
-        hydrate_workflow_requirement(Path(state_dir), dict(request))
+        requirement = hydrate_workflow_requirement(Path(state_dir), dict(request))
     except WorkflowRequestError as exc:
         raise WorkflowProposalError(str(exc)) from exc
     current_ref = request.get("proposal_ref")
@@ -140,6 +177,8 @@ def build_workflow_proposal(
             raise WorkflowProposalError(
                 "current workflow proposal binding is invalid"
             )
+        if request.get("status") == "proposed":
+            recheck_proposal_plan_sources(Path(state_dir), current, Path(base_config_path).resolve().parent)
         return current, dict(current_ref)
     base_path = Path(base_config_path).expanduser().resolve()
     candidate_path = Path(candidate_config_path or base_path).expanduser().resolve()
@@ -180,6 +219,18 @@ def build_workflow_proposal(
     from zf.runtime.workflow_approval_requirements import load_approval_bound_config
     config = load_approval_bound_config(candidate_path, short_spec.get("parameters") or {})
     from zf.runtime.workflow_graph_snapshot import compile_proposal_graph
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+    teams = flow_metadata_for(config, "prd").get("stage_teams") or {}
+    from zf.runtime.plan_team_transfer import validate_predecessors
+    plan_files = []
+    if str(short_spec.get("flow_family") or flow_kind or request.get("kind")).lower() in {"prd", "prdflow", "feat"}:
+        plan_files = _check_proposal_plan_sources(teams.get("plan", {}), base_path.parent, Path(state_dir), requirement)
+    for team_name in ("plan", "judge"):
+        try:
+            validate_predecessors(Path(state_dir), teams.get(team_name, {}), request_id=request_id,
+                                  revision=request_revision, requirement=requirement_digest, team_name=team_name)
+        except (ValueError, KeyError, OSError) as exc:
+            raise WorkflowProposalError(str(exc)) from exc
     rendered = redact_config(renderable_config_to_primitive(config))
     source_docs = _flow_documents(candidate_path)
     if not short_spec_ref:
@@ -200,8 +251,11 @@ def build_workflow_proposal(
         )
     base_digest = _file_digest(base_path)
     candidate_digest = _file_digest(candidate_path)
+    profile_sources = [item for item in config.config_sources if item.get("kind") == "ProfileSource"]
     effective_snapshot = {
         "schema_version": EFFECTIVE_CONFIG_SNAPSHOT_SCHEMA,
+        **({"plan_project_file_refs": plan_files} if plan_files else {}),
+        **({"profile_sources": profile_sources} if profile_sources else {}),
         "compiler_version": WORKFLOW_PROPOSAL_COMPILER_VERSION,
         "request_id": request_id,
         "request_revision": request_revision,

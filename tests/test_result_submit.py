@@ -539,6 +539,25 @@ def test_stdin_semantic_submit_fills_identity_and_emits_canonical_event(tmp_path
     assert duplicate.value.code == "duplicate_submit"
 
 
+@pytest.mark.parametrize("context, also_invalid", [({}, True), (["unknown"], False)])
+def test_malformed_plan_validation_contract_retains_current_read_gate(tmp_path, context, also_invalid):
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    source = write_immutable_json_sidecar(tmp_path / "project/.zf", {"rule": "Read the current input"},
+        root="inputs", kind="test", schema_version="test.v1", created_by="test")
+    _, prepared, service, token = _running_plan_candidate_operation(tmp_path, extra_payload={
+        "plan_candidate_validation": context,
+        "input_refs": [{**source, "source_id": "requirement", "artifact_id": "source.json", "allowed_paths": ["$"]}],
+    })
+    check = service.validate_plan_candidate(operation_id=prepared.operation_id, semantic_result=_plan_candidate(),
+                                            role_instance="planner", credential=token)
+    assert check["status"] == "failed"
+    codes = {e["code"] for e in check["errors"]}
+    assert "required_read_missing" in codes
+    if also_invalid:
+        assert "plan_candidate_context_invalid" in codes
+
+
 def test_plan_candidate_validate_can_fail_fix_and_submit_same_operation(
     tmp_path: Path,
 ) -> None:
@@ -1497,3 +1516,39 @@ def test_signed_regular_result_scratch_is_ingested(tmp_path: Path) -> None:
         credential=token,
     )
     assert result.canonical_event_type == "dev.build.done"
+
+
+def test_plan_producer_summary_reports_every_reader_with_scalar_plan_ports(tmp_path):
+    from zf.cli.result import _validation_summary
+    from tests.test_plan_candidate_preflight import _product_acceptance_spec
+
+    _, prepared, service, token = _running_plan_candidate_operation(tmp_path)
+    candidate = _plan_candidate()
+    spec = _product_acceptance_spec()
+    ports = ["task_map", "product_acceptance_spec", "test_matrix"]
+    spec["candidate_reader_assignments"] = [
+        {"role_instance": role, "acceptance": [{"task_id": "TASK-1", "acceptance_id": "AC-1"}],
+         "journey_ids": ["journey-cli"], "plan_reads": dict.fromkeys(ports, "private draft text")}
+        for role in ["verify-lane-0", "verify-lane-1"]
+    ]
+    candidate["plan_ports"] = [{"logical_name": "product_acceptance_spec", "body": spec}]
+
+    def summary():
+        outcome = service.validate_plan_candidate(
+            operation_id=prepared.operation_id, semantic_result=candidate,
+            role_instance="planner", credential=token, project_root=tmp_path,
+        )
+        return _validation_summary(outcome)
+
+    failed = summary()
+    errors = [row for row in failed["errors"] if row["code"] == "product_acceptance_spec_invalid"]
+    assert len(errors) == 2
+    for i, row in enumerate(errors):
+        assert row["field"] == f"plan_ports.product_acceptance_spec.candidate_reader_assignments[{i}].plan_reads"
+        assert f"verify-lane-{i}" in row["message"]
+        assert all(port in row["message"] for port in ports)
+        assert "JSON array of distinct JSONPath strings" in row["message"]
+        assert "private draft text" not in row["message"]
+    for reader in spec["candidate_reader_assignments"]:
+        reader["plan_reads"] = {"task_map": ["$.tasks[0]"]}
+    assert not any(row["code"] == "product_acceptance_spec_invalid" for row in summary()["errors"])

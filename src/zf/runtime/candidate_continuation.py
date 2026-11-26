@@ -192,9 +192,12 @@ def preview(service: Any, *, source_run_id: str, candidate_event_id: str) -> dic
         command_digest = str(fact.get("command_digest") or "")
         if not command_digest:
             raise ValueError("host execution evidence lacks a command digest")
-        # Latest observation of an identical command at this exact commit wins,
-        # including a failed observation; older occurrences remain in the ledger.
-        execution_evidence[command_digest] = {"source_event_id": event.id, "receipt_ref": ref}
+        # Keep the latest observation per duty, including a failed observation.
+        # Older receipt formats without IDs retain their digest-only history.
+        command = (fact.get("manifest") or {}).get("command") or {}
+        key = (command_digest, str(fact.get("command_id") or command.get("command_id") or ""),
+               str(command.get("tier") or ""))
+        execution_evidence[key] = {"source_event_id": event.id, "receipt_ref": ref}
     stages = [s.id for s in service.config.workflow.stages
               if s.trigger == "candidate.ready" and s.topology == "fanout_reader"]
     if not stages:

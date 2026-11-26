@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
-from zf.runtime.transport import DispatchContext
+from zf.runtime.transport import DispatchContext, MailboxPointerWrite
 
 
 class RuntimeAuthorityMixin:
@@ -118,16 +119,18 @@ class RuntimeAuthorityMixin:
             delivery_evidence = briefing_delivery_evidence(self, prepared, role_name, briefing_path)
         try:
             try:
-                self.transport.send_task(
+                receipt = self.transport.send_task(
                     role_name,
                     briefing_path,
                     prompt,
                     context=delivery_context,
                 )
             except TypeError as exc:
-                if "context" not in str(exc):
+                # A mailbox pointer may already be partially written. Never send it twice.
+                if (delivery_context and delivery_context.mailbox_notice) or "context" not in str(exc):
                     raise
                 self.transport.send_task(role_name, briefing_path, prompt)
+                receipt = None
         except Exception as exc:
             from zf.runtime.provider_dispatch_wait import release_external_gate_delivery
 
@@ -136,6 +139,10 @@ class RuntimeAuthorityMixin:
             self._rollback_inflight_dispatch(delivery_context)
             raise
         mark_task_attempt_sent(self, prepared, delivery_evidence=delivery_evidence)
+        if delivery_context is not None and delivery_context.mailbox_notice:
+            if not isinstance(receipt, MailboxPointerWrite) or receipt.role_instance != role_name:
+                receipt = None
+            return replace(delivery_context, mailbox_pointer_write=receipt)
         return delivery_context
 
     def _task_attempt_rejection(

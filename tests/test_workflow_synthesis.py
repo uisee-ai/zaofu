@@ -483,6 +483,28 @@ def test_real_headless_caller_passes_read_only_contract_to_agent(
     assert request["effective_policy_digest"].startswith("sha256:")
 
 
+def test_synthesis_first_codex_turn_uses_configured_oa_model_and_effort(tmp_path, monkeypatch):
+    import sys
+    from tests.test_web_headless_agent import _fake_codex_script
+    from zf.web.headless_agent import CodexHeadlessBackend, KanbanHeadlessAgent
+
+    config, state_dir, writer, projection = _context(tmp_path)
+    oa = config.roles[0]
+    config.workflow.orchestration.oa_profile = oa.instance_id
+    oa.backend, oa.model, oa.model_reasoning_effort = "codex", "gpt-6.2-astra", "high"
+    result_json = json.dumps(_result(projection, "IssueFlow"))
+    fake = _fake_codex_script(tmp_path, reply=result_json)
+    monkeypatch.setenv("FAKE_CODEX_MODEL", oa.model)
+    monkeypatch.setenv("FAKE_CODEX_THINKING_LEVEL", oa.model_reasoning_effort)
+    agent = KanbanHeadlessAgent(state_dir=state_dir, project_root=tmp_path)
+    agent.backends["codex-headless"] = CodexHeadlessBackend(command=f"{sys.executable} {fake}")
+    outcome = run_workflow_synthesis(
+        state_dir=state_dir, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", actor="test", backend="codex", agent=agent,
+    )
+    assert outcome.result["selected_flow_family"] == "IssueFlow"
+
+
 def test_cancelled_running_synthesis_discards_late_provider_result(
     tmp_path: Path,
 ) -> None:

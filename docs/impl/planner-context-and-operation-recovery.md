@@ -28,6 +28,11 @@ Reader 恢复次数耗尽时，内核写入 `fanout.child.failed` 后、评估�
 未注册事件及新增 writer trigger 不因这项支持而获准。
 Run 激活与重触发都保留审计，不清零原 Run 成本、不修改既有操作的终态。
 
+Web 创建的 `operator.intent.v0` 只记录恢复提案。以该提案直接请求
+`stage-retrigger` 时，控制面返回 `409 approval_required` 并记录失败。
+Run Manager 需要 Owner 决策时，由项目的受控审批入口确认对应 checkpoint，
+再以获批动作重发原触发事件。
+
 Owner 授权的 `stage-replan-new-generation` 可在 action payload 中提供
 `input_task_ids: ["TASK-A", "TASK-B"]`，明确需要完整读取的任务合同。该字段只影响
 Plan handoff 的读取范围，不替代 `task_ids`、依赖或验收。现有 scope 与明确失败任务

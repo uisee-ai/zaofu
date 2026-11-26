@@ -23,7 +23,7 @@ from zf.web.projections.workflow_workbench_snapshot import capture_snapshot, sna
 
 # Change when cached graph or Plan projection semantics change.  The version
 # participates in the storage key and ETag, isolating older running servers.
-CACHE_VERSION = "workflow-workbench.v7"
+CACHE_VERSION = "workflow-workbench.v9-team-observations"
 
 
 class WorkbenchSourceChanged(RuntimeError):
@@ -237,6 +237,12 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
                     inputs = read_structure_sources(context, body, as_of=as_of, all_events=events)
                 else:
                     inputs = read_workbench_sources(context, body, as_of=as_of, all_events=events)
+                # Imported/legacy Requests can omit project_id. The resolved API
+                # route still binds the snapshot to the project being inspected.
+                if not inputs["scope"].get("project_id"):
+                    inputs["scope"]["project_id"] = project_id
+                from zf.web.projections.workflow_team_sources import read_stage_team_inputs
+                inputs["stage_team_inputs"], team_refs = read_stage_team_inputs(context.state_dir, inputs)
             # Ordinary tool/trace events carry many opaque refs which the graph
             # never hydrates. Follow only the semantic readers' inputs/outputs.
             artifact_events = [event.payload for _, event in inputs["events"] if event.type in {
@@ -247,6 +253,7 @@ def read_workbench_projection(context, project_id: str, request_id: str, as_of: 
             discovered = _references(body if structure_only or execution_only else [
                 body, inputs["plans"], inputs["versions"], inputs["goal_claim_set"], artifact_events,
             ], context)
+            discovered.update(_references(team_refs, context))
             added = discovered - dependencies
             changed = before != version(snapshot)
             dependencies.update(discovered)

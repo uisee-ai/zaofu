@@ -65,14 +65,23 @@ def test_untrusted_or_obsolete_probe_does_not_open_diagnosis(case, monkeypatch, 
     assert not any(a.get("source_event_id") == failure.id for a in projection["pending_actions"])
 
 
-def _later_receipt(service, events, failure, *, code, origin="kernel"):
+def _later_receipt(service, events, failure, *, code, origin="kernel", command=None):
     receipt = dict(hydrate_sidecar_ref(service.state_dir, failure.payload["receipt_ref"]).payload)
     receipt.update(exit_code=code, status="completed" if code == 0 else "failed")
     start = replace(next(e for e in events if e.id == failure.causation_id), id="start-later")
+    if command:
+        from zf.runtime.task_host_manifest import digest
+        manifest = {**receipt['manifest'], 'command': {**receipt['manifest']['command'], **command}}
+        manifest.pop('manifest_digest')
+        manifest['manifest_digest'] = digest(manifest)
+        receipt.update(manifest=manifest, manifest_digest=manifest['manifest_digest'],
+                       command_id=manifest['command']['command_id'])
+        start = replace(start, payload={**start.payload, 'manifest_digest': manifest['manifest_digest']})
     ref = write_sidecar_json(service.state_dir, "artifacts/later-probe.json", receipt,
         kind="test", schema_version="task-host-receipt.v1", created_by="test")
     completed = replace(failure, id="completed-later", causation_id=start.id, origin=origin,
-        payload={**failure.payload, "receipt_ref": ref, "status": receipt["status"]})
+        payload={**failure.payload, "receipt_ref": ref, "status": receipt["status"],
+                 "manifest_digest": receipt["manifest_digest"]})
     return [*events, start, completed]
 
 
@@ -94,3 +103,11 @@ def test_failure_after_success_opens_new_request(case, monkeypatch):
     actions = pending_host_probe_diagnoses(service.state_dir, [*later, start, new_failure], config)
     assert len(actions) == 1
     assert actions[0]["source_event_id"] == "failure-new"
+
+
+@pytest.mark.parametrize("change", [{"command_id": "second-obligation"}, {"tier": "different-tier"}])
+def test_same_argv_another_obligation_does_not_clear_failed_probe(case, monkeypatch, change):
+    service, _, events, failure, config = _failed_probe(case, monkeypatch)
+    history = _later_receipt(service, events, failure, code=0, command=change)
+    actions = pending_host_probe_diagnoses(service.state_dir, history, config)
+    assert [action["source_event_id"] for action in actions] == [failure.id]

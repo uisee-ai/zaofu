@@ -90,7 +90,10 @@ def build_execution_context(
             "goal_claim_ids",
         )} for task in task_map.get("tasks", [])]
         break
-    target = str(payload.get("target_task_id") or "")
+    correction = str(payload.get("verify_assignment_task") or "")
+    if correction:
+        graph = [row for row in graph if row["task_id"] == correction]
+    target = correction or str(payload.get("target_task_id") or "")
     selected = {target} if target else {row["task_id"] for row in graph}
     store = TaskStore(Path(runtime.state_dir) / "kanban.json")
     bindings = {

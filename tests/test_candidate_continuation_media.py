@@ -57,3 +57,21 @@ def test_initial_continuation_delivers_verified_media_without_probe(source, corr
     assert (seeded.state_dir / index['files'][0]['ref']).read_bytes() == PNG
     assert str(indices[0]) in candidates[0].payload['operator_feedback'][0]
     assert not any(e.type in {'test.passed', 'runtime.action.attempt.started'} for e in events)
+
+
+def test_continuation_retains_latest_host_observation_per_obligation(source):
+    runtime, service, run_id, candidate = source
+    for idx, (command_id, tier) in enumerate([('one', 'runtime'), ('two', 'e2e'), ('one', 'runtime')]):
+        receipt = write_sidecar_json(runtime.state_dir, f"artifacts/occurrence-{idx}.json", {
+            "workflow_run_id": run_id, "target_commit": candidate.payload["candidate_head_commit"],
+            "command_digest": "shared-argv", "command_id": command_id,
+            "manifest": {"command": {"command_id": command_id, "tier": tier}},
+            "exit_code": 1 if idx == 2 else 0}, kind="task_host_receipt",
+            schema_version="task-host-receipt.v1", created_by="run-manager")
+        runtime.event_writer.append(ZfEvent(type="runtime.action.attempt.completed", origin="kernel",
+            id=f"occurrence-{idx}", payload={"workflow_run_id": run_id, "action": "task-host-assist",
+                                             "kind": "verify", "receipt_ref": receipt}))
+    preview = _action(service, run_id, candidate, dry_run=True)
+    assert preview["ok"], preview
+    assert {r["source_event_id"] for r in preview["manifest"]["execution_evidence"]} == {
+        "occurrence-1", "occurrence-2"}

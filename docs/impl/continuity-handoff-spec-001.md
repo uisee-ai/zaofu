@@ -454,6 +454,9 @@ ref/digest 重新核验基础设施失败；不修改旧事件。显式 `misrout
 worktree；要求同仓库 detached exact HEAD、源码干净、资源空闲。仅执行当前 candidate_verify
 合同命令，禁止 Candidate commit。结果仍是宿主执行收据，不自动产生产品 verdict；独立
 Reader 必须审阅并以当前身份提交。宿主执行不等于 Provider sandbox 获得 Docker/监听权限。
+控制面验证授权与冻结绑定后，内核为宿主效果的开始、完成及异常事件写入 `origin=kernel`，
+保留调用方 `actor` 和回执的 `execution_origin`。后继 Reader 的输入只采纳来源完整的执行事实；
+历史缺少 origin 的事件保留原貌，当前 Reader 仍可独立执行冻结命令取证。
 
 验证覆盖真实 Git detached currentness/负对照、实时与 settled replay 分类、实际聚合调用方、
 历史 sidecar 篡改/缺失/跨 Run、误派发取消及活跃持有者拒绝。完整交付、Judge 和无人值守

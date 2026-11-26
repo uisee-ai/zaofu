@@ -1,4 +1,4 @@
-"""Request another Judge review when historical candidate evidence becomes available."""
+"""Request another Judge review with newly bound evidence for its hold."""
 
 import argparse
 from contextlib import closing
@@ -13,11 +13,16 @@ from zf.runtime.goal_evidence_recovery import GoalEvidenceRecovery
 
 def register_recover_goal_evidence(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "goal-evidence", help="Re-review a hold with newly bound historical evidence"
+        "goal-evidence",
+        help="Re-review a hold with historical Candidate evidence or newly readable Task Verify results",
+        description=(
+            "Preview a held Judge with newly bound historical Candidate reports, or when every "
+            "open gap names an admitted Task Verify result missing from the original input grant."
+        ),
     )
-    parser.add_argument("--blocked-event", required=True)
+    parser.add_argument("--blocked-event", required=True, help="Kernel goal.closure.blocked event ID")
     parser.add_argument("--state-dir", default=None)
-    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--apply", action="store_true", help="Request a new Judge review on the same Run")
     parser.set_defaults(func=run)
 
 

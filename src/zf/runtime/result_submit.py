@@ -344,12 +344,19 @@ class SemanticResultSubmitService:
                 credential=credential,
             )
         )
-        from zf.runtime.input_delivery_preflight import input_delivery_preflight
+        from zf.runtime.input_delivery_preflight import result_readiness_preflight
 
-        delivery_errors = input_delivery_preflight(self.state_dir, self.event_log, _operation, semantic)
+        delivery_errors = result_readiness_preflight(
+            self.state_dir, self.event_log, _operation, request, semantic, self.registry,
+        )
         if delivery_errors:
-            return {"schema_version": "semantic-result-preflight.v1", "status": "failed",
-                    "profile_id": profile_id, "profile_revision": _revision, "errors": delivery_errors}
+            delivery_failure = {"schema_version": "semantic-result-preflight.v1", "status": "failed",
+                                "profile_id": profile_id, "profile_revision": _revision, "errors": delivery_errors}
+            has_plan_contract = isinstance(request.get("plan_candidate_validation"), Mapping)
+            if (request.get("reassessment_scope_ref") or not (has_plan_contract or profile_id == _PLAN_SYNTH_PROFILE_ID)
+                    or any(error["code"] not in {"required_read_missing", "required_input_delivery_missing"}
+                           for error in delivery_errors)):
+                return delivery_failure
         if request.get("reassessment_scope_ref"):
             from zf.runtime.candidate_reader_reassessment import validate_submission
             issues = []
@@ -359,29 +366,44 @@ class SemanticResultSubmitService:
                 issues.append({"field": "finding_results", "code": "reader_evidence_scope_invalid", "message": str(exc)})
             return {"schema_version": "semantic-result-preflight.v1", "status": "failed" if issues else "passed",
                     "profile_id": profile_id, "profile_revision": _revision, "errors": issues}
-        validation = validate_plan_candidate_semantic(
-            state_dir=self.state_dir,
-            request=request,
-            semantic=semantic,
-            profile_id=profile_id,
-            project_root=Path(project_root or Path.cwd()),
-        )
-        if validation is not None:
-            return validation
-        if profile_id == _PLAN_SYNTH_PROFILE_ID:
-            return validate_plan_synth_result(
+        try:
+            validation = validate_plan_candidate_semantic(
                 state_dir=self.state_dir,
-                registry=self.registry,
-                event_type=self._canonical_event_type(request, semantic),
-                operation=_operation,
                 request=request,
                 semantic=semantic,
-                operation_id=operation_id,
-                role_instance=role_instance,
                 profile_id=profile_id,
-                revision=_revision,
+                project_root=Path(project_root or Path.cwd()),
             )
-        if profile_id in {"implementation", "task-verify", "candidate-verify"} or (
+            if validation is None and profile_id == _PLAN_SYNTH_PROFILE_ID:
+                validation = validate_plan_synth_result(
+                    state_dir=self.state_dir,
+                    registry=self.registry,
+                    event_type=self._canonical_event_type(request, semantic),
+                    operation=_operation,
+                    request=request,
+                    semantic=semantic,
+                    operation_id=operation_id,
+                    role_instance=role_instance,
+                    profile_id=profile_id,
+                    revision=_revision,
+                )
+        except ResultSubmitError as exc:
+            if not delivery_errors:
+                raise
+            return {**delivery_failure, "errors": [*delivery_errors, {
+                "field": "plan_candidate_validation", "code": exc.code, "message": str(exc),
+            }]}
+        if validation is not None:
+            if delivery_errors:
+                # Semantic feedback on the draft does not attest delivery to this worker.
+                validation["status"] = "failed"
+                validation["errors"] = [*delivery_errors, *validation["errors"]]
+                if "execution_ready" in validation:
+                    validation["execution_ready"] = False
+            return validation
+        if delivery_errors:
+            return delivery_failure
+        if profile_id in {"implementation", "task-verify", "candidate-verify", "thin-judge-goal-closure"} or (
             profile_id == "workflow-read"
             and request.get("canonical_success_event") == "flow.discovery.child.completed"
         ):
@@ -399,6 +421,7 @@ class SemanticResultSubmitService:
                 revision=_revision,
                 delivery=self._current_task_pipeline_delivery(_operation, request),
                 events=self.event_log.read_all(),
+                goal_checker=self.admission._goal_closure_issues if profile_id == "thin-judge-goal-closure" else None,
             )
         if profile_id == "orchestrator-semantic-decision":
             from zf.runtime.orchestrator_directive_refs import validate_orchestrator_submission
@@ -811,28 +834,8 @@ class SemanticResultSubmitService:
     ) -> dict[str, Any]:
         if not str(request.get("task_pipeline_stage") or "").strip():
             return {}
-        operation_id = str(operation.get("operation_id") or "").strip()
-        attempt_id = str(operation.get("active_attempt_id") or "").strip()
-        dispatch_id = str(operation.get("dispatch_id") or "").strip()
-        if not operation_id or not attempt_id:
-            return {}
-        for event in reversed(self.event_log.read_all()):
-            if (
-                event.type != "task.pipeline.stage.dispatched"
-                or str(event.origin or "") != "kernel"
-            ):
-                continue
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if (
-                str(payload.get("operation_id") or "") == operation_id
-                and str(payload.get("attempt_id") or "") == attempt_id
-                and (
-                    not dispatch_id
-                    or str(payload.get("dispatch_id") or "") == dispatch_id
-                )
-            ):
-                return dict(payload)
-        return {}
+        from zf.runtime.input_delivery_contract import current_task_input_delivery
+        return current_task_input_delivery(self.event_log.read_all(), operation)
 
     def _input_policy(
         self,
@@ -840,15 +843,9 @@ class SemanticResultSubmitService:
         *,
         task_pipeline_delivery: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        delivery = task_pipeline_delivery or {}
-        if str(request.get("task_pipeline_stage") or "").strip():
-            descriptor = delivery.get("input_consumption_policy_ref")
-        else:
-            descriptor = request.get("input_consumption_policy_ref")
-        if not isinstance(descriptor, Mapping) or not str(descriptor.get("ref") or ""):
-            return {}
-        hydrated = hydrate_sidecar_ref(self.state_dir, dict(descriptor)).payload
-        return dict(hydrated) if isinstance(hydrated, Mapping) else {}
+        from zf.runtime.input_delivery_contract import submitted_input_policy
+        carrier = (task_pipeline_delivery or {}) if request.get("task_pipeline_stage") else request
+        return submitted_input_policy(self.state_dir, carrier)
 
     def _mark_used(self, operation_id: str) -> None:
         path = _binding_path(self.state_dir, operation_id)

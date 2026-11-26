@@ -185,14 +185,18 @@ def compile_task_pipeline_profile(
         "affinity": affinity,
         "candidate": candidate,
     }
+    normalized["profile_digest"] = profile_digest(normalized)
+    return normalized
+
+
+def profile_digest(policy: dict[str, Any]) -> str:
     encoded = json.dumps(
-        normalized,
+        {key: value for key, value in policy.items() if key != "profile_digest"},
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    normalized["profile_digest"] = hashlib.sha256(encoded).hexdigest()
-    return normalized
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _compile_pool(

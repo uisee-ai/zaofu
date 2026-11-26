@@ -534,6 +534,8 @@ def _scope_multi_kind_flow_expansion(expansion: dict) -> dict:
         if str(role.get("instance_id") or "").strip() in {"", old_name}:
             role["instance_id"] = new_name
 
+    from zf.core.config.stage_teams import scope_team_roles
+    scope_team_roles(out, role_map)
     if "artifact_worker_cgroups" in metadata:
         groups = metadata["artifact_worker_cgroups"]
         scoped_groups = {scoped(actor): path for actor, path in groups.items()}
