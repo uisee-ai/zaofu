@@ -101,7 +101,14 @@ def test_unknown_delivery_deadline_requests_owned_diagnosis(tmp_path, manager, c
     assert notice.payload["retryable"] is False and notice.payload["delivery_status"] == "unknown"
     if manager:
         from zf.runtime.run_manager import build_run_manager_projection
+        from zf.runtime.wake_patterns import WAKE_PATTERNS
+        from zf.runtime.watcher import EventWatcher
 
+        watcher = EventWatcher(state / "events.jsonl", lambda _: None, wake_patterns=list(WAKE_PATTERNS), event_log=log)
+        assert watcher.is_wake_event(notice.to_json())
+        deferred = next(e for e in rows if e.id == notice.causation_id)
+        assert deferred.type == "fanout.child.dispatch_deferred" and not watcher.is_wake_event(deferred.to_json())
+        assert notice.payload["lease_id"] == row["lease_id"] and notice.payload["recovery_owner"] == "run_manager"
         actions = build_run_manager_projection(state, events=rows, config=config, project_root=tmp_path)[
             "pending_actions"
         ]

@@ -576,16 +576,22 @@ class CodexSessionReader(BackendSessionReader):
                     try:
                         obj = json.loads(line)
                     except json.JSONDecodeError:
+                        if complete:
+                            return None
+                        # An append in progress can leave the last line partial.
                         if tracker:
                             tracker.boundary.valid = False
                         continue
+                    if not isinstance(obj, dict) or (
+                        obj.get("type") in ("session_meta", "turn_context", "event_msg")
+                        and not isinstance(obj.get("payload"), dict)
+                    ):
+                        return None
                     if tracker:
-                        if complete and isinstance(obj, dict):
+                        if complete:
                             tracker.consume(obj)
                         else:
                             tracker.boundary.valid = False
-                    if not isinstance(obj, dict):
-                        continue
                     if obj.get("type") == "session_meta":
                         payload = obj.get("payload") or {}
                         if isinstance(payload, dict):

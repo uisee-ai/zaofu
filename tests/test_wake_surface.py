@@ -43,7 +43,9 @@ def test_wake_list_changes_are_explicit():
     assert "task_map.amend.failed" in WAKE_PATTERNS  # 3fe3a300: failed amendments wake recovery.
     assert "candidate.reader.reassessment.requested" in WAKE_PATTERNS
     assert {t for t in WAKE_PATTERNS if t.startswith("workflow.mailbox.")} == {"workflow.mailbox.question"}
-    assert len(WAKE_PATTERNS) == 199, (
+    assert wake_event_category("fanout.child.delivery_unconfirmed") == WAKE_CATEGORY_LAYER1_WAKE_LAYER2_NOISE
+    assert "fanout.child.dispatch_deferred" not in WAKE_PATTERNS
+    assert len(WAKE_PATTERNS) == 200, (
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
@@ -107,7 +109,8 @@ def test_wake_list_changes_are_explicit():
             f"failed task-map amendment +1:task_map.amend.failed → 196; "
             f"scoped evidence Reader +1:candidate.reader.reassessment.requested → 197; "
             f"approved Plan research reserve +1:fanout.plan.extension.requested → 198; "
-            f"durable question ownership/answer changes +1:workflow.mailbox.question → 199"
+            f"durable question ownership/answer changes +1:workflow.mailbox.question → 199; "
+            f"expired Reader transport confirmation +1:fanout.child.delivery_unconfirmed → 200"
         )
 
 

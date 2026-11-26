@@ -15,3 +15,5 @@ usage_liveness 现在始终读取已有角色状态。同任务或无任务的 u
 Codex 用量回执现在保留 transcript 中的原生 `provider_session_id`。按派发隔离的 Reader 将该会话与 RoleSessionRegistry 登记的 Run、task、dispatch 及已发送的 TaskAttempt 对账。复用会话的角色还需要正在运行的 WRC operation 明确绑定该会话，或由当前任务阶段的角色、阶段和放置代次证明归属。样本早于派发、目标已结束、投递只有 claim，或会话身份无法对账时，系统保留用量，记录 `usage_binding_status=unattributed`，不给待执行任务或角色租约续期。旧版无原生会话标识的兼容采样仍支持唯一的已发送 attempt。
 
 回归入口是 `tests/test_disk_usage_attempt_attribution.py`，覆盖旧投递悬挂、新会话真实派发、迟到采样、不同会话和未知归属的费用保留。
+
+读取 Codex 记录时，已换行的损坏 JSON、非对象记录或用量事件类型不符使该次用量记为缺失。正在写入的末行尚未封口时，费用采集可以沿用之前完整的计数，原生区间等待完整采样后再证明。

@@ -268,3 +268,16 @@ def test_native_start_before_post_send_occurrence_needs_exact_transport_claim(tm
     assert row["delivery_claim_event_id"] == claim.id and datetime.fromisoformat(row["observed_from"]) == datetime.fromisoformat(h.ts)
     claim.payload["lease_id"] = "other-lease"
     assert frozen([claim, d, h, u], ["T"])["tasks"][0]["provider_turns"] == []
+
+
+def test_closed_corrupt_line_invalidates_registered_native_usage(tmp_path):
+    sid, tid = str(uuid4()), str(uuid4())
+    p = rollout(tmp_path, "lane", sid, tid, str(tmp_path / "project"), 3, 8)
+    with p.open("a", encoding="utf-8") as stream:
+        stream.write("{unfinished")
+    # Polls may race a live append. Only the previously complete counters are available.
+    partial = read(tmp_path, "lane", sid, p)
+    assert partial.raw["output_tokens"] == 3 and partial.native_turn_sample == {}
+    with p.open("a", encoding="utf-8") as stream:
+        stream.write("\n")
+    assert read(tmp_path, "lane", sid, p) is None

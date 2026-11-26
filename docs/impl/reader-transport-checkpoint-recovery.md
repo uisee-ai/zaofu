@@ -102,3 +102,5 @@ dispatch、attempt 和 lease。若有来自 Kernel 的发送回执，且原简�
 
 该机制适用于各工作流中有持久 operation 与 TaskAttempt 的 Reader 首次派发。
 已经发出并开始消费的 Reader 后续中断，仍使用本文的读取断点恢复流程。
+
+投递等待期间，`fanout.child.dispatch_deferred` 仅记录原 attempt。确认期限耗尽且 Run Manager 已启用时，`fanout.child.delivery_unconfirmed` 立即唤醒 Kernel，Run Manager 根据原 attempt 和租约安排 `diagnose_attention`。OA 仅在显式订阅该事件时额外收到唤醒。
