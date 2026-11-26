@@ -6,7 +6,8 @@ from typing import Any
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 
 
-def plan_cli_page_guidance(payload: Mapping[str, Any]) -> str:
+def required_cli_entry(payload: Mapping[str, Any], command: str, *, native: bool) -> list[str]:
+    label = "CLI fallback" if native else "Preferred deduplicated read"
     profile = payload.get("output_profile_id")
     authority = payload.get("handoff_authority_contract")
     if profile == "plan-synth":
@@ -16,18 +17,18 @@ def plan_cli_page_guidance(payload: Mapping[str, Any]) -> str:
           and authority.get("operation_type") == "fanout_reader_child"):
         page_bytes = 16384
     else:
-        return ""
-    return (
-        "- When using the controlled CLI with a tool that can return a complete wide page, add "
-        f"`--format text --page-bytes {page_bytes}` to the required-read command. "
-        "Reserve at least 16384 native tool output tokens when adjustable, including wrapper overhead. "
-        "Use one page per call and check the full original text and its next_cursor. "
-        "Text mode preserves source quoting; do not infer command syntax from display escaping. "
-        "For unknown or smaller capacity, start at 8192 or 2048 bytes. If clipped, retry the same input cursor "
-        "(omit it for page one) at the smaller size before advancing. Keep raw evidence in the authorized session "
-        "and cite its locator in shared reports. Exact source reads also accept --format text; "
-        "their --page-size limit is 8192 characters."
-    )
+        return [f"- {label}: `{command}`."]
+    return [
+        f"- {label} with an adjustable tool output budget: "
+        f"`{command} --format text --page-bytes {page_bytes}`. "
+        "Reserve at least 16384 native tool output tokens (e.g. max_output_tokens=16384), including wrapper overhead. "
+        "Read the complete original text through ZF_ARTIFACT_TEXT_PAGE_END, then keep the same flags "
+        "and append the returned --cursor for the next page.",
+        f"- For unknown or smaller capacity, start at 8192 or 2048 bytes: `{command} --page-bytes 2048`. "
+        "If clipped, retry the same input cursor (omit it for page one) at the smaller size before advancing. "
+        "Keep raw evidence in the authorized session and cite its locator in shared reports. "
+        "Exact source reads also accept --format text; their --page-size limit is 8192 characters.",
+    ]
 
 
 def bound_read_policy_locator(payload: Mapping[str, Any], state_dir: Path | None) -> str:

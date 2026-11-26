@@ -659,9 +659,12 @@ def render_attempt_source_briefing(
                 "scope, verification ownership and acceptance; do not treat the "
                 "predecessor task's contract as the current one."
             )
+        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator, required_cli_entry
+
+        lines.extend(required_cli_entry(payload, f"{cli_command} artifact read --attempt {attempt_id} --required",
+                                        native=native))
         lines.extend([
-            f"- {'CLI fallback' if native else 'Preferred deduplicated read'}: `{cli_command} artifact read --attempt {attempt_id} --required`.",
-            "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
+            "  Consume every returned body (items[].content in JSON). Identical bodies share output; "
             "each source is recorded. Follow `--cursor <next_cursor>` until null. "
             "Do not reread complete aliases.",
             "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
@@ -674,11 +677,6 @@ def render_attempt_source_briefing(
             "- For a source/path read, start with `--page-start 0 --page-size 8192` and follow "
             "`next_page_start` to null for gap-free coverage.",
         ])
-        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator, plan_cli_page_guidance
-
-        page_guidance = plan_cli_page_guidance(payload)
-        if page_guidance:
-            lines.append(page_guidance)
         locator = bound_read_policy_locator(payload, state_dir)
         if locator:
             lines.append(locator)

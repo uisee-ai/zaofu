@@ -97,7 +97,12 @@ def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domai
                                                  "operation_type": operation}
     text = render_attempt_source_briefing(payload, role_name="planner")
     assert "Preferred deduplicated read" in text and "--page-bytes 2048" in text
+    first_command = next(line for line in text.splitlines() if "Preferred deduplicated read" in line)
     if expected:
-        assert f"--format text --page-bytes {expected}" in text
+        assert f"--required --format text --page-bytes {expected}`" in first_command
+        assert "tool output budget" in first_command
+        assert "same flags" in text and "ZF_ARTIFACT_TEXT_PAGE_END" in text
+        assert "--required --page-bytes 2048`" in text
     else:
+        assert "--required`" in first_command
         assert "--format text --page-bytes" not in text
