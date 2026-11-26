@@ -258,3 +258,91 @@ def test_compact_selection_does_not_remove_full_package_obligations(missing):
     errors = plan_input_declaration_errors({'required_plan_ports': ports, 'tasks': [
         {'task_id': 'T1', 'evidence_contract': {'plan_input_selection': policy}}]})
     assert any('complete plan matrix ports' in error for error in errors)
+
+
+@pytest.mark.parametrize("case", ["execution_spec"], indirect=True)
+def test_oa_task_and_stage_select_exact_partition_and_keep_global_evidence(case):
+    from zf.runtime.artifact_query.authority_contract import build_handoff_authority_contract
+    from zf.runtime.artifact_read_ledger import write_attempt_source_manifest
+    from zf.runtime.orchestrator_agent_run_plan import RUN_PLAN_ADMITTED
+
+    state, resolver, identity, _ = case
+    pkg = json.loads((state / identity["plan_artifact_package_ref"]).read_bytes())
+    ports = {p["logical_name"]:p for p in pkg["produced"]}
+    def source(name):
+        r = ports[name]
+        return {"source_id":name,"artifact_id":name,"kind":name,"ref":r["ref"],"sha256":r["sha256"],
+                "allowed_paths":["$"],"source_event_id":"oa-source"}
+    units = [
+        {"work_unit_id":"other","task_ids":["T2"],"stage_ids":["impl"]},
+        {"work_unit_id":"wrong-stage","task_ids":["T1"],"stage_ids":["verify"]},
+        {"work_unit_id":"impl","task_ids":["T2"],"stage_ids":["impl"]},
+        {"work_unit_id":"T1","task_ids":["T2"],"stage_ids":["impl"]},
+        {"work_unit_id":"inventory","task_ids":["T1"],"stage_ids":["implementation"]},
+        {"work_unit_id":"global","stage_ids":["prd-lanes-impl"]},
+    ]
+    plan = {"work_units":units,
+            "context_routes":[{"work_unit_id":r["work_unit_id"],"required_sources":[
+                source("acceptance_matrix" if r["work_unit_id"] == "global" else "execution_spec")]} for r in units]}
+    entry = write_immutable_json_sidecar(state,plan,root="fixtures",kind="execution_plan",schema_version="v1",created_by="test")
+    EventLog(state/"events.jsonl").append(ZfEvent(type=RUN_PLAN_ADMITTED,origin="kernel",correlation_id="run",
+        payload={**identity,"workflow_run_id":"run","execution_plan_ref":entry}))
+    store = TaskStore(state/"kanban.json")
+    task = store.get("T1")
+    task.contract.evidence_contract["source_refs"] = identity
+    store.update("T1",contract=task.contract)
+    task = store.get("T1")
+    snap = build_task_contract_snapshot(task, workflow_run_id="run",task_map_generation_id="g1",
+                                        base_commit="base",task_ref="refs/zf/tasks/T1")
+    desc = write_task_contract_snapshot(state,snap)
+    payload={**current_task_contract_identity(task),**identity,"workflow_run_id":"run",
+             "task_ref":"refs/zf/tasks/T1","base_commit":"base","output_profile_id":"implementation",
+             "contract_snapshot_ref":desc["ref"],"contract_snapshot_digest":desc["sha256"],"stage_id":"impl", "flow_kind":"prd"}
+    payload["handoff_authority_contract"] = build_handoff_authority_contract(
+        payload,output_profile_id="implementation",stage_id="impl",operation_type="task-stage")
+    args = dict(payload=payload, workflow_run_id="run",task_id="T1",attempt_id="a1",dispatch_id="d1")
+    manifest, _ = resolver.resolve_payload(**args)
+    aliases = {s["source_id"]:s for s in manifest["sources"] if s["source_id"].startswith("oa-route-")}
+    assert list(aliases) == ["oa-route-inventory-1", "oa-route-global-1"]
+    a = aliases["oa-route-inventory-1"]
+    assert a["source_event_id"] == "oa-source"
+    assert a["allowed_paths"] == ["$.shared","$.tasks[0]"]
+    assert aliases["oa-route-global-1"]["allowed_paths"] == ["$"]
+    reads = build_canonical_required_reads(manifest,output_profile_id="implementation")
+    assert [(r["source_id"],r["json_path"]) for r in reads if r["source_id"].startswith("oa-route-")] == [
+        ("oa-route-global-1","$")]
+    explicit={"source_id":a["source_id"],"artifact_id":a["artifact_id"],"artifact_sha256":a["sha256"],"json_path":"$.shared"}
+    assert explicit in build_canonical_required_reads(manifest,output_profile_id="implementation",explicit=[explicit])
+    read_args = dict(manifest=manifest,source_id=a["source_id"],artifact_id=a["artifact_id"],record=False)
+    assert json.loads(read_attempt_artifact(state,**read_args,json_path="$.tasks[0]")["content"])["task_id"] == "T1"
+    for denied in ("$", "$.tasks[1]"):
+        with pytest.raises(ArtifactReadError,match="not allowed"):
+            read_attempt_artifact(state,**read_args,json_path=denied)
+    # A legacy request binds its own original route, including the full grant.
+    # Build a historical manifest using the same writer as the dispatcher.
+    import copy
+    old = copy.deepcopy(manifest)
+    legacy_alias = next(s for s in old["sources"] if s["source_id"] == a["source_id"])
+    legacy_alias.update(source_id="oa-route-other-1", allowed_paths=["$"])
+    old["orchestrator_context_route_source_ids"][0] = legacy_alias["source_id"]
+    desc = write_attempt_source_manifest(state,old)
+    request = {"active_attempt_id":"a1","source_manifest_digest":desc["sha256"]}
+    prior, _ = resolver.resolve_payload(**args,previous_request=request)
+    aliases = {s["source_id"]:s for s in prior["sources"] if s["source_id"].startswith("oa-route-")}
+    assert aliases["oa-route-other-1"]["allowed_paths"] == ["$"]
+    assert a["source_id"] not in aliases
+    with pytest.raises(ValueError,match="signed task attempt"):
+        resolver.resolve_payload(**{**args,"dispatch_id":"another"},previous_request=request)
+
+def test_oa_route_preserves_restricted_paths_and_acls_without_affecting_other_versions():
+    from zf.runtime.task_plan_consumption import task_context_route_sources
+
+    port = {"kind": "task_scoped_plan_input", "ref": "inventory.json", "sha256": "a",
+            "allowed_paths": ["$.shared", "$.tasks[0]"], "access_scope": {"roles": ["reader", "writer"]}}
+    route = {"source_id": "oa-route-inventory-1", "ref": "inventory.json", "sha256": "a",
+             "allowed_paths": ["$.tasks[0]"], "access_scope": {"roles": ["reader"]}}
+    projected, other = task_context_route_sources([dict(route), {**route, "sha256": "b", "allowed_paths": ["$"]}], [port])
+    assert projected["allowed_paths"] == ["$.tasks[0]"] and projected["access_scope"]["roles"] == ["reader"]
+    assert other["allowed_paths"] == ["$"] and other["access_scope"] == route["access_scope"]
+    with pytest.raises(ValueError, match="no common authorized path"):
+        task_context_route_sources([{**route, "allowed_paths": ["$.tasks[1]"]}], [port])

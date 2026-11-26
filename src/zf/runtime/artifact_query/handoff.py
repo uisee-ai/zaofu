@@ -65,6 +65,7 @@ class CanonicalHandoffResolver:
         dispatch_id: str,
         source_event_id: str = "",
         read_purpose: str = "",
+        previous_request: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         mutable = dict(payload)
         currentness = self._validate_currentness(
@@ -141,21 +142,24 @@ class CanonicalHandoffResolver:
         if plan_expert:
             mutable.pop("workflow_input_manifest_ref", None)
             mutable["artifact_refs"] = []
-        route_sources = admitted_context_route_sources(
-            state_dir=self.state_dir,
-            workflow_run_id=workflow_run_id,
-            task_id=task_id,
-            stage_id=str(authority_contract.get("stage_id") or ""),
-            task_map_generation=str(
-                currentness.get("task_map_generation") or ""
-            ),
-            plan_artifact_package_ref=str(
-                currentness.get("plan_artifact_package_ref") or ""
-            ),
-            plan_artifact_package_digest=str(
-                currentness.get("plan_artifact_package_digest") or ""
-            ),
-        )
+        from zf.runtime.task_plan_consumption import replayed_task_context_routes, task_context_route_sources
+
+        task_profile = profile in {"implementation", "task-verify"}
+        route_sources = replayed_task_context_routes(
+            self.state_dir, previous_request, attempt_id=attempt_id, dispatch_id=dispatch_id,
+            workflow_run_id=workflow_run_id, task_id=task_id, currentness=currentness,
+        ) if task_profile else None
+        if route_sources is None:
+            route_sources = admitted_context_route_sources(
+                state_dir=self.state_dir, workflow_run_id=workflow_run_id, task_id=task_id,
+                stage_id=str(authority_contract.get("stage_id") or ""),
+                flow_kind=str(mutable.get("flow_kind") or mutable.get("request_kind") or ""),
+                task_map_generation=str(currentness.get("task_map_generation") or ""),
+                plan_artifact_package_ref=str(currentness.get("plan_artifact_package_ref") or ""),
+                plan_artifact_package_digest=str(currentness.get("plan_artifact_package_digest") or ""),
+            )
+            if task_profile:
+                route_sources = task_context_route_sources(route_sources, plan_port_sources)
         if route_sources:
             artifact_refs = (
                 list(mutable.get("artifact_refs") or [])

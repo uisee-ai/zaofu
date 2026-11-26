@@ -361,7 +361,7 @@ def prepare_call_operation(
         task_id=task_id,
         attempt_id=attempt_id,
         dispatch_id=dispatch_id,
-        source_event_id=causation_id,
+        source_event_id=causation_id, previous_request=previous_request,
         **({"read_purpose": "candidate-verify"} if reassessment_scope_ref else {}),
     )
     payload.pop("_context_delivery_enabled", None)

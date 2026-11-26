@@ -113,15 +113,12 @@ def build_canonical_required_reads(
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
             if source_id.startswith(("plan-port-", "oa-route-")):
-                required_paths[source_id] = (
-                    tuple(source.get("allowed_paths") or ["$"])
-                    if source_id.startswith("plan-port-")
-                    and ((source.get("kind") == "task_scoped_plan_input"
-                          and profile in {"implementation", "task-verify"})
-                         or (source.get("kind") == "candidate_scoped_plan_input"
-                             and profile == "candidate-verify"))
-                    else ("$",)
+                scoped = (
+                    source_id.startswith("oa-route-")
+                    or (source.get("kind") == "task_scoped_plan_input" and profile in {"implementation", "task-verify"})
+                    or (source.get("kind") == "candidate_scoped_plan_input" and profile == "candidate-verify")
                 )
+                required_paths[source_id] = tuple(source.get("allowed_paths") or ["$"]) if scoped else ("$",)
     if profile == "candidate-verify":
         for source_id, selected in manifest.get("candidate_plan_read_selections", {}).items():
             if source_id in required_paths:
@@ -245,12 +242,15 @@ def build_canonical_required_reads(
             json.dumps(source.get("access_scope") or {}, sort_keys=True),
             json.dumps(source.get("retention") or {}, sort_keys=True),
         )
-        if key[0].startswith("plan-port-") and ref:
+        task_route_slice = (profile in {"implementation", "task-verify"} and key[0].startswith("oa-route-")
+                            and key[3] != "$" and key[:2] not in explicit_ids)
+        if (key[0].startswith("plan-port-") or task_route_slice) and ref:
             # Preserve the existing same-file Plan port alias contract.
             slice_key = (ref, key[2], key[3], *constraints)
             if slice_key in seen_plan_slices:
                 continue
-            seen_plan_slices.add(slice_key)
+            if not task_route_slice:
+                seen_plan_slices.add(slice_key)
         elif profile in {"plan-synth", "workflow-read"} and ref and key[:2] not in explicit_ids:
             # Occurrence IDs differ for logical aliases. Their full identity
             # stays in the manifest; only the identical delivered body merges.

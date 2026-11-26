@@ -57,3 +57,15 @@ not filter fields or batch pages into a summary.` 每页应保留身份、digest
 保持，以及真实 briefing 原页要求。共享 snapshot、lossless codec、resume 和
 output-identity 测试保护现有恢复/授权边界。设计依据见
 [198 按需输入与恢复](../design/198-context-index-write-read-resume.md)。
+
+## 任务级上下文路由
+
+任务的实施与独立验证从已准入的 OA work unit 取上下文。工作单元同时声明
+`task_ids` 和 `stage_ids` 时，派单须同时匹配两项。仅指定一个维度的通用
+分工仍按该维度匹配，严格 OA Verify 分工还须具有对应的任务和阶段。
+
+当 OA 指向与当前任务已签 Plan 分区相同的物理引用和摘要时，别名保留 OA
+来源、选择器和访问控制，读取范围限于共同授权的分区。与 Plan 端口同字节、
+同选择器、同权限和同读取条件的分区只需履行一次。显式指定的别名读取义务
+单独保留。其它文件沿用各自授权。已签任务重新准备时沿用原 manifest 中的
+OA 别名和授权，新的任务尝试才采用本次路由。

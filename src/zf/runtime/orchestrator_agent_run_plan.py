@@ -386,6 +386,7 @@ def admitted_context_route_sources(
     task_map_generation: str,
     plan_artifact_package_ref: str,
     plan_artifact_package_digest: str,
+    flow_kind: str = "",
 ) -> list[dict[str, Any]]:
     """Resolve only same-generation context routes for one downstream unit."""
 
@@ -398,7 +399,7 @@ def admitted_context_route_sources(
         plan_artifact_package_ref=plan_artifact_package_ref,
         plan_artifact_package_digest=plan_artifact_package_digest,
         task_map_generation=task_map_generation,
-        verify_task=task_id if stage_id in {"verify", "prd-lanes-verify"} else "",
+        verify_task=task_id if stage_id in pipeline_stage_aliases("verify", flow_kind or "prd") else "",
         require_kernel=True,
     )
     descriptor = admitted.get("execution_plan_ref")
@@ -412,10 +413,10 @@ def admitted_context_route_sources(
     selected = _selected_work_units(
         execution_plan,
         task_id=task_id,
-        stage_id=stage_id,
+        stage_id=stage_id, flow_kind=flow_kind,
     )
     sources: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for route in execution_plan.get("context_routes") or []:
         if not isinstance(route, Mapping) or str(
             route.get("work_unit_id") or ""
@@ -426,7 +427,7 @@ def admitted_context_route_sources(
             if not isinstance(source, Mapping):
                 continue
             key = (
-                str(source.get("ref") or ""),
+                work_unit_id, str(source.get("ref") or ""),
                 str(source.get("sha256") or ""),
             )
             if not all(key) or key in seen:
@@ -437,9 +438,19 @@ def admitted_context_route_sources(
                 "source_id": (
                     f"oa-route-{_safe(work_unit_id)}-{index + 1}"
                 ),
-                "allowed_paths": ["$"],
+                "allowed_paths": source.get("allowed_paths") or ["$"],
             })
     return sources
+
+
+def pipeline_stage_aliases(stage: str, flow_kind: str) -> set[str]:
+    """The same approved stage spellings govern delegation and its inputs."""
+    aliases = {stage}
+    if flow_kind:
+        aliases.add(f"{flow_kind}-lanes-{stage}")
+    if stage == "impl":
+        aliases.add("implementation")
+    return aliases
 
 
 def _selected_work_units(
@@ -447,9 +458,12 @@ def _selected_work_units(
     *,
     task_id: str,
     stage_id: str,
+    flow_kind: str,
 ) -> set[str]:
     selected: set[str] = set()
-    verify_stages = {"verify", "prd-lanes-verify"}
+    verify_stages = pipeline_stage_aliases("verify", flow_kind or "prd")
+    stage_aliases = (pipeline_stage_aliases(stage_id, flow_kind)
+                     if stage_id in {"impl", "verify", "acceptance_review"} else {stage_id})
     scoped = execution_plan.get("verify_assignment_mode") == "oa_run_plan"
     for row in execution_plan.get("work_units") or []:
         if not isinstance(row, Mapping):
@@ -457,15 +471,16 @@ def _selected_work_units(
         unit_id = str(row.get("work_unit_id") or "")
         task_ids = _strings(row.get("task_ids"))
         stage_ids = _strings(row.get("stage_ids"))
+        stage_matches = bool(stage_aliases.intersection(stage_ids)) or (
+            stage_id in verify_stages and bool(verify_stages.intersection(stage_ids))
+        )
         if scoped and (stage_id in verify_stages or verify_stages.intersection(stage_ids)):
-            if stage_id in verify_stages and task_id in task_ids and verify_stages.intersection(stage_ids):
+            if stage_id in verify_stages and task_id in task_ids and stage_matches:
                 selected.add(unit_id)
-            continue
-        if (
-            unit_id in {task_id, stage_id}
-            or (task_id and task_id in task_ids)
-            or (stage_id and stage_id in stage_ids)
-        ):
+        elif task_ids or stage_ids:
+            if (not task_ids or task_id in task_ids) and (not stage_ids or stage_matches):
+                selected.add(unit_id)
+        elif unit_id and unit_id in {task_id, stage_id}:
             selected.add(unit_id)
     return selected
 
