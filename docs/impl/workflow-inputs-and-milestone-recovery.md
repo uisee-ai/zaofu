@@ -74,7 +74,7 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 
 影响范围测试需要控制器依赖。验证使用工作树独立环境安装 dev、web、controller 和 native-inputs 四组依赖。
 
-单任务 Impl 与独立 Task Verify 在首次派发和恢复时按本次合同读取自己的必读项。支持调整工具输出预算的角色可选用 16 KiB 文本页，收到完整页尾后再按返回的游标继续。输出被截断时以相同游标和较小页重读。已签来源、授权范围和必读项沿用原合同。
+单任务 Impl 与独立 Task Verify 在首次派发和恢复时可选用 16 KiB 文本页。已绑定冻结候选的 Candidate Verify 各席可选 32 KiB 文本页，各自读取并核验自己的必读项。可调工具应预留完整的输出容量，受限客户端可用 8 KiB 或 2 KiB。看到完整页尾后按返回的游标继续，若截断则以本页输入游标和较小页重读。恢复首条命令可用 `--resume`，翻页时用 `--cursor` 替换它。已签来源、授权范围和必读项沿用原合同。
 
 现行 CLI 默认使用 JSON 与 8 KiB 批页。B 是显式文本批页试验。三组调用数来自模拟工具返回，无法据此估算真实模型 token 或从派发到准入的耗时。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
 

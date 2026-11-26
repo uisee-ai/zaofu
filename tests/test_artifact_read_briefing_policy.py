@@ -129,6 +129,9 @@ def test_museum_plan_reader_gets_wide_page_guidance_without_changing_its_policy(
     ("task-verify", "task", "task-stage", "16384"),
     ("implementation", "plan", "task-stage", None),
     ("task-verify", "task", "fanout_reader_child", None),
+    ("candidate-verify", "task", "fanout_reader_child", None),  # legacy without candidate lineage
+    ("candidate-verify", "task", "task-stage", None),
+    ("candidate-verify", "plan", "fanout_reader_child", None),
     ("unregistered-profile", "task", "task-stage", None),
 ))
 def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domain, operation, expected):
@@ -148,3 +151,32 @@ def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domai
     else:
         assert "--required`" in first_command
         assert "--format text --page-bytes" not in text
+
+
+def test_frozen_candidate_reader_retains_all_inputs_across_briefing_and_recovery(tmp_path):
+    from tests.test_candidate_reader_retry_authority import _prepared_candidate
+    from zf.runtime.artifact_input_recovery import build_input_recovery
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    runtime, role, _, payload = _prepared_candidate(tmp_path)
+    state = runtime.state_dir
+    before = deepcopy(payload)
+    request = next(e for e in runtime.event_log.read_all() if e.type == "workflow.operation.requested"
+                   and e.payload["operation_id"] == payload["operation_id"])
+    request_ref = request.payload["request_ref"]
+    frozen_request = (state / request_ref["ref"]).read_bytes()
+    manifest = hydrate_sidecar_ref(state, payload["attempt_source_manifest"]).payload
+    text = render_attempt_source_briefing(payload, state_dir=state, role_name=role.name)
+    assert "--required --format text --page-bytes 32768" in text
+    assert "--page-bytes 2048" in text and "same input cursor" in text
+    assert "replace it with --cursor" in text and "mutually exclusive" in text
+    assert "adjustable tool output budget" in text and "ZF_ARTIFACT_TEXT_PAGE_END" in text
+    pack = build_input_recovery(state_dir=state, manifest=manifest, required=payload["required_reads"],
+                                identity={"actor": role.instance_id, "role": role.name, "provider": "mock",
+                                          "purpose": "candidate-verify", "operation_id": payload["operation_id"]},
+                                events=runtime.event_log.read_all(), reads=[])
+    assert pack["commands"]["required_read"].endswith("--format text --page-bytes 32768")
+    assert pack["required_visible"] == len(payload["required_reads"])
+    assert "Retry clipped pages at the same cursor" in pack["instructions"]
+    assert payload == before
+    assert (state / request_ref["ref"]).read_bytes() == frozen_request

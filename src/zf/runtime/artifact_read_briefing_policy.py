@@ -12,6 +12,9 @@ def required_read_page_bytes(profile: object, authority: object) -> int | None:
     if not isinstance(authority, Mapping) or authority.get("output_profile_id") != profile:
         return None
     domain, operation = authority.get("attempt_domain"), authority.get("operation_type")
+    if (profile == "candidate-verify" and (domain, operation) == ("task", "fanout_reader_child")
+            and authority.get("requires_candidate_lineage") is True):
+        return 32768
     if profile == "workflow-read" and (domain, operation) == ("plan", "fanout_reader_child"):
         return 16384
     if profile in ("implementation", "task-verify") and (domain, operation) == ("task", "task-stage"):
@@ -29,7 +32,8 @@ def required_cli_entry(payload: Mapping[str, Any], command: str, *, native: bool
         f"`{command} --format text --page-bytes {page_bytes}`. "
         "Reserve at least 16384 native tool output tokens (e.g. max_output_tokens=16384), including wrapper overhead. "
         "Read the complete original text through ZF_ARTIFACT_TEXT_PAGE_END, then keep the same flags "
-        "and append the returned --cursor for the next page.",
+        "and append the returned --cursor for the next page. For recovery, use --resume only on the first "
+        "request, then replace it with --cursor. The two flags are mutually exclusive.",
         f"- For unknown or smaller capacity, start at 8192 or 2048 bytes: `{command} --page-bytes 2048`. "
         "If clipped, retry the same input cursor (omit it for page one) at the smaller size before advancing. "
         "Keep raw evidence in the authorized session and cite its locator in shared reports. "
