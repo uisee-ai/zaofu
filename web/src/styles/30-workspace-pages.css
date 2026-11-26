@@ -37,7 +37,8 @@
 .workspace-view-tabs button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
 
 /* Overview: flow, actionable work and context follow the metric grid. */
-.overview-dashboard { width: 100%; max-width: 1160px; margin-inline: auto; padding: 28px 24px 40px; flex: 1; }
+.board-panel:has(> .overview-dashboard) { overflow-y: auto; }
+.overview-dashboard { flex: none; width: 100%; max-width: 1160px; margin-inline: auto; padding: 28px 24px 72px; }
 .overview-heading { margin-bottom: 20px; }
 .overview-heading h2 { margin-top: 5px; }
 .overview-eyebrow { color: var(--text-secondary); font-size: var(--text-12-5); }
@@ -255,7 +256,8 @@
   .app-shell:has(.board-panel:is([data-page="project"], [data-page="agents"], [data-page="automations"], [data-page="workflows"], [data-page="delivery"], [data-page="delivery-trace"], [data-page="delivery-graph"], [data-page="behavior-loop"], [data-page="traces"])) { height: 100dvh; min-height: 100dvh; overflow: hidden; }
 }
 @media (max-width: 720px) {
-  .overview-dashboard, .board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll,
+  .overview-dashboard { padding: 20px 16px 96px; }
+  .board-panel:is([data-page="agents"], [data-page="automations"]) > .projection-scroll,
   .delivery-trace-page, .board-panel[data-page="behavior-loop"] .loop-v2-page, .trace-index-context { padding: 20px 16px 28px; }
   .workspace-page-heading { flex-wrap: wrap; }
   .workspace-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }

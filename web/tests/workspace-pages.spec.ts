@@ -6,6 +6,33 @@ test.describe.configure({ timeout: 90_000 });
 const open = (page: Page, route: string) => page.goto(`/?project=ui-review&page=${route}`);
 async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(() => innerWidth)); }
 
+test("Overview scrolls at the viewport edge and keeps its content centered", async ({ page }) => {
+  await installWorkspacePages(page);
+  await open(page, "project");
+  const panel = page.locator('.board-panel[data-page="project"]');
+  const heading = page.locator(".overview-heading");
+  await expect(heading).toContainText("ZaoFu Studio");
+
+  for (const width of [1920, 1440, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    await panel.evaluate((node) => node.scrollTo(0, 0));
+    const bounds = await panel.boundingBox();
+    const content = await heading.boundingBox();
+    const availableWidth = await panel.evaluate((node) => node.clientWidth);
+    const gutter = width === 390 ? 16 : 24;
+    expect(bounds!.x + bounds!.width).toBe(width);
+    expect(content!.width).toBeCloseTo(Math.min(1160, availableWidth) - 2 * gutter, 0);
+    expect(content!.x - bounds!.x).toBeCloseTo((availableWidth - content!.width) / 2, 0);
+
+    await page.mouse.move(width - 2, 350);
+    await page.mouse.wheel(0, 420);
+    await expect.poll(() => panel.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    expect((await heading.boundingBox())!.y).toBeLessThan(content!.y);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await noOverflow(page);
+  }
+});
+
 test("Overview prioritizes actionable work and preserves pulse-first loading", async ({ page }, info) => {
   const { writes, errors } = await installWorkspacePages(page);
   let release!: () => void;
@@ -237,6 +264,7 @@ test("Overview contains a populated execution flow within its card", async ({ pa
   }
   await flow.getByRole("button", { name: /blocked \(side pocket\)/ }).click();
   await expect(page).toHaveURL(/page=task/);
+  await page.getByLabel("编辑任务", { exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Resolve missing acceptance evidence");
   expect(writes).toEqual([]); expect(errors).toEqual([]);
 });
