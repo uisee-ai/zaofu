@@ -46,46 +46,64 @@ def project_source_event(manifest, children, event):
     charter = child["payload"].get("stage_obligation", {})
     if charter.get("obligation_id") != p.get("obligation_id") or p.get("input_ref") not in charter["input_refs"]:
         return
+    payload = child["payload"]
+    snapshots = payload.get("source_rebind_snapshots", {})
+    if p["input_ref"] in snapshots:
+        return
     if event.type == REJECTED and child["status"] == "pending":
+        if payload.get("source_rebind_event_id") and event.causation_id != payload["source_rebind_event_id"]:
+            return
         child.update(status="awaiting_source", source_rejection_id=event.id, last_event_id=event.id)
     if (event.type == REBOUND and child["status"] == "awaiting_source"
             and child["source_rejection_id"] == p.get("source_event_id")):
-        refs = [p["replacement_ref"] if ref == p["input_ref"] else ref for ref in charter["input_refs"]]
-        child["payload"] = {**child["payload"], "stage_obligation": {**charter, "input_refs": refs},
-                            "input_refs": refs, "source_rebind_event_id": event.id, "source_rejection_id": p["source_event_id"],
-                            "source_rebind_snapshot": {"ref": p["replacement_ref"], "sha256": p["source_sha256"]}}
+        snapshots = {**snapshots, p["input_ref"]: {"ref": p["replacement_ref"], "sha256": p["source_sha256"]}}
+        # Keep the approved charter intact. Only execution inputs follow signed replacements.
+        refs = [snapshots[ref]["ref"] if ref in snapshots else ref for ref in charter["input_refs"]]
+        child["payload"] = {**payload, "input_refs": refs, "source_rebind_event_id": event.id,
+                            "source_rejection_id": p["source_event_id"], "source_rebind_snapshots": snapshots}
         child.update(status="pending", last_event_id=event.id)
 
 
 def defer_source_rejection(runtime, context, child, cause, exc):
     if (context.stage_id != "prd-scan" or not isinstance(exc, PlanSourceUnavailable)
-            or child.payload.get("source_rebind_event_id")
             or checkpoint_policy(runtime.config, "plan_source", flow_kind="prd") != "blocking"):
         return False
-    charter = child.payload.get("stage_obligation", {})
     run = child.payload.get("workflow_run_id") or context.trace_id
-    if exc.ref not in charter.get("input_refs", []):
-        return False
     with locked_path(runtime.state_dir / "locks" / "plan-source-recovery"):
         events = runtime.event_log.read_all()
+        # A restart can redrive the old cached child with fanout.started as cause.
+        # Rebuild its current authorization from the ledger, including pre-upgrade receipts.
+        manifest = FanoutManifestProjector(runtime.state_dir).rebuild(context.fanout_id, events)
+        live = next((c for c in manifest["children"] if c["child_id"] == child.child_id
+                     and c["role_instance"] == child.role_instance), None)
+        if not live:
+            return False
+        payload = live["payload"]
+        charter = payload.get("stage_obligation", {})
+        start = next((e for e in events if e.type == "fanout.started" and e.origin == "kernel"
+                      and e.payload.get("fanout_id") == context.fanout_id), None)
+        if (not start or cause not in {start.id, child.payload.get("source_rebind_event_id")}
+                or run != (manifest.get("workflow_run_id") or manifest["trace_id"])
+                or not any(c.get("child_id") == child.child_id and
+                           c.get("payload", {}).get("stage_obligation") == charter
+                           for c in start.payload.get("expected_children", []))):
+            return False
         try:
             proposal, owner = _authority(runtime, events, run, child.payload.get("workflow_proposal_digest", ""), charter)
         except (ValueError, KeyError, OSError):
             return False
-        start = next((e for e in events if e.id == cause and e.type == "fanout.started" and e.origin == "kernel"
-                      and e.payload.get("fanout_id") == context.fanout_id), None)
-        if not start or not any(c.get("child_id") == child.child_id and
-                                c.get("payload", {}).get("stage_obligation") == charter
-                                for c in start.payload.get("expected_children", [])):
+        # Another dispatcher may already have deferred, corrected or finished this child.
+        # A stale preregistration failure cannot override the newer state.
+        if live["status"] != "pending" or child.payload.get("source_rebind_event_id") != payload.get("source_rebind_event_id"):
+            return True
+        if exc.ref not in charter["input_refs"] or exc.ref in payload.get("source_rebind_snapshots", {}):
             return False
-        if not any(e.type == REJECTED and e.origin == "kernel" and e.causation_id == cause
-                   and e.payload.get("child_id") == child.child_id for e in events):
-            runtime.event_writer.append(ZfEvent(type=REJECTED, actor="zf-cli", origin="kernel",
-                causation_id=cause, correlation_id=run, payload={
-                    "workflow_run_id": run, "workflow_proposal_digest": proposal["proposal_digest"],
-                    "stage_id": "prd-scan", "fanout_id": context.fanout_id, "child_id": child.child_id,
-                    "role_instance": child.role_instance, "obligation_id": charter["obligation_id"],
-                    "input_ref": exc.ref, "reason": str(exc), "recovery_owner": owner}))
+        runtime.event_writer.append(ZfEvent(type=REJECTED, actor="zf-cli", origin="kernel",
+            causation_id=payload.get("source_rebind_event_id") or start.id, correlation_id=run, payload={
+                "workflow_run_id": run, "workflow_proposal_digest": proposal["proposal_digest"],
+                "stage_id": "prd-scan", "fanout_id": context.fanout_id, "child_id": child.child_id,
+                "role_instance": child.role_instance, "obligation_id": charter["obligation_id"],
+                "input_ref": exc.ref, "reason": str(exc), "recovery_owner": owner}))
     return True
 
 

@@ -584,7 +584,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                             "recovery_owner": "run_manager"}
                            if child.payload.get("source_rejection_id") and child.payload.get("source_rebind_event_id") else {}),
                     },
-                    causation_id=causation_id,
+                    causation_id=child.payload.get("source_rebind_event_id") or causation_id,
                     correlation_id=context.trace_id,
                 ))
                 prepared[child.child_id] = {"skip": True, "run_id": run_id}

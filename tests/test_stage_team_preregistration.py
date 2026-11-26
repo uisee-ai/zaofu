@@ -62,6 +62,13 @@ def test_stage_roster_binds_preregistration_receipts_to_the_current_child():
     current = member()
     assert (current["source_event_id"], current["status"], current["owner"]) == (rebound.id, "ready", "kernel")
     assert current["attempt_count"] == 0
+    second = replace(rejected, id="second-source", causation_id=rebound.id,
+                     payload={**rejected.payload, "input_ref": "b.md", "reason": "b.md missing"})
+    timeline.append(second)
+    assert member()["source_event_id"] == second.id and member()["owner"] == "oa"
+    timeline.append(replace(rebound, id="late-first-rebound"))
+    assert member()["source_event_id"] == second.id
+    del timeline[-2:]
     # The selected file can change between the OA decision and target binding.
     drift = replace(failed, id="changed-after-rebind", causation_id=rebound.id,
                     payload={**failed.payload, "reason": "selected source changed"})

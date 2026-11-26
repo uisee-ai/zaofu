@@ -275,17 +275,24 @@ def bind_plan_team_inputs(runtime, child, stage_id: str, run: str, *, predecesso
     trigger = payload.get("trigger_payload") or {}
     reports = trigger.get("stage_member_results") or []
     author = stage_id == "prd-plan"
-    assigned = list(charter["input_refs"])
+    snapshots = payload.get("source_rebind_snapshots", {})
+    assigned = [snapshots[ref]["ref"] if ref in snapshots else ref for ref in charter["input_refs"]]
     if author:
         assigned.extend(ref for m in payload.get("transferred_obligations") or [] for ref in m["input_refs"])
     expected = {r["obligation_id"] for r in reports} if author else set()
     refs = [ref for ref in dict.fromkeys(assigned) if ref not in expected]
     sources = (_retry_inputs(runtime, charter, refs, payload, predecessor) if predecessor else
                [_slice(runtime, charter, ref, trigger, run) for ref in refs])
-    rebound = payload.get("source_rebind_snapshot")
-    if rebound and not any(s["source_id"] == _input_id(rebound["ref"]) and s["sha256"] == rebound["sha256"]
-                           for s in sources):
-        raise _unavailable(charter["obligation_id"], rebound["ref"], "changed after OA source selection")
+    # Existing in-flight operations and manifest caches can still have the original single-pin representation.
+    pins = list(snapshots.values())
+    if not pins and payload.get("source_rebind_snapshot"):
+        pins.append(payload["source_rebind_snapshot"])
+    digests = {s["source_id"]: s["sha256"] for s in sources}
+    for pin in pins:
+        if digests.get(_input_id(pin["ref"])) != pin["sha256"]:
+            raise _unavailable(charter["obligation_id"], pin["ref"], "changed after OA source selection")
+    if snapshots:
+        payload["stage_obligation"] = {**charter, "input_refs": assigned}
     extension = payload.get("plan_extension_evidence") if not author else None
     if (author and reports) or extension:
         events = runtime.event_log.read_all()

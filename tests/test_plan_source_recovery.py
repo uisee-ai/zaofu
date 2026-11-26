@@ -17,12 +17,16 @@ from zf.runtime.result_submit import SemanticResultSubmitService, provision_role
 from zf.runtime.workflow_proposal import build_workflow_proposal
 
 
-def _start(assembly, tmp_path):
+def _start(assembly, tmp_path, *, second_input=False):
     base, state, _, _, _ = assembly
-    for name in ("api.md", "api-index.md"):
-        (base.parent / name).write_text("API inputs and exact source index")
+    alternatives = {"api.md": ["api-index.md"]}
+    if second_input:
+        alternatives["schema.md"] = ["schema-index.md"]
+    for original, (alternative,) in alternatives.items():
+        for name in (original, alternative):
+            (base.parent / name).write_text(f"Reference material for {name}")
     plan = select(assembly, ["product-scan", "tech-scan"])
-    plan["members"][1].update(input_refs=["api.md"], input_alternatives={"api.md": ["api-index.md"]})
+    plan["members"][1].update(input_refs=list(alternatives), input_alternatives=alternatives)
     admitted, request, candidate = _candidate(assembly)
     config = load_config(candidate)
     proposal, ref = build_workflow_proposal(state, request=request, base_config_path=base,
@@ -37,7 +41,8 @@ def _start(assembly, tmp_path):
     runtime = Orchestrator(runtime_state, template.config, transport, project_root=root)
     log = runtime.event_log
     # A real regular file existed at approval; at dispatch only the approved alternative remains.
-    (root / "api.md").unlink()
+    for original in alternatives:
+        (root / original).unlink()
     runtime.config.workflow.flow_metadata = config.workflow.flow_metadata
     runtime.config.workflow.orchestration = config.workflow.orchestration
     runtime.config.workflow.stages = [s for s in config.workflow.stages if s.id in {"prd-scan", "prd-plan"}]
@@ -267,3 +272,90 @@ def test_source_checkpoint_requires_its_registered_prd_route(tmp_path, flow, pol
       checkpoint_policies: {{plan_source: {policy}}}""")
     with pytest.raises(ConfigError, match="requires a blocking PRD"):
         load_config(path)
+
+
+@pytest.mark.parametrize("final_inputs", ["intact", "legacy_manifest", "first_digest_changed", "restored_original_lost_again"])
+def test_independent_source_rejections_resume_each_once_on_the_same_member(
+    assembly, tmp_path, monkeypatch, final_inputs,
+):
+    from zf.runtime.fanout import FanoutManifestProjector
+
+    runtime, log, transport = _start(assembly, tmp_path, second_input=True)
+    product, = log.query(type="fanout.child.dispatched")
+    assert product.payload["role_instance"] == "product-scan"
+    submit_plan_expert(runtime, product, {"child_id": product.payload["child_id"], "status": "passed",
+        "summary": "Product source was independently reviewed", "recommendation": "approve", "findings": []})
+    runtime._reconcile_reader_fanout_triggers()
+    first, = log.query(type="fanout.plan.source.rejected")
+    checkpoint, = log.query(type="orchestrator.semantic.checkpoint.requested")
+    first_choice = "api-index.md"
+    if final_inputs == "restored_original_lost_again":
+        first_choice = "api.md"
+        (runtime.project_root / first_choice).write_text("The original reference is readable again")
+
+    def reboot_after_decision(replacement, checkpoint):
+        with monkeypatch.context() as patch:
+            patch.setattr("zf.runtime.plan_source_recovery._dispatch_rebound", lambda *a: None)
+            patch.setattr(runtime, "_recover_pending_reader_fanout_dispatches", lambda *a, **kw: False)
+            runtime.run_once(events=[_decision(runtime, checkpoint, replacement)])
+        return Orchestrator(runtime.state_dir, runtime.config, transport, project_root=runtime.project_root)
+
+    runtime = reboot_after_decision(first_choice, checkpoint)
+    binding, = log.query(type="fanout.plan.source.rebound")
+    if final_inputs == "legacy_manifest":
+        # The previous runtime cached the effective charter and only its latest pin.
+        import json
+        from zf.core.state.atomic_io import atomic_write_text
+
+        cache = runtime.state_dir / "fanouts" / first.payload["fanout_id"] / "manifest.json"
+        old_view = json.loads(cache.read_text())
+        payload = next(c["payload"] for c in old_view["children"] if c["role_instance"] == "tech-scan")
+        payload["stage_obligation"]["input_refs"] = payload["input_refs"]
+        payload["source_rebind_snapshot"] = payload.pop("source_rebind_snapshots")["api.md"]
+        atomic_write_text(cache, json.dumps(old_view))
+    runtime._recover_pending_reader_fanout_dispatches(log.read_all())
+    _, second = log.query(type="fanout.plan.source.rejected")
+    assert second.causation_id == binding.id
+    assert [first.payload["input_ref"], second.payload["input_ref"]] == ["api.md", "schema.md"]
+    assert first.payload["child_id"] == second.payload["child_id"]
+    runtime._reconcile_reader_fanout_triggers()
+    _, next_checkpoint = log.query(type="orchestrator.semantic.checkpoint.requested")
+    assert next_checkpoint.payload["source_event_id"] == second.id
+    runtime = reboot_after_decision("schema-index.md", next_checkpoint)
+    _, last_binding = log.query(type="fanout.plan.source.rebound")
+    manifest = FanoutManifestProjector(runtime.state_dir).rebuild(first.payload["fanout_id"], log.read_all())
+    tech, = [c for c in manifest["children"] if c["role_instance"] == "tech-scan"]
+    assert tech["payload"]["stage_obligation"]["input_refs"] == ["api.md", "schema.md"]
+    pins = tech["payload"]["source_rebind_snapshots"]
+    assert pins["api.md"] == {"ref": first_choice, "sha256": binding.payload["source_sha256"]}
+    assert pins["schema.md"] == {"ref": "schema-index.md", "sha256": last_binding.payload["source_sha256"]}
+
+    if final_inputs == "first_digest_changed":
+        (runtime.project_root / first_choice).write_text("Changed after the first signed decision")
+    if final_inputs == "restored_original_lost_again":
+        (runtime.project_root / first_choice).unlink()
+    runtime._recover_pending_reader_fanout_dispatches(log.read_all())
+    runtime._reconcile_reader_fanout_triggers()
+    assert [r for r, *_ in transport.sent].count("product-scan") == 1
+    assert len(log.query(type="fanout.plan.source.rejected")) == 2
+    assert len(log.query(type="orchestrator.semantic.checkpoint.requested")) == 2
+    if final_inputs in {"first_digest_changed", "restored_original_lost_again"}:
+        failure, = log.query(type="fanout.child.failed")
+        assert failure.causation_id == last_binding.id and failure.payload["source_event_id"] == second.id
+        assert first_choice in failure.payload["reason"] and failure.payload["recovery_owner"] == "run_manager"
+        assert "tech-scan" not in [r for r, *_ in transport.sent]
+        return
+    _, technical = log.query(type="fanout.child.dispatched")
+    assert technical.payload["role_instance"] == "tech-scan"
+    from zf.runtime.artifact_input_index import load_attempt_source_manifest
+
+    delivered = load_attempt_source_manifest(runtime.state_dir, technical.payload["run_id"])["sources"]
+    assert {s["sha256"] for s in delivered if s["source_id"].startswith("plan-input-")} == {
+        binding.payload["source_sha256"], last_binding.payload["source_sha256"],
+    }
+    submit_plan_expert(runtime, technical, {"child_id": technical.payload["child_id"], "status": "passed",
+        "summary": "Both repaired inputs were reviewed", "recommendation": "approve", "findings": []})
+    finished, = log.query(type="prd.scan.completed")
+    runtime.run_once(events=[finished])
+    assert len(finished.payload["stage_member_results"]) == 2
+    assert [r for r, *_ in transport.sent].count("planner") == 1
