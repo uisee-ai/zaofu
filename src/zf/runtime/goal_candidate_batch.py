@@ -119,7 +119,7 @@ def bind_goal_candidate_batch(
             or closure.type not in {"flow.goal.closed", "module.parity.closed"}
         ):
             return missing
-        closure_source = by_id.get(closure.causation_id)
+        closure_source = _original_closure_source(events, by_id, closure)
         if not closure_source or closure_source.origin != "kernel":
             return missing
         route = ""
@@ -212,3 +212,71 @@ def bind_goal_candidate_batch(
         verification_batch_event_id=publication.id,
         verification_member_event_ids=tuple(terminals.values()),
     )
+
+def _original_closure_source(events, by_id, closure):
+    """Follow verified Judge rework edges to the original publication or discovery."""
+    source = by_id.get(closure.causation_id)
+    if not source or source.type != "goal.closure.synthesis.failed":
+        return source
+    positions = {event.id: i for i, event in enumerate(events)}
+    identity = (
+        "workflow_run_id",
+        "goal_id",
+        "candidate_ref",
+        "candidate_head_commit",
+        "task_map_generation",
+        "plan_artifact_package_digest",
+        "closure_identity",
+        "closure_fact_digest",
+        "source_event_id",
+    )
+    pinned = {key: closure.payload.get(key) for key in identity}
+    if not all(pinned.values()):
+        return None
+    while source and source.type == "goal.closure.synthesis.failed":
+        fanout = source.payload.get("fanout_id")
+        stage = source.payload.get("stage_id")
+        aggregate = by_id.get(source.causation_id)
+        if (
+            not fanout
+            or not stage
+            or source.origin != "kernel"
+            or source.payload.get("status") != "failed"
+            or source.payload.get("workflow_run_id") != pinned["workflow_run_id"]
+            or source.id != closure.payload.get("rework_of")
+            or not aggregate
+            or aggregate.type != "fanout.aggregate.completed"
+            or aggregate.origin != "kernel"
+            or aggregate.payload.get("workflow_run_id") != pinned["workflow_run_id"]
+            or aggregate.payload.get("stage_id") != stage
+            or aggregate.payload.get("fanout_id") != fanout
+            or aggregate.payload.get("status") != "failed"
+            or aggregate.payload.get("failure_event") != source.type
+            or not positions[aggregate.id] < positions[source.id] < positions[closure.id]
+        ):
+            return None
+        starts = [
+            event
+            for event in events[: positions[aggregate.id]]
+            if event.type == "fanout.started"
+            and event.origin == "kernel"
+            and event.payload.get("fanout_id") == fanout
+        ]
+        if len(starts) != 1:
+            return None
+        start = starts[0]
+        previous = by_id.get(start.payload.get("trigger_event_id"))
+        if (
+            start.payload.get("workflow_run_id") != pinned["workflow_run_id"]
+            or start.payload.get("stage_id") != stage
+            or not previous
+            or previous.origin != "kernel"
+            or previous.type != closure.type
+            or start.causation_id != previous.id
+            or positions[previous.id] >= positions[start.id]
+            or any(previous.payload.get(key) != value for key, value in pinned.items())
+        ):
+            return None
+        closure = previous
+        source = by_id.get(closure.causation_id)
+    return source if source and source.id == pinned["source_event_id"] else None
