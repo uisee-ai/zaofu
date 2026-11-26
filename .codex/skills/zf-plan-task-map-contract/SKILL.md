@@ -25,9 +25,11 @@ authoring the result. Adapt its commands, owners, journeys and assertions to
 the actual requirements; it demonstrates field names, not product scope or a
 default provider waiver. Keep `journey_id` and assertion-local `assertion_id`
 distinct; `id` and `kind` are not substitutes for those schema keys.
-Each Candidate `integration_checks` row has exactly `check_id`, `task_ids` and
-`assertion`. Name at least two different tasks and the observable result of
-their interaction. For scoped Candidate readers, the same descriptor example shows
+Declare Candidate `integration_checks` for required interactions between distinct approved tasks.
+For a single-task Plan use `integration_checks: []` and `integration_check_ids: []`
+on its Reader assignments. Keep the task-qualified acceptance IDs, mandatory
+journeys and independent Candidate verification. For each cross-task check,
+provide `check_id`, the participating `task_ids` and an observable `assertion`. For scoped Candidate readers, the same descriptor example shows
 a complete `candidate_reader_assignments` row. Bind each acceptance to both
 `task_id` and `acceptance_id`; bind `plan_reads` to port-specific JSON paths.
 Use the roster authorized for the actual project.

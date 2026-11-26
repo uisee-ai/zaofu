@@ -41,3 +41,21 @@ def test_example_does_not_relax_fields_missing_in_real_planner_output(missing):
     assert len(errors) == 1
     assert errors[0]["code"] == "product_acceptance_spec_invalid"
     assert missing in errors[0]["message"]
+
+
+def test_single_task_candidate_keeps_product_coverage_with_empty_integration_checks():
+    body = json.loads((ROOT / "skills" / EXAMPLE).read_text())["body"]
+    task = {"task_id": "TASK-ONE", "acceptance_criteria": [{"id": "AC-SAVE"}]}
+    task_map = {"tasks": [task]}
+    body["assembly_owner"] = body["entrypoints"][0]["owner"] = task["task_id"]
+    body["integration_checks"] = []
+    reader, = body["candidate_reader_assignments"]
+    reader.update(acceptance=[{"task_id": "TASK-ONE", "acceptance_id": "AC-SAVE"}],
+                  integration_check_ids=[], plan_reads={"task_map": ["$.tasks[0]"]})
+    assert _product_acceptance_spec_errors(body, task_map=task_map, manifest={}, flow_kind="prd") == []
+    body["integration_checks"] = [{"check_id": "C1", "task_ids": ["TASK-ONE"], "assertion": "saved"}]
+    errors = _product_acceptance_spec_errors(body, task_map=task_map, manifest={}, flow_kind="prd")
+    assert any("integration_checks: []" in error["message"] for error in errors)
+    body["integration_checks"] = []
+    reader["journey_ids"] = []
+    assert _product_acceptance_spec_errors(body, task_map=task_map, manifest={}, flow_kind="prd")

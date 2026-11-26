@@ -47,8 +47,9 @@ def apply_validation_teams(expansion: dict, teams: dict) -> None:
             planner["criteria"]["instructions"] = [*planner["criteria"]["instructions"],
                 f"Declare exactly {width} candidate_reader_assignments in product_acceptance_spec. "
                 "Select independent registered verify seats and assign each its task-qualified acceptance IDs, "
-                "mandatory journeys and cross-task integration checks. Declare integration_checks as check_id, task_ids "
-                "and observable assertion; assign every check ID via integration_check_ids and declare the needed Plan reads. "
+                "mandatory journeys and needed Plan reads. For a single-task Plan use integration_checks: [] "
+                "and integration_check_ids: [] on each assignment. For required cross-task interactions, declare "
+                "check_id, task_ids and an observable assertion, and assign every check ID via integration_check_ids. "
                 "The OA will review the exact assignment on this Plan revision."]
         policy["profile_digest"] = profile_digest(policy)
     judge = teams.get("judge")

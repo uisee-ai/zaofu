@@ -56,7 +56,9 @@ def integration_checks(spec: Mapping[str, Any]) -> dict[str, dict]:
         if len(set(tasks)) != len(tasks):
             raise ValueError(f"{path}.task_ids contains duplicate task IDs")
         if len(tasks) < 2:
-            raise ValueError(f"{path}.task_ids requires at least two distinct tasks")
+            raise ValueError(f"{path}.task_ids requires at least two distinct tasks. For a single-task Plan use "
+                             "integration_checks: [] and integration_check_ids: [] on each Reader assignment. "
+                             "Keep its acceptance and journey coverage.")
         checks[row["check_id"]] = row
     return checks
 

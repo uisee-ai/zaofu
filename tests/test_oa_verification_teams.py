@@ -255,7 +255,9 @@ def test_two_candidate_seats_from_eight_leave_task_verify_capacity_intact(assemb
     assert policy["pools"]["verify"]["capacity"] == 8
     assert len(set(policy["pools"]["verify"]["role_instances"])) == 8
     plan = next(s for s in config.workflow.stages if s.id == "prd-plan")
-    assert any("exactly 2 candidate_reader_assignments" in instruction for instruction in plan.criteria.instructions)
+    assignment = next(instruction for instruction in plan.criteria.instructions
+                      if "exactly 2 candidate_reader_assignments" in instruction)
+    assert "integration_checks: []" in assignment and "integration_check_ids: []" in assignment
 
 
 def test_oa_selects_one_authorized_alternate_judge(assembly):
