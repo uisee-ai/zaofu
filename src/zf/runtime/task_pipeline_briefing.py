@@ -170,7 +170,15 @@ def write_task_pipeline_briefing(
     state_dir = Path(runtime.state_dir).resolve()
     # These exact values are already delivered in the header/envelope. Keep
     # distinct values (including unexpected mismatches) visible for diagnosis.
-    target_commit = payload.get("target_commit") or commit or workspace.base_commit
+    target_commit = payload.get("target_commit") or commit
+    if stage == "impl" and not target_commit:
+        target_lines = [
+            f"- workspace_base_commit: `{workspace.base_commit}`",
+            "- Result target_commit: record the actual workspace HEAD at submission and bind self-checks to that commit.",
+        ]
+    else:
+        target_commit = target_commit or workspace.base_commit
+        target_lines = [f"- target_commit: `{target_commit}`"]
     delivered = {
         "task_id": str(task.id), "operation_id": prepared.operation_id,
         "dispatch_id": payload.get("dispatch_id") or "",
@@ -197,7 +205,7 @@ def write_task_pipeline_briefing(
         f"- operation_generation: `{payload['operation_generation']}`",
         f"- placement_epoch: `{payload['placement_epoch']}`",
         f"- workdir: `{workspace.project_path}`",
-        f"- target_commit: `{target_commit}`",
+        *target_lines,
         f"- skills: `{', '.join(role.skills) or 'none'}`",
         "",
         "## Read Order (authoritative)",

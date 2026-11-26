@@ -329,7 +329,12 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         if stage == "impl" and published:
             assert f"- target_commit: `{published}`" in text and f"Reassess published commit {published}" in text
             assert "each separate product finding" in text and "reproduce these failures first" not in text
+        elif stage == "impl":
+            assert f"- workspace_base_commit: `{'d' * 40}`" in text and "- target_commit: `" not in text
+            assert "actual workspace HEAD at submission" in text
         else:
+            assert "- target_commit: `" in text and "- workspace_base_commit:" not in text
+        if not published or stage != "impl":
             assert "Reassess published commit" not in text
         if stage == "impl":
             assert "do not remove required evidence outputs" in text

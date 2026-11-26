@@ -157,7 +157,10 @@ def test_published_impl_briefing_and_completion_bind_the_same_commit(published_c
         ).read_text()
 
     ordinary = render({**operation, "operation_generation": 3})
-    assert f"- target_commit: `{base}`" in ordinary and "reproduce these failures first" in ordinary
+    assert f"- workspace_base_commit: `{base}`" in ordinary and "actual workspace HEAD at submission" in ordinary
+    assert "- target_commit: `" not in ordinary and "reproduce these failures first" in ordinary
+    explicitly_bound = render({**operation, "operation_generation": 3, "target_commit": base})
+    assert f"- target_commit: `{base}`" in explicitly_bound and "workspace_base_commit:" not in explicitly_bound
     assert "Reassess published commit" not in ordinary
     brief = render(operation)
     assert f"- target_commit: `{published}`" in brief and f"Reassess published commit {published}" in brief
