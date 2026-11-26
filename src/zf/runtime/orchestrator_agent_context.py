@@ -207,6 +207,8 @@ def build_orchestrator_agent_context(
             "terminal_self_approval": False,
         },
     }
+    if checkpoint == "plan_source":
+        input_body["checkpoint_context"]["source_rejection"] = payload["source_rejection"]
     if "verify_specialist_patterns" in payload:
         input_body["checkpoint_context"]["verify_specialist_patterns"] = payload["verify_specialist_patterns"]
         input_body["checkpoint_context"]["verify_assignment_seats"] = payload.get("verify_assignment_seats", [])
@@ -312,6 +314,7 @@ def build_orchestrator_agent_context(
         }
         for source in required_sources
         if not (checkpoint == "semantic_failure" and source["source_id"].startswith("candidate-prior-repair-"))
+        and (checkpoint != "plan_source" or source["source_id"] == "checkpoint-input")
         and (checkpoint != "candidate_reader_observation" or source["source_id"] in {
             "checkpoint-input", "candidate-reader-counterexample",
         }) and (input_mode != "execution" or source["source_id"] in execution_sources)
@@ -691,6 +694,7 @@ def _checkpoint_objective(checkpoint: str) -> str:
         "plan_candidate": "Review the current Plan Package for semantic adoption.",
         "stage_barrier": "Resolve result conflicts and select the next semantic action.",
         "candidate_reader_observation": "Diagnose the admitted Reader counterexample on its frozen target while sibling Readers continue.",
+        "plan_source": "Select an approved, available input for the rejected scan obligation or escalate.",
         "semantic_failure": "Produce a bounded target-specific semantic recovery delta.",
         "goal_revision": "Revise the semantic graph and declare exact invalidation.",
         "pre_closeout": "Aggregate admitted results and identify remaining goal gaps.",

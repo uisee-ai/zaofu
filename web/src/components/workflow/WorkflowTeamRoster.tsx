@@ -13,7 +13,7 @@ type Mailbox = {pending:number; unanswered:number; sent_unanswered:number; unkno
   response_timeout_seconds?:number; response_started_at?:string; last_claimed_at:string; last_answered_at:string; recovery_owner:string};
 type Member = {mailbox?:Mailbox; instances?:string[]; selection_reason?:string; completion_condition?:string; admission_evidence_id?:string; judge_objectives?:string[]; source_seq?:number; attempt_count?:number; wait?:{reason:string; wake_event?:string; deadline?:string}; judge_questions?:{question_id:string;question:string}[]; integration_check_ids?:string[];
   obligation_id: string; stage: string; role: string; status: string; instance: string; task_ids: string[]; required?: boolean; reused?: boolean; source_operation_id?: string; source_result_event_id?: string; original_work_unit_id?: string; coverage_owner?: string; disposition?: {reason:string};
-  recipient?: string; question?: string; expected_output?: string; owner: string; last_event_at: string; status_since: string;
+  dispatch_failure_reason?: string; recipient?: string; question?: string; expected_output?: string; owner: string; last_event_at: string; status_since: string;
   source_event_id: string; evidence_ref?: {ref?: string; sha256?: string}; waiting_for?: string[]; operation_ids: string[]; attempt_ids: string[]; verdict?: string;
   attempt_history?: {seq?:number; event_id:string; event_type:string; time:string; instance:string; reason:string; attempt_id:string}[];
   last_activity?: {kind?:string; time:string; event_type:string}; history: {operation_id: string; instance?:string; status: string; attempt_id: string; reason: string}[]; messages: Message[]};
@@ -105,6 +105,7 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
           {m.mailbox.response_timeout_seconds && ` · 自 ${m.mailbox.response_started_at} 起 ${m.mailbox.response_timeout_seconds} 秒内答复（暂停不计）`}
           {m.mailbox.deadline && ` · 邮件截止 ${m.mailbox.deadline}`}{m.mailbox.last_claimed_at && ` · 最近接手 ${m.mailbox.last_claimed_at}`}
           {m.mailbox.last_answered_at && ` · 最近回答 ${m.mailbox.last_answered_at}`}{m.mailbox.recovery_owner && ` · 恢复责任人 ${m.mailbox.recovery_owner}`}</span>}
+        {m.dispatch_failure_reason && ` · 派发前失败 ${m.dispatch_failure_reason}`}
         {m.wait && ` · ${m.wait.reason} · 唤醒 ${m.wait.wake_event || '待核实'}`}{m.wait?.deadline && ` · 截止 ${m.wait.deadline}`}
       </small>
       {details && !team.partial && <MemberHandoff member={m}><summary>{m.obligation_id} · {m.task_ids.join('、') || m.stage} · 查看交接</summary>
@@ -116,7 +117,7 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
         {m.judge_questions?.map(q => <p key={q.question_id}>{q.question_id} · {q.question}</p>)}
         {!!m.integration_check_ids?.length && <p>跨任务检查：{m.integration_check_ids.join('、')}</p>}
         {m.question && <p>{m.question}</p>}{m.expected_output && <p>交付物：{m.expected_output}</p>}
-        <p>当前责任人：{m.owner} {m.recipient && `· 预定接收人：${m.recipient}`}</p>
+        <p>当前责任人：{m.owner || '待核实'} {m.recipient && `· 预定接收人：${m.recipient}`}</p>
         <p>状态起点：{m.status_since || '未知'} · 最近观测：{m.last_event_at || '未知'}</p>
         {m.last_activity && <p>最近活动：{m.last_activity.event_type} · {m.last_activity.time}</p>}
         <p>来源：{m.source_event_id || '未知'} {m.verdict && `· 判词：${m.verdict}`}</p>

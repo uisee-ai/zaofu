@@ -151,7 +151,20 @@ class WorkflowConfigApplyService:
             )
         _validate_no_inline_secrets(content)
         try:
-            candidate_config = load_config(candidate_path)
+            candidate_config = load_config(target, source_text=content)
+            profile_sources = [
+                item for item in candidate_config.config_sources if item.get("kind") == "ProfileSource"
+            ]
+            if profile_sources:
+                from zf.core.config.render import redact_config, renderable_config_to_primitive
+                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+                snapshot = hydrate_sidecar_ref(self.state_dir, proposal["effective_config_ref"]).payload
+                if "profile_sources" in snapshot and profile_sources != snapshot["profile_sources"]:
+                    raise ValueError("workflow profile sources changed after proposal preparation")
+                # Older proposals also bind the effective configuration, including expanded values.
+                if redact_config(renderable_config_to_primitive(candidate_config)) != snapshot["config"]:
+                    raise ValueError("workflow profile sources changed the approved configuration")
             from zf.runtime.workflow_approval_requirements import enforce_approval_requirements
             enforce_approval_requirements(candidate_config, proposal.get("run_parameters") or {})
             from zf.runtime.workflow_controller_skills import validate_controller_skill_packages

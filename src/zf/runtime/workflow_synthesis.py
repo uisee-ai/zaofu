@@ -186,13 +186,11 @@ def run_workflow_synthesis(
         operation_context=operation_context,
     )
     request = prepared["request"]
-    requirement = prepared["requirement"]
     requirement_ref = prepared["requirement_ref"]
     requirement_digest = prepared["requirement_digest"]
     revision = prepared["revision"]
     workflow_run_id = prepared["workflow_run_id"]
     operation_id = prepared["operation_id"]
-    catalog = prepared["catalog"]
     operation_request = prepared["operation_request"]
     service = WorkflowOperationService(
         state_dir=state_dir,
@@ -298,28 +296,11 @@ def run_workflow_synthesis(
         reusable = reusable_synthesis_candidate(
             state_dir, operation_context or {}, request=request, writer=writer,
         )
-        raw_result = (
-            dict(candidate_result)
-            if isinstance(candidate_result, Mapping)
-            else reusable if reusable is not None
-            else _invoke_synthesis_agent(
-                config=config, state_dir=state_dir,
-                project_root=project_root,
-                request=request,
-                requirement=requirement,
-                operation_id=operation_id,
-                backend=backend,
-                agent=agent,
-                catalog=catalog,
-            )
-        )
-        _require_synthesis_operation_open(
-            writer,
-            operation_id=operation_id,
-        )
-        admitted = _admit_result(
-            raw_result, request=request, catalog=catalog, state_dir=state_dir,
-            project_root=project_root, operation_id=operation_id,
+        from zf.runtime.workflow_synthesis_input_correction import admit_with_source_correction
+        admitted = admit_with_source_correction(
+            prepared, state_dir=state_dir, project_root=project_root, config=config, writer=writer,
+            request_hash=ensured.request_hash, supplied=candidate_result if isinstance(candidate_result, Mapping) else reusable,
+            agent=agent, backend=backend, resume=resume_running, causation_id=causation_id,
         )
         result_ref = write_immutable_json_sidecar(
             state_dir,
@@ -366,6 +347,7 @@ def run_workflow_synthesis(
             "cancelled",
             "superseded",
             "blocked",
+            "suspended",
             "failed",
         }:
             service.fail(
@@ -505,7 +487,7 @@ def _require_synthesis_operation_open(
 ) -> None:
     current = load_workflow_operation(writer.event_log, operation_id) or {}
     status = str(current.get("status") or "")
-    if status in {"cancelled", "superseded", "blocked", "failed"}:
+    if status in {"cancelled", "superseded", "suspended", "blocked", "failed"}:
         raise WorkflowSynthesisError(
             f"workflow synthesis operation is terminal: {status}"
         )
@@ -651,6 +633,7 @@ def _invoke_synthesis_agent(
     backend: str,
     agent: Any | None,
     catalog: Mapping[str, Any],
+    correction_prompt: str = "",
 ) -> dict[str, Any]:
     if not backend:
         raise WorkflowSynthesisError(
@@ -663,7 +646,7 @@ def _invoke_synthesis_agent(
             state_dir=state_dir,
             project_root=project_root,
         )
-    prompt = _synthesis_prompt(
+    prompt = correction_prompt or _synthesis_prompt(
         request=request,
         requirement=requirement,
         catalog=catalog,
@@ -833,10 +816,10 @@ def _admit_result(
         from zf.runtime.workflow_approval_requirements import validate_approval_requirements
         requirement = hydrate_workflow_requirement(state_dir, dict(request))
         validate_approval_requirements(parameters, requirement, required=bool(parameters.get("controller_id")))
-        from zf.runtime.plan_team_inputs import validate_plan_project_sources
-        validate_plan_project_sources((parameters.get("stage_teams") or {}).get("plan", {}), project_root, state_dir, requirement)
     except ValueError as exc:
         raise WorkflowSynthesisError(str(exc)) from exc
+    from zf.runtime.plan_team_inputs import validate_plan_project_sources
+    validate_plan_project_sources((parameters.get("stage_teams") or {}).get("plan", {}), project_root, state_dir, requirement)
     completion = result.get("completion_profile") or {}
     if not isinstance(completion, Mapping):
         raise WorkflowSynthesisError(

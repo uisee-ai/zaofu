@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from zf.runtime.candidate_verification_authority import frozen_candidate_for_payload
 from zf.runtime.task_pipeline_contexts import latest_task_pipeline_generation_context
 from zf.runtime.stage_team_mailbox import mailbox_index, member_mailbox
-from zf.runtime.stage_team_observations import receipt_observations
+from zf.runtime.stage_team_observations import apply_preregistration_receipts, receipt_observations
 
 
 def _proposal_receipt(scope, events):
@@ -36,7 +36,7 @@ def _member(declaration, authority, receipt):
 
 def team_summary(team):
     """First paint carries the roster. Member evidence and handoffs stay in node detail."""
-    fields = {"mailbox", "question", "expected_output", "attempt_count", "instances", "source_seq", "last_activity", "wait", "waiting_for", "obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
+    fields = {"dispatch_failure_reason", "mailbox", "question", "expected_output", "attempt_count", "instances", "source_seq", "last_activity", "wait", "waiting_for", "obligation_id", "role", "status", "instance", "task_ids", "stage", "owner", "recipient",
               "status_since", "last_event_at", "source_event_id", "verdict", "pipeline_stage", "task_map_generation", "required", "coverage_owner", "reused"}
     members = [{k: v for k, v in member.items() if k in fields} for member in team["members"]]
     return {**{k: v for k, v in team.items() if k != "communications"}, "partial": True, "members": members}
@@ -293,6 +293,7 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
     inputs = source.get("stage_team_inputs", {})
     judge_events = _judge_target_events(events, run, inputs, by_id) if run and teams.get("judge") else None
     fanouts, latest_fanout, dispatches, admissions = {}, {}, defaultdict(list), {}
+    preregistration = defaultdict(list)
     positions = {event.id: seq for seq, event in source["events"]}
     invocations, old_invocations, reused = defaultdict(list), {}, defaultdict(list)
     for event in events:
@@ -305,6 +306,9 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                 continue
             fanouts[p.get("fanout_id")] = event
             latest_fanout[p.get("stage_id")] = event.id
+        elif event.type in {"fanout.plan.source.rejected", "fanout.plan.source.rebound", "fanout.child.failed"}:
+            if event.type != "fanout.child.failed" or p.get("failure_scope") == "operation_preregistration":
+                preregistration[p.get("role_instance")].append(event)
         elif event.type == "fanout.child.dispatched":
             dispatches[p.get("operation_id") or ""].append(event)
         elif event.type == "workflow.invoke.requested" and p.get("workflow_operation_id"):
@@ -479,6 +483,14 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                                       last_event_at=delivery.ts, status_since=delivery.ts, source_event_id=delivery.id)
                         if p.get("attempt_id"):
                             member["attempt_ids"].append(p["attempt_id"])
+                    receipts = preregistration.get(member["role"], ())
+                    if receipts:
+                        start = by_id.get(latest_fanout.get(member["stage"]))
+                        matching = (e for e in receipts if start and e.payload.get("fanout_id") == start.payload.get("fanout_id")
+                                    and e.payload.get("stage_id") == member["stage"] and _belongs_to_child(
+                                        e, start, member, binding, latest_fanout, by_id, events, run, positions))
+                        apply_preregistration_receipts(member, matching, start=start,
+                                                       proposal_digest=scope.get("proposal_digest"), positions=positions)
             if member["operation_ids"]:
                 facts = observations.get(member["operation_ids"][-1], [])
                 pulse = next((f for f in reversed(facts) if f["kind"] == "heartbeat"), None)
@@ -505,8 +517,11 @@ def project_stage_teams(nodes, source, operations, *, detail_node="*"):
                 if waiting:
                     m["wait"] = {"reason": "awaiting_required_result", "wake_event": "workflow.call.result.admitted",
                                  "seq": m["source_seq"], "event_id": m["source_event_id"]}
+                    upstream = [by_obligation[ref] for ref in waiting]
+                    owners = (item["owner"] if item["status"] in {"blocked", "failed"} else item["role"]
+                              for item in upstream)
                     m.update(status="waiting_inputs", waiting_for=waiting,
-                             owner=" / ".join(by_obligation[ref]["role"] for ref in waiting))
+                             owner=" / ".join(dict.fromkeys(owner for owner in owners if owner)))
                 else:
                     completed = [by_obligation[r] for r in m.get("input_refs", []) if r in by_obligation]
                     latest_input = max(completed, key=lambda x: x.get("source_seq") or 0, default=None)

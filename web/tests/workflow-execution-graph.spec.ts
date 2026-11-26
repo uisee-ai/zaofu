@@ -601,6 +601,25 @@ async function showTeam(page: Page, node: ReturnType<typeof stage>) {
   await page.goto('/tests/inbox-workflow.html?surface=graph-refresh');
 }
 
+test('stage member shows its rejection before the first execution attempt', async ({page}, info) => {
+  const scan = stage('scan');
+  const member = {role:'tech-scan', obligation_id:'inspect-source', status:'failed', instance:'', owner:'',
+    recipient:'planner', dispatch_failure_reason:'app/ requires a regular file', source_event_id:'source-rejected',
+    task_ids:[], messages:[], history:[], operation_ids:[], attempt_ids:[], attempt_count:0};
+  const node = {...scan, data:{...scan.data, team:{members:[member], admitted_count:0, required_total:1,
+    authority:'approved', unbound_operation_ids:[]}}};
+  await showTeam(page, node);
+  const card = page.locator('.react-flow__node[data-id="workflow:stage:scan"]');
+  await expect(card).toContainText('派发前失败 app/ requires a regular file');
+  await expect(card).toContainText('已准入 0/1 项义务');
+  await card.click();
+  const detail = page.getByRole('complementary', {name:'图节点详情'});
+  await detail.getByText(/inspect-source.*查看交接/).click();
+  await expect(detail).toContainText('source-rejected');
+  await expect(detail).toContainText('当前责任人：待核实');
+  await page.screenshot({path:info.outputPath('rejected-before-dispatch.png')});
+});
+
 test('corrected Verify work shows the reused opinion and its original attempt', async ({page}, info) => {
   const shared = {task_ids:['T-1'], stage:'verify', messages:[], history:[], attempt_ids:[],
     owner:'signer', source_event_id:'new-choice', operation_ids:[]};

@@ -123,6 +123,11 @@ def admit_orchestrator_agent_decision(
         envelope_ref
     ):
         return _reject("settled_result_ref_mismatch", operation_id=operation_id)
+    if expected["checkpoint"] == "plan_source":
+        from zf.runtime.call_result_runtime import hydrate_admitted_control_result
+
+        if decision_raw != hydrate_admitted_control_result(runtime.state_dir, settled_ref):
+            return _reject("source_selection_differs_from_admitted_result", operation_id=operation_id)
     if plan_candidate_rejected(runtime.event_log.read_all(), request):
         return _reject("plan_candidate_rejected", operation_id=operation_id)
     workflow_run_id = expected["workflow_run_id"]

@@ -19,6 +19,8 @@ def team_member(raw: Any, *, stage: str = "") -> dict:
     """Read the shared, non-executable contract of a stage specialist."""
     fields = {"obligation_id", "role", "question", "input_refs", "expected_output"}
     extra = {"required", "coverage_owner", "disposition"} if stage in {"plan", "judge"} else set()
+    if stage == "plan":
+        extra.add("input_alternatives")
     if stage in {"plan", "judge", "task_verify"}:
         extra |= {"selection_reason", "completion_condition"}
     if not isinstance(raw, dict) or not fields <= raw.keys() or set(raw) - fields - extra:
@@ -33,7 +35,17 @@ def team_member(raw: Any, *, stage: str = "") -> dict:
     if not isinstance(refs, list) or not refs:
         raise ValueError("stage_teams member requires an input_refs slice")
     result["input_refs"] = list(dict.fromkeys(_text(ref, "input ref") for ref in refs))
-    for ref in result["input_refs"]:
+    alternatives = raw.get("input_alternatives", {})
+    if not isinstance(alternatives, dict) or not alternatives.keys() <= set(result["input_refs"]):
+        raise ValueError("Plan input_alternatives must name an assigned input")
+    for original, choices in alternatives.items():
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("Plan input_alternatives requires a nonempty list of scoped refs")
+        choices = [_text(choice, "alternative input") for choice in choices]
+        if len(set(choices)) != len(choices) or set(choices).intersection(result["input_refs"]):
+            raise ValueError("Plan alternative inputs must be distinct from the assigned refs")
+        result.setdefault("input_alternatives", {})[original] = choices
+    for ref in [*result["input_refs"], *(r for choices in result.get("input_alternatives", {}).values() for r in choices)]:
         path = ref.partition("#")[0]
         if (path.startswith(("/", "~")) or "\\" in path or ".." in Path(path).parts
                 or PureWindowsPath(path).drive or "://" in path or path.lower().startswith("file:")):
@@ -226,7 +238,8 @@ def validate_effective_teams(config: Any, metadata: dict, project_root: Path) ->
     teams = normalize_stage_teams(metadata["stage_teams"])
     for team in teams.values():
         for member in team.get("members", []):
-            for ref in member["input_refs"]:
+            for ref in [*member["input_refs"], *(r for choices in member.get("input_alternatives", {}).values()
+                                                 for r in choices)]:
                 if not (project_root / ref.partition("#")[0]).resolve().is_relative_to(project_root.resolve()):
                     raise ValueError("stage_teams input reference resolves outside the project")
     for target in team_roles(teams):

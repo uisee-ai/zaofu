@@ -968,6 +968,8 @@ class WorkflowRuntimeCoordinator(
         reconcile_reassessments(self, events)
         from zf.runtime.plan_team_extension import resume_extensions
         resume_extensions(self, events)
+        from zf.runtime.plan_source_recovery import reconcile_source_rejections
+        reconcile_source_rejections(self, events)
 
     def _emit_decision_recorded(
         self,

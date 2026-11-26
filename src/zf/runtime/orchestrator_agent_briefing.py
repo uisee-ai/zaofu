@@ -90,6 +90,7 @@ def build_orchestrator_agent_operation_briefing(
                 "plan_candidate": "adopt",
                 "stage_barrier": "continue",
                 "semantic_failure": "continue",
+                "plan_source": "select_source",
                 "candidate_reader_observation": "continue",
                 "goal_revision": "halt",
                 "pre_closeout": "aggregate",
@@ -182,6 +183,18 @@ def build_orchestrator_agent_operation_briefing(
             "- actions are checkpoint-scoped and mechanically admitted",
             "- any mutation/rework/replan action requires a typed `delta`",
         ]
+        if prepared.checkpoint == "plan_source":
+            output_rules = ["- select_source requires the named replacement_ref bound to the rejected obligation"]
+            incident = context.input_body["checkpoint_context"]["source_rejection"]
+            template["replacement_ref"] = ""
+            output_rules.append(
+                "- Resolve the exact failed scan input in checkpoint_context.source_rejection. "
+                "If the original file was restored, select it. Otherwise choose one explicitly approved alternative, "
+                "or a concrete file inside an approved directory "
+                "ending in /. Use select_source with replacement_ref and explain how it answers the same question. "
+                "Use escalate when none is sufficient. Keep completed sibling reports and their recipient."
+            )
+            output_rules.append("- Rejected input: " + incident["input_ref"] + ". " + incident["reason"])
         if prepared.checkpoint == "plan_candidate":
             output_rules.extend([
                 "- treat Task Map `owner_role` values as logical capability or "

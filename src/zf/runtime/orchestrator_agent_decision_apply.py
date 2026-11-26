@@ -81,14 +81,18 @@ def _apply_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
         "decision_ref": dict(admission.decision_ref or {}),
         "status": "admitted",
     }
-    runtime.event_writer.append(ZfEvent(
-        type="orchestrator.semantic.decision.admitted",
-        actor="zf-cli",
-        origin="kernel",
-        payload=base,
-        causation_id=event.id,
-        correlation_id=event.correlation_id,
-    ))
+    if admission.checkpoint != "plan_source" or not any(
+        item.origin == "kernel" and item.causation_id == event.id
+        for item in runtime.event_log.query(type="orchestrator.semantic.decision.admitted")
+    ):
+        runtime.event_writer.append(ZfEvent(
+            type="orchestrator.semantic.decision.admitted",
+            actor="zf-cli",
+            origin="kernel",
+            payload=base,
+            causation_id=event.id,
+            correlation_id=event.correlation_id,
+        ))
     if admission.checkpoint_policy == "shadow":
         shadow = {**base, "status": "shadowed", "applied": False}
         runtime.event_writer.append(ZfEvent(
@@ -105,6 +109,10 @@ def _apply_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
         outcome = _apply_run_plan(runtime, event, decision, outcome)
     elif admission.checkpoint == "plan_candidate":
         outcome = _apply_plan_candidate(runtime, event, decision, outcome)
+    elif admission.checkpoint == "plan_source":
+        from zf.runtime.plan_source_recovery import apply_source_decision
+
+        outcome = apply_source_decision(runtime, event, decision, outcome)
     elif admission.checkpoint == "semantic_failure":
         outcome = _apply_semantic_failure(runtime, event, decision, outcome)
     elif admission.checkpoint in {"stage_barrier", "pre_closeout"}:

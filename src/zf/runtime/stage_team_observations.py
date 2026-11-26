@@ -2,6 +2,8 @@
 
 from collections import defaultdict
 
+from zf.core.security.redaction import redact_text
+
 
 def scoped_team(team, members, *, task="", instance=""):
     """A relationship survives a filter only through a selected member's bound call."""
@@ -42,3 +44,45 @@ def receipt_observations(events, operations, positions):
                 "owner": p.get("next_owner") or p.get("owner_route") or p.get("recovery_decision_owner") or "",
                 "wake_event": p.get("wake_event") or "", "deadline": p.get("deadline") or ""})
     return records
+
+
+def apply_preregistration_receipts(member, receipts, *, start, proposal_digest, positions):
+    """A member can be rejected before there is an operation or a provider attempt."""
+    if not start:
+        return
+    binding_event_id = start.id
+    rejection = None
+    for event in receipts:
+        p = event.payload
+        if positions[event.id] <= positions.get(member["source_event_id"], 0):
+            continue
+        source = p.get("source_event_id")
+        if event.type == "fanout.child.failed":
+            if p.get("failure_scope") != "operation_preregistration":
+                continue
+            if event.causation_id != binding_event_id and not (rejection and source == rejection.id):
+                continue
+            rejection = None
+            binding_event_id = ""
+            member.update(status="failed", owner=p.get("recovery_owner") or "",
+                          dispatch_failure_reason=redact_text(p.get("reason", "")))
+            member.pop("wait", None)
+        else:
+            if (p.get("obligation_id") != member["obligation_id"]
+                    or not proposal_digest or p.get("workflow_proposal_digest") != proposal_digest):
+                continue
+            if event.type == "fanout.plan.source.rejected":
+                if event.causation_id != binding_event_id or not p.get("recovery_owner"):
+                    continue
+                rejection = event
+                member.update(status="blocked", owner=p["recovery_owner"], wait={
+                    "reason": redact_text(p.get("reason", "")), "wake_event": "fanout.plan.source.rebound",
+                    "event_id": event.id, "seq": positions[event.id]})
+            elif rejection and source == rejection.id:
+                member.update(status="ready", owner="kernel")
+                member.pop("wait", None)
+                rejection = None
+                binding_event_id = event.id
+            else:
+                continue
+        member.update(source_event_id=event.id, status_since=event.ts, last_event_at=event.ts)

@@ -334,7 +334,8 @@ class FanoutManifestProjector:
     def project_event(self, event_log: EventLog, event: ZfEvent) -> dict | None:
         if (not event.type.startswith("fanout.")
                 or event.type in {"fanout.plan.extension.requested", "fanout.plan.extension.rejected"}
-                or event.type == "fanout.plan.member.admitted" and event.origin != "kernel"):
+                or event.type in {"fanout.plan.member.admitted", "fanout.plan.source.rejected",
+                                  "fanout.plan.source.rebound"} and event.origin != "kernel"):
             return None
         fanout_id = _payload_str(event.payload, "fanout_id")
         if not fanout_id:
@@ -538,6 +539,10 @@ class FanoutManifestProjector:
                             children[child_id],
                             children[child_id]["payload"],
                         )
+            elif event.type in {"fanout.plan.source.rejected", "fanout.plan.source.rebound"} and event.origin == "kernel":
+                from zf.runtime.plan_source_recovery import project_source_event
+
+                project_source_event(manifest, children, event)
             elif event.type == "fanout.plan.member.admitted" and event.origin == "kernel":
                 child_id = payload.get("child_id")
                 if (manifest["stage_id"] == "prd-scan" and child_id and child_id not in children

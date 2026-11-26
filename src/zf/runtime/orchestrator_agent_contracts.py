@@ -19,6 +19,7 @@ OWNER_DELIVERY_NARRATIVE_SCHEMA = "owner-delivery-narrative.v1"
 
 CHECKPOINT_ACTIONS: dict[str, frozenset[str]] = {
     "run_start": frozenset({"adopt", "revise", "clarify", "block"}),
+    "plan_source": frozenset({"select_source", "escalate"}),
     "pre_impl": frozenset({"adopt", "revise", "clarify", "block"}),
     "plan_candidate": frozenset({"adopt", "revise", "clarify", "block"}),
     "stage_barrier": frozenset({
@@ -164,6 +165,8 @@ def normalize_orchestration_decision(value: Mapping[str, Any]) -> dict[str, Any]
         raise OrchestratorAgentContractError(
             f"decision {decision!r} is not allowed at {checkpoint!r}"
         )
+    if checkpoint == "plan_source" and decision == "select_source":
+        _required_string(body, "replacement_ref", "Plan source decision")
     reason_codes = _string_list(body, "reason_codes", required=True)
     if len(reason_codes) != len(set(reason_codes)):
         raise OrchestratorAgentContractError("reason_codes must be unique")

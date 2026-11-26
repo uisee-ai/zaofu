@@ -703,6 +703,7 @@ _ORCHESTRATION_CHECKPOINTS = frozenset({
     "pre_impl",
     "plan_candidate",
     "stage_barrier",
+    "plan_source",
     "semantic_failure",
     "goal_revision",
     "pre_closeout",
@@ -799,6 +800,10 @@ def _build_orchestration_flow_policy(
             f"{path} checkpoint policy requires the checkpoint to be declared: "
             + ", ".join(undeclared)
         )
+    if "plan_source" in checkpoints and (
+        path != "workflow.orchestration.flow_policies.prd" or policies.get("plan_source", "blocking") != "blocking"
+    ):
+        raise ConfigError(f"{path}.plan_source requires a blocking PRD flow checkpoint")
     if mode == "exception_advisor" and checkpoints:
         raise ConfigError(f"{path}.checkpoints require mode=semantic_control")
     if mode == "semantic_control" and not checkpoints:
@@ -830,9 +835,9 @@ def _build_orchestration_flow_policy(
             f"{path} blocking rollout is restricted to an explicit full "
             "Product Flow pilot"
         )
-    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout"}:
+    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout", "plan_source"}:
         raise ConfigError(
-            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; "
+            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; plan_source is also supported for PRD scans; "
             f"got {', '.join(blocking)}"
         )
     if pilot_id and not blocking:
@@ -2715,7 +2720,8 @@ def _load_profile_source_documents(
     return documents, sources
 
 
-def load_config(path: Path) -> ZfConfig:
+def load_config(path: Path, *, source_text: str | None = None) -> ZfConfig:
+    """Resolve relative inputs at path when loading from disk or a supplied YAML body."""
     import sys
     from zf.core.events.known_types import validate_role_event_names
 
@@ -2723,7 +2729,7 @@ def load_config(path: Path) -> ZfConfig:
         raise ConfigError(f"Config file not found: {path}")
 
     env = _config_env_map(path)
-    text = _expand_env_vars(path.read_text(encoding="utf-8"), env)
+    text = _expand_env_vars(path.read_text(encoding="utf-8") if source_text is None else source_text, env)
     try:
         documents = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
     except yaml.YAMLError as e:

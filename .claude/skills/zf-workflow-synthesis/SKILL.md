@@ -160,6 +160,8 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
   对可能需要追加调查的在途扫描，可在 Proposal 的 `reserve_roles` 中预留独立 Reader，并纳入 `requested_roles`。只有已有成员提供新证据且通过 `request-fanout` 的增员准入后，才使用相应席位。
   引用项目实物时选择已授权的具体文件或索引文件。目录不能作为成员输入，也不会递归展开。
   指定章节时使用项目相对路径加唯一的 Markdown 标题锚点，例如 `docs/design.md#authentication`。
+  若已获准的两个具体来源可以回答同一问题，可用 `input_alternatives` 声明主引用及其备选，例如 `{"api.md":["api-index.md"]}`。正常扫描只读主引用。
+  收到来源拒绝时，按原成员的问题核查文件，给出满足同一义务的替代引用；没有合适来源时说明缺失内容。保留其他成员的有效分工和独立验收。
   默认成员必需。可选 Plan 专家声明 `required:false` 和 `coverage_owner`（本次 author），仍有正式回执。
   如果要改由 Planner 接手，在后继 Proposal 保留原成员和义务，添加 `disposition`，其 status 为
   `reassigned`，填写 reason、previous_proposal_digest 和 previous_run_id。核验原批准分工后再审批新版本。

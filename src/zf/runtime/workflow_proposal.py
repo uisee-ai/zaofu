@@ -251,9 +251,11 @@ def build_workflow_proposal(
         )
     base_digest = _file_digest(base_path)
     candidate_digest = _file_digest(candidate_path)
+    profile_sources = [item for item in config.config_sources if item.get("kind") == "ProfileSource"]
     effective_snapshot = {
         "schema_version": EFFECTIVE_CONFIG_SNAPSHOT_SCHEMA,
         **({"plan_project_file_refs": plan_files} if plan_files else {}),
+        **({"profile_sources": profile_sources} if profile_sources else {}),
         "compiler_version": WORKFLOW_PROPOSAL_COMPILER_VERSION,
         "request_id": request_id,
         "request_revision": request_revision,

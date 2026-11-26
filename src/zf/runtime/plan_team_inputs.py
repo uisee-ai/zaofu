@@ -11,6 +11,14 @@ from zf.runtime.artifact_read_ledger import ArtifactReadError, materialize_attem
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
 
+class PlanSourceUnavailable(ArtifactReadError):
+    """A project-file or heading binding failed before a Plan operation was created."""
+
+    def __init__(self, obligation: str, ref: str, reason: str):
+        self.ref = ref
+        super().__init__(str(_unavailable(obligation, ref, reason)))
+
+
 def _unavailable(obligation: str, ref: str, reason: str) -> ArtifactReadError:
     return ArtifactReadError(f"Plan obligation {obligation}: {ref} {reason}; correct the source binding before retry")
 
@@ -82,7 +90,7 @@ def _project_file(path: Path, root: Path, state: Path, obligation: str, ref: str
     if not path.is_relative_to(root) or path.is_relative_to(state) or path.is_relative_to(root / ".git"):
         raise _unavailable(obligation, ref, "is missing or outside the approved project scope")
     if not path.is_file():
-        raise _unavailable(obligation, ref, "must name an existing regular file; select a scoped file or index")
+        raise PlanSourceUnavailable(obligation, ref, "must name an existing regular file; select a scoped file or index")
     return path
 
 
@@ -119,9 +127,19 @@ def _markdown_section(body: bytes, fragment: str, obligation: str, ref: str) -> 
     matches = [h for h in headings if h["title"] == anchor or
                re.sub(r"[^\w\s-]", "", h["title"].casefold()).replace(" ", "-") == anchor.casefold()]
     if not complete or not anchor or len(matches) != 1:
-        raise _unavailable(obligation, ref, "has a missing or ambiguous section")
+        raise PlanSourceUnavailable(obligation, ref, "has a missing or ambiguous section")
     start, stop = matches[0]["page_start"], matches[0]["section_end"]
     return content[start:stop]
+
+
+class PlanProjectInputError(ValueError):
+    """A known source rejection addressable to the author of this obligation."""
+
+    def __init__(self, member: dict, ref: str, reason: str):
+        self.obligation_id = member["obligation_id"]
+        self.role = member["coverage_owner"] if member.get("disposition") else member["role"]
+        self.ref = ref
+        super().__init__(f"stage_teams.plan {self.role} input_refs: {reason}")
 
 
 def validate_plan_project_sources(
@@ -135,13 +153,21 @@ def validate_plan_project_sources(
     descriptors = [s for s in requirement.get("artifact_refs", []) if isinstance(s, dict)]
     for member in plan["members"]:
         role = member["coverage_owner"] if member.get("disposition") else member["role"]
-        for ref in member["input_refs"]:
+        alternatives = {ref for choices in member.get("input_alternatives", {}).values() for ref in choices}
+        for ref in [*member["input_refs"], *sorted(alternatives)]:
+            field = "input_alternatives" if ref in alternatives else "input_refs"
             try:
                 if _check_project_ref(ref, role, member["obligation_id"], root, state, descriptors,
-                                      previously_file=ref in frozen_file_refs):
+                                      previously_file=ref in frozen_file_refs or ref in alternatives):
                     observed.add(ref)
+                elif ref in alternatives:
+                    raise ValueError(f"{ref} must name an existing scoped project file or index")
+            except PlanSourceUnavailable as exc:
+                if field == "input_refs":
+                    raise PlanProjectInputError(member, ref, str(exc)) from exc
+                raise ValueError(f"stage_teams.plan {role} {field}: {exc}") from exc
             except (ValueError, OSError, RuntimeError) as exc:
-                raise ValueError(f"stage_teams.plan {role} input_refs: {exc}") from exc
+                raise ValueError(f"stage_teams.plan {role} {field}: {exc}") from exc
     return sorted(observed)
 
 
@@ -256,6 +282,10 @@ def bind_plan_team_inputs(runtime, child, stage_id: str, run: str, *, predecesso
     refs = [ref for ref in dict.fromkeys(assigned) if ref not in expected]
     sources = (_retry_inputs(runtime, charter, refs, payload, predecessor) if predecessor else
                [_slice(runtime, charter, ref, trigger, run) for ref in refs])
+    rebound = payload.get("source_rebind_snapshot")
+    if rebound and not any(s["source_id"] == _input_id(rebound["ref"]) and s["sha256"] == rebound["sha256"]
+                           for s in sources):
+        raise _unavailable(charter["obligation_id"], rebound["ref"], "changed after OA source selection")
     extension = payload.get("plan_extension_evidence") if not author else None
     if (author and reports) or extension:
         events = runtime.event_log.read_all()
