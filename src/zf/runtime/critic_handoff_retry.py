@@ -22,6 +22,10 @@ FIELDS = {
 
 
 def apply_critic_recovery(service, requested, action, requested_action, payload):
+    if ("resume_planner_handoff_event_id" in payload or
+            not {"retry_cancelled_critic_event_id", "retry_critic_handoff_event_id"}.intersection(payload)):
+        from zf.runtime.unissued_plan_critic_recovery import apply_handoff_recovery
+        return apply_handoff_recovery(service, requested, action, requested_action, payload)
     if "retry_cancelled_critic_event_id" in payload:
         from zf.runtime.cancelled_critic_recovery import apply_cancelled_critic_retry
 

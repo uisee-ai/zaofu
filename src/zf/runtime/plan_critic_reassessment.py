@@ -121,6 +121,9 @@ def reassessment_manifest(state, manifest: dict) -> dict:
         _check_source(state, source)
     result = deepcopy(manifest)
     result['trigger_event_id'] = manifest['review_request_event_id']
+    if body.get('schema_version') == 'plan-handoff-checkpoint.v1':
+        result['review_input_refs'] = body['historical_review_inputs']
+        return result
     result['review_input_refs'] = [
         {**manifest['review_checkpoint_ref'], 'source_id': 'plan-review-counter-evidence',
          'artifact_id': 'plan-review-counter-evidence.json', 'allowed_paths': ['$']},
@@ -145,6 +148,7 @@ def reconcile_reassessments(runtime, events) -> None:
     """Durable aggregate requests use the existing fanout dispatch/restart path."""
     checkpoint_fields = {
         KIND: 'review_request_event_id',
+        'unissued_plan_critic_recovery': 'review_request_event_id',
         'repaired_plan_first_review': 'recovered_plan_reader_event_id',
         'diagnosis_critic_handoff_retry': 'critic_handoff_retry_event_id',
         'cancelled_diagnosis_critic_retry': 'cancelled_critic_retry_event_id',

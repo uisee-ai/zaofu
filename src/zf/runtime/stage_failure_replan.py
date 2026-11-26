@@ -574,6 +574,12 @@ def plan_reader_stage_replan(
             # A Run may contain many candidates for the same reader stage. Its
             # latest request is not the causal input of this failed operation.
             origin_payload = lineage
+            if failure_payload.get("stage_replan_generation"):
+                from zf.runtime.unissued_plan_critic_recovery import rejected_handoff_lineage
+                try:
+                    origin_payload.update(rejected_handoff_lineage(state_dir, index, events, failure_event))
+                except (KeyError, ValueError, OSError, TypeError) as exc:
+                    return None, f"unverified_recovered_review: {exc}"
         else:
             origin_payload = {**lineage, **origin_payload}
     if trigger_type == "candidate.ready":
