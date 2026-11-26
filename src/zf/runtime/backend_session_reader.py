@@ -613,6 +613,7 @@ class CodexSessionReader(BackendSessionReader):
             model=str(latest_info.get("model") or latest_model),
             usage_semantics="cumulative" if cumulative else "incremental",
             series_started_at=series_started_at,
+            provider_session_id=session_id,
             usage_series_id=(
                 f"codex:{session_id}"
                 if session_id

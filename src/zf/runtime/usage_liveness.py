@@ -25,7 +25,7 @@ def apply_agent_usage_liveness(
     heartbeat protocol as the primary worker signal.
     """
     instance_id = str(event.actor or "").strip()
-    if not instance_id:
+    if not instance_id or event.payload.get("usage_binding_status") == "unattributed":
         return
     payload = event.payload if isinstance(event.payload, dict) else {}
     explicit_task_id = str(event.task_id or payload.get("task_id") or "").strip()
@@ -205,7 +205,7 @@ def _fresh_disk_sample(event: ZfEvent, previous_receipt: str | None) -> bool:
 def apply_usage_fallback_liveness(registry: RoleSessionRegistry, event: ZfEvent) -> None:
     """Keep the same sample guard when richer task-context lookup fails."""
     instance_id = str(event.actor or "").strip()
-    if not instance_id:
+    if not instance_id or event.payload.get("usage_binding_status") == "unattributed":
         return
     kernel_ts, previous = registry.get_last_heartbeat(instance_id)
     if event.payload.get("source") == "disk_reader" and not _fresh_disk_sample(event, kernel_ts):
