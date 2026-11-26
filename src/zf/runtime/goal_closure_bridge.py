@@ -725,6 +725,18 @@ class GoalClosureBridgeMixin:
         # Keep older signed results discoverable, outside both current acceptance and mandatory reads.
         for index, (ref, digest) in enumerate(history, 1):
             add_descriptor(ref=ref, digest=digest, source_id=f"historical-admission-{index}", kind="historical_call_result")
+        if identity.get("has_task_verify_evidence"):
+            fact = hydrate_sidecar_ref(self.state_dir, {"ref": identity["closure_fact_ref"],
+                "sha256": identity["closure_fact_digest"]}).payload
+            for row in fact["task_verify_evidence"]:
+                member = candidate_child_authorities.get(row["task_id"], {})
+                control = row["control_result"]
+                if (member.get("verification_event_id") != row["verification_event_id"]
+                        or member.get("verification_result_ref") != control["ref"]
+                        or member.get("verification_result_digest") != control["sha256"]):
+                    raise JudgeAdmissionError("Task Verify evidence no longer matches the current Candidate reader")
+                add_descriptor(ref=control["ref"], digest=control["sha256"], source_id=row["source_id"],
+                               kind="task_verification_result")
         # The compact summary is already a required part of closure-fact.
         if detail := identity.get("candidate_lifecycle_input"):
             from zf.runtime.milestone_task_lifecycles import SOURCE

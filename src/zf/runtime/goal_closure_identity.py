@@ -124,6 +124,11 @@ def build_closure_identity(
         package=str(package_identity.get("plan_artifact_package_digest") or ""))
     if lifecycles:
         closure_source["candidate_task_lifecycles"] = lifecycles
+    from zf.runtime.goal_task_verify_evidence import judge_task_verify_evidence
+    task_results = judge_task_verify_evidence(state_dir, events, batch=batch, run=workflow_run_id,
+                                             generation=generation, target=candidate_head)
+    if task_results:
+        closure_source["task_verify_evidence"] = task_results
     from zf.runtime.candidate_continuation import closure_provenance
 
     continuation = closure_provenance(events, state_dir=state_dir, workflow_run_id=workflow_run_id)
@@ -158,6 +163,7 @@ def build_closure_identity(
         **identity_fields,
         **({"judge_batch_admissions": batch} if batch else {}),
         **({"has_judge_mandate": True} if judge_mandate else {}),
+        **({"has_task_verify_evidence": True} if task_results else {}),
         **({"candidate_lifecycle_input": {
             "ref": lifecycles["lifecycle_ref"], "sha256": lifecycles["lifecycle_digest"],
             "task_count": len(lifecycles["summary"]["task_ids"]),

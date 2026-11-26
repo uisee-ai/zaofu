@@ -75,3 +75,7 @@ PYTHONPATH=src uv run python scripts/compare-stage-team-pilot.py /path/to/captur
 同一产品在独立机器路径、tmux 和宿主授权下对照时，可在启动前的协议保存每组 `local_bindings`。比较器逐字段核对实际快照，仅归一化项目本地的会话名、目标目录、诊断输出目录、专属 worker cgroup 和宿主授权引用。配置中命令、受保护文件、权限、容量或超时不同都会保留差异。批准后的 Web 受控请求按 Run 归属审计。无法归属的动作进入复核。真实窗口还需绑定覆盖批准至终点的 `host_observation` 及原始采集摘要，缺少独立宿主观察时，介入次数保留未知。
 
 现有项目 PrdFlow 与注册控制器沿相同审批路径绑定验证团队。已注册可自主委派的 PRD OA 若有影子 pre_impl 检查点，选择 Task 或 Candidate Verify 团队时会在待审批的候选配置中展示阻塞模式。缺少 OA 委派权限或检查点时停止装配。Owner 按候选配置摘要批准后，控制面才写入新配置。
+
+### Judge 按 Task 核查独立 Verify 正文
+
+当已签收的 Candidate Reader 合同绑定成员的独立 Task Verify 时，Goal closure 在冻结事实的 `task_verify_evidence` 中记录每个成员的 Task 提交、Verify 发布事件、准入事件、WRC 尝试和正文摘要。Judge 可从自己的输入索引按需读取 `task-verify-<task_id>`，回答已批准的 mandate。运行内核按被冻结的 Candidate、成员提交及承认这份正文的调用交叉核对来源。当前 Candidate 和 Discovery 的签收仍承担原有闭环职责，阅读单项 Task 正文不会增加一张 Candidate 票或代替 Judge 裁决。新增可读材料进入 closure identity 的摘要，同一批材料重复加载产生相同 identity。[实现](../../src/zf/runtime/goal_task_verify_evidence.py) · [回归](../../tests/test_goal_task_verify_evidence.py)
