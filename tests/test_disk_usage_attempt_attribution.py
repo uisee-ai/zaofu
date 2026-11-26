@@ -343,3 +343,84 @@ def test_registered_migrated_reader_requires_exclusive_fresh_session(tmp_path):
         runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel",
             payload={**fields, "task_id": "OTHER-TASK", "operation_id": "other-op", "dispatch_id": "other-send"}))
     assert sample() is None
+
+
+def test_dispatch_scoped_reader_on_task_pipeline_owns_only_current_physical_turn(tmp_path, monkeypatch):
+    from zf.core.events import ZfEvent
+    from zf.runtime.disk_usage_attempt_binding import disk_usage_attempt_binding
+
+    runtime, _, state = _runtime(tmp_path, mode="enforce")
+    base = runtime.config.roles[0]
+    role = replace(base, backend="codex", role_kind="reader",
+                   lifecycle=replace(base.lifecycle, mode="on_demand", reader_context_scope="dispatch"))
+    registry = runtime._role_lifecycle_registry()
+    stage = registry.bind_task_stage_session(
+        workflow_run_id="RUN", task_id="T", stage="verify", rework_affinity_id="generation:verify",
+        role_instance=role.instance_id, role_config_digest="role", workspace_generation=1,
+        placement_epoch=1, backend="codex",
+    )
+    registry.activate_task_stage_session(binding_key=stage["binding_key"], role_instance=role.instance_id)
+    session, turn = str(uuid4()), str(uuid4())
+    registry.bind_codex_session(role.instance_id, session)
+    # A lane may have served an unrelated fanout before this signed placement.
+    registry.update_instance_meta(role.instance_id, fanout_context_task_id="earlier",
+                                 fanout_context_dispatch_id="old-send", fanout_context_trace_id="old-run")
+    context = DispatchContext(task_id="T", role_name=role.name, instance_id=role.instance_id,
+                              dispatch_id="send", run_id="RUN", operation_id="op",
+                              task_pipeline_stage="verify", placement_epoch=1)
+    attempt = prepare_task_attempt(runtime, context=context, briefing_path=state / "verify.md")
+    assert attempt
+    mark_task_attempt_sent(runtime, attempt, delivery_evidence={"role_instance": role.instance_id})
+    sent = runtime.event_log.query(type="task.attempt.sent")[-1].payload
+    identity = {**sent, "workflow_run_id": "RUN", "role_instance": role.instance_id,
+                "operation_type": "task-stage", "task_pipeline_stage": "verify", "parent_stage_id": "verify",
+                "active_attempt_id": attempt.context.attempt_id, "request_hash": "h", "placement_epoch": 1,
+                "workspace_generation": 1, "stage_id": "verify", "task_stage_session_binding": stage["binding_key"],
+                "workdir": str(state / "task-project")}
+    for kind in ("requested", "started"):
+        runtime.event_writer.append(ZfEvent(type=f"workflow.operation.{kind}", origin="kernel", task_id="T", payload=identity))
+    dispatch = runtime.event_writer.append(ZfEvent(type="task.pipeline.stage.dispatched", origin="kernel",
+        actor="orchestrator", task_id="T", payload=identity))
+
+    def submit(cause, hook_turn, *, source="kernel", workspace=identity["workdir"]):
+        runtime.event_writer.append(ZfEvent(type="codex.hook.user_prompt_submit", origin=source,
+            actor=role.instance_id, causation_id=cause, payload={"session_id": session, "turn_id":hook_turn, "cwd":workspace}))
+
+    def binding(sample_turn=turn, sample_session=session, native=None):
+        usage = UsageReport(8, 2, 100, .1, datetime.now(timezone.utc).isoformat(), native_turn_sample=native or {},
+                            provider_session_id=sample_session, provider_usage_turn_id=sample_turn)
+        return disk_usage_attempt_binding(runtime, role, usage)[0]
+
+    assert not binding()
+    submit(dispatch.id, turn, source="worker")
+    assert not binding()
+    submit(dispatch.id, turn)
+    assert binding()["attempt_id"] == attempt.context.attempt_id
+    assert binding()["lease_id"] == attempt.context.lease_id
+    events = runtime.event_log.read_all()
+    physical = next(e for e in events if e.type == "task.attempt.sent")
+    prompt = next(e for e in reversed(events) if e.type == "codex.hook.user_prompt_submit")
+    for original, changed in [
+        (physical, {"origin": "worker"}), (physical, {"actor": role.instance_id}),
+        (dispatch, {"origin": "worker"}), (dispatch, {"actor": role.instance_id}),
+        (dispatch, {"payload": {**dispatch.payload, "workflow_run_id": "another-run"}}),
+        (dispatch, {"payload": {**dispatch.payload, "task_id": "another-task"}}),
+        (physical, {"payload": {**physical.payload, "lease_id": "previous-lease"}}),
+        (prompt, {"ts": "2001-01-01T00:00:00Z"}), (prompt, {"ts": "2099-01-01T00:00:00Z"}),
+    ]:
+        revised = [replace(e, **changed) if e.id == original.id else e for e in events]
+        with monkeypatch.context() as patch:
+            patch.setattr(runtime.event_log, "read_all", lambda: revised)
+            assert not binding(), (original.type, changed)
+    assert not binding(str(uuid4()))
+    assert not binding(sample_session=str(uuid4()))
+    assert not binding(native={"session_id": session, "turn_id": turn, "workspace_sha256": "other-workspace"})
+    submit(dispatch.id, turn, workspace=str(state/"another-task"))
+    assert not binding()
+    submit("old-dispatch", turn)
+    assert not binding()
+    submit(dispatch.id, turn)
+    registry.bind_task_stage_session(workflow_run_id="RUN", task_id="T", stage="verify",
+        rework_affinity_id="generation:verify", role_instance=role.instance_id, role_config_digest="role",
+        workspace_generation=1, placement_epoch=2, backend="codex")
+    assert not binding()
