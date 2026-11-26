@@ -47,6 +47,8 @@ task_id 对照需求声明与实际派发入口。对于候选验证，分别列
 未标记的比较在批准时用 conclusion 和 basis 对账，其字段以本次冻结结果为准。
 运行时从 Task Map 和配置计算比较。若声明入口、实际入口或命令选择与需求冲突，
 修复项给出 Task ID、作者能修改的 Task Map 字段、现值及受控验证应观察到的结果。
+入口比较给出 `runtime_evidence_fields` 时，以行内的 `entry_mode` 或
+`first_stage_on_admission` 为运行时证据，把作者的声明留在当前候选证据中，再与需求逐项对照。
 Planner 修改候选后重新运行 validate-plan 生成事实。遇到旧返工意见要求补运行时投影时，
 先核对当前候选和既有证据，修正仍成立的声明或用实际入口及来源反证该意见。
 Planner 收到返工时查看 `plan_review_dispositions` 中的精确证据，处理仍成立的修复项。

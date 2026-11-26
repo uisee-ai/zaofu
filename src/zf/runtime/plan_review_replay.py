@@ -88,6 +88,12 @@ def pin_replayed_review_usage(
             key = "standard_with_empty_write_scope"
             old_check = old_comparable["execution_comparisons"].get(key)
             new_checks = dict(new_comparable.get("execution_comparisons") or {})
+            # An already issued review retains the citation rules it advertised.
+            for name, frozen in old_comparable["execution_comparisons"].items():
+                if name in new_checks and "runtime_evidence_fields" not in frozen:
+                    new_checks[name] = {field: value for field, value in new_checks[name].items()
+                                        if field != "runtime_evidence_fields"}
+            new_comparable["execution_comparisons"] = new_checks
             current = new_checks.get(key) or {}
             if old_check == {"task_ids": current.get("task_ids")} and current.get("before_rework"):
                 new_comparable["execution_comparisons"] = {**new_checks, key: old_check}

@@ -180,3 +180,18 @@ def test_wrong_projection_request_is_corrected_on_same_candidate_and_only_routes
     assert action["task_id"] == "A" and action["required_change"] == fix["required_change"]
     assert action["basis"]["current_evidence"] == [field]
     assert handoff["plan_review_dispositions"]["assessments"] == [row]
+
+def test_declared_mode_is_not_runtime_proof_of_a_dispatch_entry(tmp_path):
+    runtime, svc, args, result, assessments = case(tmp_path, readonly_required=True)
+    read_current_review_inputs(runtime, args["operation_id"])
+    result["report"]["execution_assessments"] = assessments
+    citation = assessments[0]["runtime_evidence"]
+    prefix = "$.execution_comparisons.standard_with_empty_write_scope.facts.entries[0]."
+    citation.update(json_path=prefix + "declared_execution_mode", observed_value="document_review")
+    errors = svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
+    assert any(e["field"].endswith(".runtime_evidence") and "first_stage_on_admission" in e["message"]
+               for e in errors)
+    with pytest.raises(ResultSubmitError):
+        svc.submit(**args, semantic_result=result)
+    citation.update(json_path=prefix + "first_stage_on_admission", observed_value="impl_ready")
+    assert not svc.validate_plan_candidate(**args, semantic_result=result)["errors"]

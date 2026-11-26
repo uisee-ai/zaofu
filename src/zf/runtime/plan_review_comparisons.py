@@ -19,6 +19,7 @@ def execution_comparisons(
     if entries:
         comparisons["readonly_pipeline_entry"] = {
             "task_ids": list(entries), "before_rework": True,
+            "runtime_evidence_fields": ["entry_mode", "first_stage_on_admission"],
             "facts": {"entries": [
                 {"task_id": key, "entry_mode": "verify_only", "first_stage_on_admission": VERIFY_ONLY_INITIAL_STAGE,
                  **{k: entry[k] for k in ("status", "reason") if k in entry}}
@@ -78,6 +79,7 @@ def execution_comparisons(
     if empty:
         comparisons["standard_with_empty_write_scope"] = {
             "task_ids": [entry["task_id"] for entry in empty], "before_rework": True,
+            "runtime_evidence_fields": ["entry_mode", "first_stage_on_admission"],
             "facts": {"entries": empty},
         }
     if (
@@ -185,7 +187,7 @@ def execution_assessments(
                 "Account for the exact affected Task IDs in the frozen summary",
             )
         if checks[row["comparison"]].get("before_rework"):
-            _check_review_disposition(row, path, report, matches[0], rejected=rejected, error=error)
+            _check_review_disposition(row, path, report, matches[0], checks[row["comparison"]], rejected=rejected, error=error)
         elif rework_checks and "disposition" in row:
             error(path + ".disposition", "Explicit repair dispositions belong to comparisons marked before_rework")
         basis = row.get("basis")
@@ -209,7 +211,7 @@ def execution_assessments(
     return rows
 
 
-def _check_review_disposition(row, path, report, source, *, rejected, error):
+def _check_review_disposition(row, path, report, source, spec, *, rejected, error):
     comparison = row["comparison"]
     disposition = row.get("disposition")
     if disposition not in ("no_repair", "repair_required", "needs_clarification") or (
@@ -241,3 +243,8 @@ def _check_review_disposition(row, path, report, source, *, rejected, error):
             for k in ("source_id", "artifact_id", "sha256")) or not isinstance(selector, str)
             or not selector.startswith((prefix + ".", prefix + "["))):
         error(path + ".runtime_evidence", "Cite a specific field under the frozen comparison facts")
+    elif fields := spec.get("runtime_evidence_fields"):
+        if not any(selector == f"{prefix}.entries[{index}].{field}"
+                   for index in range(len(spec["facts"]["entries"])) for field in fields):
+            error(path + ".runtime_evidence",
+                  f"Cite the computed dispatch field under {prefix}.entries[i]: " + ", ".join(fields))
