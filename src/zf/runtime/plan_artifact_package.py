@@ -582,7 +582,7 @@ def prepare_plan_artifact_package(
     if prior_body is not None:
         continuity = package_claim_continuity(
             state_dir, prior_body, claim_set, workflow_run_id=workflow_run_id,
-            goal_id=goal_id, payload=payload, events=event_list,
+            goal_id=goal_id, payload=payload, events=event_list, task_map=task_map,
         )
         if continuity["status"] != "passed":
             rejected_ids = ", ".join(

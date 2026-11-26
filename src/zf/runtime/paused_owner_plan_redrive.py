@@ -240,6 +240,10 @@ def apply_owner_redrive(service, requested, action, requested_action, payload):
 def apply_stage_replan(service, requested, action, requested_action, payload):
     # The same lock serializes publication with Run pause, resume and competing owner generations.
     with locked_path(service.state_dir / "locks" / "run-admission"):
+        from zf.runtime.plan_derived_claim_correction import KEY as CORRECTION, apply_owner_correction
+
+        if CORRECTION in payload:
+            return apply_owner_correction(service, requested, action, requested_action, payload)
         if KEY in payload:
             return apply_owner_redrive(service, requested, action, requested_action, payload)
         return service._stage_replan_new_generation_action(

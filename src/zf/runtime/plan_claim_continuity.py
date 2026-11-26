@@ -19,18 +19,29 @@ def plan_objective_ref(payload: Mapping) -> str:
 
 def package_claim_continuity(
     state_dir: Path, package: Mapping, current: Mapping, *, workflow_run_id: str,
-    goal_id: str, payload: Mapping, events: list,
+    goal_id: str, payload: Mapping, events: list, task_map: Mapping,
 ) -> dict:
     port = next((p for p in [*package["produced"], *package["inherited"]]
                  if p["logical_name"] == "goal_claim_set"), None)
     body = hydrate_sidecar_ref(state_dir, port).payload if port else None
     previous = body if isinstance(body, Mapping) else None
     waivers = _goal_claim_waivers(payload)
-    return mandatory_claim_continuity(
+    from zf.runtime.plan_derived_claim_correction import corrected_claim_baseline, correction_origin_errors
+
+    previous, changed = corrected_claim_baseline(
+        previous, package, events, workflow_run_id, payload.get("stage_replan_generation"),
+    )
+    result = mandatory_claim_continuity(
         amended_claim_set_baseline(state_dir, workflow_run_id, previous, events=events),
         current, claim_waivers=waivers,
         active_waiver_refs=_active_goal_claim_waiver_refs(events, goal_id=goal_id) if waivers else (),
     )
+    failed = {r["goal_claim_id"] for r in result["findings"]}
+    result["findings"].extend(r for r in correction_origin_errors(changed, current, task_map)
+                              if r["goal_claim_id"] not in failed)
+    if result["findings"]:
+        result["status"] = "rejected"
+    return result
 
 
 def candidate_claim_errors(
@@ -52,7 +63,7 @@ def candidate_claim_errors(
         objective_ref=objective, objective=read_goal_objective(state_dir, project_root, objective),
     )
     result = package_claim_continuity(state_dir, package, current, workflow_run_id=run_id,
-                                      goal_id=goal_id, payload=payload, events=events)
+                                      goal_id=goal_id, payload=payload, events=events, task_map=task_map)
     return [{"code": row["code"], "field": f"task_map.goal_claims[{row['goal_claim_id']}]",
              "message": f"Preserve the bound mandatory claim: {row['previous_text']}"}
             for row in result["findings"]]

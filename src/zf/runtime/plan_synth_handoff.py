@@ -287,6 +287,10 @@ def build_plan_handoff_input_refs(
     }
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str, str, str]] = set()
+    from zf.runtime.plan_derived_claim_correction import correction_sources
+
+    input_refs.extend(correction_sources(state_dir, {**trigger, **payload}, attempt_id=payload.get("attempt_id"),
+        operation_id=payload.get("operation_id"), read_events=read_events))
     if binding:
         input_refs.append({**binding["requirement_amendment_ref"],
                            "source_id": "owner-requirement-amendment", "allowed_paths": ["$"]})
@@ -720,7 +724,7 @@ def build_plan_synth_call_payload(
     for source in build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
-        payload=manifest,
+        payload={**manifest, "attempt_id": run_id},
         source_event_id=trigger_event_id,
         read_events=(lambda: diagnosis_events) if diagnosis_events is not None else read_events,
     ):
