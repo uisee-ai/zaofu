@@ -125,6 +125,11 @@ def test_museum_plan_reader_gets_wide_page_guidance_without_changing_its_policy(
     ("workflow-read", "plan", "fanout_writer_child", None),
     ("workflow-read", None, None, None),
     ("task-verify", "plan", "fanout_reader_child", None),
+    ("implementation", "task", "task-stage", "16384"),
+    ("task-verify", "task", "task-stage", "16384"),
+    ("implementation", "plan", "task-stage", None),
+    ("task-verify", "task", "fanout_reader_child", None),
+    ("unregistered-profile", "task", "task-stage", None),
 ))
 def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domain, operation, expected):
     payload, _ = bound

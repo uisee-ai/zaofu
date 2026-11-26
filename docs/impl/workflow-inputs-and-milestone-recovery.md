@@ -13,7 +13,7 @@
 
 同一 Codex 会话压缩后，先用 `zf artifact recover --attempt <id>` 找回工作记录。若原生轨迹只证明部分材料已交付，`zf artifact read --required --resume` 会先给出当前上下文的恢复页。跟随标准 `next_cursor` 时，CLI 重新核对会话、压缩边界和交付凭证，继续补读尚未完整交付的区间。需要在当前上下文中逐页重读时，显式选择 `continuation.context_next_cursor`。该游标在恢复页已包含正文且仍有后文时提供。从头通读可直接执行 `--required`，省略游标与 `--resume`。原兼容入口 `continuation.historical_next_cursor` 仍可定位历史缺口。当前会话收到恢复提示后，再次执行 `--resume` 也可继续补读。历史交付凭证不证明模型当前仍记得材料。
 
-挂载试点使用 Linux、cgroup v2、FUSE、`fusermount` 及 libfuse2。项目可通过 `uv sync --extra native-inputs` 安装对应的 Python 适配器。在项目的 `workflow.flow_metadata.artifact_worker_cgroups` 中将具体 worker 实例映射到专属 cgroup 的绝对层级名。每次 open/read 都检查当前派发凭据、会话、进程、cgroup 和 grant 代次。直接 I/O 并禁用数据缓存，原进程退出、凭据轮换后旧描述符不得继续读取。当前版本只为与注册会话相符的 Codex CLI 0.171.0 单文件 `exec_command` 创建严格原生交付见证。旧合同、共享工作区、无法验证的包装器及不支持的 Provider 使用派发中原有的 CLI。
+挂载试点使用 Linux、cgroup v2、FUSE、`fusermount` 及 libfuse2。项目可通过 `uv sync --extra native-inputs` 安装对应的 Python 适配器。在项目的 `workflow.flow_metadata.artifact_worker_cgroups` 中将具体 worker 实例映射到专属 cgroup 的绝对层级名。每次 open/read 都检查当前派发凭据、会话、进程、cgroup 和 grant 代次。直接 I/O 并禁用数据缓存，原进程退出、凭据轮换后旧描述符不得继续读取。当前版本只为与注册会话相符的 Codex CLI 0.171.0 和 0.172.0 单文件 `exec_command` 创建严格原生交付见证。旧合同、共享工作区、无法验证的包装器及不支持的 Provider 使用派发中原有的 CLI。
 
 部署资格测试使用独立的 Linux user scope。将 libfuse2 和 Python 适配器放在实际 worker 工具命名空间可读的目录；私有依赖可使用该目录下的绝对 `FUSE_LIBRARY_PATH`。测试分别记录工作区沙箱能否加载库、能否访问 `/dev/fuse`、受控 CLI 能否挂载，以及真实 Codex 文件读取是否留下可验证的原生回执。若沙箱屏蔽设备，worker 使用已授权的 artifact read。专属 scope 下的宿主预挂载仅验证文件消费能力，普通派发仍需核实挂载由谁启动。可在已准备依赖和 Codex 的隔离 checkout 运行下列显式测试，结果写在 pytest 的临时项目内。[原生工作区资格测试](../../tests/integration/test_native_workspace_qualification.py)
 
@@ -25,7 +25,7 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 
 2026-11-24 的 8×8 B 运行 `workflow-7dbaae8a3501596d` 中，`verify-lane-0` 的 `AUDIT-NORMALIZE` 尝试 `ta-f3e497dda5a5ac4a3f2d` 已进入专属 cgroup。宿主能加载的私有 libfuse2 位于 `/dev/shm`，实际 Codex 工作区沙箱看不到该库。该尝试记录了 26 条 CLI stdout 读取回执、0 条挂载读取回执。
 
-独立单输入项目把同版本库置于工具可见的只读位置后，宿主及工作区沙箱均能加载。真实 Codex CLI 0.171.0 使用本地模拟 Responses 服务调用 `exec_command`。在同一冻结 request、role 凭据和 cgroup 下，工作区沙箱中缺少 `/dev/fuse`，直接启动 workspace 返回 1，已授权的 CLI 读取成功；由该 scope 的宿主进程运行同一受控 CLI 时，沙箱能读取它预备的只读挂载，账本记录 `mounted_file_read`、`observed_in_transcript` 及完整字节区间，租约撤销后卸载。常规派发目前提示 worker 运行 workspace，没有自动在宿主预备挂载的步骤。该正例的预备进程仅存在于测试中。
+独立单输入项目把同版本库置于工具可见的只读位置后，宿主及工作区沙箱均能加载。真实 Codex CLI 0.171.0 与 0.172.0 分别使用本地模拟 Responses 服务调用 `exec_command`。在同一冻结 request、role 凭据和 cgroup 下，工作区沙箱中缺少 `/dev/fuse`，直接启动 workspace 返回 1，已授权的 CLI 读取成功；由该 scope 的宿主进程运行同一受控 CLI 时，沙箱能读取它预备的只读挂载，账本记录 `mounted_file_read`、`observed_in_transcript` 及完整字节区间，租约撤销后卸载。常规派发目前提示 worker 运行 workspace，没有自动在宿主预备挂载的步骤。该正例的预备进程仅存在于测试中。
 
 文件访问时的 caller PID、实际文件、冻结来源及读区间形成宿主见证。准入重新核对该会话中唯一 call ID 的参数和公开返回。完整输出及可精确复核边界的 Codex 截断片段可以累计，并可用 CLI 补齐中段。原生见证、CLI stdout、当前模型记忆和产品判词分别记录。挂载在产品仓库之外创建，停止后释放。挂载不创建产品文件。
 
@@ -73,6 +73,8 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 | 浏览器声明路径指向不可消费的目录，记录缺口时重复检查同一路径并抛出异常 | 单独保留生产者声明与原失败原因。宿主回执回归覆盖目录、媒体不可用及恢复，不重复运行浏览器。 |
 
 影响范围测试需要控制器依赖。验证使用工作树独立环境安装 dev、web、controller 和 native-inputs 四组依赖。
+
+单任务 Impl 与独立 Task Verify 在首次派发和恢复时按本次合同读取自己的必读项。支持调整工具输出预算的角色可选用 16 KiB 文本页，收到完整页尾后再按返回的游标继续。输出被截断时以相同游标和较小页重读。已签来源、授权范围和必读项沿用原合同。
 
 现行 CLI 默认使用 JSON 与 8 KiB 批页。B 是显式文本批页试验。三组调用数来自模拟工具返回，无法据此估算真实模型 token 或从派发到准入的耗时。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
 

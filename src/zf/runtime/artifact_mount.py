@@ -9,7 +9,7 @@ import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
-from zf.runtime.artifact_native_delivery import HOST_SCHEMA, NATIVE_CODEX_VERSION, open_call
+from zf.runtime.artifact_native_delivery import HOST_SCHEMA, NATIVE_CODEX_VERSIONS, open_call
 from zf.runtime.artifact_read_ledger import append_artifact_read
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
@@ -73,7 +73,7 @@ class MountAccess:
         base, bounds = _slice(name)
         data, row = self.view.read(base, bounds)
         proof = None
-        if row is not None and self.version == NATIVE_CODEX_VERSION:
+        if row is not None and self.version in NATIVE_CODEX_VERSIONS:
             try:
                 proof = open_call(
                     self.state,

@@ -64,14 +64,19 @@ def test_authenticated_recovery_cli_runtime_briefing_and_advisor_share_inputs(tm
     assert '"sources"' not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(('purpose', 'domain', 'expected'), [
-    ('workflow-read', 'plan', 16384), ('plan-synth', 'plan', 32768),
-    ('workflow-read', 'candidate', None), ('implementation', 'task', None),
+@pytest.mark.parametrize(('purpose', 'domain', 'operation', 'expected'), [
+    ('workflow-read', 'plan', 'fanout_reader_child', 16384),
+    ('plan-synth', 'plan', 'fanout_writer_child', 32768),
+    ('workflow-read', 'candidate', 'fanout_reader_child', None),
+    ('implementation', 'task', 'task-stage', 16384),
+    ('task-verify', 'task', 'task-stage', 16384),
+    ('implementation', 'task', 'fanout_reader_child', None),
+    ('task-verify', 'candidate', 'task-stage', None),
 ])
-def test_recovery_read_command_preserves_complete_output_for_plan_roles(tmp_path, purpose, domain, expected):
+def test_recovery_read_command_matches_frozen_role_scope(tmp_path, purpose, domain, operation, expected):
     manifest, rows, _ = published(tmp_path)
     manifest.update(read_purpose=purpose, handoff_authority_contract={
-        'output_profile_id': purpose, 'attempt_domain': domain, 'operation_type': 'fanout_reader_child',
+        'output_profile_id': purpose, 'attempt_domain': domain, 'operation_type': operation,
     })
     pack = build_input_recovery(state_dir=tmp_path, manifest=manifest, identity=IDENTITY,
                                 events=[], required=rows, reads=[])

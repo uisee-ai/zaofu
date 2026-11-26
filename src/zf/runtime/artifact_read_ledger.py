@@ -614,7 +614,8 @@ def render_attempt_source_briefing(
     if native:
         lines.append(
             f"- Preferred artifact input: start `{cli_command} artifact workspace --attempt {shlex.quote(attempt_id)}` "
-            "in a persistent tool session. Open the printed INPUTS.md and RESUME.md paths. "
+            "in a persistent tool session if your worker has access to /dev/fuse. Otherwise use the CLI fallback. "
+            "Open the printed INPUTS.md and RESUME.md paths. "
             "The read-only mount is outside the product checkout. Use a single literal "
             "`/usr/bin/cat ABSOLUTE_PATH` for each required text selection listed in INPUTS.md. "
             "For partial delivery, read the missing .chars-START-END slices. Use the CLI fallback "

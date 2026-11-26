@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from zf.runtime.artifact_access import artifact_access_allowed
 from zf.runtime.artifact_input_index import input_index, load_attempt_source_manifest
 from zf.runtime.artifact_input_lifecycle import input_lifecycle
-from zf.runtime.artifact_read_briefing_policy import plan_read_page_bytes
+from zf.runtime.artifact_read_briefing_policy import required_read_page_bytes
 from zf.runtime.artifact_read_ledger import required_read_satisfied
 from zf.runtime.artifact_read_requirements import required_reads_for_attempt
 from zf.runtime.cli_command import zf_cli_cmd
@@ -121,7 +121,7 @@ def build_input_recovery(
     if not lifecycle["requires_rebind"]:
         if missing:
             command = f"{prefix} read --attempt {attempt} --required --resume --reason recovery"
-            page_bytes = plan_read_page_bytes(manifest.get("read_purpose"), manifest.get("handoff_authority_contract"))
+            page_bytes = required_read_page_bytes(manifest.get("read_purpose"), manifest.get("handoff_authority_contract"))
             if page_bytes:
                 command += f" --format text --page-bytes {page_bytes}"
                 result["instructions"] += (

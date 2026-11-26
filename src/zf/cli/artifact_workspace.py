@@ -24,7 +24,7 @@ from zf.runtime.artifact_mount import (
     peer_identity,
     serve_mount,
 )
-from zf.runtime.artifact_native_delivery import NATIVE_CODEX_VERSION
+from zf.runtime.artifact_native_delivery import NATIVE_CODEX_VERSIONS
 from zf.runtime.artifact_query import ArtifactQueryService
 from zf.runtime.artifact_read_capability import (
     authorize_artifact_read_from_environment,
@@ -144,7 +144,7 @@ def run_workspace(args):
             )
             if probe.returncode == 0:
                 version = probe.stdout.strip().removeprefix("codex-cli ")
-        if version != NATIVE_CODEX_VERSION:
+        if version not in NATIVE_CODEX_VERSIONS:
             raise ValueError("this Codex version has no verified native input receipts")
         # mkdtemp atomically reserves a new, private mount point outside project Git.
         with tempfile.TemporaryDirectory(prefix="zf-input-view-", dir="/tmp") as tmp:
