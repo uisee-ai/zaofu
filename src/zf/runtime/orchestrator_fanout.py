@@ -6520,14 +6520,14 @@ class FanoutCoordinationMixin(
                 return False
         from zf.runtime.reader_failure_supersession import reader_manifest_replacement_admission
 
-        from zf.runtime.writer_replan_frontier import retired_plan_branch
+        from zf.runtime.writer_replan_frontier import plan_branch_retirement_reason, retired_plan_branch
         trigger_event = next((event for event in events
                               if event.id == manifest.get("trigger_event_id")), None)
         retired_by = retired_plan_branch(events, trigger_event, self.config) if trigger_event else None
         if retired_by is not None:
             self._cancel_superseded_fanout_manifest(
                 fanout_id=str(manifest.get("fanout_id") or ""), manifest=manifest,
-                reason="plan_branch_descends_from_retired_writer_trigger",
+                reason=plan_branch_retirement_reason(retired_by),
                 superseded_by=retired_by.id, source="authorized_plan_recovery_frontier",
             )
             return True

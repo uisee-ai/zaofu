@@ -480,6 +480,10 @@ def plan_reader_stage_replan(
     from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
 
     index = event_index or ReaderReplanIndex(events)
+    from zf.runtime.stage_replan_generation import exhausted_failure_escalation
+
+    if not authorized_generation and exhausted_failure_escalation(index, failure_event):
+        return None, "failure_already_escalated_to_owner"
     if reader_failure_was_replaced(events, failure_event, event_index=index):
         return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")

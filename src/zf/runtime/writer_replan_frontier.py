@@ -7,7 +7,8 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.run_scope import event_run_id, run_aliases
-from zf.runtime.stage_replan_generation import completed_generation_source
+from zf.runtime.stage_replan_generation import completed_generation_source, exhausted_failure_escalation
+from zf.runtime.reader_replan_index import ReaderReplanIndex
 from zf.runtime.fanout_retrigger_guard import stall_trigger_original
 
 
@@ -93,24 +94,35 @@ def retired_plan_branch(
     if not any(stage.topology == "fanout_reader" and stage.attempt_domain == "plan"
                and stage.trigger == trigger.type for stage in config.workflow.stages):
         return None
-    by_id = {event.id: event for event in events}
-    aliases = run_aliases(events)
-    run_id, pdd_id = event_run_id(trigger, aliases=aliases), _pdd(trigger)
+    index = ReaderReplanIndex(events)
+    run_id, pdd_id = index.run_id(trigger), _pdd(trigger)
     current, visited = trigger, set()
     while current.id not in visited:
         visited.add(current.id)
         if (current.origin in {"worker", "external"}
-                or event_run_id(current, aliases=aliases) != run_id
-                or _pdd(current) != pdd_id):
+                or index.run_id(current) != run_id or _pdd(current) != pdd_id):
             return None
+        parent = index.by_id.get(str(current.causation_id or ""))
+        if current.actor == "zf-cli" and current.payload.get("rework_of") and parent:
+            # A mechanical retry cites its failure. A controlled owner trigger cites its
+            # request and may legitimately refer back to the same rejected candidate.
+            cap = exhausted_failure_escalation(index, parent)
+            if (cap and index.run_id(parent) == run_id
+                    and index.positions[cap.id] < index.positions.get(current.id, -1)):
+                return cap
         newer = retired_writer_trigger(events, current, config)
         if newer is not None:
             return newer
-        parent = by_id.get(str(current.causation_id or ""))
         if parent is None:
             return None
         current = parent
     return None
+
+
+def plan_branch_retirement_reason(source: ZfEvent) -> str:
+    if source.type == "human.escalate":
+        return "automatic_plan_retry_after_owner_handoff"
+    return "plan_branch_descends_from_retired_writer_trigger"
 
 
 def suppress_retired_plan_branch(
@@ -122,7 +134,7 @@ def suppress_retired_plan_branch(
     newer = retired_plan_branch(events, trigger, runtime.config)
     if newer is None:
         return False
-    reason = "plan_branch_descends_from_retired_writer_trigger"
+    reason = plan_branch_retirement_reason(newer)
     for stage_id in sorted(set(stage_ids)):
         if any(event.type == "fanout.retrigger.suppressed"
                and event.payload.get("trigger_event_id") == trigger.id

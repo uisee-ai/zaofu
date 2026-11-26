@@ -1504,3 +1504,32 @@ def test_candidate_retry_preserves_only_bound_kernel_freeze_origin():
     failure.origin = "kernel"
     failure.payload["candidate_event_id"] = "another-freeze"
     assert retry_origin() == ""
+
+
+def test_cap_handoff_retires_only_its_automatic_failure_occurrence():
+    from dataclasses import replace
+    from zf.runtime.workflow_resume import _reader_stage_replan_checkpoints
+
+    cfg = _config()
+    run = ZfEvent(type="run.goal.started", correlation_id="run", payload={"run_id": "run"})
+    other = replace(run, id="other-run-start", correlation_id="other", payload={"run_id": "other"})
+    origin = ZfEvent(type="issue.requested", correlation_id="run", payload={"issue_ref": "issue.md"})
+    failure = replace(_failure(), correlation_id="run")
+    cap = ZfEvent(type="human.escalate", actor="orchestrator", correlation_id="run", payload={
+        "failure_class": "stage_replan_cap_exhausted", "source_event_id": failure.id,
+        "allowed_actions": ["operator_review", "start_new_generation"]})
+    prefix = [run, other, origin, failure]
+    for wrong in (replace(cap, origin="worker"), replace(cap, actor="worker"),
+                  replace(cap, correlation_id="other"), replace(cap, payload={**cap.payload, "source_event_id": "other"}),
+                  replace(cap, payload={**cap.payload, "failure_class": "other"})):
+        assert plan_reader_stage_replan(cfg, [*prefix, wrong], failure)[0]
+    for history in ([run, other, origin, cap, failure], prefix):
+        assert plan_reader_stage_replan(cfg, history, failure)[0]
+    history = [*prefix, cap]
+    assert plan_reader_stage_replan(cfg, history, failure) == (None, "failure_already_escalated_to_owner")
+    assert not _reader_stage_replan_checkpoints(history, [], cfg, state_dir=None)
+    approved, reason = plan_reader_stage_replan(cfg, history, failure, authorized_generation="owner-2",
+        generation_source_event_id=cap.id, authorization_event_id="control-request", authorization_ref="owner:approved")
+    assert approved and approved.causation_id == "control-request", reason
+    current = replace(failure, id="current-failure", payload={**failure.payload, "stage_replan_generation": "owner-2"})
+    assert plan_reader_stage_replan(cfg, [*history, approved, current], current)[0]

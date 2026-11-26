@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.reader_replan_index import ReaderReplanIndex
 from zf.runtime.run_scope import event_run_id
 
 
@@ -61,6 +62,19 @@ def completed_generation_source(
     if any(event_run_id(bound, aliases=aliases) != run_id for bound in (source, goal, trigger)):
         return None
     return source
+
+
+def exhausted_failure_escalation(index: ReaderReplanIndex, failure: ZfEvent) -> ZfEvent | None:
+    """A stage cap is an owner handoff for this occurrence, across software and generation changes."""
+    position = index.positions.get(failure.id)
+    if position is None:
+        return None
+    return next((e for i, e in index.rows("human.escalate")
+                 if i > position and e.origin in {"", "kernel"} and e.actor == "orchestrator"
+                 and e.payload.get("failure_class") == "stage_replan_cap_exhausted"
+                 and e.payload.get("source_event_id") == failure.id
+                 and "start_new_generation" in (e.payload.get("allowed_actions") or ())
+                 and index.run_id(failure) and index.run_id(e) == index.run_id(failure)), None)
 
 
 def stage_replan_generation_preflight(
