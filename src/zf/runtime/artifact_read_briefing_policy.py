@@ -1,9 +1,33 @@
-"""Render a compact locator only when the complete read policy is pinned."""
+"""Render controlled CLI navigation for required artifact reads."""
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+
+
+def plan_cli_page_guidance(payload: Mapping[str, Any]) -> str:
+    profile = payload.get("output_profile_id")
+    authority = payload.get("handoff_authority_contract")
+    if profile == "plan-synth":
+        page_bytes = 32768
+    elif (profile == "workflow-read" and isinstance(authority, Mapping)
+          and authority.get("output_profile_id") == profile and authority.get("attempt_domain") == "plan"
+          and authority.get("operation_type") == "fanout_reader_child"):
+        page_bytes = 16384
+    else:
+        return ""
+    return (
+        "- When using the controlled CLI with a tool that can return a complete wide page, add "
+        f"`--format text --page-bytes {page_bytes}` to the required-read command. "
+        "Reserve at least 16384 native tool output tokens when adjustable, including wrapper overhead. "
+        "Use one page per call and check the full original text and its next_cursor. "
+        "Text mode preserves source quoting; do not infer command syntax from display escaping. "
+        "For unknown or smaller capacity, start at 8192 or 2048 bytes. If clipped, retry the same input cursor "
+        "(omit it for page one) at the smaller size before advancing. Keep raw evidence in the authorized session "
+        "and cite its locator in shared reports. Exact source reads also accept --format text; "
+        "their --page-size limit is 8192 characters."
+    )
 
 
 def bound_read_policy_locator(payload: Mapping[str, Any], state_dir: Path | None) -> str:

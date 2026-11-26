@@ -12,6 +12,10 @@ Plan 是基于旧证据提出修订的角色；输入基线可以是历史已准
 
 实施、部署与现场后继结果见 [任务](../../tasks/2026-11-08-1551-plan-reader-input-lifecycle.md)。
 
+## Plan Reader 的受控 CLI 分页
+
+已启用原生输入工作区的角色优先使用挂载入口。需要经 CLI 强制读取时，`workflow-read` 的 Plan Reader 可以在工具输出容量足够时从 `--format text --page-bytes 16384` 开始，`plan-synth` 沿用 32768 B 宽页。判断路径使用已绑定的读取 profile 与 Plan domain，无需固定角色名称。每次返回一页完整原文，能设置原生工具输出预算时预留至少 16384 tokens 并检查工具包装与实际回包；容量未知或较小时使用 8192 或 2048 B。遇到截断以原输入游标减小页长重读，首页不传游标。原文留在获准的角色会话，对外说明引用来源定位。分页参数仅调整交付形式，旧 WRC、受控选区与完整读取证据仍按原合同核验。[角色与回退验证](../../tests/test_artifact_read_briefing_policy.py)
+
 ## 返工描述符的按需读取
 
 新的 Plan 读取请求在同一 Run 的 kernel 失败事件已绑定全部历史候选，且当前 manifest 对每项都授予内容相同的独立完整读取时，可将 `plan-rework-context.v1` 的整根必读改为四项。四项分别是 `schema_version`、`rework_of`、`rework_attempt` 和完整 `rework_feedback`。历史候选逐一核对文件、摘要、授权路径和完整内容绑定。根文档保留原历史 occurrence、事件与版本元数据，可按 `$` 回读。任何未知字段、受限授权、历史身份变化、缺少独立来源或显式必读要求，都沿用原策略。旧 operation 以已登记的读取政策和请求摘要重放。实际减少的引文字节按两个选区的完整文本计算。[受控读与重放测试](../../tests/test_plan_rework_descriptor_reads.py)

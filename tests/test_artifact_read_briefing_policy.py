@@ -59,3 +59,45 @@ def test_unbound_policy_keeps_explicit_fallback_commands(tmp_path, bound, fault)
     rendered = render_attempt_source_briefing(payload, state_dir=tmp_path)
     assert "--source matrix" in rendered
     assert "Complete required-read policy:" not in rendered
+
+
+def test_museum_plan_reader_gets_wide_page_guidance_without_changing_its_policy(tmp_path):
+    from tests.test_plan_owner_rework_descriptor_reads import museum
+
+    runtime, prepare, charter, _ = museum(tmp_path)
+    issued, payload = prepare("catalog", charter)
+    before = deepcopy(payload)
+    text = render_attempt_source_briefing(payload, state_dir=runtime.state_dir, role_name="curator")
+    assert "--format text --page-bytes 16384" in text
+    assert "16384 native tool output tokens" in text
+    assert "unknown or smaller capacity" in text and "8192 or 2048 bytes" in text
+    assert "retry the same input cursor (omit it for page one)" in text
+    assert "Keep raw evidence in the authorized session" in text
+    assert "外借藏品清单" not in text
+    assert payload == before
+    replay, _ = prepare("catalog", charter)
+    assert replay.request_hash == issued.request_hash
+    native = render_attempt_source_briefing({**payload, "native_input_view": True}, role_name="curator")
+    assert native.index("Preferred artifact input") < native.index("CLI fallback") < native.index("--format text --page-bytes 16384")
+
+
+@pytest.mark.parametrize(("profile", "domain", "operation", "expected"), (
+    ("plan-synth", None, None, "32768"),
+    ("workflow-read", "plan", "fanout_reader_child", "16384"),
+    ("workflow-read", "candidate", "fanout_reader_child", None),
+    ("workflow-read", "plan", "fanout_writer_child", None),
+    ("workflow-read", None, None, None),
+    ("task-verify", "plan", "fanout_reader_child", None),
+))
+def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domain, operation, expected):
+    payload, _ = bound
+    payload["output_profile_id"] = profile
+    if domain:
+        payload["handoff_authority_contract"] = {"output_profile_id": profile, "attempt_domain": domain,
+                                                 "operation_type": operation}
+    text = render_attempt_source_briefing(payload, role_name="planner")
+    assert "Preferred deduplicated read" in text and "--page-bytes 2048" in text
+    if expected:
+        assert f"--format text --page-bytes {expected}" in text
+    else:
+        assert "--format text --page-bytes" not in text

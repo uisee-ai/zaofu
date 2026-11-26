@@ -674,17 +674,11 @@ def render_attempt_source_briefing(
             "- For a source/path read, start with `--page-start 0 --page-size 8192` and follow "
             "`next_page_start` to null for gap-free coverage.",
         ])
-        if payload.get("output_profile_id") == "plan-synth":
-            lines.append(
-                "- For Plan review through CLI, prefer --format text --page-bytes 32768 on the required-read command "
-                "when the tool can return the full page (reserve at least 16384 output tokens). "
-                "This bounded view prints original content without an outer JSON string escape layer. "
-                "Retain these flags with each cursor; if output truncates, retry the same cursor at 8192 "
-                "or 2048 bytes before continuing. Supplemental source reads also accept --format text; "
-                "their --page-size remains at most 8192 characters. Do not infer command syntax from display escaping."
-            )
-        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator
+        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator, plan_cli_page_guidance
 
+        page_guidance = plan_cli_page_guidance(payload)
+        if page_guidance:
+            lines.append(page_guidance)
         locator = bound_read_policy_locator(payload, state_dir)
         if locator:
             lines.append(locator)
