@@ -276,8 +276,10 @@ def test_real_plan_reader_reflection_binds_its_method_to_the_successor(
     runtime.run_once(events=[agg])
     assert not log.query(type="human.escalate")
     method = "Validate the proposed single Task against the applicable contract."
+    seen_prompts = []
 
     def diagnose(prompt, **_):
+        seen_prompts.append(prompt)
         option = json.loads(prompt.splitlines()[-1])
         assert option["dispatch_event_id"] == issued.id
         return parse_reflection_response(
@@ -321,6 +323,31 @@ def test_real_plan_reader_reflection_binds_its_method_to_the_successor(
         spawn_repairs=False,
         reflect_fn=diagnose,
     )
+    assert any("single_task_conflict" in prompt and "I cannot express this requirement." in prompt
+               for prompt in seen_prompts)
+    reflection = log.query(type="run.manager.reflect.requested")[0]
+    context = hydrate_sidecar_ref(state, reflection.payload["context_ref"]).payload
+    read_set = hydrate_sidecar_ref(state, reflection.payload["read_set_ref"]).payload
+    evidence = context["worker_failure_evidence"]
+    assert evidence["source_status"] == "admitted_worker_report"
+    assert evidence["preflight"]["binding"] == "passed"
+    assert evidence["preflight"]["product_validation"] == "not_established"
+    assert evidence["failure_class"] == "reader_execution_failure"
+    assert evidence["summary"] == "The producer could not represent a single Task."
+    assert evidence["findings"][0]["code"] == "single_task_conflict"
+    assert evidence["original_result"] == read_set["source_refs"]["worker_failure_result"]
+    assert evidence["admission_event_id"] in read_set["source_event_ids"]
+    assert ret.canonical_event_id != evidence["admission_event_id"]
+    from zf.runtime.reader_failure_evidence import worker_failure_evidence
+
+    option = reflection.payload["reader_recovery_option"]
+    events = log.read_all()
+    for key, other in (("attempt_id", "unrelated"), ("workflow_run_id", "another-run"),
+                       ("control_result_ref", {}), ("semantic_verdict", "passed")):
+        stale = [replace(e, payload={**e.payload, key: other}) if e.id == evidence["admission_event_id"] else e
+                 for e in events]
+        assert not worker_failure_evidence(state, stale, option)
+    assert not worker_failure_evidence(state, events, {**option, "human_gate_status": "blocked"})
     (intent,) = log.query(type="repair.action.requested")
     runtime.run_once(events=[intent])
     runtime.run_once(events=[intent])
@@ -373,3 +400,11 @@ def test_real_plan_reader_reflection_binds_its_method_to_the_successor(
         and "Plan revision limit" in card["reason"]
     )
     assert "recommendation" not in card
+
+
+def test_worker_diagnosis_excerpt_redacts_before_truncating():
+    from zf.runtime.reader_failure_evidence import _excerpt
+
+    assert _excerpt("OPENAI_API_KEY=sk-" + "z" * 50, 36)== "OPENAI_API_KEY=[REDACTED_SECRET]"
+    assert len(_excerpt("a" * 2000, 80)) == 80
+    assert _excerpt("a" * 2000, 80).endswith("…")
