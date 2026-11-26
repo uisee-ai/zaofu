@@ -481,10 +481,13 @@ class EventReactorMixin(
 
                 manager = getattr(getattr(self.config, "runtime", None), "run_manager", None)
                 resident = getattr(manager, "resident_agent", None)
+                reflect = getattr(manager, "reflect", None)
                 spec = spec_for_event(event.type)
-                if (getattr(resident, "enabled", False) and spec is not None
-                        and spec.owner_route == "run_manager"
-                        and "pending_action" in spec.run_manager_semantics):
+                from zf.runtime.planner_reader_recovery import has_bound_diagnostic_option
+
+                if (spec is not None and spec.owner_route == "run_manager" and "pending_action" in spec.run_manager_semantics
+                        and (getattr(resident, "enabled", False) or (getattr(reflect, "enabled", False)
+                             and has_bound_diagnostic_option(self, events, event)))):
                     # The existing RM consumer owns diagnosis. Infrastructure
                     # failure alone grants neither a retry nor a human gate.
                     return WorkflowRuntimeDecision(
@@ -512,9 +515,13 @@ class EventReactorMixin(
                     else "canonical input unchanged after semantic scan rejection"
                 )
                 try:
+                    payload = event.payload or {}
+                    task_id = event.task_id or payload.get("task_id") or payload.get("pdd_id")
+                    run_id = payload.get("workflow_run_id") or payload.get("trace_id")
                     self.escalation.escalate(
-                        f"{event.type}: {reason}; owner action is required",
-                        task_id=str(event.task_id or "") or None,
+                        f"{event.type}: {reason}; owner action is required", task_id=task_id,
+                        metadata={"source_event_id": event.id, **({"workflow_run_id": run_id} if run_id else {})},
+                        correlation_id=event.correlation_id or run_id, causation_id=event.id,
                     )
                 except Exception:
                     pass

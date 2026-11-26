@@ -51,9 +51,10 @@ class EscalationManager:
         *,
         metadata: Mapping[str, Any] | None = None,
         correlation_id: str | None = None,
+        causation_id: str | None = None,
     ) -> ZfEvent | None:
         """Emit escalation event and write steer marker."""
-        if self._recently_escalated(reason, task_id or ""):
+        if self._recently_escalated(reason, task_id or "", causation_id=causation_id):
             return None
         terminal_metadata = escalation_terminal_metadata(reason)
         event = ZfEvent(
@@ -62,12 +63,13 @@ class EscalationManager:
             task_id=task_id or "",
             payload={"reason": reason, **terminal_metadata, **dict(metadata or {})},
             correlation_id=correlation_id,
+            causation_id=causation_id,
         )
         self.event_log.append(event)
         self.steer_path.write_text("")  # empty steer file signals escalation
         return event
 
-    def _recently_escalated(self, reason: str, task_id: str) -> bool:
+    def _recently_escalated(self, reason: str, task_id: str, *, causation_id: str | None = None) -> bool:
         signature = _escalate_signature(task_id, reason)
         now = datetime.now(timezone.utc)
         try:
@@ -75,7 +77,7 @@ class EscalationManager:
         except Exception:
             return False
         for event in reversed(events):
-            if event.type != "human.escalate":
+            if event.type != "human.escalate" or (causation_id and event.causation_id != causation_id):
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
             if _escalate_signature(

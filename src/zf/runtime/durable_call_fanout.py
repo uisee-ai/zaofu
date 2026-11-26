@@ -325,12 +325,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             "success_event",
         )
         workdir_write_scopes: list[str] = []
-        if self._is_plan_artifact_stage(
+        plan_artifact_stage = self._is_plan_artifact_stage(
             role=role,
             stage_id=context.stage_id,
             success_event=aggregate_success_event,
             child_success_event=child_success_event,
-        ):
+        )
+        if plan_artifact_stage:
             from zf.runtime.fanout_artifact_refs import (
                 plan_artifact_workdir_write_scopes,
             )
@@ -359,6 +360,10 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
 
             bind_plan_team_inputs(self, child, context.stage_id, str(child.payload.get("workflow_run_id") or context.trace_id),
                                   predecessor=child.payload.get("retry_of_operation_id", "") if retry_attempt else "")
+        if plan_artifact_stage and retry_attempt and child.payload.get("retry_of_operation_id"):
+            from zf.runtime.planner_reader_recovery import attach_diagnosis
+
+            attach_diagnosis(self, child.payload, child.payload["retry_of_operation_id"])
         call_mode = result_protocol_mode(self.config, child.payload)
         if call_mode != "shadow" or bool(child.payload.get("durable_operation")):
             from zf.runtime.call_result_runtime import prepare_call_operation
