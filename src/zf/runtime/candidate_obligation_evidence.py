@@ -61,7 +61,7 @@ def validate_obligation_evidence(state_dir: Path, result: dict, contract: dict, 
                 independent = (effect.id in result.get('host_execution_receipt_ids', [])
                     and receipt['target_commit'] == result['target_commit']
                     and all(receipt['manifest']['command'].get(k) == original['command'].get(k)
-                            for k in ('command', 'command_digest', 'producer_paths')))
+                            for k in ('command_id', 'command', 'command_digest', 'tier', 'producer_paths')))
             if (not fact or effect.payload.get('workflow_run_id') != result['workflow_run_id']
                     or not (direct or independent)):
                 raise ValueError('host observation does not resolve the exact original unknown effect')

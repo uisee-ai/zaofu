@@ -8,19 +8,31 @@ from urllib.parse import unquote, urlsplit
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def _reference_keys(state_dir: Path, value: str) -> set[str]:
-    value = value.strip().split('#', 1)[0]
+def _reference_parts(state_dir: Path, value: str) -> tuple[str, str]:
     if value.startswith('file:'):
         uri = urlsplit(value)
         if uri.netloc not in {'', 'localhost'}:
-            return {value}
+            return value, value
         value = unquote(uri.path)
     elif ':' in value:
-        return {value}  # Event IDs and other URI schemes are opaque identities.
+        return value, value  # Other URI schemes are opaque identities.
     if not value:
-        return set()
+        return "", ""
     # Lexical aliases only; never open or resolve an untrusted filesystem path.
-    return {value, posixpath.normpath(posixpath.join(str(state_dir.absolute()), value))}
+    return value, posixpath.normpath(posixpath.join(str(state_dir.absolute()), value))
+
+
+def _reference_keys(state_dir: Path, value: str) -> set[str]:
+    return set(_reference_parts(state_dir, value.strip().partition('#')[0])) - {""}
+
+
+def probe_execution_reference(state_dir: Path, value: str) -> str:
+    """Identify the cited execution, preserving exact locators within a shared report."""
+    value, separator, locator = value.strip().partition("#")
+    if value.startswith("evt-"):
+        value = "event:" + value
+    _, canonical = _reference_parts(state_dir, value)
+    return canonical + separator + locator
 
 
 def reject_host_backed_probes(state_dir: Path, result: dict, request: dict) -> None:

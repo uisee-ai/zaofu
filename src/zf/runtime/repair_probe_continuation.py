@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import ZfEvent
-from zf.runtime.host_probe_diagnosis import bound_container_probe_receipt
+from zf.runtime.host_probe_diagnosis import bound_container_probe_receipt, probe_obligation
 
 
 def probe_repair_revalidated(
@@ -46,6 +46,6 @@ def probe_repair_revalidated(
         if index < merged and event.id in sources and receipt["exit_code"] != 0:
             failures.append(receipt)
         if (index > merged and len(failures) == 1
-                and receipt["command"] == failures[0]["command"]):
+                and probe_obligation(receipt) == probe_obligation(failures[0])):
             latest = receipt
     return len(failures) == 1 and latest is not None and latest["exit_code"] == 0

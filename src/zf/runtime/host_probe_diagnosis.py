@@ -73,6 +73,11 @@ def bound_container_probe_receipt(
         return None
 
 
+def probe_obligation(receipt: dict) -> tuple[str, ...]:
+    command = receipt["manifest"]["command"]
+    return tuple(str(command.get(key) or "") for key in ("command_id", "tier", "command_digest", "command"))
+
+
 def pending_host_probe_diagnoses(state_dir: Path, events: list[ZfEvent], config: Any) -> list[dict]:
     policy = getattr(config.runtime, "host_verification", None)
     if not policy or not policy.enabled:
@@ -101,7 +106,7 @@ def pending_host_probe_diagnoses(state_dir: Path, events: list[ZfEvent], config:
                         and receipt['manifest'].get('recollection_of_start_id') == failed.causation_id
                         and receipt['command'] in policy.recollect_commands):
                     unknown.pop(manifest_digest)
-            key = (run, p["task_id"], receipt["target_commit"], receipt["command"])
+            key = (run, p["task_id"], receipt["target_commit"], probe_obligation(receipt))
             if receipt["exit_code"] == 0 and receipt["status"] == "completed":
                 failures.pop(key, None)
             else:
