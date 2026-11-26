@@ -522,10 +522,17 @@ class ControlledActionService(
                 requested_action=requested_action, payload=payload,
             )
         if action == "stage-replan-new-generation":
-            return self._stage_replan_new_generation_action(
-                requested=requested, action=action,
-                requested_action=requested_action, payload=payload,
-            )
+            from zf.core.state.locks import locked_path
+            from zf.runtime.paused_owner_plan_redrive import KEY, apply_owner_redrive
+
+            # Serialize the authority check and publication with Run pauses, resumes and other generations.
+            with locked_path(self.state_dir / "locks" / "run-admission"):
+                if KEY in payload:
+                    return apply_owner_redrive(self, requested, action, requested_action, payload)
+                return self._stage_replan_new_generation_action(
+                    requested=requested, action=action,
+                    requested_action=requested_action, payload=payload,
+                )
         if action == "fanout-aggregate-rebuild":
             return self._fanout_aggregate_rebuild_action(
                 requested=requested, action=action,

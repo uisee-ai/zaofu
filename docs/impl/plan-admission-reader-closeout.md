@@ -36,4 +36,6 @@ Writer 拒绝已核准的 Task Map 时，失败事件携带原 kernel `task_map.
 
 同一 Run 中，Kernel 为某个具体阶段失败发出 `stage_replan_cap_exhausted` 后，该发生点的自动额度已耗尽。Watcher 启动和空闲补偿都读取此事实。即使新版本能够从旧 Writer 收据还原更准确的代次，也须通过指向该升级的受控动作开始下一代。来自当前代的新失败仍使用自身额度。
 
-旧版本若已发布直接以已升级失败为原因的 Planner 重试，Kernel 会拦住其派发和迟到聚合。若它已经替换了合法 Planner，保持 Run 暂停，对原 Owner 已批准的阶段触发事件执行 `stage-retrigger`，然后 `zf runs resume <run>`。只引用原触发事件可保留历史候选摘要、批准意见和已验收的 Scan；原错误尝试及取消凭据保留在账本。
+旧版本若已发布直接以已升级失败为原因的 Planner 重试，Kernel 会拦住其派发和迟到聚合。若它已经替换了合法 Planner，先用 `zf runs pause <run>` 暂停该 Run，再从经过身份校验的 Web 动作重投被取代的原请求。使用 `POST /api/actions/stage-replan-new-generation`，提供 `workflow_run_id`、`escalation_event_id`、`approval_ref` 和 `redrive_owner_trigger_event_id`。后三项分别取自原 Owner 的升级事件、批准引用和已获准的触发事件。可选的 `reason` 记入操作审计。
+
+控制面核对最近一次有效代次、原始 Web 授权、原 Planner 的撤销凭据以及旧分支的来源，随后从账本恢复原来的候选、Scan 和意见。错代 Reader 的产物仍可审计。正确分支已交付或 Run 已进入后续业务决策时，请求返回 409。重复请求返回同一触发事件。收到成功回执后用 `zf runs resume <run>` 继续派发。[HTTP、并发与中断重试验证](../../tests/test_paused_owner_plan_redrive.py)
