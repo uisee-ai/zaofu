@@ -273,7 +273,7 @@ def test_mock_signed_rejection_exports_draft_through_stock_cli(
     import shutil
 
     from tests.test_plan_rework_draft import issue
-    from zf.cli import main
+    from zf.cli.main import main
     from zf.core.events import EventLog, EventWriter
     from zf.core.safety.path_guard import write_workdir_owner_marker
     from zf.runtime.artifact_read_capability import (
