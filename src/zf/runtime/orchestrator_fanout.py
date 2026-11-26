@@ -833,7 +833,7 @@ class FanoutCoordinationMixin(
         for position, event in enumerate(events):
             if (event.type == "fanout.aggregate.started" and event.origin == "kernel"
                     and event.actor == "zf-cli" and event.payload.get("recovery_kind") in {
-                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry",
+                        "diagnosis_critic_handoff_retry", "cancelled_diagnosis_critic_retry", "repaired_plan_first_review",
                     }):
                 fanout = event.payload.get("fanout_id")
                 retry_floor[fanout] = position
@@ -5693,7 +5693,11 @@ class FanoutCoordinationMixin(
             if not all_terminal:
                 return
             if self._fanout_synth_dispatched(manifest):
-                return
+                from zf.runtime.repaired_plan_review import open_first_review
+
+                if failed or not open_first_review(self, manifest):
+                    return
+                manifest = self._fanout_manifest(fanout_id)
             self._dispatch_fanout_synth(fanout_id, manifest, mode, synth_role)
             return
         if mode == "any_failed_fail" and failed:

@@ -182,8 +182,9 @@ def test_repair_consumer_accepts_only_exact_abstaining_plan_producer(tmp_path, f
     )
 
 
+@pytest.mark.parametrize("repaired", [True, False])
 def test_real_plan_reader_reflection_binds_its_method_to_the_successor(
-    tmp_path, assembly
+    tmp_path, assembly, repaired, monkeypatch
 ):
     import json
     from tests.test_plan_team_inputs import _team, submit_plan_expert
@@ -364,6 +365,52 @@ def test_real_plan_reader_reflection_binds_its_method_to_the_successor(
         for r in next_call["payload"]["required_reads"]
     )
     assert len(log.query(type="repair.action.applied")) == 1
+    if repaired:
+        from tests.test_result_submit import _plan_candidate
+        from tests.test_plan_team_inputs import read_plan_member_inputs
+
+        successor = log.query(type="fanout.child.dispatched")[-1]
+        read_plan_member_inputs(runtime, successor)
+        successful = service.submit(operation_id=next_call["operation_id"], role_instance="planner",
+                                    credential=token, semantic_result=_plan_candidate())
+        # Simulate a controller upgrade after the old kernel materialized the successful child
+        # but before any new event can invite the independent Critic.
+        with monkeypatch.context() as before:
+            before.setattr(runtime, "_evaluate_reader_fanout", lambda *args, **kwargs: None)
+            runtime.run_once(events=[next(e for e in log.read_all() if e.id == successful.canonical_event_id)])
+        old = runtime._fanout_manifest(next_call["fanout_id"])
+        assert old["synth"]["status"] == "failed" and old["aggregate"]["status"] == "pending"
+        assert not log.query(type="fanout.synth.dispatched")
+        from zf.runtime.repaired_plan_review import _review_inputs
+        from zf.runtime.sidecar_refs import write_sidecar_json
+
+        events = log.read_all()
+        old_failure = next(e for e in events if e.id == old["synth"]["last_event_id"])
+        assert _review_inputs(state, events, old)
+        assert not _review_inputs(state, [e for e in events if e.type != "repair.action.applied"], old)
+        assert not _review_inputs(state, [
+            replace(e, payload={**e.payload, "operation_id": "genuine-critic-verdict"}) if e == old_failure else e
+            for e in events
+        ], old)
+        sibling = {**old["children"][0], "child_id": "independent", "status": "failed"}
+        assert not _review_inputs(state, events, {**old, "children": [*old["children"], sibling]})
+        assert not _review_inputs(state, [*events, ZfEvent(type="human.escalate", origin="kernel",
+            task_id="ANCHOR", payload={"workflow_run_id": run, "blocking": True})], old)
+        # Registration already belongs to the Critic even if a crash occurred before provider dispatch.
+        def registration(fanout_id):
+            ref = write_sidecar_json(state, f"artifacts/{fanout_id}-critic-request.json",
+                {"request": {"fanout_id": fanout_id}}, kind="workflow_operation_request",
+                schema_version="workflow-operation-request.v1", created_by="kernel")
+            return ZfEvent(type="workflow.operation.requested", origin="kernel", payload={
+                "workflow_run_id": run, "parent_stage_id": old["stage_id"],
+                "operation_type": "fanout_synth", "request_ref": ref})
+        assert not _review_inputs(state, [*events, registration(old["fanout_id"])], old)
+        assert _review_inputs(state, [*events, registration("independent-fanout")], old)
+        runtime.run_once(events=[])
+        runtime.run_once(events=[])
+        dispatches = log.query(type="fanout.synth.dispatched")
+        assert len(dispatches) == 1 and dispatches[0].payload["role_instance"] == "plan-critic"
+        return
     # A second unresolved diagnosis cannot exceed the Run's Plan revision allowance.
     config.workflow.orchestration.max_plan_revisions = 1
     repeated = service.submit(

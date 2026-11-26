@@ -10,6 +10,24 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import operation_request_hash, reduce_workflow_operations
 
 
+def synth_call_issued(state: Path, events, fanout_id: str, run: str, stage: str) -> bool:
+    """A registered but not-yet-dispatched call belongs to its original Critic."""
+    for event in events:
+        p = event.payload
+        if event.type == "fanout.synth.dispatched" and p.get("fanout_id") == fanout_id:
+            return True
+        if (
+            event.type == "workflow.operation.requested"
+            and p.get("operation_type") == "fanout_synth"
+            and p.get("workflow_run_id") == run
+            and p.get("parent_stage_id") == stage
+        ):
+            request = hydrate_sidecar_ref(state, p["request_ref"]).payload["request"]
+            if not request.get("fanout_id") or request["fanout_id"] == fanout_id:
+                return True
+    return False
+
+
 def admitted_unissued_planner(
     state: Path,
     events: list[ZfEvent],
@@ -73,19 +91,8 @@ def admitted_unissued_planner(
         or child.payload["request_hash"] != planner.get("request_hash")
     ):
         return None
-    for event in history:
-        p = event.payload
-        if event.type == "fanout.synth.dispatched" and p.get("fanout_id") == fanout_id:
-            return None
-        if (
-            event.type == "workflow.operation.requested"
-            and p.get("operation_type") == "fanout_synth"
-            and p.get("workflow_run_id") == run
-            and p.get("parent_stage_id") == start.payload.get("stage_id")
-        ):
-            request = hydrate_sidecar_ref(state, p["request_ref"]).payload["request"]
-            if request.get("fanout_id") == fanout_id:
-                return None
+    if synth_call_issued(state, history, fanout_id, run, start.payload.get("stage_id")):
+        return None
     signed = hydrate_sidecar_ref(state, planner["request_ref"]).payload
     req = signed["request"]
     pinned = (req.get("plan_candidate_validation") or {}).get("manifest") or {}

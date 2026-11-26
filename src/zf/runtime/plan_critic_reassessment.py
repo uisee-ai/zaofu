@@ -145,6 +145,7 @@ def reconcile_reassessments(runtime, events) -> None:
     """Durable aggregate requests use the existing fanout dispatch/restart path."""
     checkpoint_fields = {
         KIND: 'review_request_event_id',
+        'repaired_plan_first_review': 'recovered_plan_reader_event_id',
         'diagnosis_critic_handoff_retry': 'critic_handoff_retry_event_id',
         'cancelled_diagnosis_critic_retry': 'cancelled_critic_retry_event_id',
     }
@@ -166,7 +167,7 @@ def reconcile_reassessments(runtime, events) -> None:
 
 def review_checkpoint_id(manifest):
     return (manifest.get('cancelled_critic_retry_event_id') or manifest.get('critic_handoff_retry_event_id')
-            or manifest.get('review_request_event_id') or '')
+            or manifest.get('review_request_event_id') or manifest.get('recovered_plan_reader_event_id') or '')
 
 
 def review_result_matches(checkpoint, dispatch, event):
