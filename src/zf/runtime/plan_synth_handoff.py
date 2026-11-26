@@ -136,18 +136,26 @@ def render_plan_synth_completion_command(
     actor: str,
     state_dir: Path,
     payload: Mapping[str, Any],
+    new_scratch_policy_ref: Mapping[str, Any] | None = None,
 ) -> str:
-    """Render a compact result-file submit command for plan synthesis."""
+    """Seed the authored result; the registered operation owns its immutable input policy."""
 
     del actor
+    from zf.runtime.artifact_read_briefing_policy import verified_plan_read_policy
     from zf.runtime.stage_execution_card import prepare_result_file_command
 
+    template = dict(payload)
+    if (new_scratch_policy_ref and new_scratch_policy_ref == payload.get("input_consumption_policy_ref")
+            and payload.get("semantic_result_submit_mode") == "blocking"):
+        policy = verified_plan_read_policy(payload, state_dir)
+        if policy is not None and policy == payload.get("input_consumption_policy"):
+            del template["required_reads"], template["input_consumption_policy"]
     command, _ = prepare_result_file_command(
         state_dir=Path(state_dir),
         result_scratch_ref=str(payload.get("result_scratch_ref") or ""),
         operation_id=str(payload.get("operation_id") or ""),
         cli_command=cli_command,
-        semantic_template=dict(payload),
+        semantic_template=template,
     )
     return command
 

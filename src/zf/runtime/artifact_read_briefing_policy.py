@@ -34,27 +34,36 @@ def required_cli_entry(payload: Mapping[str, Any], command: str, *, native: bool
     ]
 
 
-def bound_read_policy_locator(payload: Mapping[str, Any], state_dir: Path | None) -> str:
-    """A locator replaces command repetition, never source bodies or obligations."""
+def verified_plan_read_policy(payload: Mapping[str, Any], state_dir: Path | None) -> Mapping[str, Any] | None:
+    """Resolve the digest-bound policy only if its run, attempt and selections match."""
     if state_dir is None or payload.get("output_profile_id") != "plan-synth":
-        return ""
+        return None
     attempt_id = payload.get("attempt_id") or payload.get("run_id")
     if not attempt_id or not payload.get("workflow_run_id") or not payload.get("required_reads"):
-        return ""
+        return None
     descriptor = payload.get("input_consumption_policy_ref")
     if not isinstance(descriptor, Mapping) or not descriptor.get("sha256"):
-        return ""
+        return None
     if payload.get("input_consumption_policy_digest") != descriptor["sha256"]:
-        return ""
+        return None
     try:
         body = hydrate_sidecar_ref(state_dir, dict(descriptor)).payload
     except (SidecarRefError, ValueError, OSError):
-        return ""
+        return None
     if (not isinstance(body, Mapping) or body.get("schema_version") != "input-consumption-policy.v1"
             or body.get("attempt_id") != attempt_id
             or body.get("workflow_run_id") != payload.get("workflow_run_id")
             or body.get("required_reads") != payload.get("required_reads")):
+        return None
+    return body
+
+
+def bound_read_policy_locator(payload: Mapping[str, Any], state_dir: Path | None) -> str:
+    """A locator replaces command repetition, never source bodies or obligations."""
+    body = verified_plan_read_policy(payload, state_dir)
+    if body is None:
         return ""
+    descriptor = payload["input_consumption_policy_ref"]
     return (
         f"- Complete required-read policy: `{descriptor['ref']}` (sha256 `{descriptor['sha256']}`); "
         f"{len(body['required_reads'])} required selections. The required-read command above "

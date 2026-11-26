@@ -8176,6 +8176,7 @@ class FanoutCoordinationMixin(
         skill_entries: list | None = None,
         call_payload: dict[str, Any] | None = None,
         reports: list[dict] | None = None,
+        new_scratch_policy_ref: dict | None = None,
     ) -> Path:
         import json
         import shlex
@@ -8379,6 +8380,7 @@ class FanoutCoordinationMixin(
                 actor=role.instance_id,
                 state_dir=self.state_dir,
                 payload=completion_payload,
+                new_scratch_policy_ref=new_scratch_policy_ref,
             )
             validation_lines = render_plan_synth_validation_section(
                 completion_command,

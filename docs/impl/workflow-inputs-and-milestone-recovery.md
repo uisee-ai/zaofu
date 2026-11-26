@@ -232,4 +232,6 @@ Planner 或 Critic 从恢复触发中取得上一轮预检时，签发前也会�
 
 对签有 `plan-synth` 阻塞式结果提交合同的调用，操作员重启、provider 中断续派、预算续批均在恢复简报中提供原 attempt 的草稿路径和当前 CLI 命令。Synth 在本轮对已撰写的草稿执行 `zf result validate --operation … --scratch`，依据本次返回的结构化诊断修复并重验。独立评审完成且预检通过后，用同一 operation 调用 `zf result submit` 并取得回执。已准入的结果沿用原回执；恢复简报的生成不会重写草稿。
 
+新建阻塞式 Plan Synth 操作时，若冻结读策略可按摘要读取，且与本次 Run、attempt、必读选择和内嵌策略完全一致，初始结果草稿仅保留该策略的引用和摘要。可用简报中的 `zf artifact read --attempt … --required` 查看原始必读内容。预检和正式提交均读取原操作的策略及真实读取回执；历史请求和已编辑草稿仍沿用原入口。
+
 已绑定 `workflow-read` Plan 预检和失败事件的 Planner，在同一个 operation scratch 填写结果，按原命令验证、提交。真实输入丢失或工具故障使 Plan 无法交付时，`execution_status=failed` 路由到该请求的子执行失败事件。可修复的草稿问题继续原地修正，业务意见和 Owner 决策保留各自的审查路径。

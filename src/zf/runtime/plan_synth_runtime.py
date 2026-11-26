@@ -760,6 +760,8 @@ class PlanSynthRuntimeMixin:
                 skill_entries=skill_entries,
                 call_payload=call_payload,
                 reports=reports,
+                new_scratch_policy_ref=(call_payload.get("input_consumption_policy_ref")
+                                        if prepared_call and not prepared_call.replay_hit else None),
             )
             prompt = build_task_prompt(
                 role.instance_id,

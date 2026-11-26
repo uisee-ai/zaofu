@@ -61,6 +61,43 @@ def test_unbound_policy_keeps_explicit_fallback_commands(tmp_path, bound, fault)
     assert "Complete required-read policy:" not in rendered
 
 
+@pytest.mark.parametrize("fault", [
+    "legacy_request", "other_policy", "missing_file", "corrupt_file", "other_attempt",
+    "other_run", "wrong_reads", "different_inline_policy", "nonblocking",
+])
+def test_uncertain_initial_scratch_keeps_inline_policy(tmp_path, bound, fault):
+    from zf.runtime.plan_synth_handoff import render_plan_synth_completion_command
+
+    payload, policy = bound
+    payload.update(operation_id="catalog-review", input_consumption_policy=policy,
+                   semantic_result_submit_mode="blocking", result_scratch_ref="tmp/result-submit/catalog/result.json")
+    descriptor = payload["input_consumption_policy_ref"]
+    new_ref = descriptor
+    if fault == "legacy_request":
+        new_ref = None
+    elif fault == "other_policy":
+        new_ref = {**descriptor, "sha256": "b" * 64}
+    elif fault == "missing_file":
+        (tmp_path / descriptor["ref"]).unlink()
+    elif fault == "corrupt_file":
+        (tmp_path / descriptor["ref"]).write_text("{}")
+    elif fault == "other_attempt":
+        payload["attempt_id"] = "previous-curator"
+    elif fault == "other_run":
+        payload["workflow_run_id"] = "another-catalog"
+    elif fault == "wrong_reads":
+        payload["required_reads"] = []
+    elif fault == "different_inline_policy":
+        payload["input_consumption_policy"] = {**policy, "delivery_evidence": {"mode": "observed"}}
+    else:
+        payload["semantic_result_submit_mode"] = "shadow"
+
+    render_plan_synth_completion_command(
+        cli_command="zf", actor="curator", state_dir=tmp_path, payload=payload, new_scratch_policy_ref=new_ref,
+    )
+    assert json.loads((tmp_path / payload["result_scratch_ref"]).read_bytes()) == payload
+
+
 def test_museum_plan_reader_gets_wide_page_guidance_without_changing_its_policy(tmp_path):
     from tests.test_plan_owner_rework_descriptor_reads import museum
 
