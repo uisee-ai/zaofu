@@ -32,11 +32,6 @@
   white-space: nowrap;
 }
 
-.project-home {
-  min-height: 0;
-  overflow: auto;
-}
-
 .project-overview-hero {
   display: flex;
   justify-content: space-between;
