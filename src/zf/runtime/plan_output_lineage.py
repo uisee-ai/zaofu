@@ -32,7 +32,7 @@ def assert_package_task_map_matches(
 
 def assert_package_explicit_ports_match(
     state_dir: Path, project_root: Path, package: Mapping[str, Any], payload: Mapping[str, Any],
-    *, flow_kind: str, producer_stage_id: str, events: Iterable | None = None,
+    *, flow_kind: str, producer_stage_id: str, candidate_team: Mapping[str, Any], events: Iterable | None = None,
 ) -> None:
     """A frozen generation may replay inputs, but cannot silently discard new ones."""
     from zf.runtime.call_result_envelope import canonical_json_sha256
@@ -59,17 +59,20 @@ def assert_package_explicit_ports_match(
         for name, port in supplied.items():
             incoming = hydrate_sidecar_ref(state_dir, port).payload
             if name == "product_acceptance_spec":
+                from zf.runtime.candidate_reader_assignments import bind_reader_obligations
+
                 incoming = bind_product_acceptance_identity(
                     incoming, workflow_run_id=package["workflow_run_id"], flow_kind=package["flow_kind"],
                     plan_revision=package["plan_revision"], task_map_generation=package["task_map_generation"],
                 )
+                incoming = bind_reader_obligations(incoming, candidate_team)
             if name not in current or canonical_json_sha256(incoming) != canonical_json_sha256(
                 hydrate_sidecar_ref(state_dir, current[name]).payload
             ):
                 raise PlanArtifactPackageError(
                     f"explicit plan port {name!r} differs from the admitted package; "
                     "changed input requires a new plan generation")
-    except (OSError, ValueError) as exc:
+    except (KeyError, OSError, TypeError, ValueError) as exc:
         raise PlanArtifactPackageError(f"explicit plan port replay rejected: {exc}") from exc
 
 

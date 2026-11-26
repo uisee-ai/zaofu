@@ -876,7 +876,9 @@ def admit_plan_artifact_package_for_payload(
             state_dir, project_root, current_body, payload)
         assert_package_explicit_ports_match(
             state_dir, project_root, current_body, payload,
-            flow_kind=flow_kind, producer_stage_id=producer_stage_id, events=event_list)
+            flow_kind=flow_kind, producer_stage_id=producer_stage_id,
+            candidate_team=((metadata or {}).get("stage_teams") or {}).get("candidate_verify") or {},
+            events=event_list)
         current_mode = str(
             current_body.get("artifact_package_mode") or "shadow"
         )
