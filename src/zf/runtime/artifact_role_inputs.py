@@ -57,11 +57,29 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
             from zf.runtime.plan_artifact_ports import PLAN_DRAFT_PORTS
 
             args = ["plan", "draft-baseline", "--workspace", "--attempt", attempt]
-            for name in PLAN_DRAFT_PORTS:
-                if f"baseline-plan-port-{name}" in ids:
-                    args.extend(["--port", name])
-            if "baseline-plan-port-goal_claim_set" in ids:
-                args.append("--seed-goals")
-            command = shlex.join(args)
-            entry += f"\n- After required reads, start local edits from the bound files: `{zf_cli_cmd()} {command}`. Keep the baseline goals while editing changed behavior, evidence and consumers. Draft only."
+            grant = payload.get("editable_rework_candidate") or {}
+            if grant.get("ref"):
+                from zf.runtime.plan_rework_draft import SCHEMA
+                body = hydrate_sidecar_ref(state_dir, grant).payload
+                if (body.get("schema_version") != SCHEMA or body.get("attempt_id") != attempt
+                        or body.get("operation_id") != payload.get("operation_id")):
+                    return entry + "\n- Editable candidate grant identity mismatch."
+                args.append("--from-rework")
+                for name in PLAN_DRAFT_PORTS:
+                    if name in body["files"]:
+                        args.extend(["--port", name])
+                entry += f"\n- Edit the last submitted unapproved candidate: `{zf_cli_cmd()} {shlex.join(args)}`. " \
+                    "The admitted Plan package remains the comparison and Goal authority. Apply the assigned review and Owner corrections."
+            else:
+                for name in PLAN_DRAFT_PORTS:
+                    if f"baseline-plan-port-{name}" in ids:
+                        args.extend(["--port", name])
+                if "baseline-plan-port-goal_claim_set" in ids:
+                    args.append("--seed-goals")
+                if any(row.get("source_id", "").startswith("previous-plan-candidate-") for row in manifest["sources"]):
+                    entry += "\n- No complete authorized editable-candidate grant. Use the assigned previous-candidate sources. " \
+                        f"To explicitly export the admitted comparison package: `{zf_cli_cmd()} {shlex.join(args)}`."
+                else:
+                    entry += f"\n- After required reads, start local edits from the bound files: `{zf_cli_cmd()} {shlex.join(args)}`. " \
+                        "Keep the baseline goals while editing changed behavior, evidence and consumers. Draft only."
     return entry

@@ -29,6 +29,7 @@ def register(sub):
     parser.add_argument("--port", action="append", required=True, choices=PLAN_DRAFT_PORTS, help="Logical port name, repeat to include more")
     parser.add_argument("--workspace", action="store_true", help="Create an editable private draft in this Planner workdir")
     parser.add_argument("--seed-goals", action="store_true", help="Preserve pinned goals in a local task map draft")
+    parser.add_argument("--from-rework", action="store_true", help="Edit the assigned failed candidate; the admitted Package stays the authority")
     parser.set_defaults(func=run)
 
 
@@ -101,7 +102,7 @@ def write_draft(state, manifest, identity, names, stream):
             archive.addfile(entry, io.BytesIO(raw))
 
 
-def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
+def workspace_draft(context, manifest, identity, names, *, seed_goals=False, candidate=None):
     from zf.core.safety.path_guard import assert_owned_workdir
     from zf.runtime.workdirs import WorkdirManager
 
@@ -115,7 +116,8 @@ def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
     folder = project / "artifacts" / "plan"
     if folder.resolve() != folder:
         raise ValueError("draft output must stay in the Planner project")
-    files = list(draft_files(context.state_dir, manifest, identity, names, seed_goals=seed_goals))
+    files = list(candidate[0].items()) if candidate else list(draft_files(
+        context.state_dir, manifest, identity, names, seed_goals=seed_goals))
     folder.mkdir(parents=True, exist_ok=True)
     draft = Path(mkdtemp(prefix="replan-", dir=folder))
     try:
@@ -125,6 +127,9 @@ def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
         shutil.rmtree(draft)
         raise
     result = {"draft_dir": str(draft.relative_to(project)), "files": [filename for filename, _ in files]}
+    if candidate:
+        result["editable_candidate"] = candidate[1]
+        result["file_sha256"] = {name: hashlib.sha256(raw).hexdigest() for name, raw in files}
     if "baseline-goal-claims.json" in result["files"]:
         result["goal_seeding"] = {
             "status": "legacy_derived_preserved",
@@ -137,6 +142,8 @@ def workspace_draft(context, manifest, identity, names, *, seed_goals=False):
 
 def run(args):
     try:
+        if args.from_rework and (not args.workspace or args.seed_goals):
+            raise ValueError("--from-rework needs --workspace and keeps the exact candidate bytes; omit --seed-goals")
         if args.seed_goals and (not args.workspace or "task_map" not in args.port):
             raise ValueError("--seed-goals requires --workspace and --port task_map")
         if not args.workspace and sys.stdout.isatty():
@@ -148,10 +155,12 @@ def run(args):
             identity = authorize_artifact_read_from_environment(
                 context.state_dir, manifest=manifest, event_log=log, use_artifact_context=True,
             )
+            from zf.runtime.plan_rework_draft import editable_candidate_files
+            candidate = editable_candidate_files(context.state_dir, log, manifest, identity, args.port) if args.from_rework else None
         finally:
             log.close()
         if args.workspace:
-            print(json.dumps(workspace_draft(context, manifest, identity, args.port, seed_goals=args.seed_goals)))
+            print(json.dumps(workspace_draft(context, manifest, identity, args.port, seed_goals=args.seed_goals, candidate=candidate)))
             return 0
         # Validate every member before publishing even the first byte.
         with TemporaryFile() as archive:

@@ -726,11 +726,9 @@ def prepare_call_operation(
     ))
     if pinned_write_scopes:
         request["workdir_write_scopes"] = pinned_write_scopes
-    plan_candidate_validation = payload.get("plan_candidate_validation")
-    if isinstance(plan_candidate_validation, Mapping):
-        request["plan_candidate_validation"] = dict(
-            plan_candidate_validation
-        )
+    from zf.runtime.plan_rework_draft import bind_authoring_context
+
+    bind_authoring_context(runtime, payload, request, source_manifest, previous_request, operation_id)
     if context_delivery_enabled:
         from zf.runtime.context_delivery import CONTEXT_RENDERER_VERSION
 
