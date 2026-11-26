@@ -24,6 +24,42 @@ def role_input_view(manifest: Mapping[str, Any]) -> dict[str, Any]:
             'independent_consumption': True, 'authorizes_scope_change': False}
 
 
+def _owner_returned_package(manifest: Mapping[str, Any], payload: Mapping[str, Any], state_dir: Path) -> str:
+    """Identify the formal edit base for this Owner rejection using only the assigned rework context."""
+    from zf.runtime.artifact_access import artifact_access_allowed
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    scope = payload
+    if (scope.get("rework_source") != "plan.rejected" or not scope.get("rework_of")
+            or scope.get("plan_artifact_package_digest") != manifest.get("plan_artifact_package_digest")):
+        return ""
+    bindings = {}
+    for source_id in ("plan-rework-package", "plan-rework-context"):
+        matches = [row for row in manifest["sources"] if row.get("source_id") == source_id]
+        if len(matches) != 1:
+            return ""
+        row = matches[0]
+        if row.get("allowed_paths") != ["$"] or not artifact_access_allowed(
+            row.get("access_scope"), actor=str(payload.get("role_instance") or "planner"),
+            role="planner", purpose=manifest.get("read_purpose") or "workflow",
+        ):
+            return ""
+        bindings[source_id] = row
+    package = bindings["plan-rework-package"]
+    if (package.get("ref") != manifest.get("plan_artifact_package_ref")
+            or package.get("sha256") != manifest["plan_artifact_package_digest"]):
+        return ""
+    try:
+        context = hydrate_sidecar_ref(state_dir, bindings["plan-rework-context"]).payload
+    except (KeyError, OSError, TypeError, ValueError):
+        return ""
+    if (not isinstance(context, Mapping) or context.get("schema_version") != "plan-rework-context.v1"
+            or context.get("rework_source") != "plan.rejected" or context.get("rework_of") != scope["rework_of"]
+            or not context.get("rework_feedback")):
+        return ""
+    return context["rework_of"]
+
+
 def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, *, role_name: str = "") -> str:
     if state_dir is None:
         return ''
@@ -79,7 +115,15 @@ def render_role_input_entry(payload: Mapping[str, Any], state_dir: Path | None, 
                         args.extend(["--port", name])
                 if "baseline-plan-port-goal_claim_set" in ids:
                     args.append("--seed-goals")
-                if any(row.get("source_id", "").startswith("previous-plan-candidate-") for row in manifest["sources"]):
+                owner_decision = _owner_returned_package(manifest, payload, state_dir)
+                if owner_decision:
+                    entry += (f"\n- Start this revision from the assigned PlanPackage SHA256 {manifest['plan_artifact_package_digest']} "
+                              f"for Owner decision {owner_decision}. Export its editable files with "
+                              f"`{zf_cli_cmd()} {shlex.join(args)}`."
+                              "\n- Apply the current Owner reason in plan-rework-context / $.rework_feedback. "
+                              "Earlier operator_feedback and prior candidate files provide historical evidence. "
+                              "Retain applicable constraints and use this returned package for file versions.")
+                elif any(row.get("source_id", "").startswith("previous-plan-candidate-") for row in manifest["sources"]):
                     entry += "\n- No complete authorized editable-candidate grant. Use the assigned previous-candidate sources. " \
                         f"To explicitly export the admitted comparison package: `{zf_cli_cmd()} {shlex.join(args)}`."
                 else:

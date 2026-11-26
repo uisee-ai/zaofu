@@ -33,3 +33,5 @@ OA 给只读审计分配 Task Verify 时，可列出该任务首站的精确 AC�
 Planner 从工作区使用 `zf plan draft-baseline --workspace --from-rework --attempt <attempt> --port task_map` 导出所选端口及获准的 `plan.md`，可重复指定端口。命令返回生产者准入事件、控制清单与预检摘要、每个导出文件的 SHA256，以及正式比较包摘要。Markdown 按物理文件逐字节导出，其文本与已签控制正文可仅差一个末尾换行；收据分别列出两份摘要。后续修改仍须满足 Owner 纠正、独立评审和正常的 Plan/Goal 准入。
 
 普通 `draft-baseline` 继续导出已准入的正式比较包；`--seed-goals` 仅适用该模式。旧签发请求按原身份重放。独立 Critic 已签收并拒绝候选时，同代 Kernel 返工可从被拒的确切工件开始编辑，收据列出 Critic 的准入事件和控制结果摘要。Owner 另起一代时还须在受控请求中点名该 Critic 的同一断点，保留相同的正式包和任务图基线，收据增加该次审批与申请的事件 ID。未绑定的 Owner 新代、缺少正式比较包或未签收的评审只能按原读取授权访问。来源不全、跨代或只有部分读取许可时，新参数会明确报错；Planner 可用该次已分配的来源进行修订。[授权与导出测试](../../tests/test_plan_rework_draft.py)
+
+Owner 拒绝待审批的正式 Plan 时，新 Planner 简报若能核对本次拒绝事件、正式包与已分配的完整返工上下文，会直接列出该包的 SHA256、决策事件和 `draft-baseline --workspace` 命令。当前修订理由位于 `plan-rework-context` 的 `$.rework_feedback`；较早的 `operator_feedback` 和候选文件提供历史依据，仍适用的约束应继续保留。此提示取自既有签发输入，必读内容、授权和已签 WRC 不随渲染改变。[Planner 简报与历史来源回归](../../tests/test_planner_owner_draft_briefing.py)
