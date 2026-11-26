@@ -101,16 +101,22 @@ def build_orchestrator_agent_context(
                                  operation=operation_id, attempt=attempt_id, source_id=source_event_id, payload=payload)
     if successor:
         _append_descriptor(sources, source_id="milestone-successor", kind="milestone_successor", descriptor=successor)
+    scoped_verify_task = (
+        str(payload.get("verify_assignment_task") or "")
+        if checkpoint == "pre_impl" and payload.get("verify_assignment_mode") == "oa_run_plan" else ""
+    )
     execution_ref = {}
     if execution_mode:
         input_mode = "execution"
+        execution = build_execution_context(
+            runtime, workflow_run_id=workflow_run_id, scoped_verify_task=scoped_verify_task,
+            payload={**dict(payload), "effective_config_ref": effective_config_ref},
+        )
+        if scoped_verify_task:
+            _append_descriptor(sources, source_id="run-dispatch-summary", kind="task_pipeline_dispatch_summary",
+                               descriptor=execution["full_dispatch_summary_ref"])
         execution_ref = write_immutable_json_sidecar(
-            runtime.state_dir,
-            build_execution_context(
-                runtime,
-                workflow_run_id=workflow_run_id,
-                payload={**dict(payload), "effective_config_ref": effective_config_ref},
-            ),
+            runtime.state_dir, execution,
             root="orchestrator-agent/execution-contexts",
             kind="orchestrator_execution_context",
             schema_version="orchestrator-execution-context.v1",
@@ -155,7 +161,11 @@ def build_orchestrator_agent_context(
                 payload.get("run_contract_digest") or ""
             ),
         },
-        "objective": _checkpoint_objective(checkpoint),
+        "objective": (
+            f"Review the current Verify assignment for {scoped_verify_task} against its contract "
+            "and select independent verification delegates for that task."
+            if scoped_verify_task else _checkpoint_objective(checkpoint)
+        ),
         **({"milestone_successor_ref": successor} if successor else {}),
         "flow_kind": str(payload.get("flow_kind") or ""),
         "risk_signals": list(risk_signals),

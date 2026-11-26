@@ -55,6 +55,12 @@ OA 在 delegation 中可给出可选非负整数 dispatch_rank，较小值优先
 执行。原精确返工路径继续限制次数、活跃后继及当前 attempt。
 return_to_plan 只走既有局部 Planner/Critic/审批路径；没有自签 Verify 或删除依赖权限。
 
+对于绑定单个 Task 的 Verify 委派更正，检查点目标指向该 Task 的独立验证。
+执行上下文的调度摘要只列该 Task，容量和背压沿用同一冻结投影的项目级数值。
+OA 需要核对同一时刻的其他任务时，可在本次来源清单按需读取
+`run-dispatch-summary`。其内容摘要与执行上下文中的 `full_dispatch_summary_ref`
+一致。已签发的检查点在恢复时继续使用自己的来源清单、读取义务与目标。
+
 ## 增量唤醒
 
 Run Manager 仅对显式启用策略、活跃 Run、当前 generation、已结束且未通过的 Impl
