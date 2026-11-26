@@ -148,6 +148,18 @@ def bind_attempt_artifact_read_capability(
         _chmod(path, 0o600)
 
 
+def dispatch_mailbox_attempt(state_dir: Path, attempt: Mapping[str, Any]) -> str:
+    """Select the operation's issued inbox address for a scheduler delivery."""
+    dispatch = attempt["dispatch_id"]
+    binding = _read_json(_binding_path(state_dir, dispatch))
+    expected = {"workflow_run_id": attempt["run_id"], "task_id": attempt["task_id"],
+                "role_instance": attempt["instance_id"], "operation_id": attempt["operation_id"],
+                "attempt_id": dispatch}
+    if all(value and binding.get(key) == value for key, value in expected.items()):
+        return dispatch
+    return attempt["attempt_id"]
+
+
 def authorize_artifact_read_from_environment(
     state_dir: Path,
     *,

@@ -221,12 +221,10 @@ def prepare_task_attempt(
         },
         correlation_id=run_id,
     )
-    from zf.runtime.mailbox_briefing import mailbox_hint
-    from zf.runtime.durable_mailbox_authority import enabled as mailbox_enabled
+    from zf.runtime.mailbox_briefing import task_attempt_mailbox
 
-    config = getattr(runtime, "config", None)
-    _bind_attempt_to_briefing(briefing_path, attempt, durable_assistance=mailbox_enabled(config),
-                              inbox_hint=mailbox_hint(config, runtime.state_dir, attempt["attempt_id"]))
+    hint, assistance = task_attempt_mailbox(getattr(runtime, "config", None), runtime.state_dir, attempt)
+    _bind_attempt_to_briefing(briefing_path, attempt, durable_assistance=assistance, inbox_hint=hint)
     claimed_attempt, claimed = store.claim_delivery(
         str(attempt["attempt_id"]),
         updated_at=_now(),
