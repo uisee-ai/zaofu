@@ -16,7 +16,7 @@ from zf.runtime.workflow_operation import WorkflowOperationService
 
 @pytest.fixture
 def case(tmp_path, request):
-    prior, runtime, transport, _, _ = _case(tmp_path)
+    prior, runtime, transport, _, _ = _case(tmp_path, stage_id="issue-plan")
     state, log = runtime.state_dir, runtime.event_log
     service = ControlledActionService(state, prior.writer, config=runtime.config, project_root=tmp_path,
                                       actor="operator", source="operator", surface="cli")
@@ -38,6 +38,7 @@ def case(tmp_path, request):
                  "child_id": "planner", "role_instance": "planner", "stage_id": stage, "fanout_id": fid,
                  "workflow_run_id": "run", "attempt_domain": "plan", "task_id": "T"}
     report = dict(log.query(type="fanout.child.completed")[0].payload["report"], summary="revised plan, R2")
+    report["task_map_ref"] = sidecar(report["task_map"], "task-map.v1")["ref"]
     source = add("prd.plan.child.completed", actor="planner", origin="", **candidate, status="completed")
     control = sidecar({**candidate, **report, "execution_status": "completed", "result_semantics": "artifact_production",
                        "verdict": "passed"}, "workflow-read-result.v1")
@@ -97,7 +98,8 @@ def apply(service, params):
                            requested=_req(params), payload=params)
 
 
-def test_owner_restarts_only_unissued_critic_with_new_operation(case):
+@pytest.mark.parametrize("verdict", ["reject", "approve"])
+def test_owner_restarts_only_unissued_critic_with_new_operation(case, verdict):
     service, runtime, transport, params, _ = case
     result = apply(service, params)
     assert result["ok"], result
@@ -133,17 +135,28 @@ def test_owner_restarts_only_unissued_critic_with_new_operation(case):
     token = provision_role_submit_credential(runtime.state_dir, "plan-critic").read_text().strip()
     submit = SemanticResultSubmitService(state_dir=runtime.state_dir,
         event_log=runtime.event_log, event_writer=runtime.event_writer)
-    submitted = submit.submit(operation_id=dispatch.payload["operation_id"], role_instance="plan-critic",
-        credential=token, semantic_result={"status": "completed", "recommendation": "reject",
+    decision = {"status": "completed", "recommendation": "reject",
         "summary": "A current requirement needs correction", "report": {"status": "failed", "recommendation": "reject",
         "summary": "Conflict remains", "fix_items": [{"observed_gap": "Current decision conflicts",
         "required_change": "Reconcile requirement", "done_when": "Conflict removed",
         "basis": {"obligation": "Existing accepted requirement", "current_evidence": [citation],
-                  "requirement_evidence": [citation]}}]}})
+                  "requirement_evidence": [citation]}}]}}
+    if verdict == "approve":
+        decision = {"status": "completed", "recommendation": "approve", "summary": "Reviewed R2",
+                    "report": {"recommendation": "approve", "status": "passed", "summary": "Reviewed R2"}}
+    submitted = submit.submit(operation_id=dispatch.payload["operation_id"], role_instance="plan-critic",
+                              credential=token, semantic_result=decision)
     result_event = next(e for e in runtime.event_log.read_all() if e.id == submitted.canonical_event_id)
     restarted.run_once(events=[result_event])
+    if verdict == "approve":
+        from zf.runtime.plan_admission import emit_upstream_failure_for_bad_task_map
+        ready = runtime.event_log.query(type="task_map.ready")[-1]
+        assert ready.causation_id == result_event.id
+        emit_upstream_failure_for_bad_task_map(restarted, trigger_event=ready, trace_id="run",
+            pdd_id="default", reason="Writer admission found an incompatible task port", stage_id="writer",
+            plan_admission_incident_id="incident")
     rejected = runtime.event_log.query(type="prd.plan.failed")[-1]
-    assert rejected.causation_id == result_event.id
+    assert rejected.causation_id == (ready.id if verdict == "approve" else result_event.id)
     assert rejected.payload["stage_replan_generation"] == result["stage_replan_generation"]
     from zf.runtime.stage_failure_replan import plan_reader_stage_replan
     events = runtime.event_log.read_all()
@@ -155,6 +168,34 @@ def test_owner_restarts_only_unissued_critic_with_new_operation(case):
     assert following.payload["stage_replan_generation"] == result["stage_replan_generation"]
     assert sorted(r["sha256"] for r in following.payload["previous_plan_candidate_refs"]) == sorted(
         r["sha256"] for r in checkpoint["candidate_inputs"])
+    if verdict == "approve":
+        from dataclasses import replace
+        # Immutable pre-upgrade failures lacked the generation. Only the causal, approved
+        # ready event can restore it. A changed or unsigned binding cannot spend the cap.
+        legacy = replace(rejected, payload={k: v for k, v in rejected.payload.items()
+                         if k not in {"stage_replan_generation", "stage_replan_generation_source_event_id"}})
+        assert "Writer admission" in following.payload["rework_feedback"][0]["message"]
+        for corrupted in (None, "source", "digest", "actor", "generation", "missing_receipt", "verdict"):
+            f, history = legacy, list(events)
+            if corrupted == "source":
+                f = replace(f, causation_id="other-ready")
+            if corrupted == "digest":
+                f = replace(f, payload={**f.payload, "task_map_digest": "f" * 64})
+            if corrupted == "actor":
+                f = replace(f, origin="worker")
+            if corrupted == "generation":
+                f = replace(f, payload={**f.payload, "stage_replan_generation": "old"})
+            if corrupted == "missing_receipt":
+                history = [e for e in history if not (e.type == "runtime.action.completed" and e.causation_id == marker.id)]
+            if corrupted == "verdict":
+                history = [e for e in history if e.payload.get("source_event_id") != result_event.id]
+            history = [f if e.id == rejected.id else e for e in history]
+            retry, reason = plan_reader_stage_replan(runtime.config, history, f, state_dir=runtime.state_dir)
+            if corrupted:
+                assert retry is None and "unverified_writer_admission_generation" in reason, (corrupted, reason)
+            else:
+                assert retry.payload["previous_plan_candidate_refs"] == following.payload["previous_plan_candidate_refs"]
+                assert retry.payload["rework_attempt"] == 1
 
 
 @pytest.mark.parametrize("change", ["stale_planner", "digest", "wrong_run", "dispatched", "cancelled",
@@ -174,7 +215,7 @@ def test_refuses_stale_or_unproved_handoff(case, change):
     elif change == "late_result":
         add("workflow.call.result.admitted", operation_id="bounced-critic")
     elif change == "new_plan":
-        add("fanout.started", fanout_id="later-generation", stage_id="prd-plan")
+        add("fanout.started", fanout_id="later-generation", stage_id="issue-plan")
     elif change == "unknown_selector":
         params["resume_planner_handoff_event"] = params.pop("resume_planner_handoff_event_id")
     elif change == "tampered":

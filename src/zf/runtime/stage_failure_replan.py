@@ -547,6 +547,17 @@ def plan_reader_stage_replan(
         # event, not another Plan's stage history, owns recovery and authority.
         if rejected_plan is None:
             return None, "reader_origin_missing"
+        from dataclasses import replace
+        from zf.runtime.plan_admission_rework_lineage import writer_failure_generation
+
+        try:
+            generation_lineage = writer_failure_generation(state_dir, index, events, failure_event, rejected_plan)
+        except (KeyError, ValueError, OSError, TypeError) as exc:
+            return None, f"unverified_writer_admission_generation: {exc}"
+        if generation_lineage:
+            # The old writer receipt is immutable. Retry accounting uses its proved ready/approval scope.
+            failure_payload = {**failure_payload, **generation_lineage}
+            failure_event = replace(failure_event, payload=failure_payload)
         origin_payload = dict(rejected_plan.payload)
         from zf.runtime.plan_team_handoff import admission_replan_entry
 

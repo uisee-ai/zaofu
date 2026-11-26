@@ -147,6 +147,9 @@ def emit_upstream_failure_for_bad_task_map(
             "trace_id": trace_id,
             "pdd_id": pdd_id,
             "failure_scope": "plan_admission",
+            **({key: trigger_payload[key] for key in ("workflow_run_id", "stage_replan_generation",
+                    "stage_replan_generation_source_event_id") if trigger_payload.get(key)}
+               if trigger_event.origin == "kernel" and trigger_payload.get("stage_replan_generation") else {}),
             "plan_admission_incident_id": plan_admission_incident_id,
             "task_map_ref": task_map_ref or str(
                 trigger_payload.get("task_map_ref") or ""

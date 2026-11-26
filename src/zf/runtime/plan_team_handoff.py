@@ -83,6 +83,10 @@ def admission_replan_entry(
                     and e.payload.get("stage_id") == stage.id and e.payload.get("fanout_id") == plan_id), None)
     receipt = prior.get(planner.payload.get("trigger_event_id")) if planner else None
     current = {**rejected.payload, **{k: v for k, v in failure.payload.items() if v}}
+    # Writer admission historically filled an undeclared PDD with the display default.
+    # Only the two original signed receipts can establish that it was absent on both.
+    if receipt and not rejected.payload.get("pdd_id") and not receipt.payload.get("pdd_id") and current.get("pdd_id") == "default":
+        current.pop("pdd_id")
     bindings = ("request_id", "request_revision", "requirement_spec_digest", "pdd_id", "prd_ref",
                 "target_ref", "source_ref", "workflow_input_manifest_ref", "workflow_input_manifest_digest",
                 "effective_config_digest", "prd_digest", "source_digest", "prd_revision", "source_revision")
