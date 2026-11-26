@@ -229,3 +229,90 @@ def test_cost_blackout_scopes_usage_to_the_active_run(tmp_path: Path) -> None:
         event_log=log, event_writer=writer, state_dir=state_dir,
         state=TickServiceState(), intervals=TickServiceIntervals(),
     ) is False
+
+
+def _settled_task_events():
+    run, task, operation = "run-a", "TASK-A", "wop-verify-A"
+    common = {"workflow_run_id": run, "operation_id": operation, "request_hash": "a" * 64}
+    identity = {"attempt_id": "a-1", "dispatch_id": "d-1"}
+    envelope = {"ref": "artifacts/call-results/envelopes/ok.json", "sha256": "b" * 64}
+    dispatch = ZfEvent(
+        type="task.dispatched",
+        origin="kernel",
+        task_id=task,
+        correlation_id=run,
+        ts=_ts(300),
+        payload={**common, **identity, "task_id": task},
+    )
+    admission = ZfEvent(
+        type="workflow.call.result.admitted",
+        origin="kernel",
+        task_id=task,
+        correlation_id=run,
+        payload={**common, **identity, "admission_status": "admitted", "envelope_ref": envelope},
+    )
+    settled = ZfEvent(
+        type="workflow.operation.settled",
+        origin="kernel",
+        task_id=task,
+        correlation_id=run,
+        causation_id=admission.id,
+        payload={**common, "task_id": task, "admitted_call_result_ref": envelope},
+    )
+    return dispatch, admission, settled
+
+
+def test_cost_watchdog_does_not_treat_a_settled_task_as_active(tmp_path):
+    state_dir, log, writer = _env(tmp_path)
+    for event in _settled_task_events():
+        log.append(event)
+    assert not _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=TickServiceState(),
+        intervals=TickServiceIntervals(cost_blackout_stale_s=240, cost_blackout_cooldown_s=0),
+    )
+    assert not any(e.type == "cost.usage.blackout" for e in log.read_all())
+
+
+def test_only_exact_kernel_result_settlement_closes_its_dispatch():
+    from dataclasses import replace
+    from zf.runtime.cost_dispatch_liveness import last_open_cost_dispatch
+
+    dispatch, admitted, settled = _settled_task_events()
+    # An unsettled older sibling and a newly opened same-operation attempt keep their own budget monitoring.
+    sibling = replace(dispatch, id="sibling", payload={**dispatch.payload, "operation_id": "wop-still-live"})
+    assert last_open_cost_dispatch([sibling, dispatch, admitted, settled]) is sibling
+    next_attempt = replace(
+        dispatch, id="second", payload={**dispatch.payload, "attempt_id": "next", "dispatch_id": "next-dispatch"}
+    )
+    assert last_open_cost_dispatch([dispatch, next_attempt, admitted, settled]) is next_attempt
+    assert last_open_cost_dispatch([dispatch, admitted, settled, next_attempt]) is next_attempt
+    assert last_open_cost_dispatch([dispatch, admitted]) is dispatch
+    assert last_open_cost_dispatch([dispatch, settled]) is dispatch
+    for field, value in (
+        ("attempt_id", "unknown"),
+        ("dispatch_id", "other"),
+        ("request_hash", "other"),
+        ("workflow_run_id", "other-run"),
+        ("admission_status", "rejected"),
+        ("attempt_id", ""),
+        ("attempt_id", []),
+    ):
+        other = replace(admitted, payload={**admitted.payload, field: value})
+        assert last_open_cost_dispatch([dispatch, other, settled]) is dispatch
+    for other in (
+        replace(settled, origin="worker"),
+        replace(settled, task_id="other-task"),
+        replace(settled, causation_id="missing"),
+        replace(
+            settled,
+            payload={**settled.payload, "admitted_call_result_ref": {"ref": "elsewhere", "sha256": "b" * 64}},
+        ),
+    ):
+        assert last_open_cost_dispatch([dispatch, admitted, other]) is dispatch
+    assert last_open_cost_dispatch([dispatch, replace(admitted, origin="worker"), settled]) is dispatch
+    assert last_open_cost_dispatch([dispatch, settled, admitted]) is dispatch
+    unknown = replace(dispatch, payload={**dispatch.payload, "dispatch_id": []})
+    assert last_open_cost_dispatch([unknown, admitted, settled]) is unknown

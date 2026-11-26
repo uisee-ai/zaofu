@@ -818,3 +818,7 @@ Discovery 的产品评估输出补齐与 Candidate Verify 同源的报告模板�
 受控动作沿用 `workflow-batch-resume` 的 `reemit_candidate_ready`。命令校验运行合同，runtime 核对正在执行的 Run、已批准的工作流配置、原生冻结凭据字节、Git 引用、Plan 版本、OA 名单与原批次成员。所有 Reader 的合同和目标都须通过当前注册预检。原批次已有 WRC 登记、成员派发、业务拒绝、更新的 Candidate、未决 Owner 决策或暂停状态会阻止重放。同一冻结只允许发出一次新的 Reader 入口。随后的 Candidate、Judge 与交付仍须各自产出验收事实。
 
 Run Manager、Autoresearch 已接手的诊断及其证据保留在原账本。该动作沿用操作者对这一笔修复的显式批准，允许未配置常驻 Run Manager Agent 的项目恢复。自动通用 resume 继续按原策略分诊。
+
+## 费用心跳只监视仍在执行的派发
+
+`cost.usage.blackout` 的输入是本轮仍在执行的派发。Task Pipeline 的 Kernel `workflow.operation.settled` 通过 causation 绑定已准入的结果，再以原 Run、Task、operation、request hash、结果凭据及该结果的 attempt 和 dispatch 标识关闭费用传感器上的对应派发。无法对应的结算和其他活跃成员继续按现有费用心跳阈值监视。此次修复只校正后续传感器采样，历史 Owner 决策仍由原决策路径处理。
