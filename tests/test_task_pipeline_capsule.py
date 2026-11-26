@@ -272,17 +272,21 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
     assert _operation_workdir(events, operation, request) == runtime.project_root
 
 
-@pytest.mark.parametrize("old_dispatch,generation", [("", 1), ("tpd-old-p1", 2)])
+@pytest.mark.parametrize("old_dispatch,generation,published", [
+    ("", 1, ""), ("tpd-old-p1", 2, ""), ("tpd-published-p1", 2, "b" * 40),
+])
 @pytest.mark.parametrize("send_fails", [False, True])
 @pytest.mark.parametrize("stage", ["impl", "verify"])
 def test_dispatch_document_identity_matches_transport_before_delivery(
-    dispatch_fixture, monkeypatch, old_dispatch, generation, send_fails, stage
+    dispatch_fixture, monkeypatch, old_dispatch, generation, published, send_fails, stage
 ):
     import json
     from zf.runtime.task_doc import task_doc_path
     from zf.runtime import call_result_runtime
 
     runtime, task, _, _, dispatch = dispatch_fixture
+    if published:
+        monkeypatch.setattr("zf.runtime.implementation_commit.published_retry_commit", lambda *args: published)
     feedback = [{
         "rework_item_id": "RW-01", "reason": "大整数边界必须保留；不省略用户约束",
         "evidence_refs": ["evidence/full-failure.log"],
@@ -322,6 +326,11 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         assert str((doc.parent / "source.md").resolve()) in briefing.read_text()
         assert str((doc.parent / "progress.md").resolve()) in briefing.read_text()
         text = briefing.read_text()
+        if stage == "impl" and published:
+            assert f"- target_commit: `{published}`" in text and f"Reassess published commit {published}" in text
+            assert "each separate product finding" in text and "reproduce these failures first" not in text
+        else:
+            assert "Reassess published commit" not in text
         if stage == "impl":
             assert "do not remove required evidence outputs" in text
             assert "never authorize out-of-scope writes" in text

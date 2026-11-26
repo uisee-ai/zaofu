@@ -1,6 +1,7 @@
 """A malformed Impl object must be repairable in its original Task attempt."""
 import subprocess
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,7 +10,7 @@ from tests.test_task_host_actions import case
 from tests.test_task_publication import prepare
 from tests.test_typed_result_admission import _contract, _implementation_result
 from zf.core.events import ZfEvent
-from zf.runtime.implementation_commit import published_retry_commit
+from zf.runtime.implementation_commit import published_retry_commit, validate_impl_commit
 from zf.runtime.result_submit import (
     ResultSubmitError, SemanticResultSubmitService,
     bind_operation_submit_capability, provision_role_submit_credential,
@@ -95,7 +96,8 @@ def test_wrong_oid_repair_in_original_attempt(tmp_path, object_format, prefix_le
     assert result["target_commit"] == head[:prefix_length] and result["attempt_id"] == "attempt-1"
 
 
-def test_retry_uses_authenticated_preceding_publication(case):
+@pytest.fixture
+def published_case(case):
     service, _, identity = case
     service.writer.default_origin = "kernel"
     identity["request_hash"] = "request-hash"
@@ -113,6 +115,11 @@ def test_retry_uses_authenticated_preceding_publication(case):
                  "contract_snapshot_digest": receipt["manifest"]["contract_digest"],
                  "rework_feedback": [{"category": "task_pipeline_operator_retry", "blocking_event_id": retry.id}]}
     expected = git(root, "rev-parse", "HEAD")
+    return service, root, events, retry, effect, placement, expected
+
+
+def test_retry_uses_authenticated_preceding_publication(published_case):
+    service, _, events, retry, effect, placement, expected = published_case
     assert published_retry_commit(service.state_dir, placement, events) == expected
     historic_retry = replace(retry, payload={k: v for k, v in retry.payload.items() if k != "publication_event_id"})
     historic = [historic_retry if e == retry else e for e in events]
@@ -126,3 +133,46 @@ def test_retry_uses_authenticated_preceding_publication(case):
     (service.state_dir / effect.payload["receipt_ref"]["ref"]).write_text("{}")
     with pytest.raises(ValueError):
         published_retry_commit(service.state_dir, placement, events)
+
+
+def test_published_impl_briefing_and_completion_bind_the_same_commit(published_case):
+    from zf.core.config.schema import RoleConfig
+    from zf.core.task.store import TaskStore
+    from zf.runtime.task_pipeline_briefing import write_task_pipeline_briefing
+
+    service, root, _, _, _, placement, published = published_case
+    runtime = SimpleNamespace(state_dir=service.state_dir, config=service.config, event_log=service.writer.event_log)
+    task = TaskStore(service.state_dir / "kanban.json").get(placement["task_id"])
+    base = git(root, "rev-parse", "HEAD^")
+    operation = {**placement, "task_pipeline_stage": "impl", "operation_id": "op-2", "attempt_id": "a2",
+                 "active_attempt_id": "a2", "lease_id": "l2", "dispatch_id": "d2", "placement_epoch": 2,
+                 "semantic_result_submit_mode": "blocking"}
+    operation["rework_feedback"] = [*placement["rework_feedback"], {"finding_id": "independent-sort-failure"}]
+
+    def render(payload):
+        return write_task_pipeline_briefing(
+            runtime, role=RoleConfig(name="dev", instance_id="dev", backend="mock"),
+            task=task, stage="impl", workspace=SimpleNamespace(project_path=root, base_commit=base),
+            contract_snapshot={}, payload=payload, prepared=SimpleNamespace(operation_id="op-2"),
+        ).read_text()
+
+    ordinary = render({**operation, "operation_generation": 3})
+    assert f"- target_commit: `{base}`" in ordinary and "reproduce these failures first" in ordinary
+    assert "Reassess published commit" not in ordinary
+    brief = render(operation)
+    assert f"- target_commit: `{published}`" in brief and f"Reassess published commit {published}" in brief
+    assert "reproduce these failures first" not in brief
+    assert "each separate product finding" in brief and "independent-sort-failure" in brief
+    assert "required self-checks" in brief and "for the Owner separately" in brief
+    assert "Commit task changes with explicit pathspecs" not in brief
+    conflict = render({**operation, "target_commit": base})
+    assert f"- target_commit: `{base}`" in conflict and f"Reassess published commit {published}" in conflict
+    assert "report the observed hashes" in conflict
+    service.writer.append(ZfEvent(type="task.pipeline.stage.dispatched", origin="kernel", payload=operation))
+    events = service.writer.event_log.read_all()
+    validate_impl_commit(service.state_dir, operation, {"target_commit": published}, events)
+    with pytest.raises(ValueError, match="target_commit must resolve to"):
+        validate_impl_commit(service.state_dir, operation, {"target_commit": base}, events)
+    git(root, "commit", "--allow-empty", "-m", "test: simulate a different workspace target")
+    with pytest.raises(ValueError, match="differs from its host publication"):
+        validate_impl_commit(service.state_dir, operation, {"target_commit": git(root, "rev-parse", "HEAD")}, events)
