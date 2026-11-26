@@ -714,7 +714,7 @@ class PlanSynthRuntimeMixin:
                     attach_execution_review(
                         state_dir=self.state_dir, payload=call_payload,
                         review=execution_review,
-                        source_event_id=str(manifest.get("trigger_event_id") or ""),
+                        source_event_id=str(manifest.get("trigger_event_id") or ""), read_events=self.event_log.read_all,
                     )
                 workdir_write_scopes = []
                 if not call_payload["plan_synth_verdict_only"]:

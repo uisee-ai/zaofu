@@ -11,13 +11,16 @@ from pathlib import Path
 
 def attach_execution_review(
     *, state_dir: Path, payload: dict[str, Any], review: Mapping[str, Any],
-    source_event_id: str,
+    source_event_id: str, read_events=None,
 ) -> None:
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
-
     from zf.runtime.plan_execution_delivery import execution_review_delivery
+    from zf.runtime.plan_readonly_acceptance_review import attach_readonly_acceptance_summary
 
     body, details = execution_review_delivery(review)
+    attach_readonly_acceptance_summary(
+        state_dir, body, review, payload, source_event_id=source_event_id, read_events=read_events,
+    )
     for item in details:
         detail = write_immutable_json_sidecar(
             state_dir, item["body"], root=item["root"], kind=item["kind"],

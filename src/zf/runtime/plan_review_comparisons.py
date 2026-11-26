@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from zf.runtime.plan_readonly_acceptance_review import check_initial_acceptance, review_requirement_source
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -196,10 +197,7 @@ def execution_assessments(
         )
         if not isinstance(authority, list) or not any(
             isinstance(ref, Mapping)
-            and (
-                ref.get("source_id") in {"requirement", "critical-workflow-input"}
-                or str(ref.get("source_id") or "").startswith("plan-declared-input-")
-            )
+            and review_requirement_source(ref)
             for ref in authority
         ):
             error(
@@ -243,6 +241,8 @@ def _check_review_disposition(row, path, report, source, spec, *, rejected, erro
             for k in ("source_id", "artifact_id", "sha256")) or not isinstance(selector, str)
             or not selector.startswith((prefix + ".", prefix + "["))):
         error(path + ".runtime_evidence", "Cite a specific field under the frozen comparison facts")
+    elif "initial_acceptance_review" in spec:
+        check_initial_acceptance(row, path, spec, error)
     elif fields := spec.get("runtime_evidence_fields"):
         if not any(selector == f"{prefix}.entries[{index}].{field}"
                    for index in range(len(spec["facts"]["entries"])) for field in fields):

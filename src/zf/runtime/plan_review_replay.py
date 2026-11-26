@@ -77,6 +77,17 @@ def pin_replayed_review_usage(
 
     old_comparable = expanded_verification(runtime.state_dir, old, manifest.get("sources", []))
     new_comparable = expanded_verification(runtime.state_dir, new, payload.get("input_refs", []))
+    from zf.runtime.plan_readonly_acceptance_review import INITIAL_ACCEPTANCE, READONLY_SCOPE
+
+    old_checks = old_comparable.get("execution_comparisons") or {}
+    new_checks = new_comparable.get("execution_comparisons") or {}
+    old_scope, new_scope = old_checks.get(READONLY_SCOPE) or {}, new_checks.get(READONLY_SCOPE) or {}
+    if (old_scope and "initial_acceptance_review" not in old_scope
+            and INITIAL_ACCEPTANCE not in (old_scope.get("facts") or {})
+            and "initial_acceptance_review" in new_scope):
+        legacy = {k: v for k, v in new_scope.items() if k != "initial_acceptance_review"}
+        legacy["facts"] = {k: v for k, v in legacy["facts"].items() if k != INITIAL_ACCEPTANCE}
+        new_comparable["execution_comparisons"] = {**new_checks, READONLY_SCOPE: legacy}
     # The new comparison index is derived entirely from the bound Task Map and
     # compiled policy. Keep older attempts' exact summary and review obligations.
     bindings = old_comparable.get("input_binding") or {}

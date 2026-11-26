@@ -204,17 +204,16 @@ def _execution_comparison_summary(review: dict | None) -> dict:
         if stages:
             row["first_stages_on_admission"] = sorted(stages)
         if name == "readonly_command_scope":
-            selected = [
-                (task["task_id"], initial["mandatory_acceptance_ids"])
-                for task in review.get("verification", {}).get("task_requirements", [])
-                if (initial := task.get("initial_readonly_verify"))
-                and isinstance(initial.get("mandatory_acceptance_ids"), list)
-            ]
-            if selected:
-                empty = [task_id for task_id, criteria in selected if not criteria]
-                row["resolved_acceptance_task_count"] = len(selected)
-                row["without_mandatory_acceptance_count"] = len(empty)
-                row["sample_without_mandatory_acceptance"] = [task_id for task_id in empty[:3] if len(task_id) <= 128]
+            from zf.runtime.plan_readonly_acceptance_review import readonly_acceptance_summary
+
+            selection = readonly_acceptance_summary(
+                review.get("verification", {}).get("task_requirements", []), sample_limit=3
+            )
+            if selection["resolved_acceptance_task_count"]:
+                row.update({k: selection[k] for k in (
+                    "resolved_acceptance_task_count", "without_mandatory_acceptance_count",
+                    "sample_without_mandatory_acceptance",
+                )})
         summary[name] = row
     return {"execution_comparisons": summary}
 
