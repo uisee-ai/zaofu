@@ -15,3 +15,5 @@ Plan 是基于旧证据提出修订的角色；输入基线可以是历史已准
 ## 返工描述符的按需读取
 
 新的 Plan 读取请求在同一 Run 的 kernel 失败事件已绑定全部历史候选，且当前 manifest 对每项都授予内容相同的独立完整读取时，可将 `plan-rework-context.v1` 的整根必读改为四项。四项分别是 `schema_version`、`rework_of`、`rework_attempt` 和完整 `rework_feedback`。历史候选逐一核对文件、摘要、授权路径和完整内容绑定。根文档保留原历史 occurrence、事件与版本元数据，可按 `$` 回读。任何未知字段、受限授权、历史身份变化、缺少独立来源或显式必读要求，都沿用原策略。旧 operation 以已登记的读取政策和请求摘要重放。实际减少的引文字节按两个选区的完整文本计算。[受控读与重放测试](../../tests/test_plan_rework_descriptor_reads.py)
+
+OA 给只读审计分配 Task Verify 时，可列出该任务首站的精确 AC。请求纠正和派发按同一份当前任务合同计算，复用快照的路由与冻结 Candidate 的延后规则。这样首站由独立审计负责的 Candidate-owned AC 可以被点名，已延后的全局 AC 仍由冻结 Candidate 验收。普通任务沿用其 Task Verify 所属 AC。例见[精确分工及真实派发测试](../../tests/test_oa_readonly_verify_scope.py)。

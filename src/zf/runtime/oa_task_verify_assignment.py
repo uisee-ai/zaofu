@@ -89,9 +89,33 @@ def validate_verify_units(runtime: Any, run_plan: Mapping, request: Mapping) -> 
         raise OrchestratorAgentContractError("scoped Verify correction must cover only its requested task")
 
 
+def _verify_assignment_acceptance(task, revision: str) -> list[str]:
+    """Return the exact local ACs offered to OA and enforced at dispatch."""
+    from zf.runtime.frozen_audit_scope import bind_frozen_audit_scope
+    from zf.runtime.task_contract_snapshot import normalize_acceptance_criteria, snapshot_verification_route
+    from zf.runtime.task_pipeline_entry import task_pipeline_entry_mode
+    from zf.runtime.verification_commands import acceptance_required_for_stage, task_contract_verification_commands
+
+    contract = task.contract
+    criteria = normalize_acceptance_criteria(contract.acceptance_criteria or [contract.acceptance], task_id=task.id,
+                                             contract_revision=revision, verification_tiers=contract.verification_tiers)
+    evidence = contract.evidence_contract or {}
+    if (task_pipeline_entry_mode(task) != "verify_only" or evidence.get("runtime_only") is not True
+            or evidence.get("write_free") is not True or contract.scope != []):
+        return [c["acceptance_id"] for c in criteria if c["verification_owner"] == "task_verify"]
+    try:
+        commands = task_contract_verification_commands(contract)
+        bind_frozen_audit_scope(evidence, criteria, commands, task_id=task.id, write_paths=contract.scope)
+        owner, _ = snapshot_verification_route(criteria, commands=commands, task_id=task.id)
+    except ValueError:
+        return []  # An invalid audit contract proves no exact AC grant.
+    return [c["acceptance_id"] for c in criteria if c["mandatory"]
+            and acceptance_required_for_stage(c, verification_owner=owner)]
+
+
 def current_scope(runtime: Any, task_id: str, context: Mapping, admission: Mapping,
                   unit: Mapping, role_ids: list[str]) -> dict | None:
-    from zf.runtime.task_contract_snapshot import effective_contract_revision, normalize_acceptance_criteria
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
 
     task = runtime.task_store.get(task_id)
     if not task:
@@ -104,11 +128,7 @@ def current_scope(runtime: Any, task_id: str, context: Mapping, admission: Mappi
         return None
     selected = scope["acceptance_ids"]
     if selected != ["*"]:
-        criteria = normalize_acceptance_criteria(task.contract.acceptance_criteria or [task.contract.acceptance],
-                                                task_id=task_id, contract_revision=revision,
-                                                verification_tiers=task.contract.verification_tiers)
-        ids = {c["acceptance_id"] for c in criteria if c["verification_owner"] == "task_verify"}
-        if set(selected) != ids:
+        if not selected or set(selected) != set(_verify_assignment_acceptance(task, revision)):
             return None
     return {"verification_scope": scope, "contract_revision": revision,
             **({"specialists": unit["specialists"]} if unit.get("specialists") else {})}
@@ -178,7 +198,7 @@ def _request_correction(runtime, task, context, source, extra):
     from dataclasses import asdict
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
-    from zf.runtime.task_contract_snapshot import effective_contract_revision, normalize_acceptance_criteria
+    from zf.runtime.task_contract_snapshot import effective_contract_revision
 
     task_id = task.id
     package = hydrate_plan_artifact_package(runtime.state_dir, {
@@ -191,9 +211,6 @@ def _request_correction(runtime, task, context, source, extra):
          "contract_revision": revision, "contract": asdict(task.contract)},
         root="orchestrator-agent/verify-contracts", kind="verify_contract",
         schema_version="oa-verify-contract-input.v1", created_by="task-pipeline", source_event_id=source.id)
-    criteria = normalize_acceptance_criteria(task.contract.acceptance_criteria or [task.contract.acceptance],
-                                            task_id=task_id, contract_revision=revision,
-                                            verification_tiers=task.contract.verification_tiers)
     return request_orchestrator_agent_checkpoint(runtime, checkpoint="pre_impl", checkpoint_policy="blocking",
         workflow_run_id=context["workflow_run_id"], source_event=source, payload={
             **context, **extra, "goal_id": context.get("feature_id") or context.get("pdd_id") or package.get("goal_id"),
@@ -201,6 +218,6 @@ def _request_correction(runtime, task, context, source, extra):
             "run_contract_sha256": package.get("run_contract_sha256"),
             "verify_assignment_mode": "oa_run_plan", "verify_assignment_task": task_id,
             "verify_assignment_seats": sorted(verify_seats(runtime)),
-            "verify_assignment_acceptance": [c["acceptance_id"] for c in criteria if c["verification_owner"] == "task_verify"],
+            "verify_assignment_acceptance": _verify_assignment_acceptance(task, revision),
             "verify_assignment_revision": revision, "verify_assignment_contract_ref": contract_ref,
         })
