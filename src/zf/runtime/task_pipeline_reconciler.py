@@ -35,6 +35,7 @@ class TaskPipelineReconciler:
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
         oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
         inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
+        held_task_ids: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -108,6 +109,11 @@ class TaskPipelineReconciler:
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
         ]
+        for view in task_views:
+            if (view["task_id"] in held_task_ids
+                    and view["stage"] in {"impl_ready", "impl_rework_ready", "verify_ready", "acceptance_review_ready"}):
+                view["stage"] = "run_paused"
+                view["blockers"].append("run_paused")
         if policy.get("verify_assignment_mode") == "oa_run_plan":
             from zf.runtime.oa_task_verify_assignment import VERIFY_WAIT
             for view in task_views:
@@ -163,6 +169,7 @@ class TaskPipelineReconciler:
                 "admission_blocked",
                 "replan_requested",
                 "external_gate_waiting",
+                "run_paused",
             }
         })
         backpressure_policy = dict(policy.get("backpressure") or {})

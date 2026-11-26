@@ -13,6 +13,17 @@ TASK_PIPELINE_GENERATION_ADMITTED = "task.pipeline.generation.admitted"
 CANDIDATE_FREEZE_RECEIPT_SCHEMA = "candidate-freeze-receipt.v1"
 
 
+def paused_pipeline_tasks(
+    events: list[ZfEvent], contexts: dict[str, dict[str, Any]],
+) -> frozenset[str]:
+    """Use the same admitted Run holds for dispatch allocation and its read projection."""
+    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+
+    held = {run for run in {context.get("workflow_run_id", "") for context in contexts.values()}
+            if is_run_dispatch_paused(events, run)}
+    return frozenset(task_id for task_id, context in contexts.items() if context.get("workflow_run_id", "") in held)
+
+
 def latest_task_pipeline_generation_context(
     events: Iterable[ZfEvent],
     *,

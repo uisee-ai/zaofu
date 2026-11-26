@@ -178,3 +178,6 @@ stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当�
 任务缺少适用的 OA 分工时，WRC 等当前 Impl 投递结束并释放任务执行位，再请求 OA 签署该任务的 Verify 分工。物理派发按 Run、任务、操作、attempt 和 dispatch 核对。租约过期、派发失败或被代替时，原有调度和故障恢复仍依据正式业务结果处理。首次即从 Verify 开始的任务沿用本任务的合同。
 
 旧版本可能在 Impl 已结算、任务执行位尚未释放时冻结 OA 输入，导致分工被当前性检查拒绝。调度器核对原核准的 Impl 结果、物理释放记录以及任务当前合同、依赖和状态；仅执行位清空时，它保留旧拒绝，按该次释放身份请求一次新的 OA 判断。新的执行者与证据要求仍须获准。[回放与拒绝用例](../../tests/test_oa_verify_predecessor_release.py)
+
+
+Run 暂停期间，在途 Impl 和 OA 仍可提交已经派发的结果。WRC 暂缓新的执行分工与 Task Verify，暂停前已经排队的 pre_impl 保留原 operation 和输入；恢复后按原身份派发一次。待命交接让出可用席位，其他 Run 以及按现行策略处理的故障诊断可以继续。[Run 暂停与分工回归](../../tests/test_oa_paused_business_dispatch.py)

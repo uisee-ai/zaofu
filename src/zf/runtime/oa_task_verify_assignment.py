@@ -152,7 +152,7 @@ def request_verification_corrections(runtime, projection, contexts, events) -> N
         if not source or not task or task.active_dispatch_id:
             continue
         prepared = _request_correction(runtime, task, context, source, {})
-        rejection = rejected.get(prepared.operation_id)
+        rejection = rejected.get(prepared.operation_id) if prepared else None
         if rejection and rejection.payload.get("reason") == "execution_target_changed:" + task_id:
             release = _released_verify_predecessor(runtime, task, context, prepared, events)
             if release:
@@ -291,6 +291,10 @@ def _request_correction(runtime, task, context, source, extra):
     from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
     from zf.runtime.task_contract_snapshot import effective_contract_revision
 
+    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+
+    if is_run_dispatch_paused(runtime.event_log.read_all(), context["workflow_run_id"]):
+        return None
     task_id = task.id
     package = hydrate_plan_artifact_package(runtime.state_dir, {
         "ref": context["plan_artifact_package_ref"], "sha256": context["plan_artifact_package_digest"],
