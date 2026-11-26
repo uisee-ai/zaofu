@@ -14,7 +14,7 @@ from zf.runtime.call_result_envelope import (
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.worker_reply_binding import resolve_reply_operation
-from zf.runtime.workflow_board_authority import board_for_run, board_policy_enabled, legacy_boards, permits
+from zf.runtime.workflow_board_authority import BoardPaused, board_for_run, board_policy_enabled, legacy_boards, permits
 
 ACTOR = "workflow-board"
 
@@ -268,6 +268,8 @@ def deliver_mentions(runtime):
                         raise ValueError("audience or generation expired")
                     if _binding(op) != binding:
                         raise ValueError("recipient changed")
+                except BoardPaused:
+                    continue  # Unclaimed notices remain eligible after an authorized resume.
                 except ValueError as exc:
                     kind, fields = "workflow.board.expired", {"reason": str(exc)}
                 else:

@@ -20,6 +20,7 @@ from zf.runtime.actions_pending import (
     PendingActionsStore,
 )
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.workflow_board_authority import BoardPaused
 from zf.runtime.orchestrator_agent_role import is_configured_orchestrator_role
 
 if TYPE_CHECKING:
@@ -175,6 +176,9 @@ class AgentViewRuntimeMixin:
                         instance_id=entry.instance_id,
                         payload=entry.payload,
                     )
+            except BoardPaused:
+                # The pending action stays replayable without spending its retry budget.
+                continue
             except Exception as exc:
                 self._record_action_failure(store, entry, error=str(exc))
                 continue
@@ -277,6 +281,8 @@ class AgentViewRuntimeMixin:
                 role=instance_id,
                 reason="operator reply delivered",
             )
+        except BoardPaused:
+            raise
         except Exception as exc:
             self._emit_worker_action_failed(
                 request,

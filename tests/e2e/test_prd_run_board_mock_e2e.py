@@ -21,6 +21,7 @@ from zf.runtime.run_contract import (
     build_run_contract,
     write_run_contract_snapshot,
 )
+from zf.runtime.workflow_board import deliver_mentions
 from zf.runtime.workflow_operation import reduce_workflow_operations
 from zf.runtime.workflow_proposal import build_workflow_proposal
 from zf.runtime.workflow_requests import mark_workflow_request
@@ -174,6 +175,14 @@ def test_admitted_prd_readers_exchange_one_notice_and_route_silence(
         assert code == 1
         return output.err
 
+    def control(action):
+        with monkeypatch.context() as owner:
+            owner.delenv("ZF_ROLE_INSTANCE", raising=False)
+            owner.delenv("ZF_ARTIFACT_READ_TOKEN_FILE", raising=False)
+            code = main(["runs", "--state-dir", str(state), action, run])
+            output = capsys.readouterr()
+            assert code == 0, output.err
+
     roster = cli(sender, "--roster")
     assert sorted(roster["members"]) == sorted(readers)
     assert sorted(roster["groups"]["prd-scan"]) == sorted(readers)
@@ -200,10 +209,28 @@ def test_admitted_prd_readers_exchange_one_notice_and_route_silence(
     assert notice["workflow_run_id"] == run
     assert notice["audience"][recipient["actor"]]["operation_id"] == recipient["operation_id"]
     (posted,) = log.query(type="workflow.board.posted")
+    control("pause")
+    assert "paused" in cli(sender, "--roster", success=False)
+    assert "paused" in cli(sender, *arguments, success=False)
+    assert "paused" in cli(recipient, "--ack", notice["message_key"], success=False)
+    late = datetime.now(timezone.utc) + timedelta(days=1)
+    assert not board_silence_attention(state, config, log.read_all(), late)
     runtime.run_once(events=[posted])
-    runtime.run_once(events=[posted])
+    assert not log.query(type="worker.reply.requested")
+    assert not log.query(type="workflow.board.expired")
+    control("resume")
+    assert cli(sender, "--roster") == roster
+    # Pause in the second window, after the real notification is queued but before transport.
+    deliver_mentions(runtime)
+    deliver_mentions(runtime)
     (wake,) = log.query(type="worker.reply.requested")
     assert wake.payload["attempt_id"] == recipient["attempt_id"]
+    control("pause")
+    runtime.run_once(events=[wake])
+    runtime.run_once(events=[wake])
+    assert not log.query(type="workflow.notification.claimed")
+    assert not log.query(type="worker.reply.sent") and not log.query(type="worker.reply.failed")
+    control("resume")
     runtime.run_once(events=[wake])
     runtime.run_once(events=[wake])
     (reply,) = log.query(type="worker.reply.sent")

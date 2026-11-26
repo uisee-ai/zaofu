@@ -56,6 +56,8 @@ spec:
 
 成员从各自的 briefing 取得带 `--attempt` 和 `--state-dir` 的命令，加 `--roster` 可以查看当前成员和阶段组。例如，Plan 的 `product-scan` 发现需求与实现约束冲突，可将 `--roster` 换为 `--post scan-conflict --recipient tech-scan --text "请核对 PRD 的并发约束"`，点名当前技术调查席。收件人沿自己的 operation 取阅。使用同一消息 ID、收件人和正文重发时只提醒一次。需要成员正式提交意见或独立验收的阶段，继续按该义务接收交付。
 
+项目暂停或通过 `zf runs pause` 暂停此 Run 时，动态名单和兼容的固定名单都关闭 Board 访问与通知，Supervisor 暂停静默诊断。恢复后重新核对当前成员、代次和 attempt，再投递暂停前尚未发送的通知。
+
 当已加入的团队仍有未完成工作，且超过配置时间没有进展时，Supervisor 结合当前租约与已登记等待判断是否送 Run Manager 诊断。启用 Run Board 不会增加 OA 的派工权限。[新 Run 派发与静默回归](../../tests/e2e/test_prd_run_board_mock_e2e.py)
 
 ### 成员会话的查看权限

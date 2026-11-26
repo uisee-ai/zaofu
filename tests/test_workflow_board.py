@@ -30,16 +30,26 @@ def seed(runtime, actor):
     return {"actor": actor, "attempt_id": actor, "operation_id": op}
 
 
-def test_frozen_board_target_and_per_recipient_ack(tmp_path):
-    log = EventLog(tmp_path / "events.jsonl")
+def test_frozen_board_target_and_per_recipient_ack(tmp_path, monkeypatch):
+    from zf.cli.main import main
+    from zf.runtime.board_liveness import board_silence_attention
+    from datetime import datetime, timedelta, timezone
+
+    state = tmp_path / ".legacy-state"
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject: {name: legacy, state_dir: .legacy-state}\n')
+    monkeypatch.chdir(tmp_path)
+    log = EventLog(state / "events.jsonl")
+    log.append(ZfEvent(type="run.admission.admitted", origin="kernel", correlation_id="r",
+                       payload={"workflow_run_id": "r", "request_id": "r", "run_id": "r"}))
     board = {
         "enabled": True,
         "generation": "first",
         "members": ["A", "B", "C"],
         "groups": {"review": ["B"]},
+        "silence_seconds": 10,
     }
     runtime = SimpleNamespace(
-        state_dir=tmp_path,
+        state_dir=state,
         event_log=log,
         event_writer=EventWriter(log),
         config=SimpleNamespace(
@@ -48,6 +58,16 @@ def test_frozen_board_target_and_per_recipient_ack(tmp_path):
     )
     a, b, c = (seed(runtime, actor) for actor in "ABC")
     msg = post(runtime, a, "1", ["@group/review"], "Inspect the published evidence.")
+    assert main(["runs", "--state-dir", str(state), "pause", "r"]) == 0
+    late = datetime.now(timezone.utc) + timedelta(days=1)
+    assert not board_silence_attention(state, runtime.config, log.read_all(), late)
+    with pytest.raises(ValueError, match="paused"):
+        inbox(runtime, b)
+    assert main(["runs", "--state-dir", str(state), "resume", "r"]) == 0
+    assert len(inbox(runtime, b)) == 1
+    outsider = seed(runtime, "unlisted")
+    with pytest.raises(ValueError, match="outside"):
+        inbox(runtime, outsider)
     board["groups"]["review"] = ["C"]
     assert (
         post(runtime, a, "1", ["@group/review"], "Inspect the published evidence.")

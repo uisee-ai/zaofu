@@ -63,6 +63,13 @@ def test_fixed_reader_needs_current_approved_run_and_real_kernel_dispatch(tmp_pa
         event("fanout.child.dispatched", **{**binding, "attempt_id": "reused-role"}),
     ):
         assert not authority.permits(board(admit, invoke, invalid), operation)
+    paused = event("run.paused", origin="")
+    for forged in (event("run.resumed", origin="worker"), event("run.admission.admitted", origin="external"),
+                   event("run.goal.updated", origin="", status="running"), event("run.resumed", workflow_run_id="other")):
+        with pytest.raises(ValueError, match="paused"):
+            board(admit, invoke, receipt, paused, forged)
+    with pytest.raises(ValueError, match="paused"):
+        board(admit, invoke, receipt, ZfEvent(type="dispatch.paused"), event("run.resumed"))
     earlier = board(admit, invoke, receipt)
     new_map = event("task_map.ready", task_map_generation="map-two")
     advanced = board(admit, invoke, receipt, new_map)

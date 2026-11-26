@@ -16,31 +16,23 @@ def board_silence_attention(
     state: Path, config, events, now: datetime, paused=False, tasks=()
 ):
     metadata = getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {}
-    boards = dict(legacy_boards(config))
+    runs = set(legacy_boards(config))
     dynamic = board_policy_enabled(config)
-    if paused or (not dynamic and not boards):
+    if paused or (not dynamic and not runs):
         return []
     operations = reduce_workflow_operations([e for e in events if e.origin == "kernel"])
     if dynamic:
-        runs = {op["workflow_run_id"] for op in operations.values()
-                if op.get("role_instance") and op.get("status") == "running" and not op.get("admitted_call_result_ref")}
+        runs.update(op["workflow_run_id"] for op in operations.values()
+                if op.get("role_instance") and op.get("status") == "running" and not op.get("admitted_call_result_ref"))
         runs.update(t.execution_binding.workflow_run_id for t in tasks
                     if t.status in {"todo", "sprint", "in_progress", "ready"} and t.execution_binding.workflow_run_id)
-        for run in runs - boards.keys():
-            try:
-                boards[run] = board_for_run(state, config, events, operations, run)
-            except (OSError, ValueError):
-                # Only a Run with an available, currently admitted authority is observable here.
-                continue
     leases = TaskAttemptStore(state / "task_attempts.json").current_rows()
     now_epoch = now.timestamp()
     items = []
-    for run, board in boards.items():
-        if (
-            not isinstance(board, dict)
-            or board.get("enabled") is not True
-            or not board.get("generation")
-        ):
+    for run in sorted(runs):
+        try:
+            board = board_for_run(state, config, events, operations, run)
+        except (OSError, ValueError):
             continue
         threshold = board.get("silence_seconds")
         if type(threshold) is not int or threshold < 1:
