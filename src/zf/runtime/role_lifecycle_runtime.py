@@ -18,11 +18,10 @@ from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.core.state.locks import FileLock
 from zf.core.state.role_sessions import RoleSessionRegistry
-from zf.core.state.task_attempts import TaskAttemptStoreError
 from zf.runtime.event_window import read_runtime_events
 from zf.runtime.git_capture import capture_git_state
+from zf.runtime.role_lifecycle_admission import lifecycle_epoch, suspend_lease_blocker
 from zf.runtime.run_admission import fold_terminal_run_scope
-from zf.runtime.task_attempt_runtime import task_attempt_store
 from zf.runtime.transport import (
     transport_error_diagnostics,
     transport_readiness_error,
@@ -567,7 +566,7 @@ class RoleLifecycleRuntimeMixin:
         state = str(meta.get("lifecycle_state") or "active")
         if state in _TRANSITIONAL_LIFECYCLE_STATES:
             return False, "lifecycle_transition_in_progress", {"state": state}
-        last_transition = _epoch_from_value(meta.get("lifecycle_transition_at"))
+        last_transition = lifecycle_epoch(meta.get("lifecycle_transition_at"))
         if (
             last_transition is not None
             and now - last_transition < role.lifecycle.cooldown_seconds
@@ -576,14 +575,14 @@ class RoleLifecycleRuntimeMixin:
 
         heartbeat_at, heartbeat = registry.get_last_heartbeat(role.instance_id)
         heartbeat = heartbeat or {}
-        last_action = _epoch_from_value(heartbeat.get("last_action_ts"))
-        received_at = _epoch_from_value(heartbeat_at)
+        last_action = lifecycle_epoch(heartbeat.get("last_action_ts"))
+        received_at = lifecycle_epoch(heartbeat_at)
         if last_action is not None and received_at is not None:
             # Preserve genuinely older activity, but never let a worker clock
             # move activity beyond the kernel receipt (including after restart).
             last_action = min(received_at, last_action)
         if last_action is None:
-            last_action = _epoch_from_value(meta.get("lifecycle_active_at"))
+            last_action = lifecycle_epoch(meta.get("lifecycle_active_at"))
         if last_action is None:
             return False, "idle_currentness_unproven", {}
         idle_seconds = max(0.0, now - last_action)
@@ -704,22 +703,10 @@ class RoleLifecycleRuntimeMixin:
 
     def _suspend_role(self, role: RoleConfig, *, now: float) -> bool | None:
         """Return False for a deferred stop, True on suspension, or None on transport failure."""
-        # Another dispatcher can claim the transport before its Operation.started
-        # is visible, including while idle admission is inspecting the worktree.
-        try:
-            claims = [
-                row["attempt_id"] for row in task_attempt_store(self).current_rows()
-                if row.get("instance_id") == role.instance_id
-                and row.get("status") in {"prepared", "delivering", "sent"}
-                and not row.get("unsent_external_gate")
-                and (_epoch_from_value(row.get("lease_expires_at")) or 0) > now
-            ]
-        except (OSError, TaskAttemptStoreError):
-            self._record_suspend_rejection(role, reason="task_attempt_state_unreadable", details={}, now=now)
-            return False
-        if claims:
-            self._record_suspend_rejection(role, reason="current_task_attempt_lease",
-                                          details={"attempt_ids": claims}, now=now)
+        blocker = suspend_lease_blocker(self, instance_id=role.instance_id, now=now)
+        if blocker:
+            reason, details = blocker
+            self._record_suspend_rejection(role, reason=reason, details=details, now=now)
             return False
         registry = self._role_lifecycle_registry()
         registry.update_instance_meta(
@@ -803,7 +790,7 @@ class RoleLifecycleRuntimeMixin:
         registry = self._role_lifecycle_registry()
         meta = registry.instance_meta().get(role.instance_id, {})
         previous = str(meta.get("lifecycle_suspend_rejection") or "")
-        previous_at = _epoch_from_value(
+        previous_at = lifecycle_epoch(
             meta.get("lifecycle_suspend_rejection_at")
         )
         if (
@@ -934,27 +921,6 @@ def _managed_skill_dirty_files(
         for path in dirty_files
         if any(path == root or path.startswith(root + "/") for root in managed_roots)
     ]
-
-
-def _epoch_from_value(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
 
 
 def _iso_from_epoch(value: float) -> str:
