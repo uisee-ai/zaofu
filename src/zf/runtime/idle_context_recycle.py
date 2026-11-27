@@ -32,7 +32,9 @@ def hibernate_idle_context_recycle(
     )
     if not eligible:
         return False
-    runtime._suspend_role(role, now=now)
+    if runtime._suspend_role(role, now=now) is False:
+        runtime._instance_state[instance_id] = "pending_recycle"
+        return True
     if runtime._role_lifecycle_meta(role).get("lifecycle_state") != "suspended":
         raise RuntimeError(f"failed to suspend {instance_id} during context recycle")
     replacement = runtime._replace_provider_session_for_recycle(
