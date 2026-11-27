@@ -42,6 +42,9 @@ _PRD_SPEC_SECTIONS = {
     ),
 }
 
+# Each section ends with a supported Chinese heading for localized authors and repairs.
+PRD_CHINESE_SECTION_HEADINGS = "、".join(aliases[-1] for aliases in _PRD_SPEC_SECTIONS.values())
+
 _PRD_VIEW_SECTIONS = {
     "product": ("document control", "overview", "background", "goals", "user personas", "user journeys", "success", "acceptance", "dependencies"),
     "architecture": ("document control", "overview", "goals", "business rules", "entities", "non functional", "dependencies", "rollout", "appendices"),
@@ -136,9 +139,13 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
 
     headings = _markdown_headings(body["prd_markdown"])
     normalized_headings = {_normalize_heading(title) for _, title in headings}
-    for section, aliases in _PRD_SPEC_SECTIONS.items():
-        if not any(_section_matches(normalized_headings, alias) for alias in aliases):
-            return f"prd-spec.v1 requires section: {section}"
+    missing_sections = [
+        f"{section} ({aliases[0]} / {aliases[-1]})"
+        for section, aliases in _PRD_SPEC_SECTIONS.items()
+        if not any(_section_matches(normalized_headings, alias) for alias in aliases)
+    ]
+    if missing_sections:
+        return "prd-spec.v1 requires section: " + ", ".join(missing_sections)
 
     requirement_headings = [
         title for level, title in headings

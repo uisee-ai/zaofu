@@ -63,6 +63,16 @@ export interface TaskCardProjection {
   progress: Record<string, unknown> | null;
   attention: TaskAttention;
   activity: { kind: string; at: string };
+  execution?: {
+    stage?: string;
+    state?: string;
+    active_instances?: Array<{ instance_id: string; role?: string; attempt_id?: string; operation_id?: string }>;
+    milestone?: { label: string; at: string; event_id?: string } | null;
+    last_output?: { label: string; at: string; event_id: string } | null;
+    waiting_for?: string;
+    workflow_run_id?: string;
+    request_id?: string;
+  };
 }
 
 export interface Task {
@@ -2310,6 +2320,7 @@ export interface TaskRelation {
 }
 
 export interface TaskDetail {
+  execution?: TaskCardProjection["execution"];
   properties?: {
     source: { kind: "task" | "feature"; id: string; title: string } | null;
     upstream: TaskRelation[];

@@ -1648,6 +1648,12 @@ def _candidate_reverify_checkpoint_recovered(
 ) -> bool:
     """Require evidence from this recovery action, not legacy closeout."""
 
+    def same_run(event: ZfEvent) -> bool:
+        linked_run = event.payload.get("workflow_run_id") or event.correlation_id
+        return event.origin in {"", "kernel"} and (
+            not checkpoint.workflow_run_id or linked_run == checkpoint.workflow_run_id
+        )
+
     source_seen = False
     latest_candidate_id = ""
     latest_candidate_idx = -1
@@ -1656,7 +1662,7 @@ def _candidate_reverify_checkpoint_recovered(
         if event.id == checkpoint.source_event_id:
             source_seen = True
             continue
-        if not source_seen:
+        if not source_seen or not same_run(event):
             continue
         payload = _payload(event)
         if _payload_has_resume_marker(payload, checkpoint.checkpoint_id):
@@ -1670,12 +1676,29 @@ def _candidate_reverify_checkpoint_recovered(
     if not latest_candidate_id:
         return False
     if any(
-        event.type == "fanout.started"
+        event.type == "fanout.started" and same_run(event)
+        and (not checkpoint.stage_id or event.payload.get("stage_id") == checkpoint.stage_id)
         and str(_payload(event).get("trigger_event_id") or "")
         == latest_candidate_id
         for event in events[latest_candidate_idx + 1:]
     ):
         return True
+    # Older recovery identified a per-task writer candidate as a frozen pipeline
+    # snapshot. Retry that exact rejected handoff once from its verified producer.
+    last = events[latest_candidate_idx]
+    if last.payload.get("candidate_snapshot_event_id") and not checkpoint.freeze_id and any(
+        same_run(e) and e.origin == "kernel" and e.type == "task.fanout.rejected" and e.causation_id == last.id
+        and e.payload.get("stage_id") == checkpoint.stage_id
+        and e.payload.get("reason") == "invalid_candidate_reader_assignment"
+        and e.payload.get("error") == "Candidate Reader retrigger lacks its frozen candidate"
+        for e in events[latest_candidate_idx + 1:]
+    ):
+        from zf.runtime.writer_candidate_replay import writer_candidate_source
+        try:
+            if writer_candidate_source(events, checkpoint):
+                return False
+        except ValueError:
+            pass
     return not any(
         event.type == "orchestrator.decision.recorded"
         and idx > latest_candidate_idx
@@ -2037,6 +2060,9 @@ def _same_candidate_scope(
     *,
     branch_key: str = "candidate_ref",
 ) -> bool:
+    run = payload.get("workflow_run_id")
+    if run and checkpoint.workflow_run_id and run != checkpoint.workflow_run_id:
+        return False
     pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "").strip()
     branch = str(payload.get(branch_key) or payload.get("candidate_ref") or "").strip()
     fanout_id = str(payload.get("fanout_id") or payload.get("upstream_fanout_id") or "").strip()

@@ -86,7 +86,10 @@ def test_workflow_invoke_action_writes_input_manifest_and_source_refs(tmp_path: 
             "requested_by": "operator",
             "reason": "approved channel plan",
             "synthesis_event_id": "evt-synth-1",
-            "artifact_refs": [{"path": "channels/ch-zaofu/spec.md", "sha256": "abc"}],
+            "artifact_refs": [
+                {"path": "channels/ch-zaofu/spec.md", "sha256": "abc"},
+                {"ref": "unapproved-research.md", "source_field": "workflow.research.adopted"},
+            ],
         },
     )
 
@@ -101,6 +104,7 @@ def test_workflow_invoke_action_writes_input_manifest_and_source_refs(tmp_path: 
     assert manifest["source_refs"]["channel_id"] == "ch-zaofu"
     assert manifest["source_refs"]["synthesis_event_id"] == "evt-synth-1"
     assert manifest["artifact_refs"][0]["path"] == "channels/ch-zaofu/spec.md"
+    assert not any(item.get("ref") == "unapproved-research.md" for item in manifest["artifact_refs"])
 
     invoke = next(event for event in writer.event_log.read_all() if event.type == "workflow.invoke.requested")
     assert invoke.payload["source_refs"]["workflow_input_manifest_ref"] == manifest_ref

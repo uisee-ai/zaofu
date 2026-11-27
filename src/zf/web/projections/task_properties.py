@@ -30,15 +30,34 @@ _TRANSITIONS = {
 _STAGES = {"impl": "实现", "verify": "验证", "acceptance_review": "验收评审", "integration": "集成"}
 
 
+def admitted_output(event: ZfEvent) -> dict | None:
+    if event.type != "workflow.call.result.admitted" or event.origin != "kernel":
+        return None
+    data = event.payload
+    descriptor = data.get("control_result_ref")
+    if (not event.ts or data.get("admission_status") != "admitted" or not isinstance(descriptor, dict)
+            or not descriptor.get("ref") or not descriptor.get("sha256")):
+        return None
+    verdict = data.get("semantic_verdict")
+    label = f"已接纳阶段结果 · {verdict}" if verdict else "已接纳阶段结果"
+    return {"label": label, "at": event.ts, "event_id": event.id}
+
+
 def latest_milestone(task: Task, events: list[tuple[int, ZfEvent]]) -> dict | None:
     scoped = task_pipeline_event_scope(task, (event for _, event in events if event.task_id == task.id))
     for event in reversed(scoped):
+        if (task.active_dispatch_id and event.payload.get("dispatch_id")
+                and event.payload["dispatch_id"] != task.active_dispatch_id):
+            continue
         label = _MILESTONES.get(event.type)
         if event.type == "task.status_changed" and event.payload.get("from") != event.payload.get("to"):
             label = _TRANSITIONS.get(str(event.payload.get("to") or ""))
         elif event.type == "task.pipeline.stage.dispatched":
             stage = _STAGES.get(str(event.payload.get("task_pipeline_stage") or ""))
             label = f"已派发{stage}" if stage else "已派发"
+        elif event.type == "workflow.call.result.admitted":
+            if receipt := admitted_output(event):
+                label = receipt["label"]
         if label and event.ts:
             return {"label": label, "at": event.ts}
     return None

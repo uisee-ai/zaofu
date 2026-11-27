@@ -182,6 +182,25 @@ def test_prd_spec_v1_accepts_standard_body_and_legacy_body_remains_valid():
     assert validate_prd_document(document()) == ""
 
 
+def test_section_repair_lists_each_missing_alias_in_one_round():
+    body = spec_document()
+    body["prd_markdown"] = body["prd_markdown"].replace("## 01. Overview", "## 概览").replace(
+        "## 04. User personas and prioritized scenarios", "## 用户角色与优先场景",
+    )
+    from zf.runtime.channel_reply_prompt import channel_reply_response_contract
+
+    prompt = channel_reply_response_contract({}, {}, {"refs": {"synthesis_request_id": "current"}})
+    diagnosis = validate_prd_document(body)
+    assert "产品概述" in prompt and "用户与场景" in prompt
+    assert "overview (overview / 产品概述)" in diagnosis
+    assert "users (user personas and prioritized scenarios / 用户与场景)" in diagnosis
+    assert "goals" not in diagnosis
+    body["prd_markdown"] = body["prd_markdown"].replace("## 概览", "## 产品概述").replace(
+        "## 用户角色与优先场景", "## 用户与场景",
+    )
+    assert validate_prd_document(body) == ""
+
+
 def test_prd_spec_v1_accepts_standalone_goals_heading():
     body = spec_document()
     body["prd_markdown"] = body["prd_markdown"].replace(

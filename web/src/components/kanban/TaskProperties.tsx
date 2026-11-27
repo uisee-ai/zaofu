@@ -10,6 +10,7 @@ interface Props {
   detail: TaskDetail | null;
   projectId?: string;
   worker?: string;
+  attemptId?: string;
   onOpenTask?: (id: string) => void;
   onClose: () => void;
 }
@@ -32,8 +33,14 @@ function MilestoneTime({ at }: { at: string }) {
   return <time dateTime={at} title={formatTime(at)}>{relative}</time>;
 }
 
-export function TaskProperties({ task, detail, worker, projectId, onOpenTask, onClose }: Props) {
+export function TaskProperties({ task, detail, worker, attemptId, projectId, onOpenTask, onClose }: Props) {
   const info = detail?.properties;
+  const execution = detail?.execution;
+  const workflowLink = (graph: string, node: string) => projectId && execution?.request_id && execution.workflow_run_id
+    ? `/?${new URLSearchParams({project: projectId, page: "workflows", request: execution.request_id, expected_run: execution.workflow_run_id, graph, node})}`
+    : "";
+  const teamLink = workflowLink("modules", `task:${task.id}`);
+  const progressEvent = execution ? execution.last_output ?? execution.milestone : info?.milestone;
   const contract = detail?.contract ?? task.contract ?? {};
   const sourceTitle = textValue(contract.source_title || task.source);
   const source = info?.source;
@@ -73,8 +80,15 @@ export function TaskProperties({ task, detail, worker, projectId, onOpenTask, on
           : sourceUrl ? <a href={sourceUrl.href} target="_blank" rel="noreferrer">{sourceLabel || sourceUrl.hostname}</a>
           : sourceLabel}
       </dd></>}
-      {worker && <><dt>当前执行者</dt><dd>{worker}</dd></>}
-      {info?.milestone && <><dt>最近进展</dt><dd>{info.milestone.label}<small><MilestoneTime at={info.milestone.at} /></small></dd></>}
+      {execution?.active_instances?.length ? <><dt>当前执行者</dt><dd>{execution.active_instances.map(member => {
+        const link = member.operation_id && workflowLink("workflow", `operation:${member.operation_id}`);
+        return <div key={member.instance_id}>{member.instance_id}{member.attempt_id && <small>
+          {link ? <a href={link}>{member.attempt_id}</a> : member.attempt_id}
+        </small>}</div>;
+      })}</dd></> : !execution && worker && <><dt>当前执行者</dt><dd>{worker}</dd></>}
+      {teamLink && <><dt>工作流</dt><dd><a href={teamLink}>任务分工、产物与交接</a></dd></>}
+      {!execution && attemptId && <><dt>当前尝试</dt><dd>{attemptId}</dd></>}
+      {progressEvent && <><dt>{execution?.last_output ? "最近产出" : "最近进展"}</dt><dd>{progressEvent.label}<small><MilestoneTime at={progressEvent.at} /></small></dd></>}
       {children.length ? <><dt>子任务</dt><dd><details><summary>{children.filter(row => row.status === "done").length} / {children.length} 已完成</summary>{relationList(children)}</details></dd></>
         : progress && progress.total > 0 && <><dt>并行进度</dt><dd>
           {fanout?.fanout_id ? <a href={`?page=fanouts&project=${project}&fanout_id=${encodeURIComponent(fanout.fanout_id)}`}>{progress.done} / {progress.total} 已结束</a>

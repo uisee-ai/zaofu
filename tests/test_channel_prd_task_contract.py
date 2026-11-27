@@ -47,6 +47,7 @@ def _ready_prd_fixture(
     readiness_gaps: list[str] | None = None,
     risk_accepted: bool = False,
     owner_actor_ref: str = "web",
+    adopted_requirement: dict | None = None,
 ) -> tuple[Path, EventWriter, ControlledActionService, dict[str, object]]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -91,8 +92,6 @@ def _ready_prd_fixture(
         "## Out of Scope\n"
         "- YAML output is excluded.\n"
     )
-    spec_path.write_text(markdown, encoding="utf-8")
-    spec_digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
     readiness = persist_channel_prd_readiness(
         state_dir,
         channel_id="ch-prd-task",
@@ -134,6 +133,17 @@ def _ready_prd_fixture(
         "shared_files": ["pyproject.toml"],
         "exclusive_files": ["src/**"],
     }
+    if adopted_requirement:
+        from zf.runtime.channel_prd_document import render_prd_document
+
+        semantic["requirement_coverage"] = [adopted_requirement]
+        semantic["acceptance_criteria"][0]["source_refs"] = adopted_requirement["source_refs"]
+        markdown = render_prd_document(
+            {**semantic, "prd_markdown": markdown},
+            channel_id="ch-prd-task", thread_id="main", source_refs=adopted_requirement["source_refs"],
+        )
+    spec_path.write_text(markdown, encoding="utf-8")
+    spec_digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
     prd = persist_channel_prd(
         state_dir,
         channel_id="ch-prd-task",

@@ -981,7 +981,7 @@ def create_app(
         if not default_project_id:
             return JSONResponse(_no_default_project_payload(), status_code=409)
         return JSONResponse({
-            "tasks": _kanban(state_dir, config=config),
+            "tasks": _kanban(state_dir, config=config, project_root=project_root),
             "archive_tasks": _archive_tasks(state_dir, include_active=False, config=config),
             "delivery_features": (_delivery_rows := _delivery_features(state_dir, config=config)),
             "features": _features(state_dir, delivery_features=_delivery_rows),
@@ -2405,7 +2405,7 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_run_detail(context.state_dir, run_id))
+        return JSONResponse(_run_detail(context.state_dir, run_id, config=context.config))
 
     @app.get("/api/projects/{project_id}/runs/{run_id}/dossier")
     def project_run_dossier(
@@ -3231,7 +3231,7 @@ def create_app(
 
     @app.get("/api/runs/{run_id}")
     def run_detail(run_id: str) -> JSONResponse:
-        return JSONResponse(_run_detail(state_dir, run_id))
+        return JSONResponse(_run_detail(state_dir, run_id, config=config))
 
     @app.get("/api/workdirs")
     def workdirs() -> JSONResponse:
@@ -4117,7 +4117,7 @@ def _snapshot(
             "state_dir": str(state_dir),
         },
         "tasks": _safe_snapshot_projection(
-            "tasks", [], lambda: _kanban(state_dir, config=config)
+            "tasks", [], lambda: _kanban(state_dir, config=config, project_root=project_root)
         ),
         "archive_tasks": _safe_snapshot_projection(
             "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False, config=config)
@@ -4296,7 +4296,7 @@ def _snapshot_slice(
     if slice_name in {"light", "board"}:
         data.update({
             "tasks": board_cards["tasks"] if slice_name == "board" and board_cards is not None else _safe_snapshot_projection(
-                "tasks", [], lambda: _kanban(state_dir, config=config, include_detail_bodies=slice_name != "board")
+                "tasks", [], lambda: _kanban(state_dir, config=config, include_detail_bodies=slice_name != "board", project_root=project_root)
             ),
             "archive_tasks": board_cards["archive_tasks"] if slice_name == "board" and board_cards is not None else _safe_snapshot_projection(
                 "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False, config=config)

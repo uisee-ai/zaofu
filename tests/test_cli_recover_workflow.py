@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from zf.cli.main import main
 from zf.core.config.schema import (
@@ -153,7 +157,9 @@ def test_recover_workflow_checkpoint_id_filters_cli(
     ]
 
 
+@pytest.mark.parametrize("watcher_owns_loop", [False, True])
 def test_recover_workflow_task_map_ref_override_cli(
+    watcher_owns_loop,
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -217,16 +223,28 @@ def test_recover_workflow_task_map_ref_override_cli(
     inspect_out = json.loads(capsys.readouterr().out)
     checkpoint = inspect_out["projection"]["batch_checkpoints"][0]
 
-    rc = main([
-        "recover",
-        "workflow",
-        "--resume-pending",
-        "--checkpoint-id",
-        checkpoint["checkpoint_id"],
-        "--task-map-ref",
-        str(override_task_map),
-        "--json",
-    ])
+    from zf.runtime.workflow_runtime import WorkflowRuntimeCoordinator
+
+    deliveries = []
+    monkeypatch.setattr(WorkflowRuntimeCoordinator, "_maybe_start_writer_fanout", deliveries.append)
+    monkeypatch.setattr(WorkflowRuntimeCoordinator, "_maybe_start_reader_fanout", lambda self, event: None)
+    # A pid record alone may be left by an interrupted watcher.
+    processes = state_dir / "processes"
+    processes.mkdir(exist_ok=True)
+    (processes / "watcher.pid.json").write_text(json.dumps({"owner_pid": os.getpid()}))
+    with (state_dir / "loop.lock").open("w") as loop:
+        if watcher_owns_loop:
+            fcntl.flock(loop, fcntl.LOCK_EX)
+        rc = main([
+            "recover",
+            "workflow",
+            "--resume-pending",
+            "--checkpoint-id",
+            checkpoint["checkpoint_id"],
+            "--task-map-ref",
+            str(override_task_map),
+            "--json",
+        ])
 
     out = json.loads(capsys.readouterr().out)
     requeued = [
@@ -234,6 +252,10 @@ def test_recover_workflow_task_map_ref_override_cli(
         if event.type == "task_map.ready"
         and event.payload.get("source") == "workflow_resume_batch"
     ]
+    assert [event.id for event in deliveries] == ([] if watcher_owns_loop else [requeued[0].id])
+    for kind in ("workflow.resume.checkpoint", "workflow.resume.applied"):
+        receipt, = [e for e in log.read_all() if e.type == kind]
+        assert receipt.origin == "kernel" and receipt.payload["checkpoint_id"] == checkpoint["checkpoint_id"]
     assert inspect_rc == 0
     assert rc == 0
     assert out["applied"] == 1

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zf.runtime.candidate_input_binding import current_candidate_input_binding
 from zf.runtime.reader_input_dispatch import reader_input_dispatch_matches
+from zf.runtime.scoped_candidate_verify import candidate_bound_task_verify
 
 from zf.runtime.plan_artifact_package import (
     admitted_plan_artifact_package_for_generation,
@@ -35,9 +36,10 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
             try:
                 # Frozen Reader authority is independent of its mutable anchor,
                 # whose empty Task contract must not abort this validation.
-                valid = (current_candidate_input_binding(state_dir, manifest, events)
-                         or _current_task_binding(state_dir, manifest, events)
-                         or _current_recovery_reader_binding(state_dir, manifest, events))
+                valid = current_candidate_input_binding(state_dir, manifest, events)
+                if not valid and not _candidate_task_reader(authority):
+                    valid = (_current_task_binding(state_dir, manifest, events)
+                             or _current_recovery_reader_binding(state_dir, manifest, events))
             except (OSError, ValueError):
                 return {**result, "status": "unknown", "reason": "task_binding_unavailable", "requires_rebind": True}
             if not valid:
@@ -47,7 +49,8 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
         try:
             pinned = admitted_plan_artifact_package_for_generation(
                 reduced, task_map_generation=str(manifest.get("task_map_generation") or ""))
-            if matches(pinned) and state_dir is not None:
+            if (matches(pinned) and state_dir is not None
+                    and not _candidate_task_reader(manifest.get("handoff_authority_contract") or {})):
                 if _current_task_binding(state_dir, manifest, events):
                     return {**result, "reason": "current_task_generation_binding"}
                 if _current_recovery_reader_binding(state_dir, manifest, events):
@@ -62,6 +65,12 @@ def input_lifecycle(manifest: Mapping[str, Any], events: Sequence[Any], *,
     if any(matches(row) for row in reduced.get("rejected", [])):
         return {**result, "status": "rejected", "requires_rebind": True}
     return {**result, "status": "unadmitted", "requires_rebind": True}
+
+
+def _candidate_task_reader(authority: Mapping[str, Any]) -> bool:
+    return (isinstance(authority, Mapping) and authority.get("operation_type") == "fanout_reader_child"
+            and candidate_bound_task_verify({"output_profile_id": authority.get("output_profile_id"),
+                                             "handoff_authority_contract": authority}))
 
 
 def _current_task_binding(state_dir: Path, manifest: Mapping[str, Any], events: Sequence[Any]) -> bool:

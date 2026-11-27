@@ -3,6 +3,8 @@ import { Clock3, SignalLow, SignalMedium, SignalHigh, OctagonAlert, UserRound } 
 // 纯展示组件:消费 board 列模型 + lib 的 format/task-display helper,只读 projection,不持 truth。
 import type { PointerEvent } from "react";
 import type { Task } from "../../api/types";
+import { projectionPageQuery } from "../../app/pageCompatibility";
+import { formatDateTime } from "../../lib/uiPreferences";
 import { taskColumn } from "./board";
 import { useUiPreferences } from "../../app/UiPreferences";
 import {
@@ -137,27 +139,41 @@ export function RouteSummaryStrip({
 }
 
 export function TaskCard({
+  projectId,
   task,
   dragging,
   onPointerDown,
   selected,
   onSelect,
 }: {
+  projectId?: string;
   task: Task;
   dragging: boolean;
   onPointerDown: (event: PointerEvent<HTMLElement>, taskId: string) => void;
   selected: boolean;
   onSelect: (taskId: string) => void;
 }) {
-  const { t } = useUiPreferences();
+  const { t, preferences } = useUiPreferences();
   const currentColumn = taskColumn(task);
   const priority = taskPriority(task);
   const PriorityIcon = priority === 0 ? OctagonAlert : priority === 1 ? SignalHigh : priority === 2 ? SignalMedium : SignalLow;
   const actorLabel = taskActorLabel(task);
+  const actorTitle = actorLabel
+    ? `${t(task.assigned_to ? "Assignee" : "Required skill")} · ${actorLabel}`
+    : t("Unassigned");
   const age = latestEventAge(task);
   const attention = taskAttentionBadge(task);
   const effectiveTerminal = taskIsEffectivelyTerminal(task);
-  const fanout = task.fanout;
+  const execution = task.task_card?.execution;
+  const stage = execution?.stage || "";
+  const state = execution?.state || "";
+  const phase = [stage, state !== stage && state].filter((name): name is string => Boolean(name))
+    .map(name => t(name).replaceAll("_", " ")).join(" · ");
+  const instances = effectiveTerminal ? [] : execution?.active_instances || [];
+  const milestone = execution?.last_output || execution?.milestone;
+  const waiting = !effectiveTerminal && (execution?.waiting_for || (currentColumn === "blocked" && task.blocked_reason));
+  const runId = execution?.workflow_run_id;
+  const run = projectId && runId ? projectionPageQuery(new URLSearchParams({ project: projectId }), "run", runId) : null;
 
   return (
     <article className={`task-card status-${currentColumn} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""}`}
@@ -165,18 +181,40 @@ export function TaskCard({
       onPointerDown={(event) => onPointerDown(event, task.id)}>
       <button className="task-open" type="button" onClick={() => onSelect(task.id)}>
         <span className="task-title">{task.title || task.id}</span>
+        {!effectiveTerminal && phase && <span className="card-execution-stage">{phase}</span>}
+        {instances.length > 0 && <span className="card-execution-row">
+          <span>{t("Active workers")}{instances.length > 1 && ` (${instances.length})`}</span>
+          <span>{instances.slice(0, 2).map(member => <span className="card-worker" key={member.instance_id}
+            title={[member.role, member.instance_id, member.attempt_id].filter(Boolean).join(" · ")}>
+            {member.role && member.role !== member.instance_id && `${t(member.role)} · `}{member.instance_id}
+          </span>)}{instances.length > 2 && `+${instances.length - 2}`}</span>
+        </span>}
+        {milestone && <span className="card-execution-row" data-testid="task-card-milestone">
+          <span>{t(execution?.last_output ? "Latest output" : "Latest progress")}</span>
+          <span>{milestone.label} <time dateTime={milestone.at}>{formatDateTime(milestone.at, preferences)}</time></span>
+        </span>}
+        {waiting && <span className="card-execution-row"><span>{t("Waiting for")}</span><span>{waiting}</span></span>}
         {(effectiveTerminal || (currentColumn !== "blocked" && attention.label)) && <span className="task-chip-row">{effectiveTerminal
           ? <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
           : <span className={`badge badge-${attention.tone}`}>{attention.label}</span>}</span>}
         <span className="task-footer">
           <span className="task-id mono" title={task.id}>{task.id}</span>
           <span className="task-priority-icon" title={`${t("Priority")} P${priority}`} aria-label={`${t("Priority")} P${priority}`}><PriorityIcon size={13} aria-hidden="true" /></span>
-          {age !== "-" && <span className="task-age"><Clock3 size={12} aria-hidden="true" />{age}</span>}
-          <span className={`task-assignee-avatar ${actorLabel ? "assigned" : ""}`} title={actorLabel || t("Unassigned")} aria-label={actorLabel || t("Unassigned")}>
+          {!milestone && age !== "-" && <span className="task-age" title={t("Last activity")}><Clock3 size={12} aria-hidden="true" />{age}</span>}
+          <span className={`task-assignee-avatar ${actorLabel ? "assigned" : ""}`} title={actorTitle} aria-label={actorTitle}>
             {actorLabel ? actorLabel.replace(/^@/, "").split(/[-_ /]+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() : <UserRound size={12} aria-hidden="true" />}
           </span>
         </span>
       </button>
+      {instances.length > 1 && <details className="card-attempts" onPointerDown={event => event.stopPropagation()}>
+        <summary>{t("Current attempts")} ({instances.length})</summary>
+        <ul>{instances.map(member => <li key={member.instance_id}>
+          {member.role && `${t(member.role)} · `}{member.instance_id}
+          {member.attempt_id && <code>{member.attempt_id}</code>}
+        </li>)}</ul>
+      </details>}
+      {run && <a className="card-run-link" href={`?${run.params}`} title={runId}
+        onPointerDown={event => event.stopPropagation()}>{t("View run")} ↗</a>}
     </article>
   );
 }

@@ -15,6 +15,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.state.task_attempts import TaskAttemptStore
+from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.task_pipeline_contexts import task_pipeline_generation_contexts
 from zf.runtime.task_pipeline_execution_status import (
@@ -42,11 +43,13 @@ def read_task_pipeline_projection(
     *,
     project_root: Path,
     config: Any,
+    events: list[ZfEvent] | None = None,
+    tasks: list[Task] | None = None,
 ) -> dict[str, Any]:
     """Derive the current view exclusively from replayable runtime truth."""
 
     state_dir = Path(state_dir)
-    events = EventLog(state_dir / "events.jsonl").read_all()
+    events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
     task_store = TaskStore(state_dir / "kanban.json")
     attempts = TaskAttemptStore(state_dir / "task_attempts.json").current_rows()
     bindings = RoleSessionRegistry(
@@ -54,11 +57,10 @@ def read_task_pipeline_projection(
         project_root=str(project_root),
     ).task_stage_bindings()
     contexts = task_pipeline_generation_contexts(events)
-    tasks = [
-        task
-        for task_id in sorted(contexts)
-        if (task := task_store.get(task_id)) is not None
-    ]
+    if tasks is None:
+        tasks = [task for task_id in sorted(contexts) if (task := task_store.get(task_id)) is not None]
+    else:
+        tasks = [task for task in tasks if task.id in contexts]
     partitions = task_pipeline_policy_partitions(
         config,
         contexts,

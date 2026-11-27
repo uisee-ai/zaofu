@@ -9,7 +9,7 @@ def build_job(job: ProjectionJob) -> dict:
         from zf.web.server import _archive_tasks, _kanban, _safe_snapshot_projection
         return {
             "tasks": _safe_snapshot_projection("tasks", [], lambda: _kanban(
-                job.state_dir, config=job.config, include_detail_bodies=False)),
+                job.state_dir, config=job.config, include_detail_bodies=False, project_root=job.root)),
             "archive_tasks": _safe_snapshot_projection("archive_tasks", [], lambda: _archive_tasks(
                 job.state_dir, include_active=False, config=job.config)),
         }

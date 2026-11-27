@@ -223,7 +223,7 @@ const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", 
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   project: new Set(["agent", "agent_thread", "agent_request"]),
   channels: new Set(["thread", "question", "preview", "reader"]),
-  workflows: new Set(["request", "graph", "node"]),
+  workflows: new Set(["request", "graph", "node", "expected_run"]),
   inbox: new Set(["plan"]),
   settings: new Set(["settings"]),
   delivery: new Set(["feature"]),
@@ -2365,6 +2365,7 @@ export function App() {
                   : "已显示任务记录，正在更新执行状态与详情…"}
               </p>}
               <BoardWorkbench
+                projectId={activeProjectId || undefined}
                 projectName={topbarProjectName}
                 actionReady={actionGate.actionReady}
                 actionResult={actionResult}

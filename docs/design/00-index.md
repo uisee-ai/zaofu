@@ -5,7 +5,7 @@
 
 ## 编号与状态
 
-当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 216；201–205 已在本地设计工作中占用，不复用。
+当前公开 checkout 未包含完整历史设计目录；当前已登记的设计编号到 217；201–205 已在本地设计工作中占用，不复用。
 引用编号 212 的设计时请使用完整文件名。
 117 为历史保留编号，不复用。
 后续新增前仍需核对目录、索引及历史引用，避免重号。
@@ -35,5 +35,6 @@
 | 214 | [Workflow Skill 任务评估与按需加载优化](../spec/214-workflow-skill-evaluation-and-optimization.md) | implemented（Task Verify 与 Planner 试点） | 项目决策表、客户端兼容性、加载与交互试验已接入。[8×8 与 Loshu FMS 复盘](../impl/214-workflow-skill-field-audit.md)覆盖 39 项当前方法及长契约读取对照。 |
 | 215 | [OA 按需组队与阶段执行工作台](specs/215-oa-stage-teams-and-execution-workbench.md) | 工程已实施，真实试点待验 | OA 按需组队与独立验收、阶段工作台和按需诊断已接入。固定与按需 Plan、两组真实 8×8 的对照待验。[实施与验收](../impl/215-oa-stage-team-implementation.md)。 |
 | 216 | [Agent 持久收件箱与责任交接](specs/216-durable-agent-mailbox-and-handoff.md) | candidate | 基于 Orca mailbox 源码审查，补充 OA/Worker 稳定义务寻址、消费者隔离、交付与问题回执、未知恢复及 215 工作台接线；保留 WRC 与正式结果准入权威。 |
+| 217 | [需求调研、候选产品对标与任务执行看板](../sepcs/217-reference-guided-product-acceptance.md) | [实施与实测](../impl/217-reference-acceptance-validation.md) | 让采纳决定贯通 PRD、Plan 与候选实测，明确原始漏项、补证和范围外机会的去向，在 Task 卡面展示实际执行与等待条件。 |
 
 181–194 包含历史或本地设计编号；未纳入当前仓库追踪的文档不作为仓库文档登记。

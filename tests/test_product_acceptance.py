@@ -124,8 +124,11 @@ def _report(
     }
 
 
-def _package(state_dir: Path, *, provider_required: bool = False) -> tuple[dict, dict]:
-    spec = _spec(provider_required=provider_required)
+def _package(
+    state_dir: Path, *, provider_required: bool = False, spec: dict | None = None,
+) -> tuple[dict, dict]:
+    if spec is None:
+        spec = _spec(provider_required=provider_required)
     spec_descriptor = write_immutable_json_sidecar(
         state_dir,
         spec,

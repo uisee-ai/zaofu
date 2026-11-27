@@ -9,6 +9,7 @@ import type { BoardColumnConfig } from "./board";
 import { TaskCard } from "./TaskCard";
 
 export function BoardColumn({
+  projectId,
   column,
   tasks,
   selectedTaskId,
@@ -17,6 +18,7 @@ export function BoardColumn({
   onSelect,
   onNewTask,
 }: {
+  projectId?: string;
   column: BoardColumnConfig;
   tasks: Task[];
   selectedTaskId: string | null;
@@ -46,6 +48,7 @@ export function BoardColumn({
         {tasks.map((task) => (
           <TaskCard
             key={task.id}
+            projectId={projectId}
             task={task}
             selected={task.id === selectedTaskId}
             dragging={task.id === dragTaskId}

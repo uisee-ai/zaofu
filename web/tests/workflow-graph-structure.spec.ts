@@ -179,6 +179,19 @@ test("partial stage details load execution only on request", async ({ page }) =>
   expect(fullReads).toBe(1);
 });
 
+test("linked task attempts keep their bound workflow run", async ({ page }) => {
+  await setup(page);
+  await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ json: structure("A") }));
+  const path = "/tests/inbox-workflow.html?surface=graph-refresh&request=A&node=workflow%3Astage%3AA&expected_run=";
+  await page.goto(path + "prior-run");
+  await page.locator("#root").evaluate(element => { element.style.height = "100vh"; });
+  await expect(page.getByRole("status").filter({hasText: "此任务链接绑定运行 prior-run"})).toBeVisible();
+  await expect(page.getByTestId("workflow-graph-canvas")).toHaveCount(0);
+  await page.goto(path + "run-A");
+  await page.locator("#root").evaluate(element => { element.style.height = "100vh"; });
+  await expect(page.getByTestId("workflow-graph-canvas")).toBeVisible();
+});
+
 test("retired view links return to execution while preserving request and selected node", async ({ page }) => {
   await setup(page);
   await page.route("**/workflow-requests/A/graph/structure?*", route => route.fulfill({ status: 404 }));

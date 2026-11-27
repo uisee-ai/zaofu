@@ -73,6 +73,7 @@ def apply_workflow_resume(
     project_root: Path | None = None,
     dry_run: bool = False,
     gate_dispatcher=None,
+    delegate_batch_to_watcher: bool = False,
     checkpoint_id: str = "",
     override_task_map_ref: str = "",
     force_gate_dispatch: bool = False,
@@ -238,7 +239,9 @@ def apply_workflow_resume(
             writer,
             checkpoint,
             state_dir=state_dir,
-            gate_dispatcher=gate_dispatcher,
+            # Fresh task_map.ready / candidate.ready events wake the live watcher.
+            # Direct delivery is reserved for an offline recovery or a historical gate.
+            gate_dispatcher=None if delegate_batch_to_watcher else gate_dispatcher,
             force_gate_dispatch=force_gate_dispatch,
             override_task_map_ref=override_task_map_ref,
             events=events,
@@ -1296,7 +1299,20 @@ def _apply_batch_candidate_ready(
     }
     if registration_binding:
         payload.update(registration_binding)
-    reason = batch_candidate_replay_rejection(writer.event_log.read_all(), payload)
+    events = writer.event_log.read_all()
+    reason = batch_candidate_replay_rejection(events, payload)
+    if not reason and not registration_binding:
+        from zf.runtime.writer_candidate_replay import writer_candidate_source
+        try:
+            producer = writer_candidate_source(events, checkpoint)
+        except ValueError as exc:
+            return _reject_batch(writer, checkpoint, emitted, str(exc))
+        if producer:
+            upstream = producer.payload["fanout_id"]
+            payload = {**producer.payload, **payload, "fanout_id": upstream, "upstream_fanout_id": upstream,
+                       "operator_recovery": {**payload["operator_recovery"], "upstream_fanout_id": upstream},
+                       "candidate_event_id": producer.id, "candidate_snapshot_event_id": ""}
+
     if reason:
         return _reject_batch(writer, checkpoint, emitted, reason)
     event = writer.append(ZfEvent(
@@ -1913,6 +1929,7 @@ def _batch_checkpoint_event(
 ) -> ZfEvent:
     return ZfEvent(
         type=WORKFLOW_RESUME_EVENT,
+        origin="kernel",
         actor="zf-cli",
         payload={
             **checkpoint.to_dict(),
@@ -1930,6 +1947,7 @@ def _batch_applied_event(
 ) -> ZfEvent:
     return ZfEvent(
         type=WORKFLOW_RESUME_APPLIED_EVENT,
+        origin="kernel",
         actor="zf-cli",
         payload={
             **checkpoint.to_dict(),

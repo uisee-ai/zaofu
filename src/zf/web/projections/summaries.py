@@ -564,6 +564,12 @@ def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfC
     )
 
     all_events = _events_with_seq(state_dir, config=config)
+    from zf.web.projections.board_execution import board_executions
+    from zf.runtime.run_scope import run_aliases
+    executions = board_executions(
+        state_dir, state_dir.parent, config, [t for t in tasks if t.status in {"done", "cancelled"}],
+        all_events, run_aliases(e for _, e in all_events),
+    )
     search_texts = payload_search_texts(state_dir, config=config)
     if len(search_texts) != len(all_events):
         from zf.web.projections.common import _payload_search_text
@@ -629,6 +635,8 @@ def _archive_tasks(state_dir: Path, *, include_active: bool = False, config: ZfC
         row["effective_terminal"] = card_projection["lifecycle"]["effective_terminal"]
         row["canonical_drift"] = False
         row["attention"] = card_projection["attention"]
+        if task.id in executions:
+            card_projection["execution"] = executions[task.id]
         row["task_card"] = card_projection
         rows.append(row)
     rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)

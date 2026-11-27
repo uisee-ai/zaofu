@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from pathlib import Path
 from typing import Any
+from zf.core.config.schema import ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.security.redaction import redact_obj
 from zf.runtime.run_archive import RunArchiveError
@@ -134,12 +135,39 @@ def _active_runs(state_dir: Path, *, project_root: Path) -> dict:
         }
 
 
-def _run_detail(state_dir: Path, run_id: str) -> dict:
+def _live_run_detail(state_dir: Path, run_id: str, config: ZfConfig | None) -> dict | None:
+    """A named run can be observed before it has an archive manifest."""
+    from zf.runtime.run_scope import event_run_id, run_aliases
+    rows = _events_with_seq(state_dir, config=config)
+    anchors = {"workflow.invoke.accepted", "task.pipeline.generation.admitted", "run.goal.started", "run.started"}
+    if not any(event.origin == "kernel" and event.type in anchors and
+               (event.payload.get("workflow_run_id") or event.payload.get("run_id") or event.correlation_id) == run_id
+               for _, event in rows):
+        return None
+    aliases = run_aliases(event for _, event in rows)
+    scoped = [
+        (seq, event) for seq, event in rows
+        if (event.payload.get("workflow_run_id") or event.payload.get("run_id")
+            or event_run_id(event, aliases=aliases)) == run_id
+    ]
+    if not scoped:
+        return None
+    tasks = sorted({event.task_id for _, event in scoped if event.task_id})
+    summary = {"event_count": len(scoped), "task_count": len(tasks), "task_ids": tasks}
+    return {
+        "run_id": run_id, "run": {"run_id": run_id, "source": "events.jsonl", "status": "projected",
+                                  "started_at": scoped[0][1].ts, "summary": summary},
+        "manifest": {"source": "events.jsonl", "summary": summary}, "artifact_dir": "", "artifacts": [],
+        "events": [_event_to_dict(seq, event) for seq, event in scoped[-200:]], "empty": False,
+    }
+
+
+def _run_detail(state_dir: Path, run_id: str, *, config: ZfConfig | None = None) -> dict:
     if run_id == _EVENT_LOG_RUN_ID:
-        summary = _event_log_run_summary(state_dir)
+        summary = _event_log_run_summary(state_dir, config=config)
         if summary is None:
             raise HTTPException(404, f"run {run_id!r} not found")
-        events = [_event_to_dict(seq, event) for seq, event in _events_with_seq(state_dir)]
+        events = [_event_to_dict(seq, event) for seq, event in _events_with_seq(state_dir, config=config)]
         return redact_obj({
             "run_id": run_id,
             "run": summary,
@@ -157,6 +185,8 @@ def _run_detail(state_dir: Path, run_id: str) -> dict:
     except RunArchiveError as exc:
         raise HTTPException(400, str(exc)) from exc
     if detail.get("empty"):
+        detail = _live_run_detail(state_dir, run_id, config)
+    if not detail:
         raise HTTPException(404, f"run {run_id!r} not found")
     return redact_obj(detail)
 

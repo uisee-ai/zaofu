@@ -64,6 +64,11 @@ def _runtime_owner(state_dir: Path) -> dict[str, Any]:
     return guard if _process_identity(pid) and _loop_owned(state_dir) else {}
 
 
+def has_live_watcher(state_dir: Path) -> bool:
+    """A watcher holding the project loop lock owns normal fanout dispatch."""
+    return bool(_runtime_owner(state_dir))
+
+
 def mark_runtime_ready(state_dir: Path, *, config: ZfConfig | None = None) -> None:
     """Publish readiness for this watcher epoch, after startup catch-up."""
     guard = _read(state_dir / "processes" / "watcher.pid.json")

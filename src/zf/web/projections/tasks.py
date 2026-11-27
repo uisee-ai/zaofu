@@ -31,6 +31,7 @@ from zf.runtime.run_admission import task_workflow_run_id
 from zf.runtime.run_scope import event_run_id
 from zf.runtime.run_scope import run_aliases
 from zf.runtime.workflow_anchor import is_workflow_managed_task
+from zf.web.projections.board_execution import board_executions
 from zf.web.operator_contract import kanban_agent_evidence_model
 from zf.web.operator_contract import kanban_agent_status_model
 import json
@@ -869,6 +870,16 @@ def _task_detail(
     # test_candidate_integration_failure_projects_to_task_detail_and_snapshot).
     # Making task detail fast needs ref-scoped hydration, tracked as P1.
     all_events = _events_with_seq(state_dir, config=config)
+    execution = board_executions(
+        state_dir, _resolve_project_root_for_state(state_dir, project_root), config, [task], all_events,
+        run_aliases(event for _, event in all_events),
+    )[task.id]
+    closeout, _ = _task_display_completion(
+        task, _completed_goal_task_closeouts_for_projection(all_events),
+        _current_completed_run_closeout_for_projection(all_events),
+    )
+    if closeout is not None and task.status not in _TERMINAL_TASK_STATUSES:
+        execution.update(state="done", active_instances=[], waiting_for="")
     task_events = _events_mentioning_task(all_events, task_id)
     latest_fanout = _latest_task_fanout_runtime(state_dir, task.id, all_events)
     trace_id = _trace_id_from_events(task_events)
@@ -1027,6 +1038,7 @@ def _task_detail(
     return {
         "task": task_payload,
         "properties": redact_obj(task_properties(state_dir, task, task_events)),
+        "execution": redact_obj(execution),
         "contract": redact_obj(asdict(task.contract)),
         "artifact_refs": redact_obj(artifact_refs),
         "deliverables": [
@@ -1343,7 +1355,8 @@ def _task_diff(
     }
 
 
-def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_bodies: bool = True) -> list[dict]:
+def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_bodies: bool = True,
+            project_root: Path | None = None) -> list[dict]:
     """Tasks list with derived phase (R-TASK-STATE-AXIS-01)."""
     path = state_dir / "kanban.json"
     if not path.exists():
@@ -1371,6 +1384,9 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
 
     all_events, event_epoch, event_fingerprint = _events_state(state_dir, config=config)
     aliases = run_aliases(event for _, event in all_events)
+    executions = board_executions(
+        state_dir, _resolve_project_root_for_state(state_dir, project_root), config, tasks, all_events, aliases,
+    )
     legacy_completed_closeout = _current_completed_run_closeout_for_projection(
         all_events
     )
@@ -1503,25 +1519,9 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             workflow=workflow,
         )
         projection_reconciled = False
-        projection_reconcile_reason = ""
-        completed_closeout = goal_task_closeouts.get(t.id)
-        if (
-            completed_closeout is not None
-            and goal_terminal_matches_current_task(
-                t,
-                completed_closeout.payload
-                if isinstance(completed_closeout.payload, dict) else {},
-            )
-        ):
-            projection_reconcile_reason = "run_goal_completed"
-        elif completed_closeout is not None:
-            completed_closeout = None
-        elif (
-            legacy_completed_closeout is not None
-            and not is_workflow_managed_task(t)
-        ):
-            completed_closeout = legacy_completed_closeout
-            projection_reconcile_reason = "run_completed"
+        completed_closeout, projection_reconcile_reason = _task_display_completion(
+            t, goal_task_closeouts, legacy_completed_closeout,
+        )
         display_status = t.status
         if (
             completed_closeout is not None
@@ -1561,6 +1561,9 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
                 else str(kanban_display.get("reason") or "")
             ),
         )
+        card_projection["execution"] = executions[t.id]
+        if card_projection["lifecycle"]["effective_terminal"]:
+            card_projection["execution"].update(state=display_status, active_instances=[], waiting_for="")
         out.append({
             "id": t.id,
             "title": t.title,
@@ -1637,6 +1640,16 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             "retry_metadata": retry_metadata,
         })
     return out
+
+
+def _task_display_completion(task: Task, goal_closeouts: dict, legacy: ZfEvent | None) -> tuple[ZfEvent | None, str]:
+    event = goal_closeouts.get(task.id)
+    if event is not None:
+        if goal_terminal_matches_current_task(task, event.payload or {}):
+            return event, "run_goal_completed"
+    elif legacy is not None and not is_workflow_managed_task(task):
+        return legacy, "run_completed"
+    return None, ""
 
 
 def _completed_goal_task_closeouts_for_projection(

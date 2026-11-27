@@ -17,6 +17,7 @@ from zf.core.events.writer import EventWriter
 from zf.core.safety.path_guard import PathGuard, PathGuardError
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.workflow.request_policy import missing_fields_for_kind, normalize_workflow_kind
+from zf.runtime.workflow_inputs import bind_adopted_research_inputs, hydrate_request_workflow_input_manifest
 from zf.runtime.workflow_origin import (
     WorkflowOriginError,
     assert_same_workflow_origin,
@@ -227,6 +228,17 @@ def adopt_workflow_research_result(
     }
     projection = dict(projection)
     projection["research_artifacts"] = [*adoptions, adoption]
+    if (
+        projection.get("kind") == "prd"
+        and projection.get("status") in {"draft", "clarifying", "ready"}
+        and projection.get("workflow_input_manifest_ref")
+    ):
+        # A direct Proposal may be prepared before the next intake registration.
+        manifest = hydrate_request_workflow_input_manifest(state_dir, projection)
+        manifest["artifact_refs"] = bind_adopted_research_inputs(
+            state_dir, projection, manifest.get("artifact_refs", []),
+        )
+        _store_effective_manifest(state_dir, projection, manifest)
     projection["updated_at"] = _now_iso()
     _write_projection(state_dir, projection)
     if writer is not None:
@@ -858,7 +870,17 @@ def _bind_effective_manifest(
         refs.append(str(manifest_path))
     if projection["requirement_spec_ref"] not in ref_values:
         refs.append(projection["requirement_spec_ref"])
+    if projection.get("kind") == "prd":
+        refs = bind_adopted_research_inputs(state_dir, projection, refs)
     manifest["artifact_refs"] = refs
+    _store_effective_manifest(state_dir, projection, manifest)
+    projection["source_workflow_input_manifest_ref"] = str(manifest_path)
+    projection["source_workflow_input_manifest_digest"] = source_digest
+
+
+def _store_effective_manifest(
+    state_dir: Path, projection: dict[str, Any], manifest: dict[str, Any],
+) -> None:
     text = json.dumps(
         manifest,
         ensure_ascii=False,
@@ -883,8 +905,6 @@ def _bind_effective_manifest(
     )
     projection["workflow_input_manifest_ref"] = str(effective_path)
     projection["workflow_input_manifest_digest"] = digest
-    projection["source_workflow_input_manifest_ref"] = str(manifest_path)
-    projection["source_workflow_input_manifest_digest"] = source_digest
 
 
 def _write_projection(state_dir: Path, projection: dict[str, Any]) -> None:

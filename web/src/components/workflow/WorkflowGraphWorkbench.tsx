@@ -212,6 +212,11 @@ export default function WorkflowGraphWorkbench({ projectId, requestId, revision,
     url.searchParams.set("request", requestId); url.searchParams.set("graph", targetView); url.searchParams.set("node", id);
     history.replaceState(null, "", url);
   }
+  const linkedTarget = new URLSearchParams(location.search);
+  const linkedRun = linkedTarget.get("expected_run");
+  if (graph && linkedRun && linkedTarget.get("request") === requestId && graph.scope.run_id !== linkedRun) {
+    return <p role="status">此任务链接绑定运行 {linkedRun}。当前工作流记录对应的运行已变更，请从看板重新打开。</p>;
+  }
   return <TeamViewContext.Provider value={{clock, historical:Boolean(asOf), filters:teamFilters,
     session: !asOf && graph?.scope.historical === false && graph.scope.execution_started === true
       && graph.scope.project_id === projectId && graph.scope.request_id === requestId && graph.generation

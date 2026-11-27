@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from zf.core.config.schema import ZfConfig
+from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.core.workflow.flow_metadata import flow_metadata_for
 from zf.runtime.artifact_query.service import ArtifactQueryService
@@ -561,6 +562,7 @@ class CanonicalHandoffResolver:
         payload: Mapping[str, Any],
         workflow_run_id: str,
         currentness: dict[str, Any],
+        events: Sequence[ZfEvent] | None = None,
     ) -> dict[str, Any]:
         contract = self._authority_contract(
             payload,
@@ -572,7 +574,7 @@ class CanonicalHandoffResolver:
             raise ArtifactReadError(
                 "candidate-verify authority contract requires candidate lineage"
             )
-        all_events = self.query._events()
+        all_events = self.query._events() if events is None else list(events)
         scoped = events_for_run(all_events, run_id=workflow_run_id)
         candidates = [
             event

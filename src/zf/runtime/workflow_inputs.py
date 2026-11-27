@@ -22,6 +22,7 @@ from zf.runtime.workflow_request_concurrency import WorkflowRequestError
 
 
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_ADOPTED_RESEARCH_SOURCE = "workflow.research.adopted"
 
 
 def workflow_run_id_for(*, event_id: str, task_id: str, pattern_id: str) -> str:
@@ -84,6 +85,42 @@ def hydrate_request_workflow_input_manifest(
             "workflow input manifest does not match the request"
         )
     return manifest
+
+
+def bind_adopted_research_inputs(
+    state_dir: Path,
+    request: dict[str, Any],
+    artifact_refs: list[Any],
+) -> list[Any]:
+    """Only the Request revision or its frozen Proposal can mark evidence as adopted."""
+    # Raw intake or invocation descriptors can carry ordinary references but cannot
+    # supply this provenance. Regenerate it from the admitted decision.
+    refs = [
+        ref for ref in artifact_refs
+        if not (isinstance(ref, dict) and ref.get("source_field") == _ADOPTED_RESEARCH_SOURCE)
+    ]
+    revision = request["revision"]
+    adopted = [
+        {
+            "kind": "research_report",
+            "source_field": _ADOPTED_RESEARCH_SOURCE,
+            "ref": row["artifact_ref"],
+            "sha256": row["sha256"],
+            "summary": row["summary"],
+            "request_id": request["request_id"],
+            "request_revision": revision,
+            "result_event_id": row["result_event_id"],
+        }
+        for row in request.get("research_artifacts") or []
+        if row.get("request_revision") == revision
+    ]
+    if adopted and request.get("proposal_digest") and request.get("status") in {
+        "proposed", "approved", "submitted", "running",
+    }:
+        # A later adoption enriches the Request, not the already frozen Proposal.
+        frozen = hydrate_request_workflow_input_manifest(state_dir, request)
+        adopted = [row for row in adopted if row in frozen.get("artifact_refs", [])]
+    return [*refs, *adopted]
 
 
 def workflow_prompt_ref(workflow_run_id: str) -> str:
@@ -377,6 +414,8 @@ def _request_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_ref_item(item: Any, *, source_field: str) -> dict[str, Any]:
     if isinstance(item, dict):
+        if item.get("source_field") == _ADOPTED_RESEARCH_SOURCE:
+            return {}
         ref = redact_obj(dict(item))
         ref.setdefault("source_field", source_field)
         return ref
@@ -427,7 +466,11 @@ def _render_workflow_prompt(
         thread_id=thread_id,
         synthesis_event_id=str(source_refs.get("synthesis_event_id") or request_payload.get("synthesis_event_id") or ""),
     )
-    research_updates = _select_research_updates(channel, thread_id=thread_id)
+    if request_payload.get("request_id") and prompt_kind == "prd":
+        # Thread activity can belong to another Request or arrive after this Proposal.
+        research = "See the current Request's adopted research in Artifact Refs below."
+    else:
+        research = _render_state_updates(_select_research_updates(channel, thread_id=thread_id))
     messages = _select_recent_messages(channel, thread_id=thread_id)
     sections = [
         f"# {_prompt_title(prompt_kind)}",
@@ -448,7 +491,7 @@ def _render_workflow_prompt(
         _render_synthesis(synthesis),
         "",
         "## Research And Fanout Results",
-        _render_state_updates(research_updates),
+        research,
         "",
         "## Recent Discussion",
         _render_messages(messages),
