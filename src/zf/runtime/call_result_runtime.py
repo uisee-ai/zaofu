@@ -699,7 +699,7 @@ def prepare_call_operation(
         },
     }
     if output_profile_id == "candidate-verify":
-        from zf.runtime.candidate_reader_reassessment import enabled, policy_kind
+        from zf.runtime.candidate_reader_reassessment import enabled, native_reassessment_enabled, policy_kind
         if previous_request is not None:
             authorized = previous_request.get("candidate_reader_reassessment") is True
             flow_kind = previous_request.get("candidate_reassessment_flow_kind", "")
@@ -709,6 +709,10 @@ def prepare_call_operation(
         if authorized:
             request["candidate_reader_reassessment"] = True
             request["candidate_reassessment_flow_kind"] = flow_kind
+            native_allowed = (previous_request.get("reassess_native_activity") is True if previous_request is not None
+                              else native_reassessment_enabled(runtime.config, flow_kind))
+            if native_allowed:
+                request["reassess_native_activity"] = True
     if reassessment_scope_ref:
         request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
     if output_profile_id == "candidate-verify" and payload.get("candidate_reader_scope"):

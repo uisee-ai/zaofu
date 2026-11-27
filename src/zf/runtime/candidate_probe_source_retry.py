@@ -12,14 +12,20 @@ from zf.runtime.task_host_manifest import digest
 
 if TYPE_CHECKING:
     from zf.runtime.control_actions import ControlledActionService
+    from zf.runtime.candidate_host_production import CandidateOutputRecovery
 
 
 def resume_probe_source(service: 'ControlledActionService', operation: dict, contract: dict,
                         policy: HostVerificationConfig, events: list[ZfEvent], dispatch: ZfEvent,
-                        receipts: dict[str, dict]) -> bool:
+                        receipts: dict[str, dict], *, output_recovery: 'CandidateOutputRecovery | None' = None) -> bool:
+    expected = (output_recovery.commands if output_recovery
+                else {c['command_id'] for c in contract['verification_commands']})
+    failure_classes = {'verifier_execution_failure'}
+    if output_recovery:
+        failure_classes.add('reader_execution_failure')
     if (contract.get('authority_scope') != 'candidate'
             or operation.get('semantic_verdict') != 'abstained'
-            or {c['command_id'] for c in contract['verification_commands']} != receipts.keys()):
+            or not expected or expected != receipts.keys()):
         return False
     fanout = dispatch.payload.get('fanout_id')
     child = dispatch.payload.get('child_id')
@@ -34,7 +40,7 @@ def resume_probe_source(service: 'ControlledActionService', operation: dict, con
             members[event.payload.get('child_id')] = event
     failed = members.get(child)
     if (not failed or failed.type != 'fanout.child.failed'
-            or failed.payload.get('failure_class') != 'verifier_execution_failure'
+            or failed.payload.get('failure_class') not in failure_classes
             or failed.payload.get('operation_id') != operation['operation_id']
             or not any(e.type == 'fanout.child.dispatched' for e in members.values())):
         return False
@@ -53,7 +59,9 @@ def resume_probe_source(service: 'ControlledActionService', operation: dict, con
         request = hydrate_sidecar_ref(service.state_dir, operation['request_ref']).payload['request']
         if request.get('output_profile_id') != 'candidate-verify' or request.get('candidate_host_evidence_ref'):
             return False
-        for ref in receipts.values():
+        for command_id, ref in receipts.items():
+            if output_recovery and output_recovery.shared_receipts.get(command_id) == ref:
+                continue  # Independently authenticated against both frozen contracts and this Reader's access.
             fact = hydrate_sidecar_ref(service.state_dir, ref).payload
             if (any(not operation.get(k) or fact.get(k) != operation[k] for k in (
                     'workflow_run_id', 'operation_id', 'active_attempt_id', 'request_hash'))

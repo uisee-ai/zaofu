@@ -266,6 +266,7 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   This reports an external wait, not product acceptance. If a product report is
   supplied, all its identity and evidence checks still apply. After recovery,
   independently complete the full mandatory product evaluation below.
+- 首次 Candidate 查看当前索引。已签宿主收据按职责核验；合同允许本地执行的命令直接运行。如果签名合同要求在预授权容器生成指定输出、当前索引尚无该来源，记录准确命令 ID、候选 SHA、输出路径和本次查询证据。继续处理能读取的必读项，以简报中的正式结果入口移交采证。已签来源确实读不出时，另记实际读取错误。
 - 环境探针（例如 Docker socket）失败时，不要等读完全部产品材料才上报环境等待。
   使用 `failure_class: verifier_execution_failure`，填写具体 `summary` 和实际失败的
   `evidence_refs`。可以引用本次实际工具调用 ID 或返回的输出/chunk ID，附原命令、

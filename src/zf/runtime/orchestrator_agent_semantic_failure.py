@@ -195,7 +195,8 @@ def request_semantic_failure_checkpoint(
             **({"return_to_plan_contract": "For an aggregate return_to_plan, put finding_dispositions on the "
                 "directive. Account for each supplied finding_id exactly once with classification "
                 "product_defect/contract_question/execution_unknown, owner, next_action and rationale. "
-                "Identify the independent evidence to obtain; the source Task alone does not authorize "
+                "For unknown native concurrency, next_action=reassess_native_activity requests a bounded "
+                "historical measurement when authorized. Identify the independent evidence to obtain; the source Task alone does not authorize "
                 "Writer repair. Separate evidence recovery from a protected scope decision."}
                if aggregate_candidate else {}),
             "rework_contract": "An unchanged-contract product repair requires candidate_repair in the "

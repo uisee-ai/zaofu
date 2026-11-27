@@ -36,6 +36,7 @@ def test_blocked_retry_does_not_count_as_delivered_recovery(tmp_path, monkeypatc
     original = runtime._retry_fanout_child
     monkeypatch.setattr(runtime, "_retry_fanout_child", lambda **_kwargs: False)
     assert runtime._recover_lost_reader_fanout_dispatches(log.read_all())
+    assert not runtime._recover_lost_reader_fanout_dispatches(log.read_all())
     monkeypatch.setattr(runtime, "_retry_fanout_child", original)
     assert runtime._recover_lost_reader_fanout_dispatches(log.read_all())
     events = log.read_all()

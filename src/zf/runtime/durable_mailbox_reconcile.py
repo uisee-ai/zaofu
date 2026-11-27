@@ -9,10 +9,9 @@ def reconcile_mailbox(runtime, events=None):
     """Cancel pending deliveries only when positive authority evidence proves revocation."""
     from zf.runtime.durable_mailbox import _expired, _question_states, _write
     from zf.core.state.locks import locked_path
-    from zf.runtime.durable_mailbox_authority import operation_binding, terminal, owner_role
+    from zf.runtime.durable_mailbox_authority import operation_binding, owner_role, run_availability
     from zf.runtime.workflow_operation import reduce_workflow_operations
     from zf.runtime.durable_mailbox_question_liveness import peer_loss
-    from zf.runtime.pause_lifecycle import is_run_dispatch_paused
 
     # An unconfigured project should not allocate a mailbox index. During drain,
     # losing the cache must still discover previously accepted ledger entries.
@@ -63,8 +62,9 @@ def reconcile_mailbox(runtime, events=None):
             if last.get("action") in {"answer", "cancel"}:
                 continue
             if run not in by_run:
-                by_run[run] = (terminal(canonical, run), None)
-            ended, members = by_run[run]
+                ended, paused = run_availability(indexed, run)
+                by_run[run] = (ended, paused, None)
+            ended, paused, members = by_run[run]
             for addr in [last["target"]] if last.get("target") else p["recipients"]:
                 pair = (key, digest(addr))
                 if pair in disposed or (p["kind"] != "question" and pair in acknowledged):
@@ -93,7 +93,7 @@ def reconcile_mailbox(runtime, events=None):
                 else:
                     if members is None:
                         members = roster(runtime, canonical, operations, run)
-                        by_run[run] = (ended, members)
+                        by_run[run] = (ended, paused, members)
                     scope = ("stage", "obligation_id", "work_unit_id", "pipeline_stage", "task_id")
                     current = next((ids for member, ids in members if member == addr), [])
                     if len(current) == 1:
@@ -118,7 +118,7 @@ def reconcile_mailbox(runtime, events=None):
                 )
                 cause = e.id
                 if claim and reason in {"", "execution_ended"}:
-                    if is_run_dispatch_paused(canonical, run):
+                    if paused:
                         continue
                     if last["action"] == "wait" and not _expired(
                         canonical, waits[key], last["deadline"]

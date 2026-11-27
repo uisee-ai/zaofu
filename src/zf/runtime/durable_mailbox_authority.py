@@ -8,7 +8,7 @@ from pathlib import Path
 
 from zf.core.state.locks import locked_path
 from zf.runtime.call_result_envelope import canonical_json_sha256
-from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+from zf.runtime.pause_lifecycle import PAUSE_EVENT_TYPES, RESUME_EVENT_TYPES, is_run_dispatch_paused
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_team_projection import project_stage_teams
 from zf.runtime.stage_team_sources import read_stage_team_inputs
@@ -51,12 +51,84 @@ def owner_role(config, owner):
     return role.instance_id or role.name
 
 
-def terminal(events, run):
+def _legacy_project_resume(event, last_control):
+    """Match the historical receipts from Feishu, host restart and maintenance."""
+    p = event.payload
+    if event.type == "loop.resume_requested":
+        # The Feishu CLI checks operator level before ControlHandler writes this
+        # historical empty-body record. A caller using zf emit has worker origin.
+        return isinstance(event.actor, str) and event.actor.startswith("feishu:") and bool(event.actor.removeprefix("feishu:").strip())
+    if last_control is None:
+        return False
+    previous = last_control.payload
+    if event.type == "dispatch.resumed" and event.actor == "zf-cli":
+        return (
+            p.get("source") == "orchestrator_init" and last_control.type == "dispatch.paused"
+            and previous.get("source") == "remediation_cascade"
+            and p.get("paused_event_id") == event.causation_id == last_control.id
+        )
+    if event.actor != "zf-autoresearch" or last_control.actor != event.actor or not p.get("repair_run_id"):
+        return False
+    if event.type == "runtime.maintenance.exited":
+        return (
+            last_control.type in {"runtime.maintenance.entered", "dispatch.paused"}
+            and previous.get("trigger_id") and p.get("status") == "exited" and p.get("dispatch_paused") is False
+        )
+    return (
+        event.type == "dispatch.resumed" and last_control.type == "runtime.maintenance.exited"
+        and previous.get("repair_run_id") == p["repair_run_id"]
+    )
+
+
+def run_lifecycle_facts(events, run):
+    """Keep kernel facts and legacy control-plane actions proved for this Run."""
+    from zf.runtime.stage_replan_generation import completed_owner_goal_updates
+
+    goals = set()
+    if any(
+        e.type == "run.goal.updated" and not e.origin
+        and e.payload.get("workflow_run_id") == run and e.payload.get("stage_replan_generation")
+        for e in events
+    ):
+        goals = completed_owner_goal_updates(events, run)
+    requests = {}
+    facts = []
+    controls = {"run.resumed": "run-resume", "run.cancelled": "run-cancel"}
+    last_project_control = None
+    for event in events:
+        if event.origin not in {"", "kernel"}:
+            continue
+        if event.type in {"web.action.requested", "control.action.requested"}:
+            requests[event.id] = event
+        if event.type in PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES:
+            if event.type in RESUME_EVENT_TYPES and not event.origin and not _legacy_project_resume(event, last_project_control):
+                continue
+            last_project_control = event
+            facts.append(event)
+        elif event.origin == "kernel" or event.id in goals or event.type == "run.paused":
+            facts.append(event)
+        elif event.type in controls and event.payload.get("workflow_run_id") == run:
+            request = requests.get(event.causation_id)
+            if (
+                not request or request.actor != event.actor or request.actor not in {"web", "zf-cli", "operator"}
+                or request.payload.get("source_session_id") or event.payload.get("source_event_id") != request.id
+                or request.payload.get("action") != controls[event.type]
+            ):
+                continue
+            target = request.payload.get("request")
+            if target is None and request.type == "control.action.requested":
+                target = request.payload
+            if isinstance(target, dict) and (target.get("workflow_run_id") or target.get("run_id")) == run:
+                facts.append(event)
+    return facts
+
+
+def run_availability(events, run):
     from zf.runtime.run_admission import build_run_admission_projection
 
-    projection = build_run_admission_projection([e for e in events if e.origin == "kernel"])
-    entry = projection.runs.get(run)
-    return bool(entry and entry.terminal)
+    facts = run_lifecycle_facts(events, run)
+    entry = build_run_admission_projection(facts).runs.get(run)
+    return bool(entry and entry.terminal), is_run_dispatch_paused(facts, run)
 
 
 def operation_binding(op):
@@ -238,10 +310,7 @@ def guarded(runtime, identity, *, mutation=True):
     )
     with locked_path(Path(runtime.state_dir) / "locks/durable-mailbox"), lock, credential, lease as attempt:
         events, ops, actor, offset = snapshot(runtime, identity, attempt)
-        if mutation and (
-            terminal(events, actor["workflow_run_id"])
-            or is_run_dispatch_paused(events, actor["workflow_run_id"])
-        ):
+        if mutation and any(run_availability(events, actor["workflow_run_id"])):
             raise ValueError("mailbox dispatch paused or run terminal")
         token = admission_offset.set(offset)
         expiry = lease_expires.set(attempt.get("lease_expires_at", "") if attempt else "")

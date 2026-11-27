@@ -6,8 +6,7 @@ from collections import defaultdict
 
 from zf.core.workflow.flow_metadata import flow_metadata_for
 from zf.runtime.call_result_envelope import canonical_json_sha256
-from zf.runtime.durable_mailbox_authority import approved_stage_graph, approved_stage_roster, terminal
-from zf.runtime.pause_lifecycle import PAUSE_EVENT_TYPES, RESUME_EVENT_TYPES, is_run_dispatch_paused
+from zf.runtime.durable_mailbox_authority import approved_stage_graph, approved_stage_roster, run_availability
 
 
 def board_policy_enabled(config):
@@ -25,11 +24,8 @@ class BoardPaused(ValueError):
 
 
 def board_for_run(state, config, events, operations, run):
-    # Stock operator actions have a legacy blank origin. Only accept that origin for
-    # pause/resume controls. Worker and integration events cannot reopen the board.
-    controls = PAUSE_EVENT_TYPES | RESUME_EVENT_TYPES | {"run.paused", "run.resumed"}
-    facts = [e for e in events if e.origin == "kernel" or (not e.origin and e.type in controls)]
-    if is_run_dispatch_paused(facts, run):
+    ended, paused = run_availability(events, run)
+    if paused:
         raise BoardPaused("board run is paused")
     if run in legacy_boards(config):
         board = legacy_boards(config)[run]
@@ -41,7 +37,7 @@ def board_for_run(state, config, events, operations, run):
         raise ValueError("this run has no enabled board with a bound audience")
     kernel = [e for e in events if e.origin == "kernel"]
     scoped = [e for e in kernel if (e.payload.get("workflow_run_id") or e.correlation_id) == run]
-    if terminal(scoped, run):
+    if ended:
         raise ValueError("board run is terminal")
     invocation = next((e for e in reversed(scoped) if e.type == "workflow.invoke.accepted"
                        and e.payload.get("request_revision") and e.payload.get("workflow_generation")), None)

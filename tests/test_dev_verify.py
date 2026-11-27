@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -440,6 +441,15 @@ def test_run_cli_isolates_assigned_project_and_host_for_every_automatic_step(tmp
     )
     for script, tier in (("dev-premerge-gate.sh", "contract"), ("run-flow-smoke.sh", "mock")):
         (checkout / "scripts" / script).write_text(f"exec '{sys.executable}' probe.py {tier}\n")
+    # Load the repo's real pytest entry guard under the disposable checkout.
+    # A later tier can collect tests after the first tier wrote its fixture ledger.
+    shutil.copy2(ROOT / "tests/conftest.py", checkout / "tests/fixture_guard.py")
+    (checkout / "tests/conftest.py").write_text("from fixture_guard import pytest_configure\n")
+    (checkout / "tests/test_later.py").write_text(
+        "from pathlib import Path\ndef test_later():\n    assert Path('qa-state/events.jsonl').is_file()\n"
+    )
+    gate = checkout / "scripts/dev-premerge-gate.sh"
+    gate.write_text(f"'{sys.executable}' -m pytest tests/test_later.py -q --no-cov || exit $?\n" + gate.read_text())
     args = [sys.executable, str(runner), "run", "--no-parallel", "--json", "--paths", "examples/test.yaml",
             "--tests", "tests/test_probe.py"]
     result = subprocess.run(args, cwd=assigned, env=env, text=True, capture_output=True)
@@ -453,7 +463,78 @@ def test_run_cli_isolates_assigned_project_and_host_for_every_automatic_step(tmp
     assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3
 
     # A checkout with its own explicitly assigned ledger cannot safely serve as the QA cwd.
-    overlap = {**env, "ZF_PROJECT_ROOT": str(checkout), "ZF_STATE_DIR": "qa-state"}
-    refused = subprocess.run(args, cwd=assigned, env=overlap, text=True, capture_output=True)
+    clean = {k: v for k, v in env.items() if k not in {"ZF_PROJECT_ROOT", "ZF_STATE_DIR"}}
+    for authority in ({"ZF_PROJECT_ROOT": str(checkout), "ZF_STATE_DIR": "qa-state"},
+                      {"ZF_PROJECT_ROOT": str(checkout)}, {}):
+        refused = subprocess.run(args, cwd=assigned, env={**clean, **authority}, text=True, capture_output=True)
+        assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    alias = checkout / "remote-state"
+    alias.symlink_to(live.parent, target_is_directory=True)
+    config = checkout / "zf.yaml"
+    config.write_text(config.read_text().replace("qa-state", "remote-state"))
+    refused = subprocess.run(args, cwd=assigned, env=env, text=True, capture_output=True)
     assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    # Under the caller's environment the local config selects an empty directory.
+    # The automatic process strips that variable and would follow the alias to the owner's ledger.
+    config.write_text(config.read_text().replace("remote-state", "${QA_PATH_CANARY:-remote-state}"))
+    redirected = {**clean, "QA_PATH_CANARY": str(checkout / "unused")}
+    refused = subprocess.run(args, cwd=checkout, env=redirected, text=True, capture_output=True)
+    assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    assert hashlib.sha256(live.read_bytes()).hexdigest() == before
     assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3
+
+
+@pytest.mark.parametrize("authority", ["absolute", "relative", "root_only", "local", "state_only", "archive"])
+def test_direct_pytest_rejects_reachable_runtime_before_collection(tmp_path, authority):
+    state = tmp_path / "runtime/state"
+    state.mkdir(parents=True)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject: {name: guard, state_dir: runtime/state}\n')
+    ledger = state / "events.jsonl"
+    if authority == "archive":
+        ledger = state / "events/2026-11-26.jsonl"
+        ledger.parent.mkdir()
+    ledger.write_text("fixture ledger sentinel\n")
+    env = {k: v for k, v in os.environ.items() if k not in {"ZF_PROJECT_ROOT", "ZF_STATE_DIR"}}
+    cwd = ROOT
+    if authority in {"absolute", "relative", "root_only"}:
+        env["ZF_PROJECT_ROOT"] = str(tmp_path)
+        if authority != "root_only":
+            env["ZF_STATE_DIR"] = str(state) if authority == "absolute" else "runtime/state"
+    else:
+        cwd = tmp_path
+        if authority == "state_only":
+            env["ZF_STATE_DIR"] = str(tmp_path / "unused")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "--no-cov", "-q", str(ROOT / "tests/test_dev_verify.py")],
+        cwd=cwd, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 4, result
+    assert "assigned runtime" in result.stderr
+    assert ledger.read_text() == "fixture ledger sentinel\n"
+
+
+def test_plan_works_without_installed_zf_or_site_packages():
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(SCRIPT), "plan", "--paths", "tests/test_dev_verify.py",
+         "--no-parallel", "--json"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "tests/test_dev_verify.py" in json.loads(result.stdout)["selected_tests"]
+
+
+def test_clean_checkout_receipt_does_not_grant_another_checkout_or_survive_the_invocation(tmp_path, monkeypatch):
+    import tempfile
+    from zf.core.config.qa_state import certified_checkout_state
+
+    checkout, state = tmp_path / "checkout", tmp_path / "scratch/state"
+    with tempfile.TemporaryDirectory(prefix="zf-qa-", dir="/tmp") as directory:
+        home, runtime = Path(directory) / "home", Path(directory) / "run"
+        runtime.mkdir()
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+        (runtime / "clean-checkout.json").write_text(json.dumps({"checkout": str(checkout), "state_dir": str(state)}))
+        assert certified_checkout_state(checkout) == state
+        assert certified_checkout_state(tmp_path / "second") is None
+    assert certified_checkout_state(checkout) is None

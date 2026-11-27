@@ -49,3 +49,5 @@ Kanban 和 Channel 各自生成 PRD，再经 PRD v5 Workflow 生成完整 Plan�
 完整 Plan 的 `plan_content_profile` 必须由已准入的综合审查结果显式声明并传到
 `task_map.ready`、待审批预览。不得根据 Markdown 标题猜测完整性；缺失声明保持普通
 Plan，`summary_only` 保持摘要。UI PRD 验证同时检查该交接、正文和下载一致性。
+
+直接运行本仓库 pytest 时，收集前会分别检查当前目录、源码 checkout、继承的项目根和显式状态路径。任一路径的现有事件账本（含已轮转的分片）都可能被后续测试或换目录后的 CLI 选中。请在独立、干净的 checkout 运行 `scripts/dev-verify.py run`：入口按净化后的环境解析该 checkout 的 `project.state_dir`，并检查解析后的实际路径，包含符号链接和自定义名称。同一次验证的临时收据使后续 pytest、哨兵、mock 阶段可使用已确认干净的目录中新增的 fixture 数据；临时收据随验证退出而清理。

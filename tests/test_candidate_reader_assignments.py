@@ -27,7 +27,7 @@ def _assignments():
     ]
 
 
-def _scoped_project(tmp_path, monkeypatch, *, team=None):
+def _scoped_project(tmp_path, monkeypatch, *, team=None, seed_options=None):
     runtime = _runtime(tmp_path)
     spec = product._spec()
     spec["candidate_reader_assignments"] = _assignments()
@@ -55,7 +55,7 @@ def _scoped_project(tmp_path, monkeypatch, *, team=None):
                                            payload={**binding, **ident}))
         runtime.config.workflow.flow_metadata.update({"stage_teams": {"candidate_verify": team},
             "task_pipeline": {"pools": {"verify": {"role_instances": [m["role"] for m in team["members"]]}}}})
-    _seed_frozen_candidate(runtime, run_id=product.RUN_ID, generation=product.GENERATION,
+    _seed_frozen_candidate(runtime, **(seed_options or {}), run_id=product.RUN_ID, generation=product.GENERATION,
                            additional_checks=[("AC-2", "cmd-extra", "pytest tests/test_other.py")],
                            package_fields={**({"candidate_reader_approval": binding} if binding else {}),
                                            "task_id": "FLOW-ANCHOR", "plan_artifact_package_id": package["package_id"],

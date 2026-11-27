@@ -289,6 +289,7 @@ class TaskAttemptStore:
         attempt_id: str,
         *,
         updated_at: str,
+        lease_expires_at: str = "",
     ) -> tuple[dict[str, Any] | None, bool]:
         with locked_path(self.path):
             data = self._load_unlocked()
@@ -297,6 +298,11 @@ class TaskAttemptStore:
                 return None, False
             if row.get("status") != "prepared":
                 return dict(row), False
+            if row.get("unsent_external_gate"):
+                if not lease_expires_at:
+                    return dict(row), False
+                row.pop("unsent_external_gate")
+                row["lease_expires_at"] = lease_expires_at
             row["status"] = "delivering"
             row["updated_at"] = updated_at
             row["delivery_claimed_at"] = updated_at
@@ -304,7 +310,7 @@ class TaskAttemptStore:
             return dict(row), True
 
     def release_unsent_delivery(
-        self, attempt_id: str, *, updated_at: str, lease_expires_at: str,
+        self, attempt_id: str, *, updated_at: str, lease_expires_at: str, gate_reason: str = "",
     ) -> bool:
         """Release only the current claim after transport proves no input sent."""
         with locked_path(self.path):
@@ -317,6 +323,8 @@ class TaskAttemptStore:
                 return False
             row.update(status="prepared", updated_at=updated_at,
                        lease_expires_at=lease_expires_at)
+            if gate_reason:
+                row["unsent_external_gate"] = gate_reason
             row.pop("delivery_claimed_at", None)
             self._save_unlocked(data)
             return True
@@ -405,6 +413,10 @@ class TaskAttemptStore:
                 if not isinstance(row, dict):
                     continue
                 if str(row.get("status") or "") not in _ACTIVE_STATUSES:
+                    continue
+                # The transport positively withheld all input. No worker owns this
+                # lease until a later, freshly authorized claim actually starts.
+                if row.get("status") == "prepared" and row.get("unsent_external_gate"):
                     continue
                 if not is_expired(str(row.get("lease_expires_at") or "")):
                     continue

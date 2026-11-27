@@ -1,6 +1,7 @@
 """Hand container evidence back to the existing independent Reader recovery gate."""
 from dataclasses import asdict
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_host_production import CandidateOutputRecovery
 from zf.runtime.task_host_manifest import digest
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.stage_failure_replan import reader_stage_for_failure
@@ -81,16 +82,22 @@ def reader_probe_handoff_complete(operation: dict, events) -> bool:
     return False
 
 
-def completed_reader_probes(service, operation: dict, contract: dict, policy, events) -> tuple[set, dict, bool]:
+def completed_reader_probes(service, operation: dict, contract: dict, policy, events,
+                            output_commands: set[str] | None = None) -> tuple[set, dict, bool]:
     """Collect only current-policy, stable-target Reader execution receipts."""
     if operation.get('task_pipeline_stage'):
         return set(), {}, False  # Task Pipeline retains its own rework state machine.
     required = {c['command_id'] for c in contract['verification_commands']
                 if c.get('command') in policy.commands}
+    if output_commands is not None:
+        if not output_commands <= required:
+            return set(), {}, False
+        required = output_commands
     if not required:
         return required, {}, False
     from zf.runtime.host_verification_retained import retained_reader_probes
-    receipts = retained_reader_probes(service, operation, contract, policy, events)
+    receipts = {key: ref for key, ref in retained_reader_probes(service, operation, contract, policy, events).items()
+                if key in required}
     from zf.runtime.host_probe_recollection import replaced_capture_refs
     replaced = replaced_capture_refs(service.state_dir, operation['operation_id'], events, policy)
     retained = [hydrate_sidecar_ref(service.state_dir, ref).payload for ref in receipts.values()
@@ -156,10 +163,14 @@ def _handoff_request(service, events, payload: dict) -> ZfEvent | None:
                                causation_id=request.id, payload=body)
 
 
-def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events) -> bool:
-    required, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
+def resume_reader_after_probes(service, operation: dict, contract: dict, policy, events, *,
+                              output_recovery: CandidateOutputRecovery | None = None) -> bool:
+    required, receipts, failed_probe = completed_reader_probes(
+        service, operation, contract, policy, events, output_recovery.commands if output_recovery else None)
     if not required:
         return False
+    if output_recovery:
+        receipts = {**output_recovery.shared_receipts, **receipts}
     if not failed_probe and not required <= receipts.keys():
         return False
     dispatch = next((e for e in events if e.type == 'fanout.child.dispatched'
@@ -182,10 +193,11 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
             # Successful commands do not resolve mixed or semantic findings.
             # Their existing semantic owner retains the aggregate and receipts.
             return False
-        supplemental = operator_candidate_receipts(service, operation, contract, events)
-        receipts = {**supplemental, **receipts}
+        if output_recovery is None:
+            supplemental = operator_candidate_receipts(service, operation, contract, events)
+            receipts = {**supplemental, **receipts}
         unverified = {c['command_id'] for c in contract['verification_commands']} - receipts.keys()
-        if unverified and not failed_probe:
+        if unverified and output_recovery is None and not failed_probe:
             # A partial execution allowlist is not the frozen acceptance contract.
             # Hold the checkpoint; never invent permission for remaining commands.
             if not any(e.type == 'human.escalate' and e.origin == 'kernel'
@@ -231,5 +243,6 @@ def resume_reader_after_probes(service, operation: dict, contract: dict, policy,
         return bool(result.get('ok'))
     if not failed_probe:
         from zf.runtime.candidate_probe_source_retry import resume_probe_source
-        return resume_probe_source(service, operation, contract, policy, events, dispatch, receipts)
+        return resume_probe_source(service, operation, contract, policy, events, dispatch, receipts,
+                                   output_recovery=output_recovery)
     return False

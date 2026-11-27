@@ -8,6 +8,26 @@ from pathlib import Path
 import pytest
 
 
+def pytest_configure(config):
+    """Direct pytest must not let fixture CLIs resolve an assigned runtime."""
+    from zf.core.config.loader import ConfigError
+    from zf.core.config.qa_state import assigned_states, certified_checkout_state, configured_state, has_ledger
+
+    checkout = Path(__file__).resolve().parents[1]
+    try:
+        _, assigned = assigned_states(Path.cwd())
+        local = {configured_state(root) for root in {checkout, Path.cwd()}}
+        permitted = certified_checkout_state(checkout)
+        occupied = any(has_ledger(state) for state in assigned | (local - {permitted}))
+    except (ConfigError, OSError, ValueError) as error:
+        raise pytest.UsageError("Unable to resolve the QA state directory for this checkout") from error
+    if occupied:
+        raise pytest.UsageError(
+            "Direct pytest could reach an assigned runtime. Run scripts/dev-verify.py "
+            "from a separate checkout, or use an isolated test environment."
+        )
+
+
 @pytest.fixture(autouse=True)
 def workflow_runtime_launcher(monkeypatch):
     """Keep ordinary action tests from launching installed providers.

@@ -553,138 +553,125 @@ class CodexSessionReader(BackendSessionReader):
         registered_rollout: tuple[Path, str, str] | None = None,
         registered_session: str = "",
     ) -> UsageReport | None:
+        from zf.runtime.codex_turn_sample import open_rollout, scoped_rollout
+        from zf.runtime.codex_usage_snapshot import CodexUsageSnapshot, valid_record
+
         if not session_path.exists():
             return None
-        latest_info: dict | None = None
-        latest_ts: str = ""
-        session_id: str = ""
-        series_started_at: str = ""
-        latest_model: str = ""
-        model_provider: str = "openai"
-        latest_rate_limits: dict = {}
-        from zf.runtime.codex_turn_sample import CodexTurnSample, CodexUsageTurn, open_rollout, scoped_rollout
-
-        tracker = usage_turn = None
         try:
             if registered_rollout:
                 if not scoped_rollout(*registered_rollout, session_path):
                     return None
                 state, _, session = registered_rollout
                 source = open_rollout(state, session_path)
-                tracker = CodexTurnSample(session)
-                usage_turn = CodexUsageTurn(session)
+                snapshot = CodexUsageSnapshot(session, scoped=True)
             elif registered_session:
                 # A restored cached path may sit outside the current lane. Only
                 # read a pinned regular file for exclusive-session accounting.
                 source = open_rollout(Path(session_path.anchor), session_path)
-                usage_turn = CodexUsageTurn(registered_session)
+                snapshot = CodexUsageSnapshot(registered_session)
             else:
                 source = session_path.open("r", encoding="utf-8", errors="replace")
+                snapshot = CodexUsageSnapshot()
             with source as stream:
                 for line in stream:
-                    complete = line.endswith("\n")
-                    line = line.strip()
-                    if not line:
+                    if not line.strip():
                         continue
+                    complete = line.endswith("\n")
                     try:
-                        obj = json.loads(line)
+                        row = json.loads(line)
                     except json.JSONDecodeError:
                         if complete:
                             return None
-                        # An append in progress can leave the last line partial.
-                        if tracker:
-                            tracker.boundary.valid = False
-                        if usage_turn:
-                            usage_turn.sample = ""
+                        snapshot.incomplete()
                         continue
-                    if not isinstance(obj, dict) or (
-                        obj.get("type") in ("session_meta", "turn_context", "event_msg")
-                        and not isinstance(obj.get("payload"), dict)
-                    ):
+                    if not valid_record(row):
                         return None
-                    if tracker:
-                        if complete:
-                            tracker.consume(obj)
-                        else:
-                            tracker.boundary.valid = False
-                    if usage_turn:
-                        if complete:
-                            usage_turn.consume(obj)
-                        else:
-                            usage_turn.sample = ""
-                    if obj.get("type") == "session_meta":
-                        payload = obj.get("payload") or {}
-                        if isinstance(payload, dict):
-                            session_id = str(payload.get("id") or session_id)
-                            series_started_at = str(payload.get('timestamp') or obj.get('timestamp') or '')
-                            model_provider = str(
-                                payload.get("model_provider") or model_provider
-                            )
-                        continue
-                    if obj.get("type") == "turn_context":
-                        payload = obj.get("payload") or {}
-                        if isinstance(payload, dict):
-                            latest_model = str(payload.get("model") or latest_model)
-                        continue
-                    if obj.get("type") != "event_msg":
-                        continue
-                    payload = obj.get("payload") or {}
-                    if payload.get("type") != "token_count":
-                        continue
-                    info = payload.get("info")
-                    if not isinstance(info, dict):
-                        continue
-                    latest_info = info
-                    rate_limits = payload.get("rate_limits")
-                    latest_rate_limits = (
-                        dict(rate_limits) if isinstance(rate_limits, dict) else {}
-                    )
-                    latest_ts = obj.get("timestamp", "")
+                    snapshot.observe(row, complete=complete)
         except OSError:
             return None
-        if latest_info is None:
-            return None
-        last_usage = latest_info.get("last_token_usage") or {}
-        total_usage = latest_info.get("total_token_usage")
-        cumulative = isinstance(total_usage, dict)
-        accounting_usage = total_usage if cumulative else last_usage
-        effective = int(last_usage.get("input_tokens", 0))
-        output_tokens = int(last_usage.get("output_tokens", 0))
-        # Codex self-reports window; fallback only if missing
-        window = int(latest_info.get("model_context_window", 0)) or (
-            fallback_window or 258_400
-        )
-        ratio = effective / window if window > 0 else 0.0
-        return UsageReport(
-            effective_input_tokens=effective,
-            output_tokens=output_tokens,
-            model_context_window=window,
-            ratio=ratio,
-            timestamp=latest_ts,
-            raw=dict(accounting_usage),
-            model=str(latest_info.get("model") or latest_model),
-            usage_semantics="cumulative" if cumulative else "incremental",
-            series_started_at=series_started_at,
-            provider_session_id=session_id,
-            provider_usage_turn_id=usage_turn.sample if tracker else "",
-            registered_first_turn=usage_turn.first_sample() if usage_turn else None,
-            native_turn_sample=tracker.receipt(latest_ts, str(latest_info.get("model") or latest_model)) if tracker else {},
-            usage_series_id=(
-                f"codex:{session_id}"
-                if session_id
-                else "codex-path:"
-                + hashlib.sha256(
-                    str(session_path.resolve()).encode("utf-8")
-                ).hexdigest()[:24]
-            ),
-            provider=model_provider,
-            accounting_mode=(
-                "subscription"
-                if str(latest_rate_limits.get("plan_type") or "").strip()
-                else "unknown"
-            ),
-            input_semantics="combined_includes_cache",
-        )
+        return snapshot.report(session_path, fallback_window=fallback_window)
+
+
+def read_historical_codex_usage(
+    state: Path, role: str, session: str, path: Path, samples: dict[str, str],
+) -> dict[str, UsageReport]:
+    """Match a registered rollout prefix to frozen disk-usage identities in one pass.
+
+    A timestamp selects a bucket, not a token record. Finish its bucket before
+    accepting a unique match; later provider time is outside the requested prefix.
+    """
+    from zf.core.config.schema import RoleConfig
+    from zf.runtime.codex_turn_boundary import timestamp
+    from zf.runtime.codex_turn_sample import open_rollout, scoped_rollout
+    from zf.runtime.codex_usage_snapshot import CodexUsageSnapshot, valid_record
+    from zf.runtime.provider_usage_reconciliation import build_disk_usage_event
+
+    if not samples or not scoped_rollout(state, role, session, path):
+        return {}
+    requested = {stamp: sample_id for stamp, sample_id in samples.items()
+                 if timestamp(stamp) > 0 and isinstance(sample_id, str)
+                 and re.fullmatch(r"[0-9a-f]{24}", sample_id)}
+    if not requested:
+        return {}
+    cutoff = max(map(timestamp, requested))
+    reporter = RoleConfig(name=role, instance_id=role, backend="codex")
+    snapshot = CodexUsageSnapshot(session, scoped=True)
+    prefix = hashlib.sha256()
+    matched: dict[str, UsageReport] = {}
+    ambiguous: set[str] = set()
+    last_time = 0.0
+    open_bucket = False
+
+    try:
+        with open_rollout(state, path) as stream:
+            for raw in stream.buffer:
+                if not raw.endswith(b"\n"):
+                    open_bucket = True
+                    break
+                if not raw.strip():
+                    prefix.update(raw)
+                    continue
+                row = json.loads(raw.decode("utf-8"))
+                if not valid_record(row):
+                    open_bucket = True
+                    break
+                stamp = row.get("timestamp")
+                when = timestamp(stamp)
+                if when > cutoff:
+                    break
+                if when and when < last_time:
+                    # A non-chronological prefix cannot establish unique endpoints.
+                    return {}
+                last_time = max(last_time, when)
+                prefix.update(raw)
+                is_usage = snapshot.observe(row, complete=True)
+                if not is_usage or not isinstance(stamp, str) or stamp not in requested:
+                    continue
+                if not snapshot.valid_historical_counters():
+                    ambiguous.add(stamp)
+                    continue
+                try:
+                    report = snapshot.report(path)
+                    if report is None:
+                        ambiguous.add(stamp)
+                        continue
+                    event = build_disk_usage_event(role=reporter, usage=report, config=None)
+                except (ValueError, TypeError, OverflowError):
+                    ambiguous.add(stamp)
+                    continue
+                if event.payload["usage_sample_id"] != requested[stamp]:
+                    continue
+                if stamp in matched or not report.native_turn_sample:
+                    ambiguous.add(stamp)
+                    continue
+                report.native_turn_sample["rollout_prefix_sha256"] = prefix.hexdigest()
+                matched[stamp] = report
+    except (OSError, ValueError, RecursionError):
+        open_bucket = True
+    # An unreadable or partial row could hide another match for the open bucket.
+    return {stamp: report for stamp, report in matched.items()
+            if stamp not in ambiguous and (not open_bucket or timestamp(stamp) < last_time)}
 
 
 def read_role_usage(reader: BackendSessionReader, path: Path, *, state: Path, role: RoleConfig,

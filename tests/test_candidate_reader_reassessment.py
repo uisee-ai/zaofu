@@ -24,10 +24,10 @@ from zf.runtime.task_host_manifest import binding as host_binding
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def setup_scope(evidence, monkeypatch, *, frozen=True):
+def setup_scope(evidence, monkeypatch, *, frozen=True, native=False, next_action=""):
     runtime, seeded, _, _, _, receipt = evidence
     runtime.config.workflow.orchestration = SimpleNamespace(
-        autonomous_actions=["reassess_reader_evidence"] if frozen else []
+        autonomous_actions=(["reassess_reader_evidence"] if frozen else []) + (["reassess_native_activity"] if native else [])
     )
     role = "reader-1"
     prepared, original_payload = prepare(runtime, seeded, role)
@@ -84,7 +84,7 @@ def setup_scope(evidence, monkeypatch, *, frozen=True):
                     "candidate_obligations": [
                         {
                             **finding,
-                            "disposition": {"classification": "execution_unknown"},
+                            "disposition": {"classification": "execution_unknown", "next_action": next_action},
                         },
                         {
                             **owner,

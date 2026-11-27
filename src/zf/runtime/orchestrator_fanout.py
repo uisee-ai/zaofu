@@ -6915,7 +6915,7 @@ class FanoutCoordinationMixin(
             gate_reason = external_gate_reason(exc)
             if gate_reason:
                 self._defer_fanout_retry_dispatch(
-                    manifest, child, role, run_id, attempt, previous_dispatch, gate_reason,
+                    manifest, child, role, run_id, attempt, previous_dispatch, gate_reason, external_gate=True,
                 )
                 return False
             failure_payload = {

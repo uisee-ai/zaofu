@@ -237,3 +237,15 @@ Planner 或 Critic 从恢复触发中取得上一轮预检时，签发前也会�
 新建阻塞式 Plan Synth 操作时，若冻结读策略可按摘要读取，且与本次 Run、attempt、必读选择和内嵌策略完全一致，初始结果草稿仅保留该策略的引用和摘要。可用简报中的 `zf artifact read --attempt … --required` 查看原始必读内容。预检和正式提交均读取原操作的策略及真实读取回执；历史请求和已编辑草稿仍沿用原入口。
 
 已绑定 `workflow-read` Plan 预检和失败事件的 Planner，在同一个 operation scratch 填写结果，按原命令验证、提交。真实输入丢失或工具故障使 Plan 无法交付时，`execution_status=failed` 路由到该请求的子执行失败事件。可修复的草稿问题继续原地修正，业务意见和 Owner 决策保留各自的审查路径。
+
+### 冻结后补核历史并发证据
+
+在已批准的流程策略中，`autonomous_actions` 同时包含 `reassess_reader_evidence` 和
+`reassess_native_activity`，新 Candidate 请求才会冻结历史原生采样复核权限。已有请求保持
+原授权。OA 对具体 Reader 的 finding 判定执行情况未知，并选定 `next_action=reassess_native_activity` 后，受控复核只检查同一候选冻结前、
+正式材料缺失归属的成员。核对派发、实际发送、操作和租约、同席原生会话、工作区、模型及
+当时记录的用量样本，对吻合的原生记录前缀取摘要。授权被撤回时停止新派发。
+
+后继 Reader 收到独立的 `retrospective-native-activity` 摘要，引用历史窗口前须实际读取。
+旧判词、冻结摘要及成本事件原样保存。原始证据缺失或身份冲突时保留未知。核查发生时间以
+新的复核请求事件为准，执行窗口以摘要中的原始事件为准。

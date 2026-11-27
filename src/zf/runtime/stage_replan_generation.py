@@ -8,7 +8,7 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.reader_replan_index import ReaderReplanIndex
-from zf.runtime.run_scope import event_run_id
+from zf.runtime.run_scope import event_run_id, run_aliases
 
 
 STAGE_REPLAN_GENERATION_EXPECTED_EVENTS = frozenset({
@@ -62,6 +62,60 @@ def completed_generation_source(
     if any(event_run_id(bound, aliases=aliases) != run_id for bound in (source, goal, trigger)):
         return None
     return source
+
+
+def completed_owner_goal_updates(events: list[ZfEvent], run: str) -> set[str]:
+    """Identify Web goal activations backed by an Owner's completed stage replan."""
+    aliases = run_aliases(events)
+    prior: dict[str, ZfEvent] = {}
+    positions: dict[str, int] = {}
+    goals: set[str] = set()
+    for index, event in enumerate(events):
+        payload = event.payload
+        if (
+            event.type == "runtime.action.completed" and event.actor == "web"
+            and event.origin in {"", "kernel"} and payload.get("run_id") == run
+        ):
+            source = completed_generation_source(event, prior, aliases)
+            if source and _bound_owner_activation(event, source, prior, positions, run):
+                goals.add(payload["run_goal_update_event_id"])
+        prior[event.id] = event
+        positions[event.id] = index
+    return goals
+
+
+def _bound_owner_activation(
+    receipt: ZfEvent, escalation: ZfEvent, prior: dict[str, ZfEvent], positions: dict[str, int], run: str,
+) -> bool:
+    goal = prior[receipt.payload["run_goal_update_event_id"]]
+    trigger = prior[receipt.payload["stage_trigger_event_id"]]
+    owner = prior.get(goal.causation_id)
+    failure = prior.get(escalation.payload.get("source_event_id"))
+    if (
+        not owner or owner.type != "web.action.requested" or owner.actor != "web"
+        or owner.origin not in {"", "kernel"} or owner.payload.get("source_session_id")
+        or owner.payload.get("action") != "stage-replan-new-generation"
+        or goal.actor != "web" or goal.origin not in {"", "kernel"}
+        or trigger.actor != "zf-cli" or trigger.origin not in {"", "kernel"}
+        or goal.payload.get("workflow_run_id") != run or trigger.payload.get("workflow_run_id") != run
+        or trigger.causation_id != owner.id or receipt.causation_id != trigger.id
+        or escalation.actor != "orchestrator" or escalation.origin not in {"", "kernel"}
+        or not failure or (escalation.causation_id and escalation.causation_id != failure.id)
+        or not positions[failure.id] < positions[escalation.id] < positions[owner.id]
+        < positions[goal.id] < positions[trigger.id]
+    ):
+        return False
+    request = owner.payload.get("request")
+    return (
+        isinstance(request, dict)
+        and request.get("workflow_run_id") == run
+        and request.get("escalation_event_id") == escalation.id
+        and "start_new_generation" in (escalation.payload.get("allowed_actions") or [])
+        and goal.payload.get("status") == "active"
+        and request.get("approval_ref") == goal.payload.get("approval_ref") == trigger.payload["operator_authorization_ref"]
+        and receipt.payload["stage_replan_generation"] == escalation_generation_id(run, escalation.id)
+        and receipt.payload.get("source_failure_event_id") == goal.payload.get("source_failure_event_id") == failure.id
+    )
 
 
 def exhausted_failure_escalation(index: ReaderReplanIndex, failure: ZfEvent) -> ZfEvent | None:

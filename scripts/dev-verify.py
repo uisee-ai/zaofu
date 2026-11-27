@@ -770,20 +770,53 @@ def run_plan(
         return 2, receipt
 
     checkout = Path(plan.root).resolve()
-    project, state = os.environ.get("ZF_PROJECT_ROOT"), os.environ.get("ZF_STATE_DIR")
-    assigned_project = Path(project).resolve() if project else None
-    assigned_state = ((assigned_project or checkout) / state).resolve() if state else None
-    if (assigned_state and (assigned_state / "events.jsonl").is_file()
-            and (assigned_project == checkout or assigned_state.is_relative_to(checkout))):
-        receipt.update(status="isolation_failed",
-                       reason="The checkout contains the assigned runtime project; run QA in a separate checkout")
-        if not capture_output:
-            print(receipt["reason"], file=sys.stderr)
-        return 2, receipt
-
     with tempfile.TemporaryDirectory(prefix="zf-qa-", dir="/tmp") as private:
-        env = _verification_env(checkout, Path(private), [p for p in (assigned_project, assigned_state) if p])
+        try:
+            env = _checked_verification_env(checkout, Path(private))
+        except (OSError, ValueError) as error:
+            receipt.update(status="isolation_failed", reason=f"{error}. Run QA in a separate checkout.")
+            if not capture_output:
+                print(receipt["reason"], file=sys.stderr)
+            return 2, receipt
         return _run_steps(plan, receipt, env, keep_going, capture_output, skip_tiers)
+
+
+def _checked_verification_env(checkout: Path, private: Path) -> dict[str, str]:
+    # Plan stays usable with the system Python even when ZaoFu is not installed.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    try:
+        from zf.core.config.loader import ConfigError
+        from zf.core.config.qa_state import assigned_states, certified_checkout_state, has_ledger
+    except ImportError as error:
+        raise ValueError("QA state resolution requires the project dependencies") from error
+    finally:
+        sys.path.pop(0)
+    try:
+        project, assigned = assigned_states(Path.cwd())
+    except ConfigError as error:
+        raise ValueError("unable to resolve the assigned project's configured state directory") from error
+    if any(
+        has_ledger(state) and (project == checkout or state.is_relative_to(checkout) or checkout.is_relative_to(state))
+        for state in assigned
+    ):
+        raise ValueError("checkout overlaps the assigned runtime")
+    env = _verification_env(checkout, private, [p for p in (project, *assigned) if p])
+    # Check the state path using the same sanitized environment the actual CLI gets.
+    probe = subprocess.run(
+        [sys.executable, "-P", "-c",
+         "from pathlib import Path; from zf.core.config.qa_state import configured_state; "
+         "print(configured_state(Path.cwd()))"],
+        cwd=checkout, env=env, capture_output=True, text=True,
+    )
+    if probe.returncode or not Path(probe.stdout.strip()).is_absolute():
+        raise ValueError("unable to resolve the configured QA state directory")
+    target = Path(probe.stdout.strip())
+    if has_ledger(target) and (target in assigned or target != certified_checkout_state(checkout)):
+        raise ValueError("the configured QA state directory contains an existing ledger")
+    (Path(env["XDG_RUNTIME_DIR"]) / "clean-checkout.json").write_text(
+        json.dumps({"checkout": str(checkout), "state_dir": str(target)})
+    )
+    return env
 
 
 def _run_steps(plan: VerificationPlan, receipt: dict, env: dict[str, str], keep_going: bool,

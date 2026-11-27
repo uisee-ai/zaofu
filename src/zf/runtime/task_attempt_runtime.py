@@ -227,7 +227,7 @@ def prepare_task_attempt(
     _bind_attempt_to_briefing(briefing_path, attempt, durable_assistance=assistance, inbox_hint=hint)
     claimed_attempt, claimed = store.claim_delivery(
         str(attempt["attempt_id"]),
-        updated_at=_now(),
+        updated_at=_now(), lease_expires_at=_lease_expiry(runtime),
     )
     if not claimed:
         status = str((claimed_attempt or attempt).get("status") or "")

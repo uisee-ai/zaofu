@@ -46,8 +46,11 @@ def verifier_failure_schema_guidance(
     else:
         example = "```json\n" + body + "\n```"
     candidate_host_check = (
-        "- Candidate execution obstruction: first match the blocked command_id against this attempt's "
-        "candidate-host-execution and inspect its signed original receipt and assigned media. "
+        "- Candidate execution obstruction: if this attempt pins candidate-host-execution, match the blocked command_id in its "
+        "signed original receipt and inspect the assigned media. An empty index for an unpinned output is not a missing input. "
+        "Run authorized local checks directly. A mandatory preauthorized container output still awaiting its producer "
+        "must keep its exact command_id, target and declared evidence paths; report the observed missing evidence "
+        "with the provided result command. Do not invoke an operator shell or claim a browser verdict. "
         "A missing dependency in the Reader shell describes that shell. Determine whether it prevents "
         "the required evaluation in the contracted environment, including any separately required fresh probe.\n"
         if owner == "candidate_verify" else ""
