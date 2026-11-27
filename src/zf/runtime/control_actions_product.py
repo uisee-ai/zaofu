@@ -22,6 +22,7 @@ from zf.runtime.control_actions_helpers import _task_updates_from_payload
 from zf.runtime.control_actions_helpers import _workflow_stage
 from zf.runtime.operator_intent import infer_operator_intent
 from zf.runtime.operator_intent import validate_operator_intent_payload
+from zf.runtime.workflow_inputs import bind_adopted_research_inputs
 from zf.runtime.workflow_inputs import infer_workflow_prompt_kind
 from zf.runtime.workflow_inputs import normalize_artifact_refs
 from zf.runtime.workflow_inputs import normalize_source_refs
@@ -913,6 +914,23 @@ class ProductActionsMixin:
                 )
             payload["channel_id"] = canonical_channel
             payload["thread_id"] = canonical_thread
+        prompt_kind = infer_workflow_prompt_kind(pattern_id, payload)
+        artifact_refs = normalize_artifact_refs(payload)
+        if request_projection and prompt_kind == "prd":
+            try:
+                artifact_refs = bind_adopted_research_inputs(
+                    self.state_dir, request_projection, artifact_refs,
+                )
+            except WorkflowRequestError as exc:
+                return self._failed(
+                    requested=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    task_id=task_id,
+                    reason=str(exc),
+                    status="stale_or_missing_request",
+                    status_code=409,
+                )
         origin_binding = (
             request_projection.get("origin_binding")
             if isinstance(request_projection.get("origin_binding"), dict)
@@ -969,7 +987,6 @@ class ProductActionsMixin:
                 )
                 task = mutation.task
         manifest_ref = workflow_input_manifest_ref(workflow_run_id)
-        artifact_refs = normalize_artifact_refs(payload)
         source_refs = normalize_source_refs(
             payload,
             task_id=task_id,
@@ -1020,7 +1037,6 @@ class ProductActionsMixin:
             "request_revision": request_revision,
             "origin_binding": dict(origin_binding),
         }
-        prompt_kind = infer_workflow_prompt_kind(pattern_id, payload)
         workflow_prompt_ref = ""
         prompt_artifact: dict[str, Any] = {}
         if prompt_kind:

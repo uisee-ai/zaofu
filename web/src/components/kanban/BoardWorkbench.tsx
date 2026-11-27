@@ -66,6 +66,7 @@ function buildTaskTelemetry(agents: AgentSummary[]): Map<string, TaskTelemetry> 
 
 
 export function BoardWorkbench({
+  projectId,
   projectName,
   actionReady,
   actionResult,
@@ -101,6 +102,7 @@ export function BoardWorkbench({
   totalTaskCount,
   viewMode,
 }: {
+  projectId?: string;
   projectName: string;
   actionReady: boolean;
   actionResult: ActionResponse | null;
@@ -372,6 +374,7 @@ export function BoardWorkbench({
           {BOARD_COLUMNS.map((column) => (
             <BoardColumn
               key={column.id}
+              projectId={projectId}
               column={column}
               tasks={tasksByColumn[column.id]}
               selectedTaskId={selectedTaskId}

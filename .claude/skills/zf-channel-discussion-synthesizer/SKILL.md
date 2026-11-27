@@ -32,7 +32,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 质量增强版 synthesis 必须声明 `quality_contract=channel-prd-quality.v1`。需求覆盖表逐行
 提供直接 `evidence_refs: list[str]`，例如 `["sources/requirement.md"]`；此字段不是
 `{ref,digest,location}` 对象数组，不能用对象代替合同要求的字符串引用。引用取自当前
-绑定来源，不照抄示例路径。研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
+绑定来源，不照抄示例路径。研究项补充 `adopted_conclusion` 与 `applicability_limit`。
+对影响交付的参考，正文交代用户场景、预期和采纳理由，覆盖表关联同版来源及对应 AC。
+已决事项核对适用条件后引用原决定；其他可借鉴能力沿原范围作为备选。来源
 attestation 的读取状态不能与 partial/不可读 artifact 同时出现。贡献物分为互斥的
 `canonical_cross_review_refs` 和 `supporting_contribution_refs`，两者并集必须等于消费列表。
 同时提供 `permission_audit_contract`，明确 `deny_by_default`、审计事件字段、查询字段、
@@ -180,12 +182,13 @@ Runtime 会把上述清单和 companion 导出到同版 Markdown；无需复制�
 ### `prd-spec.v1` 标准正文
 
 新撰写的正式 PRD 在结构化结果中声明 `spec_format: "prd-spec.v1"`，并提供
-`document_control`（`revision`、`status`、`owner`、`profile: lite|full`）。正文按以下
-顺序组织：Overview；Background and Problem；Goals、Non-goals and Scope；User Personas
-and Prioritized Scenarios；User Flow and Interaction；Functional Requirements；Business
-Rules、Permissions and State；Non-functional Requirements；Success Metrics；Acceptance
-Criteria；Dependencies、Assumptions、Risks and Open Questions。需要上线、迁移、回滚或运维
-责任时再添加 Rollout、Migration and Operations。
+`document_control`（`revision`、`status`、`owner`、`profile: lite|full`）。英文正文沿用派发合同的章节标题。中文正文可直接使用以下
+二级标题，便于读者及 Runtime 在同一版文档定位章节：
+
+产品概述、背景与问题、目标与非目标、用户与场景、用户故事、用户流程与交互、功能需求、
+业务规则与状态、异常场景、关键实体、非功能需求、成功指标、验收标准、依赖与风险。
+在对应章节写清适用范围、权限、独立验收、假设和待决事项。需要上线、迁移、回滚或运维
+责任时再添加交付章节。
 
 每个 Requirement 只表达一个可观察行为，并至少有一个 Scenario（GIVEN/WHEN/THEN）和
 一个稳定 Acceptance ID。`success_metrics` 表达用户或业务结果，

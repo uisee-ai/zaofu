@@ -42,6 +42,9 @@ _PRD_SPEC_SECTIONS = {
     ),
 }
 
+# Each section ends with a supported Chinese heading for localized authors and repairs.
+PRD_CHINESE_SECTION_HEADINGS = "、".join(aliases[-1] for aliases in _PRD_SPEC_SECTIONS.values())
+
 _PRD_VIEW_SECTIONS = {
     "product": ("document control", "overview", "background", "goals", "user personas", "user journeys", "success", "acceptance", "dependencies"),
     "architecture": ("document control", "overview", "goals", "business rules", "entities", "non functional", "dependencies", "rollout", "appendices"),
@@ -81,18 +84,27 @@ def validate_prd_document(body: dict[str, Any]) -> str:
     if not isinstance(body["prd_markdown"], str) or not body["prd_markdown"].strip():
         return "prd_markdown must be a non-empty string"
     spec_format = body.get("spec_format")
-    if spec_format is not None:
-        if spec_format != PRD_SPEC_FORMAT:
-            return f"unsupported spec_format: {spec_format}"
-        spec_error = _validate_prd_spec_v1(body)
-        if spec_error:
-            return spec_error
+    if spec_format is not None and spec_format != PRD_SPEC_FORMAT:
+        return f"unsupported spec_format: {spec_format}"
+    spec_error = _validate_prd_spec_v1(body) if spec_format else ""
+    coverage_error = _validate_requirement_coverage(body)
+    if spec_error or coverage_error:
+        return "; ".join(error for error in (spec_error, coverage_error) if error)
+    if not isinstance(body.get("decision_log"), list):
+        return "decision_log must be a list"
+    return ""
+
+
+def _validate_requirement_coverage(body: dict[str, Any]) -> str:
     rows = body.get("requirement_coverage")
     if not isinstance(rows, list) or not rows:
         return "requirement_coverage must be a non-empty list"
     seen = set()
-    acceptance_ids = {str(item.get("id") or "") for item in body.get("acceptance_criteria") or []
-                      if isinstance(item, dict)}
+    criteria = body.get("acceptance_criteria")
+    if not isinstance(criteria, list):
+        criteria = []
+    acceptance_ids = {str(item.get("id") or "") for item in criteria if isinstance(item, dict)}
+    reference_errors: list[str] = []
     for row in rows:
         if not isinstance(row, dict):
             return "requirement_coverage entries must be objects"
@@ -111,17 +123,18 @@ def validate_prd_document(body: dict[str, Any]) -> str:
         if row["status"] == "covered":
             if not isinstance(row.get("section"), str) or not row["section"].strip():
                 return "covered requirement requires a PRD section"
-            if spec_format == PRD_SPEC_FORMAT:
+            if body.get("spec_format") == PRD_SPEC_FORMAT:
                 headings = {_normalize_heading(title) for _, title in _markdown_headings(body["prd_markdown"])}
                 if not _section_matches(headings, row["section"]):
                     return f"covered requirement section not found in prd_markdown: {row['section']}"
-            if not row["acceptance_ids"] or not set(row["acceptance_ids"]) <= acceptance_ids:
-                return "covered requirement must reference declared acceptance ids"
+            unknown = sorted(set(row["acceptance_ids"]) - acceptance_ids)
+            if not row["acceptance_ids"] or unknown:
+                issue = f"undeclared {unknown}" if unknown else "empty"
+                reference_errors.append(f"requirement_coverage {identity}: covered acceptance_ids is {issue}; "
+                                        "reference at least one declared acceptance_criteria.id")
         elif not isinstance(row.get("reason"), str) or not row["reason"].strip():
             return "deferred or gap requirement requires a reason"
-    if not isinstance(body.get("decision_log"), list):
-        return "decision_log must be a list"
-    return ""
+    return "; ".join(reference_errors)
 
 
 def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
@@ -136,9 +149,13 @@ def _validate_prd_spec_v1(body: dict[str, Any]) -> str:
 
     headings = _markdown_headings(body["prd_markdown"])
     normalized_headings = {_normalize_heading(title) for _, title in headings}
-    for section, aliases in _PRD_SPEC_SECTIONS.items():
-        if not any(_section_matches(normalized_headings, alias) for alias in aliases):
-            return f"prd-spec.v1 requires section: {section}"
+    missing_sections = [
+        f"{section} ({aliases[0]} / {aliases[-1]})"
+        for section, aliases in _PRD_SPEC_SECTIONS.items()
+        if not any(_section_matches(normalized_headings, alias) for alias in aliases)
+    ]
+    if missing_sections:
+        return "prd-spec.v1 requires section: " + ", ".join(missing_sections)
 
     requirement_headings = [
         title for level, title in headings
@@ -245,6 +262,7 @@ def _validate_full_profile(
 
 def _validate_id_items(field: str, values: list[Any]) -> str:
     seen: set[str] = set()
+    missing: list[str] = []
     for item in values:
         if not isinstance(item, dict):
             return f"prd-spec.v1 {field} entries must be objects"
@@ -259,7 +277,9 @@ def _validate_id_items(field: str, values: list[Any]) -> str:
             None,
         )
         if not isinstance(statement, str) or not statement.strip():
-            return f"prd-spec.v1 {field} {identity} requires a statement"
+            missing.append(identity)
+    if missing:
+        return f"prd-spec.v1 {field} {', '.join(missing)} requires a statement"
     return ""
 
 

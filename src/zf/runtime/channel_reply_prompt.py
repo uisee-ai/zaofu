@@ -6,6 +6,8 @@ import json
 from typing import Any
 
 from zf.core.security.redaction import redact_obj
+from zf.runtime.channel_prd_document import PRD_CHINESE_SECTION_HEADINGS
+from zf.runtime.channel_prd_quality import SOURCE_ATTESTATION_GUIDANCE
 from zf.runtime.channel_reply_stream import CHANNEL_CONTRACT_MARKER
 from zf.runtime.prd_quality_prompt import PRD_AUTHOR_GUIDANCE
 
@@ -390,7 +392,8 @@ def channel_reply_response_contract(
             "Functional Requirements, Business Rules/Permissions/State, Edge Cases and Error "
             "Scenarios, Key Entities and Contracts, Non-functional Requirements, Success Metrics, "
             "Acceptance Criteria, Dependencies/Assumptions/Risks/Open Questions, and a traceability "
-            "appendix. Make the audience contract explicit: a product manager can review value and "
+            f"appendix. For Chinese documents, the registered headings are {PRD_CHINESE_SECTION_HEADINGS}. "
+            "Make the audience contract explicit: a product manager can review value and "
             "scope, an architect can review boundaries/entities/rules, and a senior developer can "
             "run the acceptance and verification paths. Add a separate implementation companion or "
             "handoff appendix for schemas, JSON manifests, state enums, commands, and other design "
@@ -430,7 +433,12 @@ def channel_reply_response_contract(
             '(for example ["sources/requirement.md"]), not ref/digest objects. Copy actual bound source refs, '
             "not the illustrative example path; source_refs alone are not evidence. Research rows "
             "(id beginning RES- or kind=research) must also contain adopted_conclusion and applicability_limit. "
-            "Every deferred or gap item must also contain a non-empty reason. "
+            'For example, acceptance_criteria:[{"id":"AC-1","statement":"The original record remains."}] '
+            'pairs with requirement_coverage:[{"id":"REQ-1","source_refs":["<bound source>"],'
+            '"evidence_refs":["<bound evidence>"],"section":"Functional Requirements",'
+            '"status":"covered","acceptance_ids":["AC-1"]}]. Use actual IDs, refs and outcomes. '
+            "Each covered row links at least one declared AC. Put an unadopted feature in out_of_scope; "
+            "if a source item is deferred or a gap, record its actual status and reason. "
             "Match each source requirement to a real PRD section and acceptance; section must be the exact "
             "heading title (for example `Functional Requirements`), never a combined list of requirement IDs "
             "or a prose description. State exclusions explicitly. "
@@ -451,8 +459,8 @@ def channel_reply_response_contract(
             "route factual investigation to members first. "
             "Never equate matching digests or merged questions with semantic completeness. "
             "quality_contract must be channel-prd-quality.v1. classification must be a JSON object with "
-            "source_read_status and artifact_readability_status; source_attestation=true is valid only when "
-            "those states prove a complete readable source pack. permission_audit_contract must contain "
+            f"source_read_status and artifact_readability_status. {SOURCE_ATTESTATION_GUIDANCE} "
+            "permission_audit_contract must contain "
             "deny_by_default=true, event_fields, query_fields, retention_policy, and owner. "
             "Split consumed contribution refs into disjoint canonical_cross_review_refs and "
             "supporting_contribution_refs whose union is exactly consumed_contribution_refs. "

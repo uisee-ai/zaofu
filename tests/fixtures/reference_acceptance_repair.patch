@@ -1,0 +1,35 @@
+--- a/candidate/vehicle.py
++++ b/candidate/vehicle.py
+@@ -18,8 +18,30 @@
+     if args.action == "detail":
+         print(json.dumps({"vehicle": args.vehicle, "sections": ["warranty"]}))
+         return 0
+-    print(json.dumps({"error": "section unavailable"}))
+-    return 1
++    vehicles = json.loads(args.store.read_text()) if args.store.exists() else {}
++    records = vehicles.setdefault(args.vehicle, {})
++    if args.action == "timeline":
++        print(json.dumps({"records": [
++            {"record": number, "expires": expires}
++            for number, expires in sorted(records.items(), key=lambda item: item[1])
++        ]}))
++        return 0
++    if args.role != "admin":
++        print(json.dumps({"error": "permission denied"}))
++        return 1
++    if not args.record or (args.action != "delete" and not args.expires):
++        parser.error("record number and expiry required for add/edit")
++    if args.action == "add" and args.record in records:
++        parser.error("record already exists")
++    if args.action in {"edit", "delete"} and args.record not in records:
++        parser.error("record not found")
++    if args.action == "delete":
++        del records[args.record]
++    else:
++        records[args.record] = args.expires
++    args.store.write_text(json.dumps(vehicles))
++    print(json.dumps({"record": args.record}))
++    return 0
+
+
+ if __name__ == "__main__":

@@ -1264,3 +1264,64 @@ def test_mock_e2e_dormant_operation_settlement_suspend_and_same_lane_resume(
         project_root=str(tmp_path),
     ).get(role.instance_id) == session_id
     assert "--resume" in transport.spawned[-1][1]
+
+
+def _publish_foreign_dispatch(daemon, role, condition):
+    from datetime import datetime, timedelta, timezone
+    from zf.core.state.task_attempts import TaskAttemptStore
+
+    store = TaskAttemptStore(daemon.state_dir / "task_attempts.json")
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(seconds=-1 if condition == "expired" else 900)
+    attempt = store.ensure_for_dispatch(
+        run_id="r", task_id="T-1", dispatch_id="verify-attempt", role=role.name,
+        instance_id="other-lane" if condition == "other_instance" else role.instance_id,
+        operation_id="verify-op", briefing_ref="briefing", max_attempts=2,
+        created_at=now.isoformat(), lease_expires_at=expiry.isoformat(),
+    ).attempt["attempt_id"]
+    if condition == "prepared":
+        return
+    store.claim_delivery(attempt, updated_at=now.isoformat())
+    if condition == "gated":
+        store.release_unsent_delivery(attempt, updated_at=now.isoformat(),
+                                     lease_expires_at=expiry.isoformat(), gate_reason="external_wait")
+    elif condition != "delivering":
+        store.mark_sent(attempt, updated_at=now.isoformat())
+        if condition == "settled":
+            store.update(attempt, status="succeeded", updated_at=now.isoformat())
+
+
+@pytest.mark.parametrize("condition, stays_alive", [
+    ("prepared", True), ("delivering", True), ("sent", True),
+    ("expired", False), ("settled", False), ("gated", False), ("other_instance", False),
+])
+def test_idle_daemon_respects_another_dispatchers_current_attempt_lease(tmp_path, monkeypatch, condition, stays_alive):
+    daemon, role, transport = _runtime(tmp_path)
+    daemon._ensure_role_active(role, task_id="ROOT")
+    registry = RoleSessionRegistry(daemon.state_dir / "role_sessions.yaml", project_root=str(tmp_path))
+    registry.record_heartbeat(role.instance_id, {"state": "idle", "last_action_ts": 1})
+    admit = daemon._role_suspend_admission
+
+    def dispatch_after_idle_observation(role, **kwargs):
+        decision = admit(role, **kwargs)
+        assert decision[0]
+        # The new lease arrives after idle approval and before any WRC start or Task assignment.
+        _publish_foreign_dispatch(daemon, role, condition)
+        return decision
+
+    monkeypatch.setattr(daemon, "_role_suspend_admission", dispatch_after_idle_observation)
+    daemon._hibernate_idle_roles()
+
+    assert (role.instance_id in transport.alive) == stays_alive
+    assert (role.instance_id in transport.terminated) != stays_alive
+
+
+def test_context_recycle_defers_instead_of_replacing_a_newly_leased_idle_provider(tmp_path):
+    daemon, role, transport = _runtime(tmp_path)
+    daemon._ensure_role_active(role, task_id="ROOT")
+    _publish_foreign_dispatch(daemon, role, "sent")
+    daemon._start_recycle(role)
+    assert role.instance_id in transport.alive
+    assert not transport.terminated
+    assert daemon._instance_state[role.instance_id] == "pending_recycle"
+    assert not any(e.type == "worker.recycled" for e in daemon.event_log.read_all())

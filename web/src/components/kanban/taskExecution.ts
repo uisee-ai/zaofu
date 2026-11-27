@@ -28,14 +28,15 @@ function pipelineState(pipeline: Record<string, unknown>, activeDispatch: unknow
   if (operationStatus === "running") {
     const owner = asRecord(pipeline.owner);
     const bound = pipeline.dispatch_id && (!activeDispatch || pipeline.dispatch_id === activeDispatch);
-    return { label: `${operationName}中`, worker: bound ? textValue(owner.instance_id) : undefined };
+    return { label: `${operationName}中`, worker: bound ? textValue(owner.instance_id) : undefined,
+      attemptId: bound ? textValue(pipeline.attempt_id) : undefined };
   }
   const phase = stage.replace(/_(ready|active)$/, "");
   if (phase !== stage) return { label: `等待${stageNames[phase] || phase}` };
   return { label: stateNames[stage] || stageNames[stage] || stage || stateNames.unknown };
 }
 
-export function taskExecution(task: Task, detail: TaskDetail | null): { label: string; worker?: string; manualEvidence?: boolean } {
+export function taskExecution(task: Task, detail: TaskDetail | null): { label: string; worker?: string; attemptId?: string; manualEvidence?: boolean } {
   const status = taskStatus(task);
   if (taskIsEffectivelyTerminal(task)) return { label: stateNames[status] || status };
   if (!detail) return { label: "正在读取执行进度" };
@@ -49,7 +50,7 @@ export function taskExecution(task: Task, detail: TaskDetail | null): { label: s
   const op = detail.task_run_panel?.active_operation;
   const dispatch = detail.task.active_dispatch_id;
   if (dispatch && op?.dispatch_id === dispatch && op.active && op.state === "in_progress") {
-    return { label: "执行中", worker: textValue(op.instance_id) };
+    return { label: "执行中", worker: textValue(op.instance_id), attemptId: textValue(op.attempt_id) };
   }
   if (status === "backlog") {
     const binding = asRecord(detail.task.execution_binding);

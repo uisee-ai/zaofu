@@ -7,6 +7,13 @@ from typing import Any, Iterable
 from zf.core.events.model import ZfEvent
 
 PRD_QUALITY_CONTRACT = "channel-prd-quality.v1"
+SOURCE_ATTESTATION_GUIDANCE = (
+    'For a fully read and verified pack, use literal JSON tokens '
+    '"source_read_status": "complete" and "artifact_readability_status": "verified" '
+    'in classification. Put the reading explanation in prd_markdown. '
+    'If required sources are unread or unavailable, omit source_attestation '
+    'and report the missing references in readiness.gaps.'
+)
 
 
 def required_prd_quality_contract(events: Iterable[ZfEvent], *, channel_id: str,
@@ -77,15 +84,15 @@ def validate_prd_quality_contract(body: dict[str, Any], *, required_version: str
         # Treat the explicit complete family as equivalent to the legacy
         # short values so publication and independent evaluation share one
         # contract across provider revisions.
+        conflicts = []
         if source_status not in _COMPLETE_SOURCE_STATES and not source_status.startswith("complete_"):
-            return (
-                "source_attestation.all_required_sources_read=true conflicts with "
-                f"classification.source_read_status={source_status or 'missing'}"
-            )
+            conflicts.append(f"classification.source_read_status={source_status or 'missing'}")
         if artifact_status in _INCOMPLETE_ARTIFACT_STATES:
+            conflicts.append(f"classification.artifact_readability_status={artifact_status or 'missing'}")
+        if conflicts:
             return (
                 "source_attestation.all_required_sources_read=true conflicts with "
-                f"classification.artifact_readability_status={artifact_status or 'missing'}"
+                + ", ".join(conflicts) + ". " + SOURCE_ATTESTATION_GUIDANCE
             )
 
     rows = body.get("requirement_coverage")

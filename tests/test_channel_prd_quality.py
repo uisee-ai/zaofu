@@ -55,6 +55,25 @@ def test_quality_contract_accepts_complete_verified_context_pack_state():
     assert validate_prd_quality_contract(body) == ""
 
 
+def test_localized_attestation_feedback_matches_the_live_synthesis_contract():
+    from zf.runtime.channel_reply_prompt import channel_reply_response_contract
+
+    body = _quality_body()
+    body["classification"] = {
+        "source_read_status": "已完整阅读已提供的来源",
+        "artifact_readability_status": "partial",
+    }
+    diagnostic = validate_prd_quality_contract(body)
+    prompt = channel_reply_response_contract({}, {}, {"refs": {"synthesis_request_id": "bound"}})
+    for text in ('"source_read_status": "complete"', '"artifact_readability_status": "verified"',
+                 "prd_markdown", "omit source_attestation", "readiness.gaps"):
+        assert text in diagnostic and text in prompt
+    assert "classification.source_read_status=已完整阅读" in diagnostic
+    assert "classification.artifact_readability_status=partial" in diagnostic
+    body["classification"] = {"source_read_status": "complete", "artifact_readability_status": "verified"}
+    assert validate_prd_quality_contract(body) == ""
+
+
 def test_quality_contract_requires_direct_research_evidence_and_adoption():
     body = _quality_body()
     body["requirement_coverage"][1].pop("adopted_conclusion")

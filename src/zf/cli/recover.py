@@ -196,6 +196,8 @@ def _run_workflow(args: argparse.Namespace) -> int:
                     f"({exc}); falling back to marker events",
                     file=sys.stderr,
                 )
+        from zf.runtime.workflow_runtime_start import has_live_watcher
+
         result = apply_workflow_resume(
             state_dir,
             config,
@@ -204,6 +206,7 @@ def _run_workflow(args: argparse.Namespace) -> int:
             project_root=context.project_root,
             dry_run=bool(args.dry_run),
             gate_dispatcher=gate_dispatcher,
+            delegate_batch_to_watcher=has_live_watcher(state_dir),
             checkpoint_id=str(args.checkpoint_id or ""),
             override_task_map_ref=str(args.task_map_ref or ""),
             force_gate_dispatch=bool(getattr(args, "force_gate_dispatch", False)),

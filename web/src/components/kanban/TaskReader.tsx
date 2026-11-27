@@ -56,7 +56,7 @@ export function TaskReader(props: Props) {
   }
   const execution = task ? taskExecution(task, detail) : null;
   const properties = task && <TaskProperties task={task} detail={detail} projectId={projectId}
-    worker={execution?.worker} onOpenTask={onOpenTask} onClose={() => setProperties(false)} />;
+    worker={execution?.worker} attemptId={execution?.attemptId} onOpenTask={onOpenTask} onClose={() => setProperties(false)} />;
   const contract = detail?.contract ?? task?.contract ?? {};
   return <section className="task-detail task-reader" aria-label="任务详情">
     <header className="reader-toolbar">
