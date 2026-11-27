@@ -1,9 +1,12 @@
 """One advisory owner: durable FIFO with a bounded guidance deadline priority."""
 
 from datetime import datetime, timezone
+from typing import Any, Mapping
+
+from zf.core.events.model import ZfEvent
 
 from zf.runtime.assistance_mailbox import notification_states
-from zf.runtime.pause_lifecycle import active_request_age_seconds
+from zf.runtime.pause_lifecycle import active_request_age_seconds, is_run_dispatch_paused
 from zf.runtime.provider_turn_liveness import active_codex_turn_from_events
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
@@ -26,6 +29,13 @@ def guidance_inflight(events, owner: str) -> bool:
     )
 
 
+def paused_business_checkpoint(events: list[ZfEvent], operation: Mapping[str, Any]) -> bool:
+    """Normal pre-Impl delegation waits for its own Run. Diagnostic checkpoints keep their own policy."""
+    return (operation.get("operation_type") == "orchestrator_agent_semantic"
+            and operation.get("parent_stage_id") == "oa-pre_impl"
+            and is_run_dispatch_paused(events, operation.get("workflow_run_id", "")))
+
+
 def next_advisory_event(events, owner: str):
     """An old checkpoint cannot indefinitely hide time-sensitive worker guidance."""
     handled = {e.payload.get("request_id") for e in events
@@ -39,7 +49,8 @@ def next_advisory_event(events, owner: str):
         p = event.payload
         if (event.type == "orchestrator.semantic.checkpoint.requested"
                 and operations.get(str(p.get("operation_id") or ""), {}).get("status") == "requested"
-                and operations[p["operation_id"]].get("role_instance") == owner):
+                and operations[p["operation_id"]].get("role_instance") == owner
+                and not paused_business_checkpoint(events, operations[p["operation_id"]])):
             queued.append(event)
         elif (event.type == "orchestrator.rework.triage.requested"
               and (not p.get("durable_mailbox") or (event.origin == "kernel" and event.actor == "run-manager"))

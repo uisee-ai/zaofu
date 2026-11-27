@@ -77,35 +77,56 @@ def pin_replayed_review_usage(
 
     old_comparable = expanded_verification(runtime.state_dir, old, manifest.get("sources", []))
     new_comparable = expanded_verification(runtime.state_dir, new, payload.get("input_refs", []))
+    from zf.runtime.plan_readonly_acceptance_review import INITIAL_ACCEPTANCE, READONLY_SCOPE
+
+    old_checks = old_comparable.get("execution_comparisons") or {}
+    new_checks = new_comparable.get("execution_comparisons") or {}
+    old_scope, new_scope = old_checks.get(READONLY_SCOPE) or {}, new_checks.get(READONLY_SCOPE) or {}
+    if (old_scope and "initial_acceptance_review" not in old_scope
+            and INITIAL_ACCEPTANCE not in (old_scope.get("facts") or {})
+            and "initial_acceptance_review" in new_scope):
+        legacy = {k: v for k, v in new_scope.items() if k != "initial_acceptance_review"}
+        legacy["facts"] = {k: v for k, v in legacy["facts"].items() if k != INITIAL_ACCEPTANCE}
+        new_comparable["execution_comparisons"] = {**new_checks, READONLY_SCOPE: legacy}
     # The new comparison index is derived entirely from the bound Task Map and
     # compiled policy. Keep older attempts' exact summary and review obligations.
     bindings = old_comparable.get("input_binding") or {}
-    if ("execution_comparisons" not in old_comparable
-            and all(bindings.get(k) for k in ("task_map_digest", "effective_policy_digest"))
+    if (all(bindings.get(k) for k in ("task_map_digest", "effective_policy_digest"))
             and bindings == new_comparable.get("input_binding")):
-        new_comparable.pop("execution_comparisons", None)
+        if "execution_comparisons" not in old_comparable:
+            new_comparable.pop("execution_comparisons", None)
+        else:
+            key = "standard_with_empty_write_scope"
+            old_check = old_comparable["execution_comparisons"].get(key)
+            new_checks = dict(new_comparable.get("execution_comparisons") or {})
+            # An already issued review retains the citation rules it advertised.
+            for name, frozen in old_comparable["execution_comparisons"].items():
+                if name in new_checks and "runtime_evidence_fields" not in frozen:
+                    new_checks[name] = {field: value for field, value in new_checks[name].items()
+                                        if field != "runtime_evidence_fields"}
+            new_comparable["execution_comparisons"] = new_checks
+            current = new_checks.get(key) or {}
+            if old_check == {"task_ids": current.get("task_ids")} and current.get("before_rework"):
+                new_comparable["execution_comparisons"] = {**new_checks, key: old_check}
     # Usage is observational, while all candidate/policy/graph facts remain
     # request identity. A real change must still reach the divergence guard.
     if ({key: value for key, value in old_comparable.items() if key != "usage_observations"}
             != {key: value for key, value in new_comparable.items() if key != "usage_observations"}):
         return
+    if payload.get("plan_review_disposition_digest") == new_source["sha256"]:
+        pinned = (request.get("result_identity") or {}).get("plan_review_disposition_digest")
+        if pinned:
+            payload["plan_review_disposition_digest"] = pinned
+        else:
+            payload.pop("plan_review_disposition_digest")
     for key in ("ref", "sha256", "byte_count"):
         if key in old_source:
             new_source[key] = old_source[key]
         else:
             new_source.pop(key, None)
-    # Preserve the exact legacy inline/detail representation for this attempt.
-    refs = payload.get("input_refs", [])
-    refs[:] = [source for source in refs if not isinstance(source, Mapping)
-               or source.get("source_id") != "plan-execution-verification"]
-    old_verification = [source for source in manifest.get("sources", [])
-                        if source.get("source_id") == "plan-execution-verification"]
-    if old_verification:
-        position = next(i for i, source in enumerate(refs)
-                        if source.get("source_id") == "plan-execution-review")
-        refs.insert(position, dict(old_verification[0]))
-    old_usage = [source for source in manifest.get("sources", [])
-                 if source.get("source_id") == "plan-execution-usage"]
+    detail_ids = {"plan-execution-usage", "plan-execution-verification"}
+    old_details = [source for source in manifest.get("sources", []) if source.get("source_id") in detail_ids]
+    old_usage = [source for source in old_details if source["source_id"] == "plan-execution-usage"]
     if len(old_usage) > 1:
         raise ValueError("ambiguous pinned plan execution usage")
     if old_usage:
@@ -114,13 +135,10 @@ def pin_replayed_review_usage(
                 or detail.get("detail_sha256") != old_usage[0].get("sha256")):
             raise ValueError("pinned plan execution usage differs from review")
         hydrate_sidecar_ref(runtime.state_dir, dict(old_usage[0]))
-    # Usage is a single frozen observation: pin both its summary and its
-    # optional detail source, including upgrades of requests created before
-    # the detail was separated from the required review body.
-    refs = payload.get("input_refs", [])
+    # Both details are issued together immediately before the review. Their
+    # order is part of the manifest digest, including for pre-upgrade attempts.
+    refs = payload["input_refs"]
     refs[:] = [source for source in refs if not isinstance(source, Mapping)
-               or source.get("source_id") != "plan-execution-usage"]
-    if old_usage:
-        position = next(i for i, source in enumerate(refs)
-                        if isinstance(source, Mapping) and source.get("source_id") == "plan-execution-review")
-        refs.insert(position, dict(old_usage[0]))
+               or source.get("source_id") not in detail_ids]
+    position = next(i for i, source in enumerate(refs) if source is new_source)
+    refs[position:position] = [dict(source) for source in old_details]

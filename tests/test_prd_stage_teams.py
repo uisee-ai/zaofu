@@ -263,7 +263,8 @@ def test_project_symlink_is_not_a_new_read_scope(assembly, tmp_path_factory):
         _admit(assembly)
 
 
-@pytest.mark.parametrize("binding", ["valid", "missing_projection", "missing", "changed", "changed_path", "other_run"])
+@pytest.mark.parametrize("binding", ["valid", "missing_projection", "missing", "changed", "changed_path", "other_run",
+                                     "display_default", "changed_pdd"])
 def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_team(assembly, binding):
     from tests.test_reader_fanout_runtime import _manifest, _state
     from zf.core.config.schema import RoleConfig
@@ -287,6 +288,8 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     run = "team-replan"
     identity = {"workflow_run_id": run, "flow_kind": "prd", "pdd_id": "F-plan",
                 "prd_ref": "prd.md", "request_revision": 1, "requirement_spec_digest": "a" * 64}
+    if binding == "display_default":
+        identity.pop("pdd_id")
     original = writer.emit("prd.requested", correlation_id=run, payload=identity)
     runtime.run_once(events=[original])
 
@@ -330,6 +333,7 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     failure = writer.emit("prd.plan.failed", correlation_id=run, causation_id=rejected.id, payload={
         "workflow_run_id": run, "stage_id": "prd-plan", "failure_scope": "plan_admission",
         "trigger_event_id": rejected.id, "plan_admission_incident_id": "admission-rejected",
+        **({"pdd_id": "default"} if binding in {"display_default", "changed_pdd"} else {}),
         "reason": "task map violates scope bounds"})
     assert runtime._on_reader_stage_failure_replan(failure).action == "dispatch"
     retry, = [e for e in log.read_all() if e.causation_id == failure.id]
@@ -337,7 +341,7 @@ def test_admission_replan_reuses_only_its_bound_scan_or_dispatches_the_approved_
     assert retry.payload["plan_admission_incident_id"] == "admission-rejected"
     assert runtime._on_reader_stage_failure_replan(failure) is None
     runtime.run_once(events=[retry])
-    reuse = binding in {"valid", "missing_projection"}
+    reuse = binding in {"valid", "missing_projection", "display_default"}
     if reuse:
         assert retry.type == "prd.scan.completed"
         assert retry.payload["stage_member_results"] == original_scan.payload["stage_member_results"]

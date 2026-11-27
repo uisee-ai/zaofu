@@ -95,17 +95,26 @@ def _navigation_phase(sources: list, bodies: dict, required: list) -> str:
 
 def select_plan_input_reads(
     state_dir: Path, manifest: Mapping[str, Any], required: list[dict[str, Any]], *,
-    policy: Mapping[str, Any], explicit: bool = False,
+    policy: Mapping[str, Any], explicit: bool = False, lookup_failure=None, previous_request=None, read_events=None, explicit_rows=(),
 ) -> tuple[list[dict[str, Any]], str]:
     """Keep explicit policies intact; unknown or unbound sources remain required."""
-    if explicit:
-        return required, ""
+    from zf.runtime.plan_rework_input_overlap import has_scoped_rework_context, rework_context_paths
+
     sources = [source for source in manifest.get("sources", []) if isinstance(source, Mapping)]
+    if explicit and (
+        (previous_request is not None and not has_scoped_rework_context(previous_request))
+        or not explicit_rows or not any(s.get("source_id") == "plan-rework-context" for s in sources)
+        or any(not isinstance(row, Mapping) or not row.get("source_id") or row["source_id"] == "plan-rework-context"
+               or row not in required for row in explicit_rows)
+    ):
+        return required, ""
     source_map = {_identity(source): source for source in sources}
     if len(source_map) != len(sources):
         return required, ""
     bodies: dict[tuple, Any] = {}
     for key, source in source_map.items():
+        if explicit and key[0] != "plan-rework-context" and not str(key[0]).startswith("previous-plan-candidate-"):
+            continue
         if "$" not in source.get("allowed_paths", ["$"]):
             continue
         try:
@@ -114,6 +123,20 @@ def select_plan_input_reads(
             continue  # The normal reader still reports the original failure.
     full_rows = {(row.get("source_id"), row.get("artifact_id"), row.get("artifact_sha256"))
                  for row in required if row.get("json_path", "$") == "$"}
+    context_paths = rework_context_paths(manifest, source_map, bodies, required, lookup_failure, previous_request,
+                                        state_dir=state_dir, read_events=read_events)
+    if explicit:
+        # Independent charter/report declarations stay exact, including their
+        # order and digest. Only an implicitly required index can be reduced.
+        if not context_paths:
+            return required, ""
+        result = []
+        for row in required:
+            if row["source_id"] == "plan-rework-context" and row.get("json_path", "$") == "$":
+                result.extend({**row, "json_path": path} for path in context_paths)
+            else:
+                result.append(row)
+        return result, "bound_rework_descriptor_index"
     peers = {encode_selected(body) for key, body in bodies.items() if key in full_rows}
     phase = _navigation_phase(sources, bodies, required)
     targeted = policy.get("mode") == "targeted" and bool(policy.get("focus")) and bool(phase)
@@ -184,6 +207,10 @@ def select_plan_input_reads(
         body = bodies.get(key)
         # Only complete report/candidate wrappers are partitioned. Authority,
         # core Plan and explicit partial reads retain their original selection.
+        if (context_paths and key[0] == "plan-rework-context" and row.get("json_path") == "$"
+                and not any(row.get(k) for k in ("max_chars", "max_items", "allow_truncated"))):
+            result.extend({**row, "json_path": path} for path in context_paths)
+            continue
         wrapper = str(key[0]).startswith(("child-result-", "previous-plan-candidate-"))
         if (not wrapper or not isinstance(body, dict) or row.get("json_path", "$") != "$"
                 or any(row.get(k) for k in ("max_chars", "max_items", "allow_truncated"))):
@@ -201,7 +228,18 @@ def select_plan_input_reads(
     if result == required:
         return required, ""
     strategy = "targeted_replan_navigation" if phase == "replan" else "targeted_navigation"
-    return result, strategy if optional else "lossless_report_partition"
+    if optional:
+        return result, strategy
+    return result, "bound_rework_descriptor_index" if context_paths else "lossless_report_partition"
+
+
+def choose_plan_reader_reads(state_dir, manifest, required, *, declarations, lookup_failure, previous_request, read_events):
+    from zf.runtime.plan_review_selection_cost import choose_review_reads
+
+    selected, strategy = select_plan_input_reads(state_dir, manifest, required, policy={}, explicit=bool(declarations),
+        explicit_rows=declarations, lookup_failure=lookup_failure, previous_request=previous_request, read_events=read_events)
+    return choose_review_reads(state_dir, manifest, before=required, candidate=selected,
+                               explicit=bool(declarations), strategy=strategy)
 
 
 def complete_partition_read(

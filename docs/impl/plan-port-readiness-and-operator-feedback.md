@@ -14,6 +14,10 @@ Plan producer 的结果预检与 Critic 派发前检查共用 `plan_candidate_po
 `zf result validate --summary` 为模型提供有界预检结果：保留原状态、错误数量及最多
 12 条错误的 code、field、message（单字段最多 512 字符），并标明省略数量及完整报告
 获取方式。Planner 简报使用该选项；去掉它可重新运行同一验证命令查看完整结果。
+只读首站合同已解析时，`readonly_command_scope` 列出实际计算过的任务数、
+首站未选中任何 mandatory AC 的任务数和最多三个样例任务 ID。未解析合同单独留待核实。
+Planner 可按这些 ID 在完整报告的 `verification.task_requirements` 核对 AC、命令和实际归属。
+独立 Critic 可从当前请求已绑定的 `plan-execution-verification` 明细展开同一组首站选择。
 摘要仅改变 CLI 输出，不改变预检、准入或 Critic 必读工件；默认 CLI 输出仍是完整报告。
 
 新 Plan Package 的公共准入还通过 `plan_package_matrix_admission` 复用既有

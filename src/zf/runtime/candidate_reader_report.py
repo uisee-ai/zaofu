@@ -42,6 +42,7 @@ def _verify_assignment(
             or not target or scope.get("target_commit") != target
             or not package_digest or scope.get("plan_artifact_package_digest") != package_digest
             or not scope.get("candidate_event_id")
+            or scope.get("stage_obligation") != assignment.get("stage_obligation")
             or scope.get("assignments_digest") != canonical_json_sha256(assignments)):
         raise ValueError("Candidate Reader assignment does not match the frozen target, Plan or owner")
     expected = {candidate_acceptance_id(row["task_id"], row["acceptance_id"])

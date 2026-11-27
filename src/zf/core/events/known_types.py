@@ -580,7 +580,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "task.fanout.requested", "task.fanout.rejected",
     "fanout.requested",
     "fanout.started", "fanout.child.queued", "fanout.child.dispatched",
-    "fanout.child.dispatch_deferred",
+    "fanout.child.dispatch_deferred", "fanout.child.delivery_unconfirmed",
     "fanout.child.completed", "fanout.child.failed",
     "fanout.child.stale_completion",
     "fanout.child.completion_adopted",

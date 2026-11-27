@@ -614,7 +614,8 @@ def render_attempt_source_briefing(
     if native:
         lines.append(
             f"- Preferred artifact input: start `{cli_command} artifact workspace --attempt {shlex.quote(attempt_id)}` "
-            "in a persistent tool session. Open the printed INPUTS.md and RESUME.md paths. "
+            "in a persistent tool session if your worker has access to /dev/fuse. Otherwise use the CLI fallback. "
+            "Open the printed INPUTS.md and RESUME.md paths. "
             "The read-only mount is outside the product checkout. Use a single literal "
             "`/usr/bin/cat ABSOLUTE_PATH` for each required text selection listed in INPUTS.md. "
             "For partial delivery, read the missing .chars-START-END slices. Use the CLI fallback "
@@ -659,9 +660,12 @@ def render_attempt_source_briefing(
                 "scope, verification ownership and acceptance; do not treat the "
                 "predecessor task's contract as the current one."
             )
+        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator, required_cli_entry
+
+        lines.extend(required_cli_entry(payload, f"{cli_command} artifact read --attempt {attempt_id} --required",
+                                        native=native))
         lines.extend([
-            f"- {'CLI fallback' if native else 'Preferred deduplicated read'}: `{cli_command} artifact read --attempt {attempt_id} --required`.",
-            "  Consume every items[].content in required-artifact-page.v2. Identical bodies share output; "
+            "  Consume every returned body (items[].content in JSON). Identical bodies share output; "
             "each source is recorded. Follow `--cursor <next_cursor>` until null. "
             "Do not reread complete aliases.",
             "- Required pages default to 8192 UTF-8 bytes including metadata, not tokens. "
@@ -674,17 +678,6 @@ def render_attempt_source_briefing(
             "- For a source/path read, start with `--page-start 0 --page-size 8192` and follow "
             "`next_page_start` to null for gap-free coverage.",
         ])
-        if payload.get("output_profile_id") == "plan-synth":
-            lines.append(
-                "- For Plan review through CLI, prefer --format text --page-bytes 32768 on the required-read command "
-                "when the tool can return the full page (reserve at least 16384 output tokens). "
-                "This bounded view prints original content without an outer JSON string escape layer. "
-                "Retain these flags with each cursor; if output truncates, retry the same cursor at 8192 "
-                "or 2048 bytes before continuing. Supplemental source reads also accept --format text; "
-                "their --page-size remains at most 8192 characters. Do not infer command syntax from display escaping."
-            )
-        from zf.runtime.artifact_read_briefing_policy import bound_read_policy_locator
-
         locator = bound_read_policy_locator(payload, state_dir)
         if locator:
             lines.append(locator)

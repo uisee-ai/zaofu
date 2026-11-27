@@ -763,12 +763,24 @@ def test_result_validate_cli_is_registered() -> None:
 @pytest.mark.parametrize("status", ["passed", "failed"])
 def test_result_validate_summary_bounds_output_and_preserves_verdict(tmp_path, monkeypatch, capsys, status):
     from zf.cli import result as result_cli
+    from zf.runtime.plan_execution_review import review_execution
 
+    empty_writers = [{"task_id": f"empty-{n}", "allowed_paths": []} for n in range(5)]
+    task_map = {"tasks": [
+        *empty_writers, {"task_id": "writer", "allowed_paths": ["module.py"]},
+        {"task_id": "audit", "runtime_only": True, "write_free": True,
+         "execution_mode": "runtime_only", "immutable_baseline": "git:current", "allowed_paths": [],
+         "validation": {"commands": [{"id": "check", "owner": "candidate_verify", "command": "run-check"}]}},
+    ]}
+    review = review_execution(
+        task_map, ports={}, policy={"host_verification_commands": ["run-check", "build"]},
+        metadata={"task_pipeline": {"mode": "blocking"}},
+    )
     outcome = {
         "schema_version": "plan-candidate-preflight.v1",
         "status": status,
         "errors": [{"code": "issue", "field": "task", "message": "x" * 5000} for _ in range(30)],
-        "execution_review": {"large": "y" * 1_000_000},
+        "execution_review": {**review, "large": "y" * 1_000_000},
     }
     context = SimpleNamespace(state_dir=tmp_path, config=None)
     monkeypatch.setattr(result_cli, "resolve_project_context", lambda **_: context)
@@ -795,9 +807,26 @@ def test_result_validate_summary_bounds_output_and_preserves_verdict(tmp_path, m
     assert summary["details_truncated"] is True
     assert "without --summary" in summary["full_report"]
 
+    comparisons = summary["execution_comparisons"]
+    assert set(comparisons) == set(review["execution_comparisons"])
+    assert comparisons["readonly_pipeline_entry"] == {
+        "task_count": 1, "sample_task_ids": ["audit"], "before_rework": True,
+        "first_stages_on_admission": ["verify_ready"],
+    }
+    assert comparisons["standard_with_empty_write_scope"] == {
+        "task_count": 5, "sample_task_ids": ["empty-0", "empty-1", "empty-2"],
+        "before_rework": True, "first_stages_on_admission": ["impl_ready"],
+    }
+    assert comparisons["cross_task_ordering"]["task_count"] == 7
+    assert comparisons["readonly_command_scope"]["sample_task_ids"] == ["audit"]
+    assert comparisons["candidate_command_scope"] == {
+        "task_count": 1, "sample_task_ids": ["audit"], "candidate_command_count": 1,
+        "host_permitted_only_count": 1,
+    }
+
     args = build_parser().parse_args(["result", "validate", "--operation", "op", "--scratch"])
     assert args.func(args) == (0 if status == "passed" else 1)
-    assert json.loads(capsys.readouterr().out) == outcome
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(outcome))
 
 
 def test_result_validation_summary_handles_missing_or_unstructured_errors():
@@ -806,6 +835,7 @@ def test_result_validation_summary_handles_missing_or_unstructured_errors():
     assert _validation_summary({"status": "failed", "errors": None})["error_count"] is None
     summary = _validation_summary({"status": "failed", "errors": ["a" * 2000]})
     assert summary["status"] == "failed"
+    assert "execution_comparisons" not in summary
     assert summary["error_count"] == 1
     assert len(summary["errors"][0]["message"]) == 512
 

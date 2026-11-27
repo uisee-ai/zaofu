@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -377,3 +378,163 @@ def test_changed_skill_plans_native_compatibility_check(mini_repo, monkeypatch, 
     check = next(s for s in plan.steps if s.id == "skill-harness-compatibility")
     assert check.automatic is available
     assert check.command[-2:] == ("--changed-skill", "demo")
+
+
+def test_run_cli_isolates_assigned_project_and_host_for_every_automatic_step(tmp_path):
+    import hashlib
+    import os
+    import shutil
+    import textwrap
+
+    # Both projects and all endpoints are disposable. No real unit, server, or account is started.
+    checkout, assigned = tmp_path / "qa", tmp_path / "assigned"
+    for repo, state in ((checkout, "qa-state"), (assigned, "live-state")):
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "zf.yaml").write_text(f'version: "1.0"\nproject:\n  name: fixture\n  state_dir: {state}\n')
+        (repo / state).mkdir()
+    live = assigned / "live-state" / "events.jsonl"
+    live.write_bytes(b"disposable-owner-canary\n")
+    before = hashlib.sha256(live.read_bytes()).hexdigest()
+    for sub in ("scripts", "examples", "tests"):
+        (checkout / sub).mkdir()
+    (checkout / "src").symlink_to(ROOT / "src", target_is_directory=True)
+    runner = checkout / "scripts/dev-verify.py"
+    shutil.copy2(SCRIPT, runner)
+    (checkout / "examples/test.yaml").touch()
+    (assigned / "bin").mkdir()
+    env = {**os.environ, "ZF_PROJECT_ROOT": str(assigned), "ZF_STATE_DIR": str(live.parent),
+           "ZF_HOST_SUPERVISOR_UNIT": "zf-disposable.service", "ZF_ROLE_INSTANCE": "worker-fixture",
+           "ZF_CLI_CMD": str(assigned / "bin/zf"), "ZF_WORKFLOW_ACTION_TOKEN": "fixture-only",
+           "ZF_RESULT_SUBMIT_TOKEN_FILE": str(assigned / "fixture-token"), "TMUX_TMPDIR": str(assigned),
+           "TMUX": str(assigned / "socket,1,0"), "TMUX_PANE": "%123",
+           "DBUS_SESSION_BUS_ADDRESS": f"unix:path={assigned}/bus", "XDG_RUNTIME_DIR": str(assigned),
+           "CODEX_HOME": str(assigned / "codex"), "HOME": str(assigned), "PYTHONPATH": str(ROOT / "src"),
+           "PATH": str(assigned / "bin") + os.pathsep + os.environ["PATH"]}
+    resolve = ("from zf.core.config.project_context import resolve_project_context; "
+               "print(resolve_project_context(require_config=True).state_dir)")
+    # Reproduce the old default propagating the assigned destination even from the other checkout.
+    assert subprocess.check_output([sys.executable, "-c", resolve], cwd=checkout, env=env, text=True).strip() == str(live.parent)
+    probe = checkout / "probe.py"
+    probe.write_text(textwrap.dedent(f"""
+        import json, os, subprocess, sys
+        from pathlib import Path
+        from zf.core.events import EventLog, ZfEvent
+        from zf.runtime.tmux import tmux_env
+        root = Path(__file__).resolve().parent
+        assigned = Path({str(assigned)!r})
+        state = Path(subprocess.check_output([sys.executable, "-c", {resolve!r}], cwd=root, text=True).strip())
+        assert state == root / "qa-state"
+        assert not any(key.startswith("ZF_") for key in os.environ if key != "ZF_WORKSPACE_HOME")
+        assert not any(key in os.environ for key in ("TMUX", "TMUX_PANE", "CODEX_HOME"))
+        assert str(assigned / "bin") not in os.get_exec_path()
+        private = Path(tmux_env()["TMUX_TMPDIR"])
+        assert private.is_dir() and private != assigned and private == Path(os.environ["XDG_RUNTIME_DIR"])
+        assert os.environ["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={{private}}/bus"
+        assert not (private / "bus").exists() and Path.home() != assigned
+        tier = sys.argv[1]
+        EventLog(state / "events.jsonl").append(ZfEvent(type="probe.received", actor="fixture", payload={{"tier": tier}}))
+        (root / (tier + ".json")).write_text(json.dumps({{"state": str(state), "socket_dir": str(private)}}))
+    """))
+    (checkout / "tests/test_probe.py").write_text(
+        "import subprocess, sys\ndef test_probe():\n    subprocess.run([sys.executable, 'probe.py', 'pytest'], check=True)\n"
+    )
+    for script, tier in (("dev-premerge-gate.sh", "contract"), ("run-flow-smoke.sh", "mock")):
+        (checkout / "scripts" / script).write_text(f"exec '{sys.executable}' probe.py {tier}\n")
+    # Load the repo's real pytest entry guard under the disposable checkout.
+    # A later tier can collect tests after the first tier wrote its fixture ledger.
+    shutil.copy2(ROOT / "tests/conftest.py", checkout / "tests/fixture_guard.py")
+    (checkout / "tests/conftest.py").write_text("from fixture_guard import pytest_configure\n")
+    (checkout / "tests/test_later.py").write_text(
+        "from pathlib import Path\ndef test_later():\n    assert Path('qa-state/events.jsonl').is_file()\n"
+    )
+    gate = checkout / "scripts/dev-premerge-gate.sh"
+    gate.write_text(f"'{sys.executable}' -m pytest tests/test_later.py -q --no-cov || exit $?\n" + gate.read_text())
+    args = [sys.executable, str(runner), "run", "--no-parallel", "--json", "--paths", "examples/test.yaml",
+            "--tests", "tests/test_probe.py"]
+    result = subprocess.run(args, cwd=assigned, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    receipt = json.loads(result.stdout)
+    assert [r["id"] for r in receipt["results"]] == ["python-deterministic", "premerge-sentinels", "flow-smoke"]
+    for tier in ("pytest", "contract", "mock"):
+        actual = json.loads((checkout / f"{tier}.json").read_text())
+        assert actual["state"] == str(checkout / "qa-state") and not Path(actual["socket_dir"]).exists()
+    assert hashlib.sha256(live.read_bytes()).hexdigest() == before
+    assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3
+
+    # A checkout with its own explicitly assigned ledger cannot safely serve as the QA cwd.
+    clean = {k: v for k, v in env.items() if k not in {"ZF_PROJECT_ROOT", "ZF_STATE_DIR"}}
+    for authority in ({"ZF_PROJECT_ROOT": str(checkout), "ZF_STATE_DIR": "qa-state"},
+                      {"ZF_PROJECT_ROOT": str(checkout)}, {}):
+        refused = subprocess.run(args, cwd=assigned, env={**clean, **authority}, text=True, capture_output=True)
+        assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    alias = checkout / "remote-state"
+    alias.symlink_to(live.parent, target_is_directory=True)
+    config = checkout / "zf.yaml"
+    config.write_text(config.read_text().replace("qa-state", "remote-state"))
+    refused = subprocess.run(args, cwd=assigned, env=env, text=True, capture_output=True)
+    assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    # Under the caller's environment the local config selects an empty directory.
+    # The automatic process strips that variable and would follow the alias to the owner's ledger.
+    config.write_text(config.read_text().replace("remote-state", "${QA_PATH_CANARY:-remote-state}"))
+    redirected = {**clean, "QA_PATH_CANARY": str(checkout / "unused")}
+    refused = subprocess.run(args, cwd=checkout, env=redirected, text=True, capture_output=True)
+    assert refused.returncode == 2 and json.loads(refused.stdout)["status"] == "isolation_failed"
+    assert hashlib.sha256(live.read_bytes()).hexdigest() == before
+    assert len((checkout / "qa-state/events.jsonl").read_text().splitlines()) == 3
+
+
+@pytest.mark.parametrize("authority", ["absolute", "relative", "root_only", "local", "state_only", "archive"])
+def test_direct_pytest_rejects_reachable_runtime_before_collection(tmp_path, authority):
+    state = tmp_path / "runtime/state"
+    state.mkdir(parents=True)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject: {name: guard, state_dir: runtime/state}\n')
+    ledger = state / "events.jsonl"
+    if authority == "archive":
+        ledger = state / "events/2026-11-26.jsonl"
+        ledger.parent.mkdir()
+    ledger.write_text("fixture ledger sentinel\n")
+    env = {k: v for k, v in os.environ.items() if k not in {"ZF_PROJECT_ROOT", "ZF_STATE_DIR"}}
+    cwd = ROOT
+    if authority in {"absolute", "relative", "root_only"}:
+        env["ZF_PROJECT_ROOT"] = str(tmp_path)
+        if authority != "root_only":
+            env["ZF_STATE_DIR"] = str(state) if authority == "absolute" else "runtime/state"
+    else:
+        cwd = tmp_path
+        if authority == "state_only":
+            env["ZF_STATE_DIR"] = str(tmp_path / "unused")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "--no-cov", "-q", str(ROOT / "tests/test_dev_verify.py")],
+        cwd=cwd, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 4, result
+    assert "assigned runtime" in result.stderr
+    assert ledger.read_text() == "fixture ledger sentinel\n"
+
+
+def test_plan_works_without_installed_zf_or_site_packages():
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(SCRIPT), "plan", "--paths", "tests/test_dev_verify.py",
+         "--no-parallel", "--json"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "tests/test_dev_verify.py" in json.loads(result.stdout)["selected_tests"]
+
+
+def test_clean_checkout_receipt_does_not_grant_another_checkout_or_survive_the_invocation(tmp_path, monkeypatch):
+    import tempfile
+    from zf.core.config.qa_state import certified_checkout_state
+
+    checkout, state = tmp_path / "checkout", tmp_path / "scratch/state"
+    with tempfile.TemporaryDirectory(prefix="zf-qa-", dir="/tmp") as directory:
+        home, runtime = Path(directory) / "home", Path(directory) / "run"
+        runtime.mkdir()
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+        (runtime / "clean-checkout.json").write_text(json.dumps({"checkout": str(checkout), "state_dir": str(state)}))
+        assert certified_checkout_state(checkout) == state
+        assert certified_checkout_state(tmp_path / "second") is None
+    assert certified_checkout_state(checkout) is None

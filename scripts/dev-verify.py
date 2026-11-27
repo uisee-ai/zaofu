@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
@@ -217,6 +218,7 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(
         ["git", *args],
         cwd=root,
+        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
         capture_output=True,
         text=True,
         check=False,
@@ -227,18 +229,10 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
     return result.stdout.strip()
 
 
-def find_repo_root(cwd: Path | None = None) -> Path:
-    start = (cwd or Path.cwd()).resolve()
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=start,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode:
-        raise RuntimeError(f"not inside a git worktree: {start}")
-    return Path(result.stdout.strip()).resolve()
+def find_repo_root() -> Path:
+    # A host launcher may cd into a live product before invoking this script by absolute path.
+    checkout = Path(__file__).resolve().parents[1]
+    return Path(_git(checkout, "rev-parse", "--show-toplevel")).resolve()
 
 
 def _normalize_paths(root: Path, paths: Iterable[str]) -> list[str]:
@@ -731,6 +725,33 @@ def _print_plan(plan: VerificationPlan) -> None:
         print(f"error: {error}", file=sys.stderr)
 
 
+def _verification_env(root: Path, private: Path, assigned: list[Path]) -> dict[str, str]:
+    # Build from toolchain inputs. A new ZF_* binding must never silently become test authority.
+    env = {k: v for k, v in os.environ.items()
+           if k in {"LANG", "TZ", "TERM", "CI", "NO_COLOR", "FORCE_COLOR", "PYTHONDONTWRITEBYTECODE"}
+           or k.startswith("LC_")}
+    home, runtime = private / "home", private / "run"
+    home.mkdir(mode=0o700)
+    runtime.mkdir(mode=0o700)
+    # Tests may commit to fixture repositories. Give them fixture identity without operator Git config/hooks.
+    (home / ".gitconfig").write_text("[user]\n\tname = ZaoFu QA\n\temail = qa@example.invalid\n")
+    # Ignore relative PATH entries and launchers supplied by an assigned runtime/project.
+    tool_paths = [root / ".venv" / "bin", Path(sys.executable).parent]
+    for value in os.get_exec_path():
+        path = Path(value)
+        if path.is_absolute() and not any(path.resolve().is_relative_to(p) for p in assigned):
+            tool_paths.append(path)
+    env.update(
+        PATH=os.pathsep.join(dict.fromkeys(str(p) for p in tool_paths)),
+        PYTHONPATH=str(root / "src"), PYTHONNOUSERSITE="1",
+        HOME=str(home), XDG_RUNTIME_DIR=str(runtime), TMUX_TMPDIR=str(runtime),
+        DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus",
+        DBUS_SYSTEM_BUS_ADDRESS=f"unix:path={runtime}/system-bus",
+        GIT_CONFIG_NOSYSTEM="1", TMPDIR="/tmp",
+    )
+    return env
+
+
 def run_plan(
     plan: VerificationPlan,
     *,
@@ -748,13 +769,58 @@ def run_plan(
         receipt["status"] = "plan_failed"
         return 2, receipt
 
-    env = os.environ.copy()
-    source = str(Path(plan.root) / "src")
-    env["PYTHONPATH"] = (
-        source
-        if not env.get("PYTHONPATH")
-        else source + os.pathsep + env["PYTHONPATH"]
+    checkout = Path(plan.root).resolve()
+    with tempfile.TemporaryDirectory(prefix="zf-qa-", dir="/tmp") as private:
+        try:
+            env = _checked_verification_env(checkout, Path(private))
+        except (OSError, ValueError) as error:
+            receipt.update(status="isolation_failed", reason=f"{error}. Run QA in a separate checkout.")
+            if not capture_output:
+                print(receipt["reason"], file=sys.stderr)
+            return 2, receipt
+        return _run_steps(plan, receipt, env, keep_going, capture_output, skip_tiers)
+
+
+def _checked_verification_env(checkout: Path, private: Path) -> dict[str, str]:
+    # Plan stays usable with the system Python even when ZaoFu is not installed.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    try:
+        from zf.core.config.loader import ConfigError
+        from zf.core.config.qa_state import assigned_states, certified_checkout_state, has_ledger
+    except ImportError as error:
+        raise ValueError("QA state resolution requires the project dependencies") from error
+    finally:
+        sys.path.pop(0)
+    try:
+        project, assigned = assigned_states(Path.cwd())
+    except ConfigError as error:
+        raise ValueError("unable to resolve the assigned project's configured state directory") from error
+    if any(
+        has_ledger(state) and (project == checkout or state.is_relative_to(checkout) or checkout.is_relative_to(state))
+        for state in assigned
+    ):
+        raise ValueError("checkout overlaps the assigned runtime")
+    env = _verification_env(checkout, private, [p for p in (project, *assigned) if p])
+    # Check the state path using the same sanitized environment the actual CLI gets.
+    probe = subprocess.run(
+        [sys.executable, "-P", "-c",
+         "from pathlib import Path; from zf.core.config.qa_state import configured_state; "
+         "print(configured_state(Path.cwd()))"],
+        cwd=checkout, env=env, capture_output=True, text=True,
     )
+    if probe.returncode or not Path(probe.stdout.strip()).is_absolute():
+        raise ValueError("unable to resolve the configured QA state directory")
+    target = Path(probe.stdout.strip())
+    if has_ledger(target) and (target in assigned or target != certified_checkout_state(checkout)):
+        raise ValueError("the configured QA state directory contains an existing ledger")
+    (Path(env["XDG_RUNTIME_DIR"]) / "clean-checkout.json").write_text(
+        json.dumps({"checkout": str(checkout), "state_dir": str(target)})
+    )
+    return env
+
+
+def _run_steps(plan: VerificationPlan, receipt: dict, env: dict[str, str], keep_going: bool,
+               capture_output: bool, skip_tiers: frozenset[str]) -> tuple[int, dict[str, object]]:
     failed = False
     for step in plan.steps:
         if not step.automatic:

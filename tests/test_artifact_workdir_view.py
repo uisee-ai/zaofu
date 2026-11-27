@@ -65,7 +65,8 @@ def test_revocation_denies_already_open_file(tmp_path, monkeypatch):
         "corrupt-witness",
     ],
 )
-def test_host_open_public_call_and_actual_admission(tmp_path, monkeypatch, outcome):
+@pytest.mark.parametrize("version", ["0.171.0", "0.172.0"])
+def test_host_open_public_call_and_actual_admission(tmp_path, monkeypatch, outcome, version):
     runtime, payload, prepared, service, token = _operation(tmp_path)
     state = runtime.state_dir
     manifest = hydrate_sidecar_ref(state, payload["attempt_source_manifest"]).payload
@@ -77,7 +78,7 @@ def test_host_open_public_call_and_actual_admission(tmp_path, monkeypatch, outco
         lambda: {},
     )
     mount = tmp_path / "mock-worker-mount"
-    access = MountAccess(state, view, mount, "/dedicated", lambda: 7, "0.171.0")
+    access = MountAccess(state, view, mount, "/dedicated", lambda: 7, version)
     monkeypatch.setattr(
         artifact_mount, "peer_identity", lambda pid, group: "verified-mock-peer"
     )
@@ -240,8 +241,9 @@ def configured_runtime(tmp_path, monkeypatch, *, backend="codex", mapped=True):
     return runtime
 
 
+@pytest.mark.parametrize("version", ["0.171.0", "0.172.0"])
 def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
-    tmp_path, monkeypatch, capsys
+    tmp_path, monkeypatch, capsys, version
 ):
     from types import SimpleNamespace
     from tests.test_artifact_read_capability import _grant
@@ -305,10 +307,14 @@ def test_registered_workspace_cli_binds_current_grant_rollout_and_rotation(
         lambda *a, **kw: SimpleNamespace(returncode=0, stdout="codex-cli 0.170.0"),
     )
     assert main(argv) == 1 and not served and "version" in capsys.readouterr().err
+    monkeypatch.setattr(artifact_workspace.subprocess, "run", lambda *a, **kw: SimpleNamespace(
+        returncode=0, stdout="codex-cli 0.173.0",
+    ))
+    assert main(argv) == 1 and not served and "version" in capsys.readouterr().err
     monkeypatch.setattr(
         artifact_workspace.subprocess,
         "run",
-        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="codex-cli 0.171.0"),
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=f"codex-cli {version}"),
     )
     monkeypatch.setattr(artifact_workspace, "mounted_scope", lambda *args: "/other")
     assert (

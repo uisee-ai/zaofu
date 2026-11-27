@@ -114,7 +114,7 @@ _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "prdRef", "prd_ref",
     "targetRef", "target_ref",
     "scanRoles", "scan_roles",
-    "stageTeams", "stage_teams",
+    "stageTeams", "stage_teams", "runBoard",
     "planRole", "plan_role",
     "implRolePattern", "impl_role_pattern",
     "verifyRolePattern", "verify_role_pattern",
@@ -1075,6 +1075,16 @@ def _controller_metadata(
                                "acceptance_matrix", "test_matrix", "real_e2e_matrix"])
     recovery = {}
     if kind == "prd":
+        if "runBoard" in params:
+            board = params["runBoard"]
+            if not isinstance(board, dict) or set(board) - {"enabled", "silenceSeconds"}:
+                raise WorkflowProfileError("PrdFlow.runBoard accepts only enabled and silenceSeconds")
+            if type(board.get("enabled")) is not bool:
+                raise WorkflowProfileError("PrdFlow.runBoard.enabled requires a boolean")
+            silence = board.get("silenceSeconds", 300)
+            if type(silence) is not int or silence < 1:
+                raise WorkflowProfileError("PrdFlow.runBoard.silenceSeconds requires a positive integer")
+            recovery["run_board_policy"] = {"enabled": board["enabled"], "silence_seconds": silence}
         for key, field, expected in (
             ("milestoneHandoff", "milestone_handoff", bool),
             ("artifactWorkerCgroups", "artifact_worker_cgroups", dict),

@@ -59,3 +59,124 @@ def test_unbound_policy_keeps_explicit_fallback_commands(tmp_path, bound, fault)
     rendered = render_attempt_source_briefing(payload, state_dir=tmp_path)
     assert "--source matrix" in rendered
     assert "Complete required-read policy:" not in rendered
+
+
+@pytest.mark.parametrize("fault", [
+    "legacy_request", "other_policy", "missing_file", "corrupt_file", "other_attempt",
+    "other_run", "wrong_reads", "different_inline_policy", "nonblocking",
+])
+def test_uncertain_initial_scratch_keeps_inline_policy(tmp_path, bound, fault):
+    from zf.runtime.plan_synth_handoff import render_plan_synth_completion_command
+
+    payload, policy = bound
+    payload.update(operation_id="catalog-review", input_consumption_policy=policy,
+                   semantic_result_submit_mode="blocking", result_scratch_ref="tmp/result-submit/catalog/result.json")
+    descriptor = payload["input_consumption_policy_ref"]
+    new_ref = descriptor
+    if fault == "legacy_request":
+        new_ref = None
+    elif fault == "other_policy":
+        new_ref = {**descriptor, "sha256": "b" * 64}
+    elif fault == "missing_file":
+        (tmp_path / descriptor["ref"]).unlink()
+    elif fault == "corrupt_file":
+        (tmp_path / descriptor["ref"]).write_text("{}")
+    elif fault == "other_attempt":
+        payload["attempt_id"] = "previous-curator"
+    elif fault == "other_run":
+        payload["workflow_run_id"] = "another-catalog"
+    elif fault == "wrong_reads":
+        payload["required_reads"] = []
+    elif fault == "different_inline_policy":
+        payload["input_consumption_policy"] = {**policy, "delivery_evidence": {"mode": "observed"}}
+    else:
+        payload["semantic_result_submit_mode"] = "shadow"
+
+    render_plan_synth_completion_command(
+        cli_command="zf", actor="curator", state_dir=tmp_path, payload=payload, new_scratch_policy_ref=new_ref,
+    )
+    assert json.loads((tmp_path / payload["result_scratch_ref"]).read_bytes()) == payload
+
+
+def test_museum_plan_reader_gets_wide_page_guidance_without_changing_its_policy(tmp_path):
+    from tests.test_plan_owner_rework_descriptor_reads import museum
+
+    runtime, prepare, charter, _ = museum(tmp_path)
+    issued, payload = prepare("catalog", charter)
+    before = deepcopy(payload)
+    text = render_attempt_source_briefing(payload, state_dir=runtime.state_dir, role_name="curator")
+    assert "--format text --page-bytes 16384" in text
+    assert "16384 native tool output tokens" in text
+    assert "unknown or smaller capacity" in text and "8192 or 2048 bytes" in text
+    assert "retry the same input cursor (omit it for page one)" in text
+    assert "Keep raw evidence in the authorized session" in text
+    assert "外借藏品清单" not in text
+    assert payload == before
+    replay, _ = prepare("catalog", charter)
+    assert replay.request_hash == issued.request_hash
+    native = render_attempt_source_briefing({**payload, "native_input_view": True}, role_name="curator")
+    assert native.index("Preferred artifact input") < native.index("CLI fallback") < native.index("--format text --page-bytes 16384")
+
+
+@pytest.mark.parametrize(("profile", "domain", "operation", "expected"), (
+    ("plan-synth", None, None, "32768"),
+    ("workflow-read", "plan", "fanout_reader_child", "16384"),
+    ("workflow-read", "candidate", "fanout_reader_child", None),
+    ("workflow-read", "plan", "fanout_writer_child", None),
+    ("workflow-read", None, None, None),
+    ("task-verify", "plan", "fanout_reader_child", None),
+    ("implementation", "task", "task-stage", "16384"),
+    ("task-verify", "task", "task-stage", "16384"),
+    ("implementation", "plan", "task-stage", None),
+    ("task-verify", "task", "fanout_reader_child", None),
+    ("candidate-verify", "task", "fanout_reader_child", None),  # legacy without candidate lineage
+    ("candidate-verify", "task", "task-stage", None),
+    ("candidate-verify", "plan", "fanout_reader_child", None),
+    ("unregistered-profile", "task", "task-stage", None),
+))
+def test_required_cli_briefing_uses_the_bound_role_profile(bound, profile, domain, operation, expected):
+    payload, _ = bound
+    payload["output_profile_id"] = profile
+    if domain:
+        payload["handoff_authority_contract"] = {"output_profile_id": profile, "attempt_domain": domain,
+                                                 "operation_type": operation}
+    text = render_attempt_source_briefing(payload, role_name="planner")
+    assert "Preferred deduplicated read" in text and "--page-bytes 2048" in text
+    first_command = next(line for line in text.splitlines() if "Preferred deduplicated read" in line)
+    if expected:
+        assert f"--required --format text --page-bytes {expected}`" in first_command
+        assert "tool output budget" in first_command
+        assert "same flags" in text and "ZF_ARTIFACT_TEXT_PAGE_END" in text
+        assert "--required --page-bytes 2048`" in text
+    else:
+        assert "--required`" in first_command
+        assert "--format text --page-bytes" not in text
+
+
+def test_frozen_candidate_reader_retains_all_inputs_across_briefing_and_recovery(tmp_path):
+    from tests.test_candidate_reader_retry_authority import _prepared_candidate
+    from zf.runtime.artifact_input_recovery import build_input_recovery
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+    runtime, role, _, payload = _prepared_candidate(tmp_path)
+    state = runtime.state_dir
+    before = deepcopy(payload)
+    request = next(e for e in runtime.event_log.read_all() if e.type == "workflow.operation.requested"
+                   and e.payload["operation_id"] == payload["operation_id"])
+    request_ref = request.payload["request_ref"]
+    frozen_request = (state / request_ref["ref"]).read_bytes()
+    manifest = hydrate_sidecar_ref(state, payload["attempt_source_manifest"]).payload
+    text = render_attempt_source_briefing(payload, state_dir=state, role_name=role.name)
+    assert "--required --format text --page-bytes 32768" in text
+    assert "--page-bytes 2048" in text and "same input cursor" in text
+    assert "replace it with --cursor" in text and "mutually exclusive" in text
+    assert "adjustable tool output budget" in text and "ZF_ARTIFACT_TEXT_PAGE_END" in text
+    pack = build_input_recovery(state_dir=state, manifest=manifest, required=payload["required_reads"],
+                                identity={"actor": role.instance_id, "role": role.name, "provider": "mock",
+                                          "purpose": "candidate-verify", "operation_id": payload["operation_id"]},
+                                events=runtime.event_log.read_all(), reads=[])
+    assert pack["commands"]["required_read"].endswith("--format text --page-bytes 32768")
+    assert pack["required_visible"] == len(payload["required_reads"])
+    assert "Retry clipped pages at the same cursor" in pack["instructions"]
+    assert payload == before
+    assert (state / request_ref["ref"]).read_bytes() == frozen_request

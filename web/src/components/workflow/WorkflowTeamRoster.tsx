@@ -17,7 +17,10 @@ type Member = {mailbox?:Mailbox; instances?:string[]; selection_reason?:string; 
   source_event_id: string; evidence_ref?: {ref?: string; sha256?: string}; waiting_for?: string[]; operation_ids: string[]; attempt_ids: string[]; verdict?: string;
   attempt_history?: {seq?:number; event_id:string; event_type:string; time:string; instance:string; reason:string; attempt_id:string}[];
   last_activity?: {kind?:string; time:string; event_type:string}; history: {operation_id: string; instance?:string; status: string; attempt_id: string; reason: string}[]; messages: Message[]};
-type Team = {partial?:boolean; snapshot_at?:string; optional_count?:number; optional_admitted_count?:number; optional_verdicts?:Record<string,number>; plan_inputs?:{admitted:number;total:number}; unreported_acceptance?:{task_id:string;acceptance_id:string}[]; communications?: Message[]; authority: string; members: Member[]; required_total: number | null; admitted_count: number;
+const revisionStatus = {awaiting_route: '等待内核路由', awaiting_owner: '等待 Owner 处理', awaiting_dispatch: '等待派发', dispatched: '已派发'};
+type RevisionHandoff = {status:keyof typeof revisionStatus; paused:boolean; obligation_id?:string; target_role?:string;
+  package_digest:string; admission_event_id:string; outcome_event_id?:string; trigger_event_id?:string; dispatch_event_id?:string};
+type Team = {revision_handoff?: RevisionHandoff; partial?:boolean; snapshot_at?:string; optional_count?:number; optional_admitted_count?:number; optional_verdicts?:Record<string,number>; plan_inputs?:{admitted:number;total:number}; unreported_acceptance?:{task_id:string;acceptance_id:string}[]; communications?: Message[]; authority: string; members: Member[]; required_total: number | null; admitted_count: number;
   verdicts: Record<string, number>; unbound_deliveries?: {event_id:string; event_type:string; ts:string}[]; decisions?: {event_id:string; event_type:string; ts:string; actor:string}[]; diagnostic?: string; unbound_operation_ids: string[]; task_progress?: Record<string,{admitted:number; total:number}>};
 const labels: Record<string,string> = { reassigned: '已撤出且覆盖已转交', waiting_inputs: '等待上游输入', dispatched: '已派发待领取', ready: '获准待派发', proposed: '已提议待准入', requested: '排队中', reserved: '已预留',
   running: '执行中', admitted: '结果已准入', awaiting_admission: '结果待准入', blocked: '阻塞', failed: '尝试失败',
@@ -76,6 +79,10 @@ export function WorkflowTeamRoster({node, details = false, task, onSelect, onRep
     {!!team.optional_count && <p>可选意见：{team.optional_admitted_count || 0}/{team.optional_count} 已准入
       {Object.entries(team.optional_verdicts || {}).map(([v,n]) => ` · ${v} × ${n}`).join('')}</p>}
     {team.plan_inputs && <p>必需专家输入 {team.plan_inputs.admitted}/{team.plan_inputs.total} · 正式 Plan 决定 {team.decisions?.length || 0} 条</p>}
+    {team.revision_handoff && <p>OA 退回修订 · {team.revision_handoff.target_role || team.revision_handoff.obligation_id || '待确认接收人'}
+      {' · '}{revisionStatus[team.revision_handoff.status]}{team.revision_handoff.paused && ' · Run 已暂停'}
+      {' · 计划包 '}{team.revision_handoff.package_digest.slice(0, 12)}
+      {details && <> · 回执 {team.revision_handoff.dispatch_event_id || team.revision_handoff.trigger_event_id || team.revision_handoff.outcome_event_id || team.revision_handoff.admission_event_id}</>}</p>}
     {!!team.unreported_acceptance?.length && <p>尚无判词的验收项：{team.unreported_acceptance.map(a => a.task_id + ' / ' + a.acceptance_id).join('、')}</p>}
     {!!Object.keys(team.verdicts || {}).length && <p>{Object.entries(team.verdicts).map(([v, n]) => `${v} × ${n}`).join('、')}</p>}
     {team.decisions?.map(d => <p key={d.event_id}>{d.event_type} · {d.actor} · {d.ts}</p>)}

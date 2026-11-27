@@ -236,6 +236,14 @@ def assemble_controller(
     package = controller_skill_source(root=root, base=base_config, template=template)
     base = renderable_config_to_primitive(base_config)
     flow = next(d for d in documents if d.get("kind") == entry["flow_family"])
+    if flow["kind"] == "PrdFlow":
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        board_policy = flow_metadata_for(base_config, "prd").get("run_board_policy")
+        if board_policy is not None:
+            flow["spec"]["runBoard"] = {
+                "enabled": board_policy["enabled"], "silenceSeconds": board_policy["silence_seconds"],
+            }
     if "plan_critic_enabled" in parameters:
         value = parameters["plan_critic_enabled"]
         if short_spec["flow_family"] != "PrdFlow" or type(value) is not bool:

@@ -1428,10 +1428,9 @@ class LifecycleManagerMixin(
             # Captured → clear any pending miss streak for this instance.
             self._usage_capture_misses.pop(role.instance_id, None)
             try:
-                usage = reader.read_latest_usage(  # type: ignore[attr-defined]
-                    path,
-                    fallback_window=role.context_window_tokens,
-                )
+                from zf.runtime.backend_session_reader import read_role_usage
+                usage = read_role_usage(reader, path, state=self.state_dir, role=role,
+                                        session=session_id_str, cached=cached_path)
             except Exception:
                 continue
             if usage is None:

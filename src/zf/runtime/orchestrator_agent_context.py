@@ -16,6 +16,7 @@ from zf.runtime.artifact_read_ledger import (
     write_input_consumption_policy,
 )
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.oa_verify_role_config import SOURCE as VERIFY_ROLE_CONFIG_SOURCE, pin_verify_role_config
 from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
@@ -82,6 +83,9 @@ def build_orchestrator_agent_context(
         effective_config_summary_ref=effective_config_summary_ref,
         expand_package=checkpoint != "candidate_reader_observation" and not payload.get("verify_assignment_task"),
     )
+    if checkpoint == "pre_impl" and payload.get("initial_verify_scope_ref"):
+        from zf.runtime.oa_initial_verify_scope import REF, SOURCE
+        _append_descriptor(sources, source_id=SOURCE, kind="initial_task_verify_scope", descriptor=payload[REF])
     if checkpoint == "pre_impl" and payload.get("verify_assignment_contract_ref"):
         _append_descriptor(sources, source_id="current-task-contract", kind="verify_contract",
                            descriptor=payload["verify_assignment_contract_ref"])
@@ -98,16 +102,25 @@ def build_orchestrator_agent_context(
                                  operation=operation_id, attempt=attempt_id, source_id=source_event_id, payload=payload)
     if successor:
         _append_descriptor(sources, source_id="milestone-successor", kind="milestone_successor", descriptor=successor)
+    scoped_verify_task = (
+        str(payload.get("verify_assignment_task") or "")
+        if checkpoint == "pre_impl" and payload.get("verify_assignment_mode") == "oa_run_plan" else ""
+    )
     execution_ref = {}
+    verify_config_ref = {}
     if execution_mode:
         input_mode = "execution"
+        execution = build_execution_context(
+            runtime, workflow_run_id=workflow_run_id, scoped_verify_task=scoped_verify_task,
+            payload={**dict(payload), "effective_config_ref": effective_config_ref},
+        )
+        if scoped_verify_task:
+            verify_config_ref = pin_verify_role_config(runtime, workflow_run_id, payload, effective_config_ref)
+            _append_descriptor(sources, source_id=VERIFY_ROLE_CONFIG_SOURCE, kind="oa_verify_role_config", descriptor=verify_config_ref)
+            _append_descriptor(sources, source_id="run-dispatch-summary", kind="task_pipeline_dispatch_summary",
+                               descriptor=execution["full_dispatch_summary_ref"])
         execution_ref = write_immutable_json_sidecar(
-            runtime.state_dir,
-            build_execution_context(
-                runtime,
-                workflow_run_id=workflow_run_id,
-                payload={**dict(payload), "effective_config_ref": effective_config_ref},
-            ),
+            runtime.state_dir, execution,
             root="orchestrator-agent/execution-contexts",
             kind="orchestrator_execution_context",
             schema_version="orchestrator-execution-context.v1",
@@ -152,7 +165,11 @@ def build_orchestrator_agent_context(
                 payload.get("run_contract_digest") or ""
             ),
         },
-        "objective": _checkpoint_objective(checkpoint),
+        "objective": (
+            f"Review the current Verify assignment for {scoped_verify_task} against its contract "
+            "and select independent verification delegates for that task."
+            if scoped_verify_task else _checkpoint_objective(checkpoint)
+        ),
         **({"milestone_successor_ref": successor} if successor else {}),
         "flow_kind": str(payload.get("flow_kind") or ""),
         "risk_signals": list(risk_signals),
@@ -168,6 +185,8 @@ def build_orchestrator_agent_context(
                 "verify_assignment_mode",
                 "verify_assignment_task",
                 "verify_assignment_revision",
+                "verify_assignment_release_event_id",
+                "verify_assignment_rejection_event_id",
                 "target_stage_id",
                 "target_attempt_id",
                 "target_role_instance",
@@ -299,6 +318,9 @@ def build_orchestrator_agent_context(
     )
     execution_sources = {"checkpoint-input", "execution-context", "effective-config", "semantic-failure-input",
                          "task-recovery-context", "milestone-successor", "current-task-contract", "specialist-incident"}
+    if verify_config_ref:
+        execution_sources.remove("effective-config")
+        execution_sources.add(VERIFY_ROLE_CONFIG_SOURCE)
     if payload.get("candidate_reader_assignments_digest"):
         execution_sources.add("plan-port-product_acceptance_spec")
     required_reads = [

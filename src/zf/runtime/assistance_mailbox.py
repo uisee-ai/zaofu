@@ -10,10 +10,7 @@ from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
 from zf.runtime.artifact_read_capability import authenticate_role_from_environment
 from zf.runtime.durable_mailbox_index import MailboxIndex
-from zf.runtime.pause_lifecycle import (
-    active_request_age_seconds,
-    is_run_dispatch_paused,
-)
+from zf.runtime.pause_lifecycle import active_request_age_seconds
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 ACTOR = "durable-mailbox"
@@ -295,15 +292,14 @@ def reserve_notice(runtime, request):
 def send_notice(runtime, request, send):
     # This lock spans the bounded transport write. A fresh process acquiring it can distinguish
     # an abandoned reservation (provably unsent) from a write with a missing receipt (unknown).
-    from zf.runtime.durable_mailbox_authority import terminal
+    from zf.runtime.durable_mailbox_authority import run_availability
 
     with locked_path(runtime.state_dir / "locks" / request.payload["request_id"]):
         events = _notice_events(runtime, request)
         rid = request.payload["request_id"]
         if (
             notification_states(events).get(rid) != "reserved"
-            or terminal(events, request.payload["workflow_run_id"])
-            or is_run_dispatch_paused(events, request.payload["workflow_run_id"])
+            or any(run_availability(events, request.payload["workflow_run_id"]))
             or any(
                 e.type == CLOSED
                 and e.origin == "kernel"

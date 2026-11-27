@@ -93,6 +93,13 @@ def run(args) -> int:
             print(f"  optional opinions admitted {stage['optional_admitted_count']}/{stage['optional_count']}")
         for mode, progress in stage.get("task_progress", {}).items():
             print(f"  {mode} | tasks {progress['admitted']}/{progress['total']}")
+        if revision := stage.get("revision_handoff"):
+            hold = " (paused)" if revision["paused"] else ""
+            receipt = (revision.get("dispatch_event_id") or revision.get("trigger_event_id")
+                       or revision.get("outcome_event_id") or revision["admission_event_id"])
+            print(f"  OA -> {revision.get('obligation_id', 'recipient pending')} | {revision['status']}{hold} | "
+                  f"{revision.get('target_role', '-')} | package {revision['package_digest']} | "
+                  f"{receipt}")
         for decision in stage.get("decisions", []):
             print(f"  {decision['event_type']} | {decision['actor']} | {decision['event_id']}")
         for receipt in stage.get("unbound_deliveries", []):

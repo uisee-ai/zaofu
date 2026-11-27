@@ -132,7 +132,10 @@ def build_task_pipeline_projection(
         for task_id in external_gate_satisfied_task_ids
         if str(task_id).strip()
     }
+    from zf.runtime.task_pipeline_contexts import paused_pipeline_tasks
+
     contexts = task_pipeline_generation_contexts(event_rows)
+    held_task_ids = paused_pipeline_tasks(event_rows, contexts)
     task_by_id = _task_by_id_prefer_active(tasks)
     managed_tasks = [
         task_by_id[task_id]
@@ -182,6 +185,7 @@ def build_task_pipeline_projection(
     if compiled_policy_by_task:
         scheduler, policy_partitions = _partitioned_scheduler_projection(
             policy_by_task=compiled_policy_by_task,
+            held_task_ids=held_task_ids,
             tasks=managed_tasks,
             operations=operation_rows,
             attempts=attempt_rows,
@@ -194,6 +198,7 @@ def build_task_pipeline_projection(
     else:
         scheduler = _scheduler_projection(
             policy=compiled_policy,
+            held_task_ids=held_task_ids,
             tasks=managed_tasks,
             operations=operation_rows,
             attempts=attempt_rows,
@@ -364,6 +369,7 @@ def _scheduler_projection(
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
     inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
     terminal_task_ids: Iterable[str] = (),
+    held_task_ids: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     if not policy:
         return {}
@@ -380,6 +386,7 @@ def _scheduler_projection(
         operations=operations,
         attempts=attempts,
         terminal_task_ids=terminal_ids,
+        held_task_ids=held_task_ids,
         impl_rework_requests=impl_rework_requests,
         external_gate_satisfied_task_ids=external_gate_satisfied_task_ids,
         oa_delegations=oa_delegations,
@@ -428,6 +435,7 @@ def _partitioned_scheduler_projection(
     oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
     preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
     inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
+    held_task_ids: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     task_by_id = {
         str(getattr(task, "id", "") or _mapping_value(task, "id")): task
@@ -466,6 +474,7 @@ def _partitioned_scheduler_projection(
             preferred_role_instances=preferred_role_instances,
             inherited_failures=inherited_failures,
             terminal_task_ids=completed_ids,
+            held_task_ids=held_task_ids,
             tasks=[task_by_id[task_id] for task_id in task_ids],
             operations=operations,
             attempts=attempts,

@@ -132,14 +132,15 @@ def test_existing_v1_series_is_not_rebaselined_after_upgrade(tmp_path):
     assert collector.outbox.pending(32)[1]['payload']['baseline_only'] is False
 
 
-@pytest.mark.parametrize('corruption', ['invalid_counter', 'invalid_record'])
+@pytest.mark.parametrize('corruption', ['invalid_counter', 'invalid_record', 'invalid_json', 'invalid_payload'])
 def test_malformed_native_usage_stays_missing(tmp_path, monkeypatch, corruption):
     path = rollout(tmp_path/'native', tmp_path)
     if corruption == 'invalid_counter':
         path.write_text(path.read_text().replace('"cached_input_tokens": 900000', '"cached_input_tokens": 2000000'))
     else:
         with path.open('a') as stream:
-            stream.write('[]\n')
+            stream.write({'invalid_record': '[]', 'invalid_json': '{broken',
+                          'invalid_payload': '{"type":"event_msg","payload":[]}' }[corruption] + '\n')
     monkeypatch.setenv('CODEX_HOME', str(tmp_path/'native'))
     result = local_codex_usage(tmp_path, tmp_path/'state')
     assert result['sessions'][0]['tokens'] is None

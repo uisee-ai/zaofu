@@ -30,11 +30,11 @@ def write_task_pipeline_briefing(
     )
 
     result_lines: list[str]
+    commit = ""
     if stage == "impl":
         from zf.runtime.impl_self_check import completion_payload_template
         from zf.runtime.implementation_commit import published_retry_commit
 
-        commit = ""
         publication_error = ""
         if payload.get("rework_feedback"):
             try:
@@ -66,12 +66,17 @@ def write_task_pipeline_briefing(
             blocked_command="",
         )
         stage_instructions = [
-            "Implement only the admitted Task Contract in this Task Workspace.",
+            (f"Reassess published commit {commit} as the Impl author. Check the result against the original "
+             "requirements, including any prescribed order, input domain and explicit exclusions."
+             if commit else "Implement only the admitted Task Contract in this Task Workspace."),
             "Rework code paths do not remove required evidence outputs already "
             "authorized by the admitted contract. Refresh those outputs for the "
             "current result; evidence requirements never authorize out-of-scope writes. "
             "Resolve an explicit write prohibition before proceeding.",
-            "Commit task changes with explicit pathspecs before submission.",
+            ("Confirm the assigned target and workspace HEAD match the publication. If they differ, report the "
+             "observed hashes. On the exact commit, use the original evidence and run the required self-checks. "
+             "If the contract is satisfied, submit this attempt's result for that commit without another code change."
+             if commit else "Commit task changes with explicit pathspecs before submission."),
             "Set target_commit and every self-check target to the exact HEAD.",
             "Do not update candidate/main refs or runtime truth directly.",
         ]
@@ -165,6 +170,15 @@ def write_task_pipeline_briefing(
     state_dir = Path(runtime.state_dir).resolve()
     # These exact values are already delivered in the header/envelope. Keep
     # distinct values (including unexpected mismatches) visible for diagnosis.
+    target_commit = payload.get("target_commit") or commit
+    if stage == "impl" and not target_commit:
+        target_lines = [
+            f"- workspace_base_commit: `{workspace.base_commit}`",
+            "- Result target_commit: record the actual workspace HEAD at submission and bind self-checks to that commit.",
+        ]
+    else:
+        target_commit = target_commit or workspace.base_commit
+        target_lines = [f"- target_commit: `{target_commit}`"]
     delivered = {
         "task_id": str(task.id), "operation_id": prepared.operation_id,
         "dispatch_id": payload.get("dispatch_id") or "",
@@ -172,7 +186,7 @@ def write_task_pipeline_briefing(
         "operation_generation": payload["operation_generation"],
         "placement_epoch": payload["placement_epoch"],
         "workdir": str(workspace.project_path),
-        "target_commit": payload.get("target_commit") or workspace.base_commit,
+        "target_commit": target_commit,
         "instruction": _task_instruction(task),
     }
     display = {
@@ -191,7 +205,7 @@ def write_task_pipeline_briefing(
         f"- operation_generation: `{payload['operation_generation']}`",
         f"- placement_epoch: `{payload['placement_epoch']}`",
         f"- workdir: `{workspace.project_path}`",
-        f"- target_commit: `{payload.get('target_commit') or workspace.base_commit}`",
+        *target_lines,
         f"- skills: `{', '.join(role.skills) or 'none'}`",
         "",
         "## Read Order (authoritative)",
@@ -282,6 +296,10 @@ def write_task_pipeline_briefing(
                         for entry in assignment["specialists"]], ""])
     if controlled_inputs:
         lines.extend([controlled_inputs, ""])
+    from zf.runtime.mailbox_briefing import run_board_hint
+    board = run_board_hint(getattr(runtime, "config", None), state_dir, payload)
+    if board:
+        lines.extend([board, ""])
     if payload.get("candidate_repair_feedback_ref"):
         lines.extend(["## Candidate repair evidence",
             "Read the required candidate-repair-feedback source. "
@@ -298,10 +316,15 @@ def write_task_pipeline_briefing(
         lines.extend([
             "## Rework Feedback",
             "",
-            "After the current required reads, reproduce these failures first. "
-            "Inspect affected code and its callers; retain all acceptance criteria "
-            "and run their required checks before handoff. Do not repeat global "
-            "repository/skill discovery solely because this is a new attempt.",
+            ("The publication receipt resolves the Git publication issue. Check each separate product finding "
+             "on the exact published commit with its original reproducer. For a violation, record the frozen requirement, input, "
+             "actual result and evidence, then request the existing repair route. Record extra-domain proposals "
+             "for the Owner separately; they cannot become acceptance or block this handoff without approval."
+             if commit else
+             "After the current required reads, reproduce these failures first. "
+             "Inspect affected code and its callers; retain all acceptance criteria "
+             "and run their required checks before handoff. Do not repeat global "
+             "repository/skill discovery solely because this is a new attempt."),
             "Current required reads are still mandatory. Use this attempt's Controlled Artifact Inputs. "
             "Use existing receipts to locate remaining selections. "
             "Prior receipts and continuation summaries cannot replace current "

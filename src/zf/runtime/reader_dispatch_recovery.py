@@ -26,7 +26,7 @@ class ReaderDispatchRecoveryMixin:
         terminal_statuses = {"completed", "failed", "timed_out", "cancelled"}
         event_index = {event.id: index for index, event in enumerate(events)}
         dispatches: dict[tuple[str, str], list[ZfEvent]] = {}
-        terminal_children: set[tuple[str, str]] = set()
+        terminal_children: dict[tuple[str, str], ZfEvent] = {}
         lost_events_by_role: dict[str, list[tuple[int, ZfEvent]]] = {}
         dispatch_lost_count: dict[tuple[str, str], int] = {}
         pending_loss: dict[tuple[str, str], ZfEvent] = {}
@@ -44,7 +44,7 @@ class ReaderDispatchRecoveryMixin:
                     dispatches.setdefault(key, []).append(event)
                     # Prior terminal receipts belong to the replaced dispatch;
                     # they must not hide loss of this newly admitted attempt.
-                    terminal_children.discard(key)
+                    terminal_children.pop(key, None)
                     if pending_loss.pop(key, None) is not None:
                         dispatch_lost_count[key] = dispatch_lost_count.get(key, 0) + 1
                 continue
@@ -52,7 +52,7 @@ class ReaderDispatchRecoveryMixin:
                 fanout_id = str(payload.get("fanout_id") or "")
                 child_id = str(payload.get("child_id") or "")
                 if fanout_id and child_id:
-                    terminal_children.add((fanout_id, child_id))
+                    terminal_children[(fanout_id, child_id)] = event
                 continue
             if event.type == "fanout.child.dispatch_lost":
                 fanout_id = str(payload.get("fanout_id") or "")
@@ -75,6 +75,7 @@ class ReaderDispatchRecoveryMixin:
                 (path.parent.name, self._fanout_manifest(path.parent.name))
                 for path in fanout_root.glob("*/manifest.json")
             )
+        recorded_loss = False
         for fanout_id, manifest in manifests:
             if not manifest or manifest.get("topology") != "fanout_reader":
                 continue
@@ -108,14 +109,17 @@ class ReaderDispatchRecoveryMixin:
             for child in manifest.get("children", []) or []:
                 if not isinstance(child, dict):
                     continue
-                if str(child.get("status") or "") != "dispatched":
+                if child.get("status") not in {"dispatched", "failed"}:
                     continue
                 child_id = str(child.get("child_id") or "")
                 role_instance = str(child.get("role_instance") or "")
                 if not child_id or not role_instance:
                     continue
                 key = (fanout_id, child_id)
-                if key in terminal_children:
+                terminal = terminal_children.get(key)
+                if terminal and (terminal.type != "fanout.child.failed" or not terminal.payload.get("retry_of_run_id")):
+                    continue
+                if child.get("status") == "failed" and not terminal:
                     continue
                 child_dispatches = dispatches.get(key, [])
                 if not child_dispatches:
@@ -130,7 +134,7 @@ class ReaderDispatchRecoveryMixin:
                     or manifest.get("trace_id") or ""
                 )
                 run = admission.runs.get(workflow_run_id)
-                if run is not None and run.status != "running":
+                if (terminal and run is None) or (run is not None and run.status != "running"):
                     continue
                 latest_index = event_index.get(latest_dispatch.id, -1)
                 if latest_index < 0:
@@ -143,6 +147,14 @@ class ReaderDispatchRecoveryMixin:
                 from zf.runtime.synth_budget_recovery import pending_reader_budget_amendment
 
                 operation = operations.get(str(latest_dispatch.payload.get("operation_id") or ""), {})
+                attempt = len(child_dispatches)
+                if terminal:
+                    from zf.runtime.reader_external_gate_recovery import expired_unsent_retry
+
+                    attempt = expired_unsent_retry(self, events, failure=terminal, dispatch=latest_dispatch,
+                                                   operation=operation, loss=pending_loss.get(key))
+                    if not attempt:
+                        continue
                 from zf.runtime.reader_checkpoint_dispatch import pending_reader_restart
 
                 restart = pending_reader_restart(self.state_dir, events, operation, latest_dispatch)
@@ -202,6 +214,10 @@ class ReaderDispatchRecoveryMixin:
                     activity_index,
                 ):
                     continue
+                from zf.runtime.provider_dispatch_wait import reader_gate_still_visible
+
+                if reader_gate_still_visible(self, events, latest_dispatch, attempt):
+                    continue
                 provider_turn_closed = lost_event.type == "provider.turn.closed"
                 from zf.runtime.reader_progress_continuation import continue_progressing_reader
 
@@ -250,6 +266,7 @@ class ReaderDispatchRecoveryMixin:
                         causation_id=lost_event.id,
                         correlation_id=str(manifest.get("trace_id") or ""),
                     ))
+                    recorded_loss = True
                 self._set_worker_state(
                     role_instance,
                     "idle",
@@ -264,13 +281,13 @@ class ReaderDispatchRecoveryMixin:
                         loss_reason=loss_reason,
                     )
                     return True
-                self._retry_fanout_child(
+                if self._retry_fanout_child(
                     manifest=manifest,
                     child=child,
                     previous_dispatch=latest_dispatch,
-                    attempt=len(child_dispatches),
+                    attempt=attempt,
                     provider_session_replaced=True,
-                    recovery_decision_event=dispatch_lost_event,
-                )
-                return True
-        return False
+                    recovery_decision_event=terminal or dispatch_lost_event,
+                ):
+                    return True
+        return recorded_loss

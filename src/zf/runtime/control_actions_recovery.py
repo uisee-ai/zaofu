@@ -396,7 +396,7 @@ class RecoveryActionsMixin:
     def _stage_replan_new_generation_action(
         self, *, requested: ZfEvent, action: str, requested_action: str, payload: dict,
     ) -> dict:
-        if {"retry_cancelled_critic_event_id", "retry_critic_handoff_event_id"}.intersection(payload):
+        if {"resume_planner_handoff_event_id", "planner_admitted_event_id", "planner_control_sha256", "retry_cancelled_critic_event_id", "retry_critic_handoff_event_id"}.intersection(payload):
             from zf.runtime.critic_handoff_retry import apply_critic_recovery
             return apply_critic_recovery(self, requested, action, requested_action, payload)
         from zf.runtime.candidate_media_review import KEY

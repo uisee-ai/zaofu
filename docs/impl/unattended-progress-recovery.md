@@ -470,6 +470,9 @@ Git效果仍逐个执行，继续使用既有受控入口、精确路径与Run�
 
 宿主验证产生当前候选绑定的回执后，Reader 仍须独立判断；不能因为其沙箱无 Docker socket 就忽略宿主执行证据。新 canonical required-read 声明将 `critical-reader-repair-context` 排在产品大输入之前；既有已冻结声明及分页游标保持不变。
 
+首次 Candidate Reader 已正式弃权时，Run Manager 可核对当前具名席的冻结命令、强制验收项及其明确声明的 `ZF_EVIDENCE_DIR/` 产物。如果本次签名输入清单没有宿主事实，准入时封存的读取账本证明已完成全部必读选区，且输入引用仍完整，则沿既有恢复授权只运行所需容器命令。若同一冻结下多个席位需要同一产物，已开始的容器效果归原生产者；同一份已完成收据须通过每个新消费者的合同、依赖和访问范围核验。原 Reader 的失败回执保持原样。收据及声明的媒体与目标相符后，新 Reader 通过自己的 WRC 读取并独立验收，其余命令继续遵循原合同。未读完的必读项、过期目标、未获授权的命令及存疑的外部效果由原恢复路径处理。授权只在正式弃权后的恢复阶段使用。
+
+
 若当前 attempt 有该必读恢复输入，`verifier_execution_failure` 的只读预检和正式准入都会检查该输入的完整读取凭证。未读或部分读返回可纠正的 `recovery_input_unread`，不消费预检凭据，也不把命令成功判为产品通过。读取后仍可依据实际证据报告 runner 失败；真实 `reader_execution_failure` 仍可在产品输入未读完时报告。错误 attempt、摘要和损坏 ledger 不予接受。此检查仅证明输入生产的完整性，不证明模型理解。
 
 运行时只维护输入/凭证边界，回执的适用性与产品判断方法在 `skills/zf-harness-verification-checklist/SKILL.md`。回归入口：`tests/test_verifier_environment_failure_reads.py`、`tests/test_reader_replan_feedback.py`。本修复不包含额度主动探测或 Docker 权限扩展。

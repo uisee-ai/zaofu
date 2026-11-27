@@ -9,7 +9,7 @@ from zf.core.events import ZfEvent
 from zf.runtime.control_actions import ControlledActionService
 
 
-def fixture(tmp_path, *, writer_actor="zf-stall-redispatch"):
+def fixture(tmp_path, *, writer_actor="zf-stall-redispatch", escalation_actor=""):
     state, log, transport, runtime = _state(tmp_path)
     _seed_tasks(state)
     runtime.config.workflow.stages.append(WorkflowStageConfig(id="prd-plan", trigger="prd.scan.completed",
@@ -24,7 +24,7 @@ def fixture(tmp_path, *, writer_actor="zf-stall-redispatch"):
         payload={"workflow_run_id": run, "pdd_id": pdd, "task_ids": ["TASK-1"], "resume_scope": "failed_children_only"}))
     failure = writer.append(ZfEvent(type="prd.plan.failed", task_id=pdd, correlation_id=run,
         payload={"workflow_run_id": run, "pdd_id": pdd, "stage_id": "prd-plan"}))
-    escalation = writer.append(ZfEvent(type="human.escalate", task_id=pdd, correlation_id=run,
+    escalation = writer.append(ZfEvent(type="human.escalate", task_id=pdd, correlation_id=run, actor=escalation_actor,
         causation_id=failure.id, payload={"failure_class": "stage_replan_cap_exhausted",
             "source_event_id": failure.id, "allowed_actions": ["start_new_generation"]}))
     old = writer.append(ZfEvent(type="task_map.ready", actor=writer_actor, correlation_id=run,
@@ -201,3 +201,38 @@ def test_late_changed_work_is_not_mistaken_for_a_stall_copy(tmp_path, changed):
         retry = replace(retry, task_id="OTHER")
     retry = runtime.event_writer.append(retry)
     assert not retired_writer_trigger(runtime.event_log.read_all(), retry, runtime.config)
+
+
+def test_late_automatic_plan_from_exhausted_failure_cannot_dispatch_or_publish(tmp_path):
+    from zf.runtime.fanout import FanoutContext
+    from zf.runtime.writer_replan_frontier import retired_plan_branch
+
+    runtime, _, recovery, transport = fixture(tmp_path, escalation_actor="orchestrator")
+    log, writer = runtime.event_log, runtime.event_writer
+    owner = next(e for e in log.read_all() if e.id == recovery["stage_trigger_event_id"])
+    cap = log.query(type="human.escalate")[0]
+    failure = log.query(type="prd.plan.failed")[0]
+    ordinary = writer.append(ZfEvent(type=owner.type, actor="zf-cli", origin="kernel",
+        causation_id=failure.id, correlation_id=owner.correlation_id,
+        payload={**owner.payload, "stage_replan_generation": "old", "rework_of": failure.id}))
+    events = log.read_all()
+    assert retired_plan_branch(events, ordinary, runtime.config) == cap
+    assert not retired_plan_branch(events, owner, runtime.config)
+    for _ in range(2):
+        assert not runtime._maybe_start_reader_fanout(ordinary)
+    assert not transport.sent
+    assert [e.payload["reason"] for e in log.query(type="fanout.retrigger.suppressed")] == [
+        "automatic_plan_retry_after_owner_handoff"]
+
+    # Simulate the persisted manifest dispatched by the previous binary.
+    context = FanoutContext.create(stage_id="prd-plan", topology="fanout_reader", trace_id=ordinary.correlation_id,
+        trigger_event_id=ordinary.id, target_ref="", role_instances=["supervisor"])
+    writer.append(ZfEvent(type="fanout.started", correlation_id=ordinary.correlation_id,
+        causation_id=ordinary.id, payload={**asdict(context), "pdd_id": ordinary.payload["pdd_id"],
+            "trigger_payload": ordinary.payload, "aggregate_config": {"failure_event": "prd.plan.failed"}}))
+    before = len(log.read_all())
+    for _ in range(2):
+        runtime._evaluate_reader_fanout(context.fanout_id)
+    assert [(e.payload["reason"], e.payload["superseded_by"]) for e in log.query(type="fanout.cancelled")] == [
+        ("automatic_plan_retry_after_owner_handoff", cap.id)]
+    assert not any(e.type in {"prd.plan.failed", "task_map.ready", "plan.approved"} for e in log.read_all()[before:])

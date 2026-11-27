@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from zf.core.task.schema import task_contract_identity_payload
 from zf.core.task.store import TaskStore
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.orchestrator_agent_policy import _effective_policy
 from zf.runtime.run_contract import stable_json_sha256
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -68,7 +69,7 @@ def operation_bindings(events, workflow_run_id: str, selected: set[str]) -> dict
 
 
 def build_execution_context(
-    runtime: Any, *, workflow_run_id: str, payload: Mapping[str, Any],
+    runtime: Any, *, workflow_run_id: str, payload: Mapping[str, Any], scoped_verify_task: str = "",
 ) -> dict[str, Any]:
     from zf.runtime.task_pipeline_dispatch_summary import build_dispatch_summary
     from zf.runtime.task_pipeline_projection import read_task_pipeline_projection
@@ -104,6 +105,17 @@ def build_execution_context(
     projection = read_task_pipeline_projection(
         runtime.state_dir, project_root=runtime.project_root, config=runtime.config,
     )
+    dispatch_summary = build_dispatch_summary(projection, workflow_run_id=workflow_run_id)
+    full_summary_ref = {}
+    if scoped_verify_task:
+        full_summary_ref = write_immutable_json_sidecar(
+            runtime.state_dir, dispatch_summary, root="orchestrator-agent/dispatch-summaries",
+            kind="task_pipeline_dispatch_summary", schema_version=dispatch_summary["schema_version"],
+            created_by="orchestrator-agent-context",
+        )
+        dispatch_summary = build_dispatch_summary(
+            projection, workflow_run_id=workflow_run_id, task_ids={scoped_verify_task},
+        )
     return {
         "schema_version": "orchestrator-execution-context.v1",
         "workflow_run_id": workflow_run_id,
@@ -128,7 +140,8 @@ def build_execution_context(
         "task_bindings": bindings,
         "operation_bindings": operation_bindings(runtime.event_log.read_all(), workflow_run_id, selected),
         "plan_tasks": graph,
-        "dispatch_summary": build_dispatch_summary(projection, workflow_run_id=workflow_run_id),
+        "dispatch_summary": dispatch_summary,
+        **({"full_dispatch_summary_ref": full_summary_ref} if full_summary_ref else {}),
         "constraints": {
             "contract_changes_require_replan": True,
             "verify_required": True,

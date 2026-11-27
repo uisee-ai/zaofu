@@ -1,4 +1,4 @@
-"""Operator CLI to re-review a proven OA role-binding defect."""
+"""Operator recovery commands for admitted or escalated OA decisions."""
 
 from __future__ import annotations
 
@@ -72,3 +72,44 @@ def run_candidate_repair(args: argparse.Namespace) -> int:
         return 1
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def register_pre_impl_revision(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("pre-impl-revision", help="Resume a previously escalated OA Plan revision")
+    parser.add_argument("--state-dir", default=None)
+    parser.add_argument("--escalation", required=True, help="Original kernel human.escalate event id")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--approval-ref", default="", help="Owner authorization reference for applying this recovery")
+    parser.set_defaults(func=run_pre_impl_revision)
+
+
+def run_pre_impl_revision(args: argparse.Namespace) -> int:
+    from types import SimpleNamespace
+
+    from zf.cli.recover import _run_contract_recovery_allowed
+    from zf.runtime.orchestrator_agent_pre_impl_recovery import escalated_pre_impl_submission
+    from zf.runtime.orchestrator_agent_pre_impl_revision import reconcile_pre_impl_revision
+
+    try:
+        approval = args.approval_ref.strip()
+        if args.apply and not approval:
+            raise ValueError("applying historical pre_impl recovery requires an operator approval reference")
+        context = resolve_project_context(explicit_state_dir=args.state_dir, require_config=True,
+                                          load_config_with_explicit=True)
+        log = event_log_from_project(context.state_dir, config=context.config)
+        try:
+            submitted = escalated_pre_impl_submission(log.read_all(), args.escalation)
+            if args.apply and not _run_contract_recovery_allowed(
+                    context.config, log, context.state_dir, context.project_root, context.config_path, fail_closed=True):
+                raise ValueError("run contract drift blocks recovery")
+            runtime = SimpleNamespace(state_dir=context.state_dir, project_root=context.project_root,
+                                      config=context.config, event_log=log, event_writer=EventWriter(log, default_origin="kernel"))
+            result = reconcile_pre_impl_revision(runtime, submitted, apply=args.apply,
+                                                 escalation_event_id=args.escalation, approval_ref=approval)
+        finally:
+            log.close()
+    except (ConfigError, ValueError, OSError) as exc:
+        print(json.dumps({"status": "rejected", "reason": str(exc)}, ensure_ascii=False))
+        return 1
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("status") in {"preview", "applied"} else 1

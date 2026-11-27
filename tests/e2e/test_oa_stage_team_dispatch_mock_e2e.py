@@ -90,3 +90,23 @@ def test_specialist_reaches_fanout_and_signer_reads_independent_result(tmp_path,
     assert signed.payload["target_commit"] == target and signed.payload["role_instance"] != "auditor"
     assert any(r["source_id"] == "specialist-audit" for r in signed.payload["required_reads"])
     assert len(runtime.event_log.query(type="workflow.invoke.requested")) == 1
+
+
+def test_public_pause_holds_approved_task_verify_until_resume(tmp_path, monkeypatch):
+    from tests.test_run_admission import _control
+    from zf.runtime.task_pipeline_projection import read_task_pipeline_projection
+
+    runtime, deliveries, _ = team_runtime(tmp_path, monkeypatch, specialist=False)
+    generation = runtime.event_log.query(type="task.pipeline.generation.admitted")[-1]
+    run = generation.payload["workflow_run_id"]
+    runtime.event_writer.append(ZfEvent(type="run.goal.started", actor="zf-cli", payload={"run_id": run, "status": "active"}))
+    assert _control(runtime, action="run-pause", run_id=run)["status"] == "paused"
+    for _ in range(2):
+        reconcile_task_pipeline_runtime(runtime)
+    assert not deliveries and not runtime.event_log.query(type="task.pipeline.stage.dispatched")
+    visible = read_task_pipeline_projection(runtime.state_dir, project_root=runtime.project_root, config=runtime.config)
+    assert {row["pipeline_stage"] for row in visible["tasks"]} == {"run_paused"}
+    assert _control(runtime, action="run-resume", run_id=run)["status"] == "running"
+    for _ in range(2):
+        reconcile_task_pipeline_runtime(runtime)
+    assert len(deliveries) == len(runtime.event_log.query(type="task.pipeline.stage.dispatched")) == 3

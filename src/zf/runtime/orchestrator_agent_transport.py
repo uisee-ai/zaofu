@@ -49,13 +49,14 @@ def _dispatch_checkpoint(runtime: Any, orch_role: Any, trigger: ZfEvent) -> None
         workflow_operation_service(runtime), role_instance=orchestrator_instance_id(runtime),
     )
     prepared = prepared_operation_from_checkpoint_event(runtime, trigger)
-    if prepared and reduce_workflow_operations(runtime.event_log.read_all()).get(
-        prepared.operation_id, {},
-    ).get("status") == "superseded":
-        return
-    from zf.runtime.orchestrator_advisory_queue import next_advisory_event
+    from zf.runtime.orchestrator_advisory_queue import next_advisory_event, paused_business_checkpoint
 
-    next_event = next_advisory_event(runtime.event_log.read_all(), orchestrator_instance_id(runtime))
+    events = runtime.event_log.read_all()
+    if prepared:
+        operation = reduce_workflow_operations(events).get(prepared.operation_id, {})
+        if operation.get("status") == "superseded" or paused_business_checkpoint(events, operation):
+            return
+    next_event = next_advisory_event(events, orchestrator_instance_id(runtime))
     if next_event is not None and next_event.payload.get("operation_id") != (
         prepared.operation_id if prepared else ""
     ):
@@ -248,8 +249,11 @@ def dispatch_pending_orchestrator_checkpoint(runtime: Any) -> None:
             event.payload.get("unsent_failure_event_id")
             and unsent_checkpoint_retry(runtime, event, operation, events)
         ):
-            runtime._notify_orchestrator_agent(event)
-            return
+            from zf.runtime.orchestrator_advisory_queue import paused_business_checkpoint
+
+            if not paused_business_checkpoint(events, operation):
+                runtime._notify_orchestrator_agent(event)
+                return
 
 
 __all__ = ["dispatch_orchestrator_agent_operation"]

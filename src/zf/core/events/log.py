@@ -75,6 +75,10 @@ def _boundary_marker(path: Path, offset: int) -> bytes | None:
     return marker if len(marker) == length else None
 
 
+class EventLedgerAdvanced(ValueError):
+    """A conditional append lost its original ledger position."""
+
+
 class EventLog:
     def __init__(
         self,
@@ -127,7 +131,7 @@ class EventLog:
                         safe = (consumed == actual - expected_offset and bool(tail) and
                                 all(row.type in allow_intervening for row in tail))
                     if not safe:
-                        raise ValueError("event ledger advanced before conditional append; retry the same request")
+                        raise EventLedgerAdvanced("event ledger advanced before conditional append; retry the same request")
             from zf.core.events.append_witness import observe_append, signature, witness_path
             observed = signature(self.path) if witness_path(self.path).exists() else None
             self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -23,6 +23,10 @@
 对应任务：`tasks/done/2026-10-20-1351-run-manager-side-gate-isolation.md`
 实施提交：`05e9b83`。
 
+## 居民诊断的任务级 Owner 决定
+
+居民 Run Manager 请求人工判断时可以给出结构化的 `{"kind":"task","task_id":"T2"}`。只有原 kernel 诊断请求与已交给该居民的提示都明确绑定 T2，且原请求未声明全局闸时，新发的升级才使用 task 范围。该任务及显式依赖 T2 的动作仍需等待 Owner，同 Run 的无关任务可继续。身份缺失、任务不一致或范围含义不明确时，新升级使用 run 范围。已经签发的全局闸继续按原范围处理。Owner 可用带决策 token 和原事件的 `human-decision-dismiss` 归档仅供判断的旧提案，RM 下一次处理将归档理由记入回执。[签发入口回归](../../tests/test_run_manager_action_admission.py) · [Owner 归档回归](../../tests/test_web_legacy_escalation_dismiss.py)
+
 ## 2026-10-26 GitHub 合并回归
 
 - Autoresearch 的故障上下文通过现有 `loop_iteration` 入口传递，同时继续从实验配置

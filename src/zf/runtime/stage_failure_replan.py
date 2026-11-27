@@ -480,6 +480,10 @@ def plan_reader_stage_replan(
     from zf.runtime.reader_failure_supersession import reader_failure_was_replaced
 
     index = event_index or ReaderReplanIndex(events)
+    from zf.runtime.stage_replan_generation import exhausted_failure_escalation
+
+    if not authorized_generation and exhausted_failure_escalation(index, failure_event):
+        return None, "failure_already_escalated_to_owner"
     if reader_failure_was_replaced(events, failure_event, event_index=index):
         return None, "superseded_by_admitted_task_replacement"
     trigger_type = str(getattr(stage, "trigger", "") or "")
@@ -547,6 +551,17 @@ def plan_reader_stage_replan(
         # event, not another Plan's stage history, owns recovery and authority.
         if rejected_plan is None:
             return None, "reader_origin_missing"
+        from dataclasses import replace
+        from zf.runtime.plan_admission_rework_lineage import writer_failure_generation
+
+        try:
+            generation_lineage = writer_failure_generation(state_dir, index, events, failure_event, rejected_plan)
+        except (KeyError, ValueError, OSError, TypeError) as exc:
+            return None, f"unverified_writer_admission_generation: {exc}"
+        if generation_lineage:
+            # The old writer receipt is immutable. Retry accounting uses its proved ready/approval scope.
+            failure_payload = {**failure_payload, **generation_lineage}
+            failure_event = replace(failure_event, payload=failure_payload)
         origin_payload = dict(rejected_plan.payload)
         from zf.runtime.plan_team_handoff import admission_replan_entry
 
@@ -574,6 +589,12 @@ def plan_reader_stage_replan(
             # A Run may contain many candidates for the same reader stage. Its
             # latest request is not the causal input of this failed operation.
             origin_payload = lineage
+            if failure_payload.get("stage_replan_generation"):
+                from zf.runtime.unissued_plan_critic_recovery import rejected_handoff_lineage
+                try:
+                    origin_payload.update(rejected_handoff_lineage(state_dir, index, events, failure_event))
+                except (KeyError, ValueError, OSError, TypeError) as exc:
+                    return None, f"unverified_recovered_review: {exc}"
         else:
             origin_payload = {**lineage, **origin_payload}
     if trigger_type == "candidate.ready":
@@ -717,6 +738,11 @@ def plan_reader_stage_replan(
         for item in failure_payload.get("findings", []) or []
         if isinstance(item, dict)
     ]
+    # A new replan must name this rejection's adjudications, not an older
+    # generation's inherited assessment. Failed packets never authorize approval.
+    origin_payload.pop("plan_review_disposition_ref", None)
+    if failure_payload.get("plan_review_disposition_ref"):
+        origin_payload["plan_review_disposition_ref"] = failure_payload["plan_review_disposition_ref"]
     diagnostics_ref = str(failure_payload.get("diagnostics_ref") or "").strip()
     diagnostic_reason = str(failure_payload.get("reason") or "").strip()
     if diagnostics_ref and diagnostic_reason and not any(

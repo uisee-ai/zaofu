@@ -91,6 +91,24 @@ def repair_input_refs(state_dir, payload: Mapping[str, Any], *, workflow_run_id:
         return _replayed_task_repair_input(
             state_dir, payload, workflow_run_id=workflow_run_id, task_id=task_id,
         )
+    binding = payload.get('plan_review_disposition_ref') or trigger.get('plan_review_disposition_ref')
+    if binding:
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        verdict = hydrate_sidecar_ref(state_dir, binding['control_result_ref']).payload
+        if (verdict.get('workflow_run_id') != workflow_run_id or verdict.get('verdict') != 'rejected'
+                or not verdict.get('reviewed_plan_candidate_digest')
+                or verdict['reviewed_plan_candidate_digest'] != binding['reviewed_plan_candidate_digest']):
+            raise ValueError('Plan repair feedback differs from the rejected candidate binding')
+        assessments = [r for r in verdict.get('execution_assessments', [])
+                       if isinstance(r, Mapping) and r.get('disposition') in
+                       {'no_repair', 'repair_required', 'needs_clarification'}]
+        digest = binding.get('plan_review_disposition_digest')
+        if not digest or not assessments or any(
+            not isinstance(row.get('runtime_evidence'), Mapping)
+            or row['runtime_evidence'].get('sha256') != digest for row in assessments
+        ):
+            raise ValueError('Plan repair dispositions differ from the frozen execution review')
+        fields['plan_review_dispositions'] = {**binding, 'assessments': assessments}
     retained = _fresh_retry_repair_inputs(
         state_dir, payload, fields=fields, workflow_run_id=workflow_run_id, task_id=task_id,
     )

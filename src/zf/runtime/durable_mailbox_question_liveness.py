@@ -1,7 +1,6 @@
 """Recover the unanswered mailbox obligation after its exact claimant ends."""
 
-from zf.runtime.durable_mailbox_authority import record, terminal
-from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+from zf.runtime.durable_mailbox_authority import record, run_availability
 from zf.runtime.provider_turn_liveness import _parse_event_ts, active_codex_turn_from_events
 from zf.runtime.stream_turn_lifecycle import open_stream_turn
 
@@ -223,7 +222,7 @@ def pending_peer_diagnoses(events):
     for e in pending.values():
         p = e.payload
         run = p["workflow_run_id"]
-        if is_run_dispatch_paused(events, run) or terminal(events, run):
+        if any(run_availability(events, run)):
             continue
         actions.append(
             {

@@ -13,6 +13,30 @@ from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
 from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
 
 
+PLAN_SYNTH_HANDOFF_KEYS = (
+    "workflow_run_id",
+    "child_id",
+    "operation_id",
+    "request_hash",
+    "attempt_id",
+    "result_protocol_mode",
+    "output_profile_id",
+    "output_profile_revision",
+    "attempt_source_manifest_ref",
+    "attempt_source_manifest_digest",
+    "attempt_source_manifest",
+    "input_consumption_policy_ref",
+    "input_consumption_policy_digest",
+    "input_consumption_policy",
+    "required_reads",
+    "result_scratch_ref",
+    "semantic_result_submit_mode",
+    "plan_revision",
+    "plan_synth_contract_ref",
+    "plan_synth_contract_digest",
+    "reviewed_plan_candidate_digest",
+    "plan_review_optimization",
+)
 PLAN_SYNTH_PROFILE_ID = "plan-synth"
 PLAN_SYNTH_PROFILE_REVISION = "1"
 PLAN_SYNTH_RESULT_SCHEMA = "plan-synthesis-result.v1"
@@ -55,6 +79,7 @@ _PLAN_REWORK_CONTEXT_KEYS = (
     "rework_attempt",
     "rework_source",
     "rework_feedback",
+    "plan_review_disposition_ref",
     "operator_feedback",
     "input_task_ids",
     "dispatch_scope_source_event_id",
@@ -111,18 +136,26 @@ def render_plan_synth_completion_command(
     actor: str,
     state_dir: Path,
     payload: Mapping[str, Any],
+    new_scratch_policy_ref: Mapping[str, Any] | None = None,
 ) -> str:
-    """Render a compact result-file submit command for plan synthesis."""
+    """Seed the authored result; the registered operation owns its immutable input policy."""
 
     del actor
+    from zf.runtime.artifact_read_briefing_policy import verified_plan_read_policy
     from zf.runtime.stage_execution_card import prepare_result_file_command
 
+    template = dict(payload)
+    if (new_scratch_policy_ref and new_scratch_policy_ref == payload.get("input_consumption_policy_ref")
+            and payload.get("semantic_result_submit_mode") == "blocking"):
+        policy = verified_plan_read_policy(payload, state_dir)
+        if policy is not None and policy == payload.get("input_consumption_policy"):
+            del template["required_reads"], template["input_consumption_policy"]
     command, _ = prepare_result_file_command(
         state_dir=Path(state_dir),
         result_scratch_ref=str(payload.get("result_scratch_ref") or ""),
         operation_id=str(payload.get("operation_id") or ""),
         cli_command=cli_command,
-        semantic_template=dict(payload),
+        semantic_template=template,
     )
     return command
 
@@ -262,6 +295,10 @@ def build_plan_handoff_input_refs(
     }
     input_refs: list[dict[str, Any]] = []
     seen_sources: set[tuple[str, str, str, str]] = set()
+    from zf.runtime.plan_derived_claim_correction import correction_sources
+
+    input_refs.extend(correction_sources(state_dir, {**trigger, **payload}, attempt_id=payload.get("attempt_id"),
+        operation_id=payload.get("operation_id"), read_events=read_events))
     if binding:
         input_refs.append({**binding["requirement_amendment_ref"],
                            "source_id": "owner-requirement-amendment", "allowed_paths": ["$"]})
@@ -695,7 +732,7 @@ def build_plan_synth_call_payload(
     for source in build_plan_handoff_input_refs(
         state_dir=state_dir,
         project_root=project_root,
-        payload=manifest,
+        payload={**manifest, "attempt_id": run_id},
         source_event_id=trigger_event_id,
         read_events=(lambda: diagnosis_events) if diagnosis_events is not None else read_events,
     ):
@@ -788,6 +825,7 @@ def _child_artifact_refs(report: Mapping[str, Any]) -> list[str]:
 
 
 __all__ = [
+    "PLAN_SYNTH_HANDOFF_KEYS",
     "PLAN_SYNTH_CONTRACT_SCHEMA",
     "PLAN_SYNTH_PROFILE_ID",
     "PLAN_SYNTH_PROFILE_REVISION",

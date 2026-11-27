@@ -21,7 +21,7 @@ def team_member(raw: Any, *, stage: str = "") -> dict:
     extra = {"required", "coverage_owner", "disposition"} if stage in {"plan", "judge"} else set()
     if stage == "plan":
         extra.add("input_alternatives")
-    if stage in {"plan", "judge", "task_verify"}:
+    if stage in {"plan", "judge", "task_verify", "candidate_verify"}:
         extra |= {"selection_reason", "completion_condition"}
     if not isinstance(raw, dict) or not fields <= raw.keys() or set(raw) - fields - extra:
         raise ValueError("stage_teams member requires exactly " + ", ".join(sorted(fields)))
@@ -236,7 +236,10 @@ def verification_delegation_policy(config: ZfConfig) -> WorkflowOrchestrationFlo
 def validate_effective_teams(config: Any, metadata: dict, project_root: Path) -> None:
     """Check the actual effective consumer after hand-written overrides and namespacing."""
     teams = normalize_stage_teams(metadata["stage_teams"])
-    for team in teams.values():
+    for stage_name, team in teams.items():
+        if stage_name == "candidate_verify":
+            # Candidate refs identify frozen acceptance obligations, not project paths.
+            continue
         for member in team.get("members", []):
             for ref in [*member["input_refs"], *(r for choices in member.get("input_alternatives", {}).values()
                                                  for r in choices)]:

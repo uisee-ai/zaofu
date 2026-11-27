@@ -653,8 +653,11 @@ class FanoutManifestProjector:
                         and (manifest.get("synth") or {}).get("last_event_id") == payload.get("retry_critic_handoff_event_id")):
                     manifest.pop("synth", None)
                     manifest.update(status="running", critic_handoff_retry_event_id=event.id)
-                if (event.origin == 'kernel' and payload.get('recovery_kind') == 'plan_critic_reassessment'
+                if (event.origin == 'kernel' and payload.get('recovery_kind') in {'plan_critic_reassessment', 'unissued_plan_critic_recovery'}
                         and payload.get('review_checkpoint_ref')):
+                    if payload['recovery_kind'] == 'unissued_plan_critic_recovery' and event.actor == 'zf-cli':
+                        from zf.runtime.unissued_plan_critic_recovery import generation_context
+                        manifest['recovered_review_generation'] = generation_context(event)
                     manifest.pop('synth', None)
                     manifest.pop('recovered_plan_reader_event_id', None)
                     manifest.update(status='running', review_key=payload['review_key'],

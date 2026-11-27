@@ -68,6 +68,38 @@ def test_resumed_synth_guidance_requires_current_signed_binding(tmp_path: Path) 
         synth_result_recovery_guidance(state, operation, **(kwargs | {"request_hash": "obsolete"}))
 
 
+def test_new_task_map_synth_draft_keeps_read_locator_and_registered_policy(tmp_path: Path) -> None:
+    from tests.test_reader_fanout_runtime import _task_map_synth_orchestrator
+    from zf.runtime.workflow_operation import load_workflow_operation, operation_request_hash
+
+    state, log, _, _ = _task_map_synth_orchestrator(tmp_path, semantic_plan_submit=True)
+    dispatch = next(event for event in log.read_all() if event.type == "fanout.synth.dispatched").payload
+    operation = load_workflow_operation(log, dispatch["operation_id"])
+    body = hydrate_sidecar_ref(state, operation["request_ref"]).payload
+    request = body["request"]
+    policy_ref = request["input_consumption_policy_ref"]
+    policy = hydrate_sidecar_ref(state, policy_ref).payload
+    assert operation_request_hash(body) == dispatch["request_hash"]
+    assert policy["required_reads"] == request["required_reads"] == dispatch["required_reads"]
+    assert policy == dispatch["input_consumption_policy"] and policy["required_reads"]
+
+    scratch = state / request["result_scratch_ref"]
+    draft = json.loads(scratch.read_bytes())
+    assert draft["input_consumption_policy_ref"] == policy_ref
+    assert draft["input_consumption_policy_digest"] == policy_ref["sha256"]
+    assert "required_reads" not in draft and "input_consumption_policy" not in draft
+    assert "report" in draft and draft["operation_id"] == operation["operation_id"]
+
+    # An existing draft may have been seeded by an earlier release and edited by its author.
+    historical = {**draft, "required_reads": policy["required_reads"], "input_consumption_policy": policy,
+                  "summary": "Review the inventory reconciliation."}
+    original = json.dumps(historical, ensure_ascii=False, indent=4).encode()
+    scratch.write_bytes(original)
+    render_plan_synth_completion_command(cli_command="zf", actor=dispatch["role_instance"],
+        state_dir=state, payload=historical, new_scratch_policy_ref=policy_ref)
+    assert scratch.read_bytes() == original
+
+
 def test_plan_synth_completion_command_round_trips_shell_sensitive_json(
     tmp_path,
 ) -> None:

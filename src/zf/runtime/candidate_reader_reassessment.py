@@ -33,6 +33,11 @@ def enabled(config, flow_kind):
     return "reassess_reader_evidence" in (bounded_actions(config, flow_kind) or [])
 
 
+def native_reassessment_enabled(config, flow_kind):
+    from zf.runtime.native_activity_reassessment import ACTION
+    return ACTION in (bounded_actions(config, flow_kind) or [])
+
+
 def _candidate(events, p):
     run_id = p["workflow_run_id"]
     candidate = frozen_candidate_for_payload(events, run_id, payload=p)
@@ -183,6 +188,13 @@ def _scope(service, events, marker, operation_id, finding_ids):
         raise ValueError("duplicate frozen receipt ID")
     for descriptor in receipts.values():
         hydrate_sidecar_ref(service.state_dir, descriptor)
+    supplemental = None
+    native_requested = any(row["disposition"].get("next_action") == "reassess_native_activity" for row in rows)
+    if (native_requested and lifecycle and request.get("reassess_native_activity") is True
+            and native_reassessment_enabled(service.config, kind)):
+        from zf.runtime.native_activity_reassessment import supplemental_activity
+        handoff = hydrate_sidecar_ref(service.state_dir, request["milestone_handoff_ref"]).payload
+        supplemental = supplemental_activity(service.state_dir, history, candidate, lifecycle, handoff["members"], role)
     return {
         "schema_version": "candidate-reader-reassessment.v1",
         "authorizes_execution": False,
@@ -206,6 +218,7 @@ def _scope(service, events, marker, operation_id, finding_ids):
         "candidate_host_evidence_ref": ref,
         "receipt_refs": receipts,
         "lifecycle": lifecycle,
+        **({"native_reassessment": supplemental} if supplemental else {}),
         "findings": rows,
     }
 
@@ -366,7 +379,7 @@ def finding_results(scope, semantic):
             or not (receipts or windows)
             or any(
                 not isinstance(w, str)
-                or w not in (scope.get("lifecycle") or {}).get("windows", {})
+                or not any(w in (scope.get(key) or {}).get("windows", {}) for key in ("lifecycle", "native_reassessment"))
                 for w in windows
             )
             or any(
@@ -390,8 +403,12 @@ def validate_submission(state, request, semantic, events):
     host = hydrate_sidecar_ref(state, evidence).payload if evidence else {}
     sources = {source["source_id"]: source for source in host.get("input_refs", [])}
     required = list(request["required_reads"])
-    if any(row.get("lifecycle_window_ids") for row in rows):
-        source = scope["lifecycle"]["source"]
+    cited = {w for row in rows for w in row.get("lifecycle_window_ids", [])}
+    for key in ("lifecycle", "native_reassessment"):
+        measurement = scope.get(key) or {}
+        if not cited.intersection(measurement.get("windows", {})):
+            continue
+        source = measurement["source"]
         required.append(
             {
                 "source_id": source["source_id"],
@@ -544,6 +561,8 @@ def dispatch_pending_reassessments(runtime):
                 _candidate(events, scope)
                 if not enabled(runtime.config, scope["flow_kind"]):
                     raise ValueError("Reader reassessment authority revoked")
+                if scope.get("native_reassessment") and not native_reassessment_enabled(runtime.config, scope["flow_kind"]):
+                    raise ValueError("Native activity reassessment authority revoked")
                 run = build_run_admission_projection(events).runs.get(
                     scope["workflow_run_id"]
                 )
@@ -638,8 +657,9 @@ def _dispatch(runtime, event, scope, role, events):
                 *evidence["input_refs"],
             ]
         )
-    if scope.get("lifecycle"):
-        inputs.append(scope["lifecycle"]["source"])
+    for key in ("lifecycle", "native_reassessment"):
+        if scope.get(key):
+            inputs.append(scope[key]["source"])
     required_reads = [
         {
             "source_id": inputs[0]["source_id"],
@@ -672,7 +692,7 @@ def _dispatch(runtime, event, scope, role, events):
             "Reassess only the frozen findings in reassessment.json using the bound host receipts. "
             "Do not execute host probes or change the product. Submit a workflow-read report with "
             "finding_results entries for each finding_id, outcome supported/refuted/unknown, "
-            "explanation and receipt_ids or lifecycle_window_ids. Read each cited original receipt or lifecycle summary, including all pages. Cite the measured lifecycle window for concurrency findings. Preserve unknowns and other Readers' verdicts."
+            "explanation and receipt_ids or lifecycle_window_ids. Read each cited original receipt or lifecycle summary, including all pages. Cite the measured lifecycle window for concurrency findings and distinguish retrospective observations from original receipts. Preserve unknowns and other Readers' verdicts."
         ),
     )
     prepared = prepare_call_operation(

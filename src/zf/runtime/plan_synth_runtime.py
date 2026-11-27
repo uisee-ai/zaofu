@@ -9,35 +9,11 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.cli_command import zf_cli_cmd
-from zf.runtime.plan_synth_handoff import current_synth_recovery_guidance
+from zf.runtime.plan_synth_handoff import PLAN_SYNTH_HANDOFF_KEYS, current_synth_recovery_guidance
 from zf.runtime.reader_respawn_continuation import reader_continuation_guidance
 from zf.runtime.run_admission import RunDispatchBlocked, build_run_admission_projection
 
 
-PLAN_SYNTH_HANDOFF_KEYS = (
-    "workflow_run_id",
-    "child_id",
-    "operation_id",
-    "request_hash",
-    "attempt_id",
-    "result_protocol_mode",
-    "output_profile_id",
-    "output_profile_revision",
-    "attempt_source_manifest_ref",
-    "attempt_source_manifest_digest",
-    "attempt_source_manifest",
-    "input_consumption_policy_ref",
-    "input_consumption_policy_digest",
-    "input_consumption_policy",
-    "required_reads",
-    "result_scratch_ref",
-    "semantic_result_submit_mode",
-    "plan_revision",
-    "plan_synth_contract_ref",
-    "plan_synth_contract_digest",
-    "reviewed_plan_candidate_digest",
-    "plan_review_optimization",
-)
 PLAN_SYNTH_SEMANTIC_FIELDS = (
     "execution_assessments",
     "failure_class",
@@ -473,6 +449,15 @@ class PlanSynthRuntimeMixin:
         mode: str,
         synth_role: str,
     ) -> None:
+        from zf.runtime.pause_lifecycle import is_run_dispatch_paused
+        from zf.runtime.pre_impl_revision_settlement import revision_can_continue
+
+        trigger = manifest.get("trigger_payload") or {}
+        run = str(manifest.get("workflow_run_id") or trigger.get("workflow_run_id") or manifest.get("trace_id") or "")
+        if is_run_dispatch_paused(self.event_log.read_all(), run):
+            return  # Completed children remain replayable without registering a successor.
+        if not revision_can_continue(self, manifest):
+            return
         from zf.runtime.plan_critic_reassessment import review_checkpoint_id
         checkpoint = review_checkpoint_id(manifest)
         trace_id = str(manifest.get("trace_id") or "")
@@ -729,7 +714,7 @@ class PlanSynthRuntimeMixin:
                     attach_execution_review(
                         state_dir=self.state_dir, payload=call_payload,
                         review=execution_review,
-                        source_event_id=str(manifest.get("trigger_event_id") or ""),
+                        source_event_id=str(manifest.get("trigger_event_id") or ""), read_events=self.event_log.read_all,
                     )
                 workdir_write_scopes = []
                 if not call_payload["plan_synth_verdict_only"]:
@@ -775,6 +760,8 @@ class PlanSynthRuntimeMixin:
                 skill_entries=skill_entries,
                 call_payload=call_payload,
                 reports=reports,
+                new_scratch_policy_ref=(call_payload.get("input_consumption_policy_ref")
+                                        if prepared_call and not prepared_call.replay_hit else None),
             )
             prompt = build_task_prompt(
                 role.instance_id,
@@ -908,6 +895,10 @@ class PlanSynthRuntimeMixin:
     def _handle_fanout_synth_completed(self, event: ZfEvent) -> None:
         payload = event.payload if isinstance(event.payload, dict) else {}
         manifest = self._fanout_manifest(str(payload.get("fanout_id") or ""))
+        from zf.runtime.pre_impl_revision_settlement import revision_can_continue
+
+        if manifest and not revision_can_continue(self, manifest, synth=event):
+            return
         from zf.runtime.plan_critic_reassessment import reassessment_result_current
         if manifest and not reassessment_result_current(self, manifest, event):
             return

@@ -311,6 +311,12 @@ def prepare_candidate_verification_authority(
 
     spec = assigned_spec(Path(runtime.state_dir), body)
     if spec:
+        if any("stage_obligation" in row for row in spec["candidate_reader_assignments"]):
+            from zf.runtime.candidate_reader_assignments import approved_roster_ref
+
+            approval = approved_roster_ref(Path(runtime.state_dir), events, body, spec)
+            if body.get("candidate_reader_approval") != approval:
+                raise CandidateVerificationAuthorityError("Evidence ownership lacks its frozen OA approval")
         scope = scope_reader_contract(aggregate, spec, role=str(payload.get("role_instance") or ""),
                                       target=candidate_head,
                                       # Before OA roster approval, old immutable freezes only guaranteed mandatory ACs.

@@ -200,6 +200,23 @@ def bind_recommendation_to_request(events, event: ZfEvent, payload: dict[str, An
             if bound.get(key) and bound[key] != value:
                 raise ValueError(f"recommendation_binding_mismatch:{key}")
             bound[key] = value
+    # A diagnosis response may express a task scope as an object. Resolve it only
+    # against the original kernel dispatch, never the responder's own task claim.
+    scope = bound.get("blocking_scope")
+    if isinstance(scope, dict):
+        task_id = request.payload.get("task_id")
+        run_id = request.payload.get("workflow_run_id") or request.payload.get("run_id")
+        delivery_run = delivery.payload.get("workflow_run_id") or delivery.payload.get("run_id")
+        if (
+            run_id and (not delivery_run or run_id == delivery_run)
+            and request.origin == delivery.origin == "kernel" and request.actor == delivery.actor == "run-manager"
+            and request.payload.get("blocking_scope") in (None, "", "task", scope)
+            and isinstance(task_id, str) and task_id and delivery.payload.get("task_id") == task_id
+            and scope == {"kind": "task", "task_id": task_id}
+        ):
+            bound["blocking_scope"] = "task"
+        else:
+            bound["blocking_scope"] = "run"
     bound["checkpoint_id"] = f"recommendation:{event.id}"
     bound["recorded_event_id"] = event.id
     from zf.runtime.reader_diagnosis_scope import bind_reader_diagnosis_scope

@@ -335,6 +335,7 @@ class FanoutDispatchLivenessMixin:
         attempt: int,
         previous_dispatch: ZfEvent,
         reason: str,
+        *, external_gate: bool = False,
     ) -> None:
         """Record an admission-blocked retry without failing the child."""
 
@@ -355,6 +356,10 @@ class FanoutDispatchLivenessMixin:
             "failure_kind": "run_dispatch_blocked",
         }
         self._copy_fanout_assignment_metadata(payload, child)
+        if external_gate:
+            from zf.runtime.provider_dispatch_wait import record_reader_gate
+            record_reader_gate(self, payload, previous_dispatch.id)
+            return
         self.event_writer.append(ZfEvent(
             type="fanout.child.dispatch_deferred",
             actor="zf-cli",

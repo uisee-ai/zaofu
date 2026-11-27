@@ -101,6 +101,8 @@ def admit_synthesized_plan_package(
     recommendation: str,
     artifact_payload: dict[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
+    from zf.runtime.pre_impl_revision_settlement import RevisionSettlementDeferred, revision_settlement_writer
+
     if final_status != "completed" or success_event not in {
         "task_map.ready",
         "zaofu.refactor.plan.ready",
@@ -170,6 +172,7 @@ def admit_synthesized_plan_package(
         metadata = flow_metadata_for(runtime.config, payload=payload)
         identity = _admit(
             runtime,
+            event_writer=revision_settlement_writer(runtime, manifest, event),
             event=event,
             payload=payload,
             metadata=metadata,
@@ -183,6 +186,8 @@ def admit_synthesized_plan_package(
             workflow_run_id=workflow_run_id,
         )
         return final_status, recommendation, {**artifact_payload, **identity}
+    except RevisionSettlementDeferred:
+        raise
     except Exception as exc:
         failure = runtime._contract_failure_payload(
             artifact_payload,
@@ -249,6 +254,7 @@ def _admit(
     metadata: dict[str, Any],
     producer_stage_id: str,
     goal_id: str,
+    event_writer=None,
     workflow_run_id: str = "",
 ) -> dict[str, Any]:
     run_id = str(
@@ -261,7 +267,7 @@ def _admit(
     return admit_plan_artifact_package_for_payload(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,
-        event_writer=runtime.event_writer,
+        event_writer=event_writer or runtime.event_writer,
         events=runtime.event_log.read_all(),
         payload=payload,
         workflow_run_id=run_id,

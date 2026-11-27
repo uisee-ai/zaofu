@@ -767,6 +767,7 @@ class WriterFanoutDataMixin:
             result["workflow_run_id"] = workflow_run_id
         if run_id:
             result["run_id"] = run_id
+        result.update(manifest.get("recovered_review_generation", {}))
         return result
 
     def _relocate_reader_fanout_artifact_refs(

@@ -37,6 +37,7 @@ from zf.core.verification.discriminator import (
     PromotedRulesD,
 )
 from zf.core.verification.scope_ratchet import ScopeRatchet, ScopeSnapshot
+from zf.runtime.orchestrator_agent_pre_impl_revision import is_pre_impl_revision_trigger
 from zf.runtime.drift import DriftDetector
 from zf.runtime.durable_hook_catchup import consume_durable_nonwake_hooks
 from zf.runtime.escalation import EscalationManager
@@ -2445,6 +2446,10 @@ class WorkflowRuntimeCoordinator(
             # end of their dispatch cycle, but still need semantic reaction.
             if event.id not in self._transport_housekept_event_ids:
                 self._apply_housekeeping(event)
+            if is_pre_impl_revision_trigger(event, self.config):
+                # The admitted Plan author is the only consumer of this directed handoff.
+                self._processed_event_ids.add(event.id)
+                continue
             self._settle_task_attempt_result(event)
 
             # Admitted v4 results advance only through the Task Pipeline.
@@ -3008,6 +3013,9 @@ class WorkflowRuntimeCoordinator(
         """Layer 1 mechanical state writes — never decisions."""
         from zf.runtime.worker_heartbeat_binding import admit_worker_heartbeat
 
+        if is_pre_impl_revision_trigger(event, self.config):
+            self._maybe_start_reader_fanout(event)
+            return
         if not admit_worker_heartbeat(self, event):
             return
         self._renew_task_attempt_lease(event)

@@ -582,7 +582,7 @@ def prepare_plan_artifact_package(
     if prior_body is not None:
         continuity = package_claim_continuity(
             state_dir, prior_body, claim_set, workflow_run_id=workflow_run_id,
-            goal_id=goal_id, payload=payload, events=event_list,
+            goal_id=goal_id, payload=payload, events=event_list, task_map=task_map,
         )
         if continuity["status"] != "passed":
             rejected_ids = ", ".join(
@@ -693,6 +693,7 @@ def prepare_plan_artifact_package(
                 "product_acceptance_spec must contain a JSON object"
             )
         product_acceptance_spec = dict(hydrated.payload)
+        candidate_team = ((metadata or {}).get("stage_teams") or {}).get("candidate_verify") or {}
         if "product_acceptance_spec" in explicit_ports:
             from zf.runtime.plan_artifact_package_ports import bind_product_acceptance_identity
 
@@ -700,6 +701,22 @@ def prepare_plan_artifact_package(
                 product_acceptance_spec, workflow_run_id=workflow_run_id, flow_kind=flow_kind,
                 plan_revision=plan_revision, task_map_generation=generation,
             )
+        validate_product_acceptance_spec(
+            product_acceptance_spec,
+            expected={
+                "workflow_run_id": workflow_run_id,
+                "flow_kind": flow_kind,
+                "plan_revision": plan_revision,
+                "task_map_generation": generation,
+            },
+        )
+        from zf.runtime.candidate_reader_assignments import bind_reader_obligations
+        try:
+            product_acceptance_spec = bind_reader_obligations(product_acceptance_spec, candidate_team,
+                frozen="product_acceptance_spec" not in explicit_ports)
+        except ValueError as exc:
+            raise PlanArtifactPackageError(str(exc)) from exc
+        if "product_acceptance_spec" in explicit_ports:
             descriptor = write_immutable_json_sidecar(
                 state_dir,
                 product_acceptance_spec,
@@ -715,16 +732,6 @@ def prepare_plan_artifact_package(
                 "ref": str(descriptor.get("ref") or ""),
                 "sha256": str(descriptor.get("sha256") or ""),
             }
-        validate_product_acceptance_spec(
-            product_acceptance_spec,
-            expected={
-                "workflow_run_id": workflow_run_id,
-                "flow_kind": flow_kind,
-                "plan_revision": plan_revision,
-                "task_map_generation": generation,
-            },
-        )
-        candidate_team = ((metadata or {}).get("stage_teams") or {}).get("candidate_verify")
         if candidate_team:
             rows = product_acceptance_spec.get("candidate_reader_assignments") or []
             pool = metadata["task_pipeline"]["pools"]["verify"]["role_instances"]
@@ -869,7 +876,9 @@ def admit_plan_artifact_package_for_payload(
             state_dir, project_root, current_body, payload)
         assert_package_explicit_ports_match(
             state_dir, project_root, current_body, payload,
-            flow_kind=flow_kind, producer_stage_id=producer_stage_id, events=event_list)
+            flow_kind=flow_kind, producer_stage_id=producer_stage_id,
+            candidate_team=((metadata or {}).get("stage_teams") or {}).get("candidate_verify") or {},
+            events=event_list)
         current_mode = str(
             current_body.get("artifact_package_mode") or "shadow"
         )

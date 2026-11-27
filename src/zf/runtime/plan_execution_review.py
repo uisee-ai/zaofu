@@ -11,13 +11,16 @@ from pathlib import Path
 
 def attach_execution_review(
     *, state_dir: Path, payload: dict[str, Any], review: Mapping[str, Any],
-    source_event_id: str,
+    source_event_id: str, read_events=None,
 ) -> None:
     from zf.runtime.call_result_envelope import write_immutable_json_sidecar
-
     from zf.runtime.plan_execution_delivery import execution_review_delivery
+    from zf.runtime.plan_readonly_acceptance_review import attach_readonly_acceptance_summary
 
     body, details = execution_review_delivery(review)
+    attach_readonly_acceptance_summary(
+        state_dir, body, review, payload, source_event_id=source_event_id, read_events=read_events,
+    )
     for item in details:
         detail = write_immutable_json_sidecar(
             state_dir, item["body"], root=item["root"], kind=item["kind"],
@@ -33,6 +36,9 @@ def attach_execution_review(
         kind="plan_execution_review", schema_version="plan-execution-review.v1",
         created_by="plan-preflight", source_event_id=source_event_id,
     )
+    if ((body.get("plan_review") or {}).get("mode", "full") == "full"
+            and any(row.get("before_rework") for row in (body.get("execution_comparisons") or {}).values())):
+        payload["plan_review_disposition_digest"] = descriptor["sha256"]
     payload.setdefault("input_refs", []).append({
         **descriptor, "source_id": "plan-execution-review",
         "artifact_id": "plan-execution-review.json", "allowed_paths": ["$"],
@@ -162,7 +168,8 @@ def review_execution(
                if not kind or role.get("flow_kind") in ("", kind)]
     from zf.runtime.plan_review_comparisons import execution_comparisons
 
-    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger)
+    comparisons = execution_comparisons(tasks, requirements, host_commands, candidate_stage=candidate_trigger,
+                                        dependencies=graph["direct_dependencies"])
     return {
         "schema_version": "plan-execution-review.v1",
         **({"execution_comparisons": comparisons} if comparisons else {}),

@@ -294,3 +294,79 @@ def test_resident_recommendation_question_preserves_precedence(fields, expected)
     payload = {"recommended_run_manager_action": {"question": "action question"},
                "summary": "summary", "reason": "reason", **fields}
     assert resident_decision_question(payload) == expected
+
+
+@pytest.mark.parametrize(
+    "case,expected",
+    [
+        ("task", "task"),
+        ("wrong_task", "run"),
+        ("extra", "run"),
+        ("untrusted", "run"),
+        ("unsolicited", "run"),
+        ("run_gate", "run"),
+        ("cross_delivery", "run"),
+        ("other_run", "run"),
+        ("explicit_task", "task"),
+    ],
+)
+def test_resident_task_scope_requires_the_original_kernel_diagnosis(tmp_path, case, expected):
+    from zf.core.events import ZfEvent
+    from zf.runtime.run_manager import _pending_human_decisions
+    from zf.runtime.run_continuation import human_decisions_block_action
+
+    state, log, writer = _state(tmp_path)
+    request_id = "diagnosis-inventory"
+    owner = "T2"
+    if case != "unsolicited":
+        writer.append(
+            ZfEvent(
+                type="run.manager.resident.prompted",
+                actor="run-manager",
+                origin="kernel",
+                payload={
+                    "request_id": request_id,
+                    "instance_id": "run-manager",
+                    "task_id": "other-task" if case == "cross_delivery" else owner,
+                    **({"workflow_run_id": "other-run"} if case == "other_run" else {}),
+                },
+            )
+        )
+        writer.append(
+            ZfEvent(
+                type="run.manager.action.effect.pending",
+                actor="run-manager",
+                origin="worker" if case == "untrusted" else "kernel",
+                payload={
+                    "request_id": request_id,
+                    "workflow_run_id": "r",
+                    "task_id": owner,
+                    "continuation_expected_events": ["run.manager.agent.recommendation"],
+                    **({"blocking_scope": "run"} if case == "run_gate" else {}),
+                    **({"blocking_scope": {"kind": "task", "task_id": owner}} if case == "explicit_task" else {}),
+                },
+            )
+        )
+    _recommend(
+        writer,
+        task_id=owner,
+        recommended_route="human",
+        safe_resume_action="agent_recommendation",
+        **({"request_id": request_id} if case != "unsolicited" else {}),
+        question="是否需要更新盘点任务的证据映射？",
+        blocking_scope={
+            "kind": "task",
+            "task_id": "other-task" if case == "wrong_task" else owner,
+            **({"unverified_field": True} if case == "extra" else {}),
+        },
+    )
+    for _ in range(2):
+        run_manager_tick(state_dir=state, writer=writer, config=_config(), spawn_repairs=False)
+    history = log.read_all()
+    (escalation,) = [e for e in history if e.type == "human.escalate"]
+    (gate,) = _pending_human_decisions(history)
+    assert gate["blocking_scope"] == escalation.payload["blocking_scope"] == expected
+    assert "/actions/human-decision-dismiss " in gate["approval_command"]
+    assert human_decisions_block_action([gate], {"task_id": owner}, events=history)
+    assert human_decisions_block_action([gate], {"task_id": "other", "blocked_by": [owner]}, events=history)
+    assert human_decisions_block_action([gate], {"task_id": "other"}, events=history) == (expected == "run")

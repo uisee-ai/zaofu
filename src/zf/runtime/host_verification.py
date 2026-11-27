@@ -145,18 +145,26 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
             from zf.runtime.host_verification_handoff import reader_probe_handoff_complete
             if reader_probe_handoff_complete(operation, events):
                 continue
+            output_recovery = None
             try:
-                _, request, contract, _ = binding(service, operation_id)
+                _, request, contract, workspace = binding(service, operation_id)
                 if not allow_execution and contract.get('authority_scope') != 'candidate':
                     continue
                 if contract.get('authority_scope') == 'candidate':
                     result = hydrate_sidecar_ref(service.state_dir,
                         operation.get('admitted_control_result_ref') or {}).payload
-                    if result.get('failure_class') == 'reader_execution_failure':
-                        # Product commands cannot repair missing input delivery.
-                        # Preserve the failure for the existing Reader recovery owner.
-                        continue
-            except (ValueError, KeyError, OSError):
+                    failure_class = result.get('failure_class')
+                    if failure_class in {'reader_execution_failure', 'verifier_execution_failure'}:
+                        from zf.runtime.candidate_host_production import missing_host_output_commands
+                        output_commands = missing_host_output_commands(
+                            service.state_dir, operation, request, contract, result, events) or None
+                        if failure_class == 'reader_execution_failure' and not output_commands:
+                            continue  # Missing signed inputs remain with the Reader recovery owner.
+                        if output_commands:
+                            from zf.runtime.candidate_host_production import sibling_host_outputs
+                            output_recovery = sibling_host_outputs(
+                                service, operation, request, contract, workspace, output_commands, operations, events)
+            except (ValueError, KeyError, OSError, TypeError):
                 continue
             group = ()
             if contract.get('authority_scope') == 'candidate':
@@ -165,8 +173,11 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                          request.get('result_identity', {}).get('contract_snapshot_digest'))
                 if not all(group):
                     group = ()
-            _, receipts, failed_probe = completed_reader_probes(service, operation, contract, policy, events)
-            eligible.append((operation_id, operation, contract, group, failed_probe, receipts))
+            required, receipts, failed_probe = completed_reader_probes(
+                service, operation, contract, policy, events, output_recovery.commands if output_recovery else None)
+            if output_recovery and not required:
+                continue
+            eligible.append((operation_id, operation, contract, group, failed_probe, receipts, output_recovery))
             # Choose from the complete cohort before processing any sibling.
             # A later failure can precede the existing owner in operation order.
             starts = [index for index, event in enumerate(events)
@@ -181,7 +192,7 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                 if group not in candidate_probe_owners or rank < candidate_probe_owners[group]:
                     candidate_probe_owners[group] = rank
 
-        for operation_id, operation, contract, group, failed_probe, receipts in eligible:
+        for operation_id, operation, contract, group, failed_probe, receipts, output_recovery in eligible:
             run_id = operation.get("workflow_run_id") or ""
             owner = candidate_probe_owners.get(group)
             if owner and owner[-1] != operation_id:
@@ -199,7 +210,8 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                             and capture_limit_now_covered(receipt, policy)
                             and _try_recollect(service, receipt['manifest'], events, policy, run_id)):
                         return 1
-            if resume_reader_after_probes(service, operation, contract, policy, events):
+            if resume_reader_after_probes(service, operation, contract, policy, events,
+                                          output_recovery=output_recovery):
                 return 1
             if not allow_execution:
                 continue
@@ -208,6 +220,9 @@ def reconcile_host_verification(service, *, allow_execution: bool = True,
                 # this failure for handoff; do not spend its remaining probes.
                 continue
             for command in contract['verification_commands']:
+                if output_recovery and (command['command_id'] not in output_recovery.commands
+                                        or command['command_id'] in output_recovery.sibling_effects):
+                    continue
                 if command['command_id'] in receipts or command['command_id'] in transferred.get(group, ()):
                     continue
                 if command.get('command') not in policy.commands:

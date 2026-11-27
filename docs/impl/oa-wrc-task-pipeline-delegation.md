@@ -21,6 +21,19 @@ OA 角色偏好是软约束；`capability_refs`、Task 能力要求和执行池�
 
 OA execution plan 的 graph/edges 不替换 Task Map 的依赖；`skill_refs` 也不授权临时安装或执行未配置的技能。改变任务依赖、scope 或执行配置须走既有计划修订与审批。局部修订保留的任务继续使用自身已接纳 generation 的委派。
 
+### 实施前退回规划
+
+在 blocking `pre_impl` 检查点，OA 可以对已经通过 Critic 的版本提出 `revise`。例如，候选验收要求三个 Reader 各自核对不同证据，而获准的计划包把同一项验收分给了三人。OA 在决定中说明受影响的分工、证据和所需改动。内核核对同一 Run 的 Task Map 代次、当前计划包摘要和决定来源，将决定及其审过的版本交回 Planner。Planner 可从该包恢复任务图和验收规格，沿用已有扫描证据，保留本次修订以外的任务、权限和审批边界。
+
+新版本仍要经过 Critic、已启用的 OA 检查点及配置要求的 Owner 审批，之后才能派发业务任务。相同决定的重放复用同一次返工。即使其他阶段监听相同的扫描完成事件，只有决定绑定的规划阶段可接手。派发、启动 Critic 和接纳修订结果时重新核对父版本。Owner 在此期间已裁决原版或另一个计划包已接替时，旧返工不能覆盖它。计划包已被替代、业务审批已经发生，或修订次数已经用尽时，内核保留对应回执供操作员核查。
+
+Planner 交接给 Critic、Critic 发布修订包及 `task_map.ready` 时，内核重新核对当初退回的父包和 Owner 决定。
+已有更新包或 Owner 已裁决时，取消这条过期返工。暂停期间保留已提交结果并阻止新派发，恢复后的正常空闲扫描可继续启动待评审的 Critic。如果账本并发写入，当前轮有限重试；已完成聚合而尚未发布的结果使用冻结事件 ID 恢复，一次结果只发布一次。
+
+在 `zf workflow team --request <request_id> --stage prd-plan` 或工作台的「阶段分工」中查看此次修订。视图绑定原决定、被审计划包、`plan-author` 和派发回执。OA 已提出意见、内核已生成返工触发、Planner 已获派分别显示。Run 暂停保留在同一视图。未完成的 Goal 在既有空闲检查确认缺少接手时，重扫回执会附上该次交接；已有待批单、有效在途工作和暂停仍按原策略处理。
+
+旧版曾把这类决定升级给 Owner。用 `zf recover pre-impl-revision --escalation <event_id>` 预览，再用 `--apply --approval-ref <授权引用>` 应用。恢复入口验证原升级与已准入决定的因果、当前代次、原扫描和派发权限。原扫描载有旧 Owner 答复时，Planner 可以读取历史答案；这次修订的权限仍取自当前检查点。可在[返工派发测试](../../tests/test_orchestrator_agent_pre_impl_revision.py)及[工作台与空闲检查测试](../../tests/test_plan_revision_handoff.py)核对。
+
 ## 阶段结果回流
 
 正常结果在已启用的 `stage_barrier` / `pre_closeout` 检查点批量进入 OA 的 canonical source manifest 和 required reads。聚合阶段不会把每个 lane 的完成变成全局 LLM 等待点。
@@ -158,3 +171,13 @@ stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当�
 终态，`recover workflow` 生成 `cancel_terminal_reader_operation`，通过 Operation
 服务取消残留占用。它不重放旧 child、不签发验收结果，也不把正在新代次工作的父
 任务改为 blocked；新的活跃 TaskAttempt 优先保护，取消前再次核对终态归属。
+
+
+### Impl 交付后的 Verify 分工修订
+
+任务缺少适用的 OA 分工时，WRC 等当前 Impl 投递结束并释放任务执行位，再请求 OA 签署该任务的 Verify 分工。物理派发按 Run、任务、操作、attempt 和 dispatch 核对。租约过期、派发失败或被代替时，原有调度和故障恢复仍依据正式业务结果处理。首次即从 Verify 开始的任务沿用本任务的合同。
+
+旧版本可能在 Impl 已结算、任务执行位尚未释放时冻结 OA 输入，导致分工被当前性检查拒绝。调度器核对原核准的 Impl 结果、物理释放记录以及任务当前合同、依赖和状态；仅执行位清空时，它保留旧拒绝，按该次释放身份请求一次新的 OA 判断。新的执行者与证据要求仍须获准。[回放与拒绝用例](../../tests/test_oa_verify_predecessor_release.py)
+
+
+Run 暂停期间，在途 Impl 和 OA 仍可提交已经派发的结果。WRC 暂缓新的执行分工与 Task Verify，暂停前已经排队的 pre_impl 保留原 operation 和输入；恢复后按原身份派发一次。待命交接让出可用席位，其他 Run 以及按现行策略处理的故障诊断可以继续。[Run 暂停与分工回归](../../tests/test_oa_paused_business_dispatch.py)

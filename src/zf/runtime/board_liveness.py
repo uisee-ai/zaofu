@@ -9,25 +9,30 @@ from zf.runtime.call_result_envelope import canonical_json_sha256
 from zf.runtime.supervisor_attention import _attention_item
 from zf.runtime.task_attempt_liveness import iso_epoch
 from zf.runtime.workflow_operation import reduce_workflow_operations
+from zf.runtime.workflow_board_authority import board_for_run, board_policy_enabled, legacy_boards, permits
 
 
 def board_silence_attention(
     state: Path, config, events, now: datetime, paused=False, tasks=()
 ):
     metadata = getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {}
-    boards = metadata.get("run_boards") or {}
-    if paused or not isinstance(boards, dict) or not boards:
+    runs = set(legacy_boards(config))
+    dynamic = board_policy_enabled(config)
+    if paused or (not dynamic and not runs):
         return []
-    operations = reduce_workflow_operations(events)
+    operations = reduce_workflow_operations([e for e in events if e.origin == "kernel"])
+    if dynamic:
+        runs.update(op["workflow_run_id"] for op in operations.values()
+                if op.get("role_instance") and op.get("status") == "running" and not op.get("admitted_call_result_ref"))
+        runs.update(t.execution_binding.workflow_run_id for t in tasks
+                    if t.status in {"todo", "sprint", "in_progress", "ready"} and t.execution_binding.workflow_run_id)
     leases = TaskAttemptStore(state / "task_attempts.json").current_rows()
     now_epoch = now.timestamp()
     items = []
-    for run, board in boards.items():
-        if (
-            not isinstance(board, dict)
-            or board.get("enabled") is not True
-            or not board.get("generation")
-        ):
+    for run in sorted(runs):
+        try:
+            board = board_for_run(state, config, events, operations, run)
+        except (OSError, ValueError):
             continue
         threshold = board.get("silence_seconds")
         if type(threshold) is not int or threshold < 1:
@@ -35,7 +40,7 @@ def board_silence_attention(
         roster = board.get("members")
         if (
             not isinstance(roster, list)
-            or not roster
+            or (not roster and "authorized_operations" not in board)
             or not all(isinstance(m, str) and m for m in roster)
         ):
             continue
@@ -44,7 +49,7 @@ def board_silence_attention(
             k: op
             for k, op in operations.items()
             if op.get("workflow_run_id") == run
-            and op.get("role_instance") in members
+            and permits(board, op)
             and op.get("status") in {"requested", "reserved", "running"}
             and not op.get("admitted_call_result_ref")
         }

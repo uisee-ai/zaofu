@@ -33,6 +33,8 @@ Web 创建的 `operator.intent.v0` 只记录恢复提案。以该提案直接请
 Run Manager 需要 Owner 决策时，由项目的受控审批入口确认对应 checkpoint，
 再以获批动作重发原触发事件。
 
+当 Plan 的最新 Planner 已准入，而已登记的独立 Critic 因请求摘要分歧在首次投递前失败并耗尽阶段预算时，Owner 可在受控动作 `stage-replan-new-generation` 提交 `resume_planner_handoff_event_id`、`workflow_run_id`、`escalation_event_id`、`planner_admitted_event_id`、`planner_control_sha256` 和授权引用 `approval_ref`。冻结证据须证明本代只有一个已完成的计划生产者、原 Critic 没有投递，且当前 Run 仍被这次升级阻塞。控制面从原 Critic 登记的合同核对生产者结果及各个输入文件，重开原 Run 和载体，并为独立 Critic 签发新 operation 与 attempt。原 Critic 要求阅读的历史拒绝证据沿用其签名与读取范围。重放同一批准只产生一次派发。若新 Critic 正式拒绝，新的 Owner 授权代次按既有阶段上限返工，Planner 收到本次拒绝及其核验的 R2 工件；旧代已用完的次数仍保留在旧代。[受控恢复与重启回归](../../tests/test_unissued_plan_critic_recovery.py)
+
 Owner 授权的 `stage-replan-new-generation` 可在 action payload 中提供
 `input_task_ids: ["TASK-A", "TASK-B"]`，明确需要完整读取的任务合同。该字段只影响
 Plan handoff 的读取范围，不替代 `task_ids`、依赖或验收。现有 scope 与明确失败任务

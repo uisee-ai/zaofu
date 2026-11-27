@@ -318,6 +318,7 @@ def evaluate_plan_candidate_preflight(
             task_map=task_map,
             manifest=manifest,
             flow_kind=flow_kind,
+            candidate_team=((metadata or {}).get("stage_teams") or {}).get("candidate_verify", {}),
         ))
 
     if not _has_plan_markdown(
@@ -372,6 +373,7 @@ def _product_acceptance_spec_errors(
     task_map: Mapping[str, Any],
     manifest: Mapping[str, Any],
     flow_kind: str,
+    candidate_team: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """Run the same structural Product Acceptance checks before submit.
 
@@ -435,6 +437,8 @@ def _product_acceptance_spec_errors(
                 "task_map_generation": generation,
             },
         )
+        from zf.runtime.candidate_reader_assignments import bind_reader_obligations
+        bind_reader_obligations(normalized, candidate_team or {})
         if "candidate_reader_assignments" in normalized:
             from zf.runtime.candidate_reader_assignments import validate_plan_assignment_coverage
 

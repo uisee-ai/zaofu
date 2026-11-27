@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from zf.core.config.schema import RoleConfig
+from zf.runtime.candidate_reader_assignments import candidate_obligation_lines
 from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.reader_submission_guidance import submission_authority
 from zf.runtime.fanout_artifact_refs import refactor_plan_workdir_refs
@@ -617,8 +618,11 @@ class FanoutBriefingMixin:
             controlled_inputs = render_attempt_source_briefing(
                 child_payload, state_dir=self.state_dir, role_name=role.name,
             ).strip()
-            from zf.runtime.mailbox_briefing import mailbox_hint
+            from zf.runtime.mailbox_briefing import mailbox_hint, run_board_hint
             inbox = mailbox_hint(getattr(self, "config", None), self.state_dir, child_payload.get("attempt_id") or child_payload.get("run_id"))
+            board = run_board_hint(getattr(self, "config", None), self.state_dir, child_payload)
+            if board:
+                payload_section.extend([board, ""])
             if inbox:
                 payload_section.extend([inbox, ""])
             if controlled_inputs:
@@ -1094,6 +1098,7 @@ class FanoutBriefingMixin:
                     "Approved Candidate Reader assignment (frozen in the contract snapshot).",
                     "Acceptance: " + ", ".join(child_payload["candidate_reader_scope"]["acceptance_ids"]),
                     "Product journeys: " + (", ".join(child_payload["candidate_reader_scope"]["journey_ids"]) or "none assigned"),
+                    *candidate_obligation_lines(child_payload["candidate_reader_scope"]),
                     "Submit evidence for the assigned checks. Product completeness is owned by post-verify discovery.",
                     "",
                 ] if child_payload.get("candidate_reader_scope") else []),

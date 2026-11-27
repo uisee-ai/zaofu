@@ -13,7 +13,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import reduce_workflow_operations
 
 
-def case(tmp_path, *, mode="full", legacy=False):
+def case(tmp_path, *, mode="full", legacy=False, mixed=False, readonly_required=False):
     state = tmp_path / "project/.zf"
 
     def source(name, body):
@@ -49,6 +49,18 @@ def case(tmp_path, *, mode="full", legacy=False):
             }
         ]
     }
+    rule = "The authorized noop producer uses the standard entry. Only build && browser is required."
+    if readonly_required:
+        task_map["tasks"][0]["execution_mode"] = "document_review"
+        rule = "Verify the frozen payroll export as the initial step, with no implementation."
+    if mixed:
+        task_map["tasks"].append({
+            "task_id": "Audit", "execution_mode": "runtime_only", "allowed_paths": [],
+            "runtime_only": True, "write_free": True, "immutable_baseline": "git:current",
+            "acceptance_criteria": [{"id": "review", "statement": "Review", "verification_owner": "candidate_verify",
+                                     "verification_command_ids": ["inspect"]}],
+            "validation": {"commands": [{"id": "inspect", "command": "inspect", "owner": "candidate_verify"}]},
+        })
     policy = {
         "host_verification_commands": [
             "build",
@@ -73,7 +85,7 @@ def case(tmp_path, *, mode="full", legacy=False):
         "test-all",
         "optional-probe",
     }
-    assert set(selections["candidate_commands"]) == {"build && browser"}
+    assert set(selections["candidate_commands"]) == ({"build && browser", "inspect"} if mixed else {"build && browser"})
     if legacy:
         review.pop("execution_comparisons")
     extra = {}
@@ -83,9 +95,7 @@ def case(tmp_path, *, mode="full", legacy=False):
     current = source("child-artifact-planner-1", task_map)
     requirement = source(
         "requirement",
-        {
-            "rule": "The authorized noop producer uses the standard entry. Only build && browser is required."
-        },
+        {"rule": rule},
     )
     bindings = [current, requirement, *extra["input_refs"]]
     contract = source(
@@ -96,6 +106,7 @@ def case(tmp_path, *, mode="full", legacy=False):
         tmp_path,
         verdict_only=True,
         extra_payload={
+            **extra,
             "plan_review_evidence_policy": POLICY,
             "plan_synth_contract_ref": contract["ref"],
             "plan_synth_contract_digest": contract["sha256"],
@@ -126,7 +137,7 @@ def case(tmp_path, *, mode="full", legacy=False):
     authority = cite(
         requirement,
         "$.rule",
-        "The authorized noop producer uses the standard entry. Only build && browser is required.",
+        rule,
     )
     args = {
         "operation_id": prepared.operation_id,
@@ -160,6 +171,10 @@ def case(tmp_path, *, mode="full", legacy=False):
             },
         },
     ]
+    if not legacy:
+        summary = next(r for r in extra["input_refs"] if r["source_id"] == "plan-execution-review")
+        assessments[0].update(disposition="no_repair", runtime_evidence=cite(
+            summary, "$.execution_comparisons.standard_with_empty_write_scope.facts.entries[0].entry_mode", "standard"))
     return runtime, svc, args, result, assessments
 
 
@@ -223,6 +238,25 @@ def test_fresh_full_approval_must_close_the_exact_comparisons(tmp_path):
         and body["findings"] == []
         and body["gates"] == []
     )
+
+
+def test_runtime_evidence_array_reports_one_actionable_shape_error(tmp_path):
+    runtime, svc, args, result, assessments = case(tmp_path)
+    read_current_review_inputs(runtime, args["operation_id"])
+    assessment = assessments[0]
+    valid = assessment["runtime_evidence"]
+    assessment["runtime_evidence"] = [valid]
+    result["report"]["execution_assessments"] = assessments
+
+    errors = svc.validate_plan_candidate(**args, semantic_result=result)["errors"]
+    assert [error["field"] for error in errors] == ["report.execution_assessments[0].runtime_evidence"]
+    message = errors[0]["message"]
+    assert "one citation object" in message
+    assert f"$.execution_comparisons.{assessment['comparison']}.facts" in message
+    assert "basis.requirement_evidence and basis.current_evidence" in message
+
+    assessment["runtime_evidence"] = valid
+    assert svc.validate_plan_candidate(**args, semantic_result=result)["status"] == "passed"
 
 
 @pytest.mark.parametrize("mode,legacy", [("full", True), ("targeted", False)])

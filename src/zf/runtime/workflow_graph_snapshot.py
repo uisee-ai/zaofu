@@ -19,7 +19,10 @@ def compile_proposal_graph(config, family: str) -> dict:
         scoped.workflow.rework_routing = {event: role for event, role in scoped.workflow.rework_routing.items()
                                           if role in role_ids}
     graph = WorkflowGraphCompiler().compile(scoped).to_dict()
-    teams = flow_metadata_for(scoped, kind).get("stage_teams")
+    metadata = flow_metadata_for(scoped, kind)
+    if kind == "prd" and "run_board_policy" in metadata:
+        graph["run_board_policy"] = deepcopy(metadata["run_board_policy"])
+    teams = metadata.get("stage_teams")
     if teams:
         graph["stage_teams"] = deepcopy(teams)
         by_id = {node["node_id"]: node for node in graph["nodes"]}

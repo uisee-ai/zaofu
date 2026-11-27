@@ -36,6 +36,23 @@ Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本
 task_id 对照需求声明与实际派发入口。对于候选验证，分别列出冻结需求要求的独立命令、
 当前 Task Map 登记的命令及宿主许可范围。复合调用中的子命令与独立执行产生不同回执。
 上一轮修好了其中一个缺口，本轮仍要对照当前版本处理其余差异。
+若比较标记 `before_rework`，正式拒绝前先在本次候选内逐项核证。在对应的
+`execution_assessments` 写入 `disposition`、受影响的 `task_ids`、需求与当前候选的
+`basis`，并在 `runtime_evidence` 引用冻结摘要的 `$.execution_comparisons.<比较名>.facts`
+下与争议直接相关的子字段及确切值或引文。已纠正或有反证的意见记为 `no_repair`；
+仍需作者修复的记为 `repair_required`，在对应 `fix_items[].comparison` 绑定比较名；独立于这些比较的修复项标记 `other` 并说明其义务。证据或权威决定未具备时，
+使用 `needs_clarification` 并通过同名 `owner_decision_items[].comparison` 提交阻塞问题。
+同一缺陷影响多项任务时可提交一个修复项并列明这些任务。分别核对本任务的 Verify 首站、
+首站实际消费的验收及命令、任务间的依赖和获批需求；不要从命令 owner 推导阶段时序。
+未标记的比较在批准时用 conclusion 和 basis 对账，其字段以本次冻结结果为准。
+运行时从 Task Map 和配置计算比较。若声明入口、实际入口或命令选择与需求冲突，
+修复项给出 Task ID、作者能修改的 Task Map 字段、现值及受控验证应观察到的结果。
+入口比较给出 `runtime_evidence_fields` 时，以行内的 `entry_mode` 或
+`first_stage_on_admission` 为运行时证据，把作者的声明留在当前候选证据中，再与需求逐项对照。
+Planner 修改候选后重新运行 validate-plan 生成事实。遇到旧返工意见要求补运行时投影时，
+先核对当前候选和既有证据，修正仍成立的声明或用实际入口及来源反证该意见。
+Planner 收到返工时查看 `plan_review_dispositions` 中的精确证据，处理仍成立的修复项。
+候选或来源变化后独立复核相关结论。
 本轮批准时，将每项核对结论写入 `report.execution_assessments`，给出 comparison、
 conclusion、摘要中列出的 task_ids（如有），以及引用冻结需求和当前候选的 basis。
 仅获准但本轮无需执行的命令可解释排除。没有缺陷时 findings 保持空。

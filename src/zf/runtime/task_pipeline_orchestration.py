@@ -8,6 +8,7 @@ from zf.runtime.orchestrator_agent_contracts import OrchestratorAgentContractErr
 from zf.runtime.orchestrator_agent_run_plan import (
     EXECUTION_PLAN_SCHEMA,
     current_run_plan_admission,
+    pipeline_stage_aliases,
     _role_capabilities,
 )
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -95,9 +96,7 @@ def admitted_pipeline_delegations(
                     if (stage == "verify" and bool(correction) != scoped) or (stage != "verify" and scoped):
                         continue
                     # Exact pipeline stage names, or the configured flow's generated stage id.
-                    aliases = {stage, f"{context.get('flow_kind', '')}-lanes-{stage}"}
-                    if stage == "impl":
-                        aliases.add("implementation")
+                    aliases = pipeline_stage_aliases(stage, str(context.get("flow_kind") or ""))
                     if stage_ids and not aliases.intersection(stage_ids):
                         continue
                     pool_roles = set(pool.get("role_instances") or [])

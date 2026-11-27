@@ -14,6 +14,8 @@
 普通交互会话可直接使用项目 Skill 的 Prompt；受控 worker 保留原 Active task、
 required reads 和结果 profile。测试中使用的内部 fixture 不是 worker 可以伪造事实的权限。
 
+使用 `scripts/dev-verify.py run` 做自动验证时，工作目录取自脚本所在的 Git checkout。测试、哨兵、Web 与 mock 子进程使用临时 HOME、tmux 目录和用户服务总线地址。每个测试项目按自己的 `zf.yaml` 确定状态目录。若运行中的项目与验证 checkout 重合，请从独立 checkout 执行。真实宿主或模型验证继续使用显式入口。
+
 ## 其他产品
 
 按 [通用项目方法](../../skills/zf-harness-verification-checklist/references/project-verification.md)
@@ -47,3 +49,5 @@ Kanban 和 Channel 各自生成 PRD，再经 PRD v5 Workflow 生成完整 Plan�
 完整 Plan 的 `plan_content_profile` 必须由已准入的综合审查结果显式声明并传到
 `task_map.ready`、待审批预览。不得根据 Markdown 标题猜测完整性；缺失声明保持普通
 Plan，`summary_only` 保持摘要。UI PRD 验证同时检查该交接、正文和下载一致性。
+
+直接运行本仓库 pytest 时，收集前会分别检查当前目录、源码 checkout、继承的项目根和显式状态路径。任一路径的现有事件账本（含已轮转的分片）都可能被后续测试或换目录后的 CLI 选中。请在独立、干净的 checkout 运行 `scripts/dev-verify.py run`：入口按净化后的环境解析该 checkout 的 `project.state_dir`，并检查解析后的实际路径，包含符号链接和自定义名称。同一次验证的临时收据使后续 pytest、哨兵、mock 阶段可使用已确认干净的目录中新增的 fixture 数据；临时收据随验证退出而清理。

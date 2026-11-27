@@ -522,10 +522,9 @@ class ControlledActionService(
                 requested_action=requested_action, payload=payload,
             )
         if action == "stage-replan-new-generation":
-            return self._stage_replan_new_generation_action(
-                requested=requested, action=action,
-                requested_action=requested_action, payload=payload,
-            )
+            from zf.runtime.paused_owner_plan_redrive import apply_stage_replan
+
+            return apply_stage_replan(self, requested, action, requested_action, payload)
         if action == "fanout-aggregate-rebuild":
             return self._fanout_aggregate_rebuild_action(
                 requested=requested, action=action,

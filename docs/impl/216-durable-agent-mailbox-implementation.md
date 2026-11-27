@@ -22,6 +22,10 @@
 
 ### 操作者与消费者
 
+邮箱与 Run Board 从同一条 Run 生命周期判断是否可投递。已阻塞 Run 经 Owner 的 Web 动作重新开代时，runtime 逐项核对原升级、Owner 请求、授权引用、新代 Goal、触发事件及完成回执。旧版生成的空 origin 只有这条因果链完整时才能解除该阻塞。重复恢复沿用原收件凭据，当前仍暂停、已取消或租约失效的消费者仍无法领件。项目级恢复同时核对签发方：旧飞书控制使用已经过权限检查的操作者标识，维护完成使用配对的宿主回执，宿主重启须引用仍有效的 safe-halt。邮箱在新 attempt 完成实际读取时记录其回执。[实测入口](../../tests/test_mailbox_controlled_recovery.py)
+
+对已派发的同 Run 成员，可以启用 `PrdFlow.spec.runBoard`，用公开消息点名提示其查阅。消息正文对本代获准成员可见。需要交给尚无实例的阶段义务、限制正文收件人或要求接手和答复时，使用 `ZfConfig.spec.runtime.durable_mailbox.enabled` 启用持久收件箱。这两个开关独立。两类通知的回执均不替代阶段交付和验收判词。[Run Board 配置与示例](215-oa-stage-team-implementation.md#按需启用-run-board)
+
 Worker 首次派发或恢复时，briefing 给出本 attempt 的只读收件入口。查看消息目录、取一批正文、显式签收，以及接手/回答问题是独立动作。OA 使用原 assistance 队列及角色凭据。CLI 的实际参数见两份生成索引。[CLI 命令索引](../manual/reference/cli-command-index.md)
 
 已批准的宿主命令、发布路径、角色和模型在真实试点启动前核对。父 Run 终态仅处置自身诊断链。采集对照按正式集成回执计算业务任务，并单列归属未知的 Web 控制动作及宿主记录缺口。[资格协议](spec215-qualification.md)

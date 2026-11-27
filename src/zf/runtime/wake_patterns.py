@@ -317,6 +317,8 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # dynamic workflow stages add custom child result names separately.
     "fanout.child.completed",
     "fanout.child.failed",
+    # Once per expired Reader claim. Wake the kernel to feed the Run Manager diagnostic.
+    "fanout.child.delivery_unconfirmed",
     # Layer 1 housekeeping events (G-MEM-2/G-EVT-3): these don't wake
     # Layer 2 (orchestrator.triggers filter drops them) but they DO
     # need to trigger run_once so _apply_housekeeping fires and the
@@ -411,6 +413,9 @@ LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
     "reconcile.decision.shadow",
     "orchestrator.decision.recorded",
     "task.doc.updated",
+    # The Run Manager owns the issued transport diagnosis and already has the
+    # exact receipt bindings. Only an explicit OA subscription adds a second turn.
+    "fanout.child.delivery_unconfirmed",
     # Mechanical completion reconciliation only; never spend a Layer 2 turn.
     "run.manager.tick.completed",
 })

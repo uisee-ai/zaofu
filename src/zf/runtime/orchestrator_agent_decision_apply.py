@@ -18,7 +18,8 @@ from zf.runtime.workflow_operation import load_workflow_operation
 
 def apply_orchestrator_agent_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
     decision = event.payload.get("orchestration_decision")
-    if isinstance(decision, Mapping) and decision.get("decision") == "return_to_plan":
+    if isinstance(decision, Mapping) and (decision.get("decision") == "return_to_plan"
+            or (decision.get("decision") == "revise" and (decision.get("identity") or {}).get("checkpoint") == "pre_impl")):
         from zf.core.state.locks import locked_path
 
         key = hashlib.sha256(event.id.encode()).hexdigest()
@@ -81,7 +82,7 @@ def _apply_decision(runtime: Any, event: ZfEvent) -> dict[str, Any]:
         "decision_ref": dict(admission.decision_ref or {}),
         "status": "admitted",
     }
-    if admission.checkpoint != "plan_source" or not any(
+    if admission.checkpoint not in {"plan_source", "pre_impl"} or not any(
         item.origin == "kernel" and item.causation_id == event.id
         for item in runtime.event_log.query(type="orchestrator.semantic.decision.admitted")
     ):
@@ -162,6 +163,13 @@ def _apply_run_plan(
             decision=decision,
             outcome=outcome,
         )
+    if action == "revise" and outcome["checkpoint"] == "pre_impl":
+        from zf.runtime.orchestrator_agent_pre_impl_revision import reconcile_pre_impl_revision
+
+        try:
+            return reconcile_pre_impl_revision(runtime, event, apply=True)
+        except (OSError, ValueError, KeyError) as exc:
+            outcome = {**outcome, "reason": str(exc)}
     runtime.event_writer.append(ZfEvent(
         type="human.escalate",
         actor="zf-cli",

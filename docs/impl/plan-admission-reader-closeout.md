@@ -26,3 +26,16 @@ generation/ref/digest 对应的有效 PlanPackage。只有旧取消 trigger 的�
 
 
 Planner 简报提供已启用的宿主验证命令原文。执行审阅在 `candidate_commands_outside_host_registry` 中列出与宿主登记不匹配的 Candidate 命令及其任务 ID。Critic 核对执行渠道和验收时点。阻塞式 Task Pipeline 按任务就绪派发独立 Verify，已配置的 Candidate Verify 在候选冻结后启动。
+
+## 独立 Critic 批准后的 Writer 准入失败
+
+Writer 拒绝已核准的 Task Map 时，失败事件携带原 kernel `task_map.ready` 的 Run 和阶段重试代次。对已持久化的旧失败，恢复从其直接引用的 ready 追溯已生效的 Owner 授权。若该代从已签收的 Planner 断点启动，还须核对独立 Critic 已准入的批准结果、该结果的输入合同及原候选所有引用。返工接收此次 Writer 的失败原因、相同候选的文件与摘要。
+
+当 Planner 原 Scan 和 ready 都未声明 PDD，Writer 补写的展示值 `default` 不构成输入变更。复用 Scan 仍须证明原调查员组、结果收据、接收角色和输入绑定。达到旧上限且 Run 已封口时，Owner 可使用 `stage-replan-new-generation`，指定原升级事件、批准引用与 `operator_feedback`。这次请求启动新代，反馈进入 Planner 的签名返工输入。新候选仍须经过 Critic 与 Writer 准入。[恢复与反例测试](../../tests/test_unissued_plan_critic_recovery.py) [Scan 复用测试](../../tests/test_prd_stage_teams.py)
+
+
+同一 Run 中，Kernel 为某个具体阶段失败发出 `stage_replan_cap_exhausted` 后，该发生点的自动额度已耗尽。Watcher 启动和空闲补偿都读取此事实。即使新版本能够从旧 Writer 收据还原更准确的代次，也须通过指向该升级的受控动作开始下一代。来自当前代的新失败仍使用自身额度。
+
+旧版本若已发布直接以已升级失败为原因的 Planner 重试，Kernel 会拦住其派发和迟到聚合。若它已经替换了合法 Planner，先用 `zf runs pause <run>` 暂停该 Run，再从经过身份校验的 Web 动作重投被取代的原请求。使用 `POST /api/actions/stage-replan-new-generation`，提供 `workflow_run_id`、`escalation_event_id`、`approval_ref` 和 `redrive_owner_trigger_event_id`。后三项分别取自原 Owner 的升级事件、批准引用和已获准的触发事件。可选的 `reason` 记入操作审计。
+
+控制面核对最近一次有效代次、原始 Web 授权、原 Planner 的撤销凭据以及旧分支的来源，随后从账本恢复原来的候选、Scan 和意见。错代 Reader 的产物仍可审计。正确分支已交付或 Run 已进入后续业务决策时，请求返回 409。重复请求返回同一触发事件。收到成功回执后用 `zf runs resume <run>` 继续派发。[HTTP、并发与中断重试验证](../../tests/test_paused_owner_plan_redrive.py)

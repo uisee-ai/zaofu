@@ -15,7 +15,7 @@ from tests.test_reader_fanout_runtime import _RecordingTransport
 from tests.test_plan_candidate_preflight import _task_map, _source_index
 
 
-def _case(root):
+def _case(root, *, stage_id='prd-plan'):
     state = root / '.zf'
     state.mkdir()
     (state / 'kanban.json').write_text('[]')
@@ -27,13 +27,13 @@ def _case(root):
         roles=[*[RoleConfig(name=name, backend='mock', role_kind='reader') for name in ('planner', 'plan-critic')],
                RoleConfig(name='dev', backend='mock', role_kind='writer')],
         workflow=WorkflowConfig(flow_metadata={'flow_kind': 'issue', 'result_protocol': {'mode': 'blocking'}}, stages=[WorkflowStageConfig(
-            id='prd-plan', attempt_domain='plan', topology='fanout_reader', trigger='plan.requested',
+            id=stage_id, attempt_domain='plan', topology='fanout_reader', trigger='plan.requested',
             roles=['planner'], aggregate=FanoutAggregateConfig(synth_role='plan-critic',
                 success_event='task_map.ready', failure_event='prd.plan.failed'))]))
     report = {'status': 'passed', 'summary': 'Current decision confirmed', 'recommendation': 'approve',
               'task_map': _task_map(), 'source_index': _source_index(),
               'source_index_ref': 'inline:source-index', 'plan_md': '# Plan\nDecision confirmed.'}
-    manifest = {'fanout_id': 'fanout', 'stage_id': 'prd-plan', 'workflow_run_id': 'run',
+    manifest = {'fanout_id': 'fanout', 'stage_id': stage_id, 'workflow_run_id': 'run',
                 'trace_id': 'run', 'trigger_event_id': 'original-trigger',
                 'trigger_payload': {'flow_kind': 'issue', 'issue_ref': 'docs/issue.md'}}
     call = build_plan_synth_call_payload(state_dir=state, project_root=root, manifest=manifest,

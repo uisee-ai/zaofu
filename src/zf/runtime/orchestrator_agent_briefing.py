@@ -235,6 +235,10 @@ def build_orchestrator_agent_operation_briefing(
                     "Reader instance IDs in preferred_role_refs, and verification_scope with acceptance_ids "
                     "(use ['*'] for all Task Verify criteria) and required_evidence. Only these seats may sign."
                 )
+                if any(s.get("source_id") == "initial-task-verify-scope" for s in context.source_manifest["sources"]):
+                    output_rules.append("- Use initial-task-verify-scope to compare each named local acceptance ID, "
+                                        "its declared owner and available Task Verify commands. Candidate-owned criteria "
+                                        "remain with Candidate. Preserve the independent local command evidence.")
                 if strategy.get("verify_specialist_patterns"):
                     output_rules.append("- For independent evidence add work_unit.specialists using the registered "
                         "verify_specialist_patterns in checkpoint-input. Each member names obligation_id, role, pattern_id, "

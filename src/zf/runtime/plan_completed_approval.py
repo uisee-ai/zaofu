@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.core.workflow.flow_metadata import flow_metadata_for
 from zf.runtime.candidate_continuation import _git_commit
 from zf.runtime.candidate_verification_authority import (
     frozen_candidate_for_payload, prepare_candidate_verification_authority,
@@ -48,8 +49,10 @@ def suppress_completed_plan_approval(runtime: Any, *, trigger_event: ZfEvent,
             return False
         incoming = {**trigger_event.payload, 'task_map_ref': loaded.task_map_ref}
         assert_package_task_map_matches(runtime.state_dir, runtime.project_root, package, incoming)
+        metadata = flow_metadata_for(getattr(runtime, 'config', None), package['flow_kind'])
         assert_package_explicit_ports_match(runtime.state_dir, runtime.project_root, package, incoming,
-            flow_kind=package['flow_kind'], producer_stage_id=package['producer_stage_id'], events=events)
+            flow_kind=package['flow_kind'], producer_stage_id=package['producer_stage_id'],
+            candidate_team=(metadata.get('stage_teams') or {}).get('candidate_verify') or {}, events=events)
     except (ValueError, OSError, KeyError):
         return False
     tasks = {str(item.get('task_id') or '') for item in loaded.task_items}

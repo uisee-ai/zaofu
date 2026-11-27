@@ -32,7 +32,20 @@ def review_claim_briefing(policy: str) -> list[str]:
         'write one report.execution_assessments entry per key: comparison, conclusion, exact task_ids if listed, '
         'and the same basis with requirement_evidence from a frozen requirement/declared input and current_evidence '
         'from the current candidate. Compare actual stage entry and standalone Candidate commands to the obligation. '
+        'For readonly_command_scope, use the bound plan-execution-verification detail when available. '
+        'Compare each relevant task’s initial_readonly_verify.mandatory_acceptance_ids, command_ids and '
+        'verification_owner with its required first-stage checks. An unresolved contract has no selection yet. '
         'A host allowlist grants permission only. Reconcile every still-present comparison again after rework. '
+        'Before any rejection, assess every frozen comparison marked before_rework; on approval assess all. '
+        'For each marked comparison include disposition (no_repair, repair_required, or needs_clarification). '
+        'Set runtime_evidence to one citation object for an exact current field beneath '
+        '$.execution_comparisons.<comparison>.facts. Use arrays of citations for basis.requirement_evidence '
+        'and basis.current_evidence. Unmarked comparisons use conclusion and basis on approval; their optional fields impose no '
+        'repair obligation. The runtime derives the comparison from the Task Map and policy. Give the author '
+        'the disputed Task Map field, its observed value and the requirement it must meet. Revalidate the '
+        'candidate to recompute the facts. Link fixes by fix_items[].comparison (other for a separate obligation) and unresolved questions by owner_decision_items[].comparison. A command owner selects acceptance and commands '
+        'within a task; verify_only uses the Task Pipeline Verify entry. Evaluate cross-task ordering separately '
+        'against the requirement and direct dependencies. Unresolved execution contracts remain unknown. '
         'Positive assessments are verdict metadata; leave clean findings and Planner-owned gates empty.', '',
     ]
 
@@ -65,16 +78,17 @@ def review_claim_issues(
     rejected = value('verdict') == 'rejected' or value('recommendation') in {'reject', 'needs_rework'}
     if rejected and not rows:
         error('fix_items', 'A rejection requires a blocking item with current evidence and obligation basis')
-    if not rejected and (value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}):
-        from zf.runtime.plan_review_comparisons import approval_assessments
+    if rejected or value("recommendation") == "approve" or value("verdict") in {"passed", "approved"}:
+        from zf.runtime.plan_review_comparisons import execution_assessments
         try:
             if scope := identity.get("diagnosis_review"):
                 from zf.runtime.candidate_diagnosis_review import diagnosis_assessments
-                if rows:
-                    error("report", "Diagnosis approval cannot retain blocking issues")
-                rows.extend(diagnosis_assessments(scope, report or result, error=error))
+                if not rejected:
+                    if rows:
+                        error("report", "Diagnosis approval cannot retain blocking issues")
+                    rows.extend(diagnosis_assessments(scope, report or result, error=error))
             else:
-                rows.extend(approval_assessments(state_dir, request, report or result, error=error))
+                rows.extend(execution_assessments(state_dir, request, report or result, rejected=rejected, error=error))
         except (KeyError, ValueError, TypeError, OSError) as exc:
             error("report.execution_assessments", str(exc))
     if not rows:
@@ -121,6 +135,15 @@ def review_claim_issues(
             if not isinstance(basis, Mapping) or not str(basis.get('obligation') or '').strip():
                 error(field, 'Name the existing requirement/approved obligation; advice cannot create one')
                 continue
+            runtime_field = path + '.runtime_evidence'
+            # A malformed citation container already has a comparison-specific shape error.
+            if 'runtime_evidence' in row and (isinstance(row['runtime_evidence'], Mapping)
+                    or not any(issue['field'] == runtime_field for issue in issues)):
+                try:
+                    _check_citation(state_dir, manifest, row['runtime_evidence'], current=None,
+                                    role=str(request.get('role_instance') or ''))
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    error(runtime_field, str(exc))
             for name in ('requirement_evidence', 'current_evidence'):
                 citations = basis.get(name)
                 if not isinstance(citations, list) or not citations:

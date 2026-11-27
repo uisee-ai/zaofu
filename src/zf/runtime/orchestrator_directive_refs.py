@@ -84,6 +84,8 @@ def validate_orchestrator_submission(
             from zf.runtime.oa_task_verify_assignment import validate_verify_units
             try:
                 validate_verify_units(None, run_plan, request)
+                from zf.runtime.oa_initial_verify_scope import initial_verify_errors
+                errors.extend(initial_verify_errors(state_dir, request, run_plan))
             except OrchestratorAgentContractError as exc:
                 errors.append({"field": "run_plan", "code": "invalid_verification_team", "message": str(exc),
                                "required_change": "Correct the verification team against the bound checkpoint and resubmit."})

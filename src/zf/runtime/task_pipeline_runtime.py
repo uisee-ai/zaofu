@@ -579,8 +579,11 @@ def reconcile_task_pipeline_runtime(
         )
         from zf.runtime.recovery_association import inherited_failure_operations
 
+        from zf.runtime.task_pipeline_contexts import paused_pipeline_tasks
+
         projection = TaskPipelineReconciler().reconcile(
             policy=policy,
+            held_task_ids=paused_pipeline_tasks(events, group_contexts),
             tasks=tasks,
             operations=all_operations,
             attempts=attempts,

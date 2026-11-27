@@ -35,7 +35,7 @@ def cited_execution_evidence(state_dir: Path, body: dict) -> dict:
     No global event search, prose classification, new authorization or output replay.
     """
     from zf.runtime.task_handoff import validate_handoff_body
-    from zf.runtime.cli_command import zf_cli_cmd
+    from zf.runtime.task_execution_evidence import handoff_evidence_command
 
     consumer = body['target']
     target, current = consumer, body
@@ -76,7 +76,7 @@ def cited_execution_evidence(state_dir: Path, body: dict) -> dict:
         raise ValueError('cited handoff history traversal bound exceeded')
 
     entries, other_refs = [], []
-    command = zf_cli_cmd() + ' artifact handoff-evidence --operation ' + shlex.quote(consumer['operation_id'])
+    command = handoff_evidence_command(consumer['operation_id'])
     for event_id, cited_by in sorted(citations.items()):
         indexed = observations.get(event_id)
         if indexed is None:

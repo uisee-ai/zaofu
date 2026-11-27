@@ -12,6 +12,8 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.task_pipeline_failure_accounting import is_semantic_failure, semantic_failures
 
 
+STANDARD_INITIAL_STAGE = "impl_ready"
+VERIFY_ONLY_INITIAL_STAGE = "verify_ready"
 TASK_PIPELINE_SHADOW_SCHEMA = "task-pipeline-shadow.v1"
 _ACTIVE_OPERATION_STATUSES = frozenset({"reserved", "running", "suspended"})
 _ACTIVE_ATTEMPT_STATUSES = frozenset({"prepared", "delivering", "sent"})
@@ -33,6 +35,7 @@ class TaskPipelineReconciler:
         preferred_role_instances: Mapping[str, Mapping[str, str]] | None = None,
         oa_delegations: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
         inherited_failures: Mapping[str, list[dict[str, Any]]] | None = None,
+        held_task_ids: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         normalized_tasks = sorted(
             (_task_row(task) for task in tasks),
@@ -106,6 +109,11 @@ class TaskPipelineReconciler:
             for task in normalized_tasks
             if task["status"] not in {"done", "cancelled"}
         ]
+        for view in task_views:
+            if (view["task_id"] in held_task_ids
+                    and view["stage"] in {"impl_ready", "impl_rework_ready", "verify_ready", "acceptance_review_ready"}):
+                view["stage"] = "run_paused"
+                view["blockers"].append("run_paused")
         if policy.get("verify_assignment_mode") == "oa_run_plan":
             from zf.runtime.oa_task_verify_assignment import VERIFY_WAIT
             for view in task_views:
@@ -161,6 +169,7 @@ class TaskPipelineReconciler:
                 "admission_blocked",
                 "replan_requested",
                 "external_gate_waiting",
+                "run_paused",
             }
         })
         backpressure_policy = dict(policy.get("backpressure") or {})
@@ -801,7 +810,7 @@ def _derive_stage(
     max_rework = int(policy.get("max_rework_attempts") or 0)
     impl = current.get("impl")
     if impl is None:
-        return "impl_ready", 1, 0
+        return STANDARD_INITIAL_STAGE, 1, 0
     impl_generation = int(impl.get("operation_generation") or 1)
     impl_status = str(impl.get("status") or "")
     if (impl_status == "superseded"
@@ -912,7 +921,7 @@ def _derive_verify_only_stage(
 ) -> tuple[str, int, int]:
     verify = current.get("verify")
     if verify is None:
-        return "verify_ready", 1, 0
+        return VERIFY_ONLY_INITIAL_STAGE, 1, 0
     generation = int(verify.get("operation_generation") or 1)
     status = str(verify.get("status") or "")
     if _verify_execution_retry(verify):

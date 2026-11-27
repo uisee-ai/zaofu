@@ -307,17 +307,22 @@ class LifecycleObservationMixin:
         recycle can otherwise immediately put the fresh worker back into
         pending_recycle before it has produced a new turn.
         """
+        event = build_disk_usage_event(role=role, usage=usage, config=getattr(self, "config", None))
+        series = event.payload.get("usage_series_id") or getattr(usage, "provider_session_id", "")
+        key = (role.instance_id, str(series or ""), str(usage.timestamp))
+        if key in self._synth_usage_seen:
+            return False
         if is_configured_orchestrator_role(getattr(self, "config", None), role):
             attempt_identity, attempt_lookup_complete = {}, True
         else:
             attempt_identity, attempt_lookup_complete = (
-                self._active_task_attempt_identity_for_usage_role(role)
+                self._active_task_attempt_identity_for_usage_role(role, usage)
             )
         operation_identity: dict[str, str] = {}
         operation_lookup_complete = True
         if not attempt_identity and attempt_lookup_complete:
             operation_identity, operation_lookup_complete = (
-                self._active_workflow_operation_identity_for_usage_role(role)
+                self._active_workflow_operation_identity_for_usage_role(role, usage)
             )
         usage_identity = attempt_identity or operation_identity
         task_id = str(usage_identity.get("task_id") or "")
@@ -328,20 +333,13 @@ class LifecycleObservationMixin:
             and operation_lookup_complete
         ):
             task_id = self._active_task_id_for_usage_role(role)
-        event = build_disk_usage_event(
-            role=role,
-            usage=usage,
-            config=getattr(self, "config", None),
-            usage_identity=usage_identity,
-            task_id=task_id,
-        )
-        key = (
-            role.instance_id,
-            str(event.payload.get("usage_series_id") or ""),
-            str(usage.timestamp),
-        )
-        if key in self._synth_usage_seen:
-            return False
+        if not attempt_lookup_complete or not operation_lookup_complete:
+            usage_identity = {"usage_binding_status": "unattributed"}
+        if attempt_identity.get("identity_version") == "operation-v2" and getattr(usage, "native_turn_sample", None):
+            event.payload["native_turn_sample"] = usage.native_turn_sample
+        event.task_id = task_id or None
+        event.payload.update(usage_identity, task_id=task_id)
+        event.correlation_id = usage_identity.get("workflow_run_id") or None
         self._synth_usage_seen.add(key)
         try:
             self.event_writer.append(event)
@@ -359,43 +357,32 @@ class LifecycleObservationMixin:
         return True
 
     def _active_task_attempt_identity_for_usage_role(
-        self,
-        role: "RoleConfig",
+        self, role: "RoleConfig", usage: "UsageReport | None" = None,
     ) -> tuple[dict[str, str], bool]:
-        """Resolve one scheduler-owned lane; ambiguity remains unattributed."""
+        from yaml import YAMLError
 
+        from zf.core.state.task_attempts import TaskAttemptStoreError
+        from zf.runtime.disk_usage_attempt_binding import disk_usage_attempt_binding
+
+        if not getattr(self, "state_dir", None):
+            return {}, True
         try:
-            from zf.runtime.task_attempt_runtime import (
-                active_task_attempt_identities_for_role,
-            )
-
-            if not getattr(self, "state_dir", None):
-                return {}, True
-            identities = active_task_attempt_identities_for_role(
-                self,
-                role_name=str(getattr(role, "name", "") or ""),
-                instance_id=str(getattr(role, "instance_id", "") or ""),
-            )
-        except Exception:
-            # A broken attempt store must not fall back to a potentially stale
-            # TaskStore assignment and renew the wrong lease.
+            return disk_usage_attempt_binding(self, role, usage)
+        except (OSError, ValueError, TaskAttemptStoreError, YAMLError):
             return {}, False
-        if len(identities) == 1:
-            return identities[0], True
-        if identities:
-            return {}, False
-        return {}, True
 
     def _active_workflow_operation_identity_for_usage_role(
         self,
-        role: "RoleConfig",
+        role: "RoleConfig", usage: "UsageReport | None" = None,
     ) -> tuple[dict[str, str], bool]:
         """Resolve one running durable operation for resident usage attribution."""
 
         try:
             from zf.runtime.workflow_operation import reduce_workflow_operations
 
-            operations = reduce_workflow_operations(self.event_log.read_all())
+            facts = self.event_log.read_all()
+            session = str(getattr(usage, "provider_session_id", "") or "")
+            operations = reduce_workflow_operations([e for e in facts if e.origin == "kernel"] if session else facts)
         except Exception:
             return {}, False
         instance_id = str(getattr(role, "instance_id", "") or "")
@@ -407,8 +394,14 @@ class LifecycleObservationMixin:
             and str(operation.get("role_instance") or "")
             in {instance_id, role_name}
         ]
+        if session:
+            from zf.runtime.task_attempt_liveness import iso_epoch
+
+            sample = iso_epoch(str(usage.timestamp))
+            active = [op for op in active if op.get("provider_session_id") == session
+                      and 0 < iso_epoch(op.get("started_at", "")) <= sample]
         if len(active) != 1:
-            return ({}, not active)
+            return {}, not active and not session
         operation = active[0]
         return ({
             "workflow_run_id": str(operation.get("workflow_run_id") or ""),

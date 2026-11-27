@@ -64,6 +64,32 @@ def test_authenticated_recovery_cli_runtime_briefing_and_advisor_share_inputs(tm
     assert '"sources"' not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(('purpose', 'domain', 'operation', 'expected'), [
+    ('workflow-read', 'plan', 'fanout_reader_child', 16384),
+    ('plan-synth', 'plan', 'fanout_writer_child', 32768),
+    ('workflow-read', 'candidate', 'fanout_reader_child', None),
+    ('implementation', 'task', 'task-stage', 16384),
+    ('task-verify', 'task', 'task-stage', 16384),
+    ('implementation', 'task', 'fanout_reader_child', None),
+    ('task-verify', 'candidate', 'task-stage', None),
+])
+def test_recovery_read_command_matches_frozen_role_scope(tmp_path, purpose, domain, operation, expected):
+    manifest, rows, _ = published(tmp_path)
+    manifest.update(read_purpose=purpose, handoff_authority_contract={
+        'output_profile_id': purpose, 'attempt_domain': domain, 'operation_type': operation,
+    })
+    pack = build_input_recovery(state_dir=tmp_path, manifest=manifest, identity=IDENTITY,
+                                events=[], required=rows, reads=[])
+    command = pack['commands']['required_read']
+    assert '--required --resume --reason recovery' in command
+    assert pack['current_memory'] == 'unknown' and pack['historical_missing'] == len(rows)
+    if expected:
+        assert command.endswith(f'--format text --page-bytes {expected}')
+        assert 'Return each full tool output' in pack['instructions'] and '--cursor' in pack['instructions']
+    else:
+        assert '--page-bytes' not in command
+
+
 def test_history_never_proves_current_memory_or_another_roles_consumption(tmp_path):
     manifest, rows, _ = published(tmp_path, body={'shared': 'rules', 'tasks': [{} for _ in range(8)]})
     _, receipts = prepare_required_read(tmp_path, manifest=manifest, rows=rows, identity=IDENTITY)

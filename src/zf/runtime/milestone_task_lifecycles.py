@@ -91,7 +91,7 @@ def task_lifecycle_evidence(events: list[ZfEvent], *, run: str, generation: str,
             gen, pkg = q.get("task_map_generation"), q.get("plan_artifact_package_digest")
             stage, mode = q.get("task_pipeline_stage"), q.get("task_pipeline_entry_mode")
             attempt, dispatch = q.get("attempt_id"), q.get("dispatch_id")
-            if (gen not in generations or not pkg or stage not in {"impl", "verify"} or q.get("stage_id") != stage
+            if (gen not in generations or not pkg or not isinstance(stage, str) or not stage or q.get("stage_id") != stage
                     or not attempt or not dispatch or (*key, attempt, dispatch) in seen):
                 continue
             seen.add((*key, attempt, dispatch))
@@ -110,15 +110,18 @@ def task_lifecycle_evidence(events: list[ZfEvent], *, run: str, generation: str,
                 entries.setdefault((gen, pkg), {}).setdefault(task, row)
     if not any(tasks.values()):
         return None
+    from zf.runtime.milestone_provider_activity import frozen_provider_activity
+
+    provider, intervals = frozen_provider_activity(events[:freeze_index], freeze, members)
     ids = sorted(tasks)
     return {"schema_version": "milestone-task-lifecycles.v1",
             "summary": {"workflow_run_id": run, "candidate_event_id": freeze_id, "target_commit": target,
-                        "candidate_generation": generation, "task_ids": ids,
+                        "candidate_generation": generation, "task_ids": ids, "provider_activity": provider,
                         "measurement": ("For each task and Plan package, measure the first admitted entry-stage "
                                         "operation from workflow.operation.started to its matching terminal event. "
                                         "The overlap covers all measured entries of one group."),
                         "generations": [_entry_summary(gen, pkg, rows) for (gen, pkg), rows in entries.items()]},
-            "tasks": [{"task_id": task, "operations": tasks[task]} for task in ids]}
+            "tasks": [{"task_id": task, "operations": tasks[task], "provider_turns": intervals.get(task, [])} for task in ids]}
 
 
 def aggregate_recovery_lifecycles(state: Path, events: list[ZfEvent], run: str, candidate: dict) -> dict | None:

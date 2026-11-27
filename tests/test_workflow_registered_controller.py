@@ -75,6 +75,7 @@ def test_v5_selection_preserves_policy_and_applies_only_exact_approved_candidate
     outcome, request, candidate = _candidate(assembly)
     config = load_config(candidate)
     assert config.project.name == "demo"
+    assert "run_board_policy" not in config.workflow.flow_metadata
     assert config.project.state_dir == ".state-demo"
     assert config.session == load_config(base).session
     assert config.runtime.run_manager == load_config(base).runtime.run_manager
@@ -284,3 +285,45 @@ def test_registered_flow_preserves_mailbox_and_exact_project_effect_authorizatio
     expected = load_config(base).runtime
     for key in ("durable_mailbox", "host_watchdog_seconds", "host_verification", "task_publication"):
         assert getattr(actual, key) == getattr(expected, key)
+
+
+@pytest.mark.parametrize("enabled", [True, False], ids=["opt-in", "opt-out"])
+def test_registered_prd_prepare_freezes_project_run_board_in_proposal(assembly, monkeypatch, enabled):
+    from tests.test_control_actions_workflow_request import _execute
+    from zf.runtime.control_actions import ControlledActionService
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_proposal import load_workflow_proposal
+    from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations
+
+    base, state, _, selection, writer = assembly
+    monkeypatch.chdir(base.parent)
+    docs = list(yaml.safe_load_all(base.read_text()))
+    docs[0].update(kind="PrdFlow", spec={
+        "lanes": 1, "backend": "mock", "prdRef": "prd.md", "topology": "fanout",
+        "runBoard": {"enabled": enabled, "silenceSeconds": 83},
+    })
+    base.write_text(yaml.safe_dump_all(docs, sort_keys=False))
+    config = load_config(base)
+    service = ControlledActionService(state, writer, config=config, project_root=base.parent,
+                                      actor="operator", source="kanban-agent", surface="web")
+    queued = _execute(service, "workflow-request", {
+        "request_id": "project-board", "kind": "auto", "objective": "Deliver the registered PRD workflow",
+        "source_ref": "prd.md", "target_root": ".", "backend": "mock", "synthesis_backend": "mock",
+        "allow_missing_env": True, "acceptance": ["Hello World and unittest pass"],
+    })
+    assert queued["status"] == "synthesis_queued", queued
+    request = load_workflow_request(state, queued["request_id"])
+    reply = {**selection, "request_id": request["request_id"], "request_revision": request["revision"],
+             "requirement_ref": request["requirement_spec_ref"], "requirement_digest": request["requirement_spec_digest"]}
+    agent = SimpleNamespace(run_turn=lambda **_: SimpleNamespace(ok=True, reply=json.dumps(reply)))
+    assert consume_workflow_synthesis_operations(state_dir=state, project_root=base.parent, config=config,
+                                                  writer=writer, agent=agent, limit=1) == 1
+    prepared = load_workflow_request(state, request["request_id"])
+    assert prepared["status"] == "proposed", [e.payload for e in writer.event_log.read_all()
+                                              if e.type.endswith("failed")]
+    proposal = load_workflow_proposal(state, prepared["proposal_ref"])
+    assert proposal["approval_status"] == "approvable", proposal["blockers"]
+    snapshot = hydrate_sidecar_ref(state, proposal["effective_config_ref"]).payload
+    expected = {"enabled": enabled, "silence_seconds": 83}
+    assert snapshot["config"]["workflow"]["_flow_metadata"]["run_board_policy"] == expected
+    assert snapshot["compiled_graph"]["run_board_policy"] == expected

@@ -108,6 +108,7 @@ def test_real_dispatch_attaches_reachable_observation_index(dispatch_fixture, ho
     index = hydrate_sidecar_ref(runtime.state_dir, body['execution_evidence_ref']).payload
     assert [e['event_id'] for e in index['entries']] == [hook.id, *([completed.id] if host else [])]
     assert 'handoff-evidence' in body['execution_evidence_read']
+    assert '--page-size 8192' in body['execution_evidence_read']
     cited = hydrate_sidecar_ref(runtime.state_dir, body['cited_execution_evidence_ref']).payload
     assert [row['event_id'] for row in cited['entries']] == [hook.id]
     assert any(row['source_id'] == 'task-handoff-cited-evidence'
@@ -215,6 +216,14 @@ def test_authenticated_cli_can_page_original_evidence_across_multiple_attempts(e
         content += page['content']
     assert json.loads(content)['output'] == 'original RED\n' * 300
     assert not page['authorizes_execution']
+    assert main([*command, '--page-size', '8192']) == 0
+    wide = json.loads(capsys.readouterr().out)
+    assert wide['content'] == content and wide['ref'] == descriptor and wide['next_page_start'] is None
+    assert main([*command, '--page-size', '13', '--page-start', '1024', '--digest', digest]) == 0
+    assert json.loads(capsys.readouterr().out)['content'] == content[1024:1037]
+    for invalid_size in ('0', '8193'):
+        assert main([*command, '--page-size', invalid_size]) == 1
+        capsys.readouterr()
     assert main([*command, '--page-start', '1024']) == 1
     capsys.readouterr()
     assert main([*command, '--digest', 'wrong']) == 1

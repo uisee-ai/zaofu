@@ -106,3 +106,25 @@ test('mail addressed to an unassigned member stays private across live and histo
   expect(items.map(i => i.type)).toEqual(['workflow.mailbox.accepted','workflow.mailbox.accepted']);
   expect(items.every(i => i.payload.content_visibility === 'restricted' && !('body_ref' in i.payload))).toBe(true);
 });
+
+test('a Plan revision shows the actual author dispatch and a later Run pause', async ({page, request}, info) => {
+  const project = process.env.ZF_E2E_PLAN_REVISION_PROJECT;
+  test.skip(!project, 'Requires an isolated OA revision with a planner dispatch followed by a Run pause');
+  const requestId = 'req-1';
+  const base = `/api/projects/${encodeURIComponent(project!)}/workflow-requests/${requestId}/graph`;
+  const response = await request.get(base + '/structure');
+  expect(response.ok()).toBeTruthy();
+  const snapshot = await response.json();
+  const team = snapshot.nodes.find((node: {id:string}) => node.id === 'workflow:stage:prd-plan').data.team;
+  expect(team.revision_handoff.status).toBe('dispatched');
+  expect(team.revision_handoff.paused).toBe(true);
+  await page.goto('/?page=workflows&request=req-1&node=workflow%3Astage%3Aprd-plan&project=' + encodeURIComponent(project!));
+  const detail = page.getByRole('complementary', {name:'图节点详情'}).getByLabel('阶段分工');
+  const revision = detail.getByText(/OA 退回修订/);
+  await expect(revision).toContainText('planner');
+  await expect(revision).toContainText('已派发');
+  await expect(revision).toContainText('Run 已暂停');
+  await expect(revision).toContainText(team.revision_handoff.package_digest.slice(0, 12));
+  await expect(revision).toContainText(team.revision_handoff.dispatch_event_id);
+  await page.screenshot({path:info.outputPath('revision-handoff.png')});
+});

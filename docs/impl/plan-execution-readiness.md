@@ -56,10 +56,18 @@ Planner/critic 的事实使用当前派发配置及冻结的验证请求。
 不会自动阻断、批准、调整 task map、启用 pipeline 或执行 setup。
 Planner 的 validate 结果与 Critic 的输入使用相同事实生成器。
 
+Planner 执行 `zf result validate --operation <id> --scratch --summary` 时，
+摘要的 `execution_comparisons` 列出本次实际算出的比较项、各项任务总数和最多三个任务 ID。
+只读入口与标准空写集项显示运行时起始阶段，Candidate 命令项显示已登记命令数和仅宿主许可数。
+`before_rework: true` 表示完整 Critic 在退回修订前也要对账。移除 `--summary` 可查全部任务、原命令和逐项事实。
+缺少某个比较项时，摘要无法据此判断其余任务的执行模式。结构预检状态与审批流程各自沿用原合同。
+
 ### Critic 的执行对账
 
 新冻结的 `plan-execution-review.execution_comparisons` 是本轮待对照的执行事实。
-`standard_with_empty_write_scope.task_ids` 列出实际进入标准流程且写入范围为空的任务。
+`standard_with_empty_write_scope` 列出实际进入标准流程且显式声明空写集的任务。
+新评审的 `facts.entries[]` 提供声明与调度入口、起始阶段、允许路径和本任务登记的命令 ID。
+Critic 对照原始需求确定这一入口是否合适。返工指向作者能修改的候选字段，重新验证候选时由运行时生成新的摘要。
 `candidate_command_scope` 列出当前按 Candidate 选择或声明的命令、登记任务与命令 ID，
 以及仅由宿主许可的命令。Critic 从冻结需求确定本轮必须取得哪些独立回执，再与
 当前 Task Map 的登记对照。独立构建与“构建后执行浏览器检查”可以在同一需求中分别出现。
@@ -243,3 +251,26 @@ Kernel 继续只传播显式声明。真实审查通过但遗漏声明时，页�
 
 在线 Apply 改变执行配置后，已启动 consumer 仍可能持有旧配置而拒绝新 Run；本验证
 不绕过 `consumer_config_stale`，也不把启动前配置的成功结果当作热重载验证。
+
+### 独立 Critic 在本次候选内核证执行异议
+
+完整审查遇到只读 Task Pipeline 入口时，冻结摘要分别列出每项任务的首站、实际选取的命令和验收，
+以及混合任务间的显式依赖。比较的 `before_rework` 标记适用于当前候选。独立 Critic 在
+`validate-plan` 和正式提交时用 `execution_assessments` 对这些比较逐项裁决。
+每项的 `runtime_evidence` 是一个引用对象，包含冻结摘要的 `source_id`、`artifact_id`、`sha256`、对应 comparison 的事实子字段 `json_path`，以及该位置的 `observed_value` 或原文 `quote`。
+`basis.requirement_evidence` 与 `basis.current_evidence` 各为引用数组，可分别列出多条需求证据与候选证据。`repair_required` 对应有同名 comparison
+的修复项，`no_repair` 保留解释及反证，证据不足的 `needs_clarification` 关联 Owner 决策问题。运行时检查选择事实、证据绑定和覆盖，语义由 Critic 判断。
+
+新签的完整审查若发现只读首站已解析且选中零项必验 AC，且本轮有可对照的冻结需求，现有 `readonly_command_scope` 会给出已解析零项与尚未解析的任务计数和样本。
+Critic 在同一条 `execution_assessments` 引用 `facts.initial_mandatory_acceptance` 的精确值，并在 `basis.requirement_evidence` 逐项说明依据对首站的要求及理由。
+若 Owner 本轮正式退回，引用当次 `plan.rejected` 对应的 `rework_feedback` 条目；若沿用经授权重新开代的意见，则引用已绑定的 `operator_feedback` 条目。
+局部探针可以选零项，由 Critic 引用冻结依据说明最终验收归属。实际要求在首站关闭的验收须有修复项，依据未明确可提交 Owner 澄清。
+若正式 Owner 决定的冻结投影内容无法核对，通用需求不能单独支撑批准。完整任务清单在 `plan-execution-verification`，既有 WRC 继续使用首次签发的引用义务。
+
+拒绝后的返工读取 `critical-reader-repair-context`。其中 `rework_feedback` 给出已确认的修复项；
+`plan_review_dispositions` 按拒绝包的 digest 附上本次裁决及其证据，供 Planner 了解已撤回意见及影响范围。
+完成当前裁决只结算当前独立评审，一次失败仍遵循现有因果幂等的返工路由。新候选的审批仍需独立裁决。
+
+同一 Critic WRC 重放时，用量与验证明细沿用首次已登记 manifest 的引用和顺序。规划、验证职责或策略发生实质变化时，WRC 仍核对完整请求摘要。
+
+新发布的任务入口比较用 `runtime_evidence_fields` 列出可引用的计算字段。审核实际首站时引用具体任务的 `entry_mode` 或 `first_stage_on_admission`，同时可以在候选证据中引用作者声明。历史 WRC 沿用首次登记的引用规则。

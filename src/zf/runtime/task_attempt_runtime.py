@@ -227,7 +227,7 @@ def prepare_task_attempt(
     _bind_attempt_to_briefing(briefing_path, attempt, durable_assistance=assistance, inbox_hint=hint)
     claimed_attempt, claimed = store.claim_delivery(
         str(attempt["attempt_id"]),
-        updated_at=_now(),
+        updated_at=_now(), lease_expires_at=_lease_expiry(runtime),
     )
     if not claimed:
         status = str((claimed_attempt or attempt).get("status") or "")
@@ -560,6 +560,9 @@ def reconcile_task_attempts(runtime: Any) -> int:
         expired_rows,
         updated_at=_now(),
     )
+    from zf.runtime.reader_initial_delivery import delivery_waits, expired_reader_claim
+
+    reader_holds = None
     for row in store.rows():
         attempt_id = str(row.get("attempt_id") or "")
         if not attempt_id:
@@ -576,6 +579,13 @@ def reconcile_task_attempts(runtime: Any) -> int:
             changed += 1
         if str(row.get("status") or "") != "expired":
             continue
+        if row.get("delivery_claimed_at"):
+            if reader_holds is None:
+                reader_holds = delivery_waits(events)
+            reader_changes = expired_reader_claim(runtime, row, events, reader_holds)
+            if reader_changes is not None:
+                changed += reader_changes
+                continue
         pipeline_changed = reconcile_expired_task_pipeline_attempt(
             runtime,
             row,
@@ -597,27 +607,6 @@ def reconcile_task_attempts(runtime: Any) -> int:
         _requeue_expired_task(runtime, row)
         changed += 1
     return changed
-
-
-def _settle_admitted_operation_attempt(
-    runtime: Any,
-    event: ZfEvent,
-    *,
-    events_by_id: dict[str, ZfEvent] | None = None,
-    attempt_rows: list[dict[str, Any]] | None = None,
-    store: TaskAttemptStore | None = None,
-) -> bool:
-    from zf.runtime.task_attempt_operation_settlement import (
-        settle_admitted_operation_attempt,
-    )
-
-    return settle_admitted_operation_attempt(
-        runtime,
-        event,
-        events_by_id=events_by_id,
-        attempt_rows=attempt_rows,
-        store=store,
-    )
 
 
 def _emit_attempt_failure(runtime: Any, row: dict[str, Any], *, reason: str) -> None:

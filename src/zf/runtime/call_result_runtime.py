@@ -348,6 +348,9 @@ def prepare_call_operation(
 
         attach_reader_handoff(runtime, payload)
 
+    from zf.runtime.plan_rework_input_overlap import restore_replayed_rework_reads
+    restore_replayed_rework_reads(payload, previous_request, attempt_id, output_profile_id)
+
     source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,
@@ -358,7 +361,7 @@ def prepare_call_operation(
         task_id=task_id,
         attempt_id=attempt_id,
         dispatch_id=dispatch_id,
-        source_event_id=causation_id,
+        source_event_id=causation_id, previous_request=previous_request,
         **({"read_purpose": "candidate-verify"} if reassessment_scope_ref else {}),
     )
     payload.pop("_context_delivery_enabled", None)
@@ -389,6 +392,8 @@ def prepare_call_operation(
             else ()
         ),
     )
+    plan_read_diagnostic = {}
+    baseline = required_reads
     full_plan_reads = list(required_reads) if output_profile_id == "plan-synth" else []
     if output_profile_id == "plan-synth" and configured_review.get("mode") != "full" and any(
         isinstance(source, Mapping) and source.get("artifact_id") == "scoped_plan_review.json"
@@ -422,21 +427,22 @@ def prepare_call_operation(
             required_reads, selection_strategy = select_plan_input_reads(
                 runtime.state_dir, source_manifest, required_reads,
                 policy=configured_review, explicit=bool(explicit_required_reads),
+                lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request,
+                read_events=runtime.event_log.read_all, explicit_rows=explicit_required_reads,
             )
         required_reads, payload["plan_review_optimization"] = choose_review_reads(
             runtime.state_dir, source_manifest, before=full_plan_reads, candidate=required_reads,
             explicit=bool(explicit_required_reads), strategy=selection_strategy,
         )
+        plan_read_diagnostic = payload["plan_review_optimization"]
     elif (source_manifest.get("handoff_authority_contract") or {}).get("attempt_domain") == "plan":
-        from zf.runtime.plan_input_read_selection import select_plan_input_reads
-        from zf.runtime.plan_review_selection_cost import choose_review_reads
+        from zf.runtime.plan_input_read_selection import choose_plan_reader_reads
 
-        partitioned, strategy = select_plan_input_reads(runtime.state_dir, source_manifest,
-            required_reads, policy={}, explicit=bool(explicit_required_reads))
-        required_reads, payload["plan_input_optimization"] = choose_review_reads(
-            runtime.state_dir, source_manifest, before=required_reads, candidate=partitioned,
-            explicit=bool(explicit_required_reads), strategy=strategy,
-        )
+        required_reads, plan_read_diagnostic = choose_plan_reader_reads(
+            runtime.state_dir, source_manifest, required_reads, declarations=explicit_required_reads,
+            lookup_failure=lambda key: _event_by_id(runtime, key), previous_request=previous_request,
+            read_events=runtime.event_log.read_all)
+        payload["plan_input_optimization"] = plan_read_diagnostic
     from zf.runtime.artifact_review_scope import select_review_inputs
     required_reads = select_review_inputs(runtime, operation_id, output_profile_id, payload, source_manifest,
                                          required_reads, explicit_required_reads)
@@ -446,6 +452,14 @@ def prepare_call_operation(
 
         payload["plan_review_optimization"]["scope"] = review_scope_diagnostics(runtime.state_dir, source_manifest)
         check_review_input_budget(runtime.config, stage_id, payload["plan_review_optimization"])
+    if payload.get("plan_review_disposition_digest") and (
+        payload.get("review_scope_ref") or payload.get("diagnosis_review")
+        or any(s.get("artifact_id") in {"scoped_plan_review.json", "unchanged-plan-review.json"}
+               for s in source_manifest["sources"])
+        or not any(r.get("source_id") == "plan-execution-review" and r.get("json_path") == "$"
+                   and r.get("artifact_sha256") == payload["plan_review_disposition_digest"] for r in required_reads)
+    ):
+        payload.pop("plan_review_disposition_digest")
     if required_reads:
         payload["required_reads"] = required_reads
         from zf.runtime.input_delivery_contract import operation_delivery_mode
@@ -500,7 +514,11 @@ def prepare_call_operation(
     payload.pop("judge_specialist_obligation", None)
     if specialist:
         payload["judge_specialist_obligation"] = specialist
+    explicit_indexes = ([required_reads.index(row) for row in explicit_required_reads]
+                        if explicit_required_reads and required_reads != baseline
+                        and plan_read_diagnostic.get("strategy") == "bound_rework_descriptor_index" else [])
     request = {
+        **({"plan_rework_explicit_read_indexes": explicit_indexes} if explicit_indexes else {}),
         **({"judge_specialist_obligation": specialist} if specialist else {}),
         "workflow_run_id": workflow_run_id,
         "operation_type": operation_type,
@@ -582,6 +600,7 @@ def prepare_call_operation(
                 "plan_synth_contract_digest",
                 "plan_synth_verdict_only",
                 "plan_review_evidence_policy",
+                "plan_review_disposition_digest",
                 "diagnosis_review",
                 "reviewed_plan_candidate_digest",
                 "pdd_id",
@@ -680,7 +699,7 @@ def prepare_call_operation(
         },
     }
     if output_profile_id == "candidate-verify":
-        from zf.runtime.candidate_reader_reassessment import enabled, policy_kind
+        from zf.runtime.candidate_reader_reassessment import enabled, native_reassessment_enabled, policy_kind
         if previous_request is not None:
             authorized = previous_request.get("candidate_reader_reassessment") is True
             flow_kind = previous_request.get("candidate_reassessment_flow_kind", "")
@@ -690,6 +709,10 @@ def prepare_call_operation(
         if authorized:
             request["candidate_reader_reassessment"] = True
             request["candidate_reassessment_flow_kind"] = flow_kind
+            native_allowed = (previous_request.get("reassess_native_activity") is True if previous_request is not None
+                              else native_reassessment_enabled(runtime.config, flow_kind))
+            if native_allowed:
+                request["reassess_native_activity"] = True
     if reassessment_scope_ref:
         request["reassessment_scope_ref"] = dict(reassessment_scope_ref)
     if output_profile_id == "candidate-verify" and payload.get("candidate_reader_scope"):
@@ -707,11 +730,9 @@ def prepare_call_operation(
     ))
     if pinned_write_scopes:
         request["workdir_write_scopes"] = pinned_write_scopes
-    plan_candidate_validation = payload.get("plan_candidate_validation")
-    if isinstance(plan_candidate_validation, Mapping):
-        request["plan_candidate_validation"] = dict(
-            plan_candidate_validation
-        )
+    from zf.runtime.plan_rework_draft import bind_authoring_context
+
+    bind_authoring_context(runtime, payload, request, source_manifest, previous_request, operation_id)
     if context_delivery_enabled:
         from zf.runtime.context_delivery import CONTEXT_RENDERER_VERSION
 

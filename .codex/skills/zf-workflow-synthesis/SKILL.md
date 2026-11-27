@@ -171,6 +171,11 @@ targeted 必须给 focus；none 不声明已审范围。普通 Flow 与当前 la
 - `candidate_verify` 提供 `{reason, width}`，选用已注册的并行 Reader 容量。冻结前将验收、
   必需用户旅程与全部已声明验收项分给具体 Reader。逐项列出跨任务检查 `integration_checks`，包含
   `check_id`、至少两个 `task_ids` 和可观察的 `assertion`，再用各 Reader 的 `integration_check_ids` 分派。
+  若各席负责不同证据，在 `candidate_verify.members` 用现有阶段义务写明每席的
+  `obligation_id`、已注册的验证 `role`、`question`、`input_refs` 和 `expected_output`。
+  此处引用既有或约定由 Plan 定义的验收键，如 `acceptance:T-A/AC-1`、`journey:purchase`、
+  `integration:runtime-overlap`。每个声明的键有唯一责任席；Planner 在产品验收中展开其断言、
+  证据来源和验证方法，将键分配给同一席位。执行时用该冻结目标的实际观察证明断言。
 - `judge` 使用同样的 author/members 结构，author 从 `authorized_judges` 选择。专项审查者
   各自声明 `obligation_id`、`role`、`question`、`input_refs` 和 `expected_output`。默认意见必需，
   正式 Judge 等待这些签署。咨询意见设置 `required:false`，可与必需意见并行取证；正式 Judge

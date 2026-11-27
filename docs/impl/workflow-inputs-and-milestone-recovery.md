@@ -13,7 +13,7 @@
 
 同一 Codex 会话压缩后，先用 `zf artifact recover --attempt <id>` 找回工作记录。若原生轨迹只证明部分材料已交付，`zf artifact read --required --resume` 会先给出当前上下文的恢复页。跟随标准 `next_cursor` 时，CLI 重新核对会话、压缩边界和交付凭证，继续补读尚未完整交付的区间。需要在当前上下文中逐页重读时，显式选择 `continuation.context_next_cursor`。该游标在恢复页已包含正文且仍有后文时提供。从头通读可直接执行 `--required`，省略游标与 `--resume`。原兼容入口 `continuation.historical_next_cursor` 仍可定位历史缺口。当前会话收到恢复提示后，再次执行 `--resume` 也可继续补读。历史交付凭证不证明模型当前仍记得材料。
 
-挂载试点使用 Linux、cgroup v2、FUSE、`fusermount` 及 libfuse2。项目可通过 `uv sync --extra native-inputs` 安装对应的 Python 适配器。在项目的 `workflow.flow_metadata.artifact_worker_cgroups` 中将具体 worker 实例映射到专属 cgroup 的绝对层级名。每次 open/read 都检查当前派发凭据、会话、进程、cgroup 和 grant 代次。直接 I/O 并禁用数据缓存，原进程退出、凭据轮换后旧描述符不得继续读取。当前版本只为与注册会话相符的 Codex CLI 0.171.0 单文件 `exec_command` 创建严格原生交付见证。旧合同、共享工作区、无法验证的包装器及不支持的 Provider 使用派发中原有的 CLI。
+挂载试点使用 Linux、cgroup v2、FUSE、`fusermount` 及 libfuse2。项目可通过 `uv sync --extra native-inputs` 安装对应的 Python 适配器。在项目的 `workflow.flow_metadata.artifact_worker_cgroups` 中将具体 worker 实例映射到专属 cgroup 的绝对层级名。每次 open/read 都检查当前派发凭据、会话、进程、cgroup 和 grant 代次。直接 I/O 并禁用数据缓存，原进程退出、凭据轮换后旧描述符不得继续读取。当前版本只为与注册会话相符的 Codex CLI 0.171.0 和 0.172.0 单文件 `exec_command` 创建严格原生交付见证。旧合同、共享工作区、无法验证的包装器及不支持的 Provider 使用派发中原有的 CLI。
 
 部署资格测试使用独立的 Linux user scope。将 libfuse2 和 Python 适配器放在实际 worker 工具命名空间可读的目录；私有依赖可使用该目录下的绝对 `FUSE_LIBRARY_PATH`。测试分别记录工作区沙箱能否加载库、能否访问 `/dev/fuse`、受控 CLI 能否挂载，以及真实 Codex 文件读取是否留下可验证的原生回执。若沙箱屏蔽设备，worker 使用已授权的 artifact read。专属 scope 下的宿主预挂载仅验证文件消费能力，普通派发仍需核实挂载由谁启动。可在已准备依赖和 Codex 的隔离 checkout 运行下列显式测试，结果写在 pytest 的临时项目内。[原生工作区资格测试](../../tests/integration/test_native_workspace_qualification.py)
 
@@ -25,7 +25,7 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 
 2026-11-24 的 8×8 B 运行 `workflow-7dbaae8a3501596d` 中，`verify-lane-0` 的 `AUDIT-NORMALIZE` 尝试 `ta-f3e497dda5a5ac4a3f2d` 已进入专属 cgroup。宿主能加载的私有 libfuse2 位于 `/dev/shm`，实际 Codex 工作区沙箱看不到该库。该尝试记录了 26 条 CLI stdout 读取回执、0 条挂载读取回执。
 
-独立单输入项目把同版本库置于工具可见的只读位置后，宿主及工作区沙箱均能加载。真实 Codex CLI 0.171.0 使用本地模拟 Responses 服务调用 `exec_command`。在同一冻结 request、role 凭据和 cgroup 下，工作区沙箱中缺少 `/dev/fuse`，直接启动 workspace 返回 1，已授权的 CLI 读取成功；由该 scope 的宿主进程运行同一受控 CLI 时，沙箱能读取它预备的只读挂载，账本记录 `mounted_file_read`、`observed_in_transcript` 及完整字节区间，租约撤销后卸载。常规派发目前提示 worker 运行 workspace，没有自动在宿主预备挂载的步骤。该正例的预备进程仅存在于测试中。
+独立单输入项目把同版本库置于工具可见的只读位置后，宿主及工作区沙箱均能加载。真实 Codex CLI 0.171.0 与 0.172.0 分别使用本地模拟 Responses 服务调用 `exec_command`。在同一冻结 request、role 凭据和 cgroup 下，工作区沙箱中缺少 `/dev/fuse`，直接启动 workspace 返回 1，已授权的 CLI 读取成功；由该 scope 的宿主进程运行同一受控 CLI 时，沙箱能读取它预备的只读挂载，账本记录 `mounted_file_read`、`observed_in_transcript` 及完整字节区间，租约撤销后卸载。常规派发目前提示 worker 运行 workspace，没有自动在宿主预备挂载的步骤。该正例的预备进程仅存在于测试中。
 
 文件访问时的 caller PID、实际文件、冻结来源及读区间形成宿主见证。准入重新核对该会话中唯一 call ID 的参数和公开返回。完整输出及可精确复核边界的 Codex 截断片段可以累计，并可用 CLI 补齐中段。原生见证、CLI stdout、当前模型记忆和产品判词分别记录。挂载在产品仓库之外创建，停止后释放。挂载不创建产品文件。
 
@@ -38,12 +38,17 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 | 配置或入口 | 行为及恢复 |
 | --- | --- |
 | `milestone_handoff: true` | Candidate Verify 新 request 冻结目标、成员、前驱判定、草稿来源及剩余义务。重放复用同一摘要。worker 通过 `zf artifact milestone --attempt ATTEMPT` 查看状态，本地操作员可在原 worker 退出后执行 `zf workflow milestone OPERATION`。 |
-| `milestone-task-lifecycles` | 有任务级调度证据时，首次 Candidate 审查按需读取。新的 Candidate 恢复请求同时绑定修复说明和生命周期索引时，将说明和对应冻结的 `$.summary` 排在必读首位；成员明细按需读取。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。该时长统计内核运行区间，Provider 实际活跃时长需独立轨迹证据。 |
+| `milestone-task-lifecycles` | 有任务级调度证据时，首次 Candidate 审查按需读取。新的 Candidate 恢复请求同时绑定修复说明和生命周期索引时，将说明和对应冻结的 `$.summary` 排在必读首位；成员明细按需读取。`$.summary` 分 Plan 版本与包摘要报告任务首次入场的峰值及共同区间；`$.tasks[i]` 提供冻结名单上该成员的派发、起止事件与重试标识。`zf artifact milestone` 可查看摘要。新的 OA 聚合失败检查点会从已绑定的 Reader 交接中获得同一摘要，旧派发保持原样。上述调度时长仍按内核事件计算。可选的原生观测见下文。 |
 | `milestone_readiness.required_gates` | 显式 gate ID 需要同 run、合同、generation 和 target 的已通过证据。空义务集须有 `empty_waiver_gate` 对应的通过记录。目标变更、未决执行、缺少独立验收、缺少命令或发现待处理问题时，投影列出缺口与 owner。实际推进继续走原准入。 |
 | `run_boards[RUN]` | 固定 `enabled`、`generation`、`members` 与可选 `groups`。用 `zf artifact board --attempt ATTEMPT --post ID --recipient @group/review --text TEXT` 提交；接收者用 `--seen KEY` 和 `--ack KEY` 分别报告看见与消费。投递前重新核对活跃 operation、原 request、接收者、代次；竞争和重复消费共享同一认领。 |
 | `orchestration_schedules` | 定义 `id/revision/owner/goal/workflow_run_id/effective_at/enabled/action`。`inspect` 需要五字段 cron、IANA 时区、`max_occurrences`；`notify` 需要 deadline 和原 operation、request_hash、actor、attempt，可绑定一个事件类型及来源。每个 wait 只有一个胜因。夏令时缺口跳过，重复时间取较早一次；停机默认合并，`catchup` 可指定有限补算。 |
 | `zf workflow schedule ID` | 返回历史、计划时刻、执行与完成时间、重试归属。手工巡检给 `--run-now REQUEST_ID --authorization-token TOKEN`，在定义中预先固定 owner 令牌的 `manual_token_sha256`，重复 request 不重复作业。独立巡检仅汇总已有 run 的操作事实；首轮没有启用无人值守的外部写入。 |
 | `worker_model_planners[实例]` | 仅 Impl 新派发冻结 `enabled/model/port/max_calls/max_output_tokens/timeout_seconds`。Executor 可在同一 attempt 通过 `zf artifact worker-plan` 将选中的冻结依据交给本机只读 Planner，再将建议带回原工作区。回交原因有 initial、repeated_failure、interface_deviation、design_choice。保留用量、耗时和失败回执，结果未知时不自动重发。独立 Verify 和原合同继续管控交付。 |
+
+`$.summary.provider_activity` 单独报告冻结成员的原生 turn 观测。Codex 的运行时用量采集沿用注册的角色私有 rollout 和已发送的 TaskAttempt 绑定，在同次读取中核对会话、turn、工作目录、模型和正用量样本。冻结时核对同一 Run、成员的 Plan 代次与包、派发、租约、placement、workspace、原生 submit 与 usage 事件。成员明细 `$.tasks[i].provider_turns` 可追到三个事件 ID，工作目录只提供摘要。有效区间从原生开始、派发记录和 submit 三者最晚时间，到最近的同一 turn 用量样本。原生开始早于派发记录时，还要先找到同一尝试和租约的投递领取记录。样本端点不证明 turn 已结束或持续占用计算资源。共同窗口按同一 Plan 包计算，只计同时覆盖正时间且角色、任务与会话各自独立的成员。
+
+没有身份齐备的原生样本时，保留调度事实，原生观测标为 `unknown`；部分覆盖列出缺少证据的成员。既有 Candidate、OA 与 Judge 读取同一个冻结引用。此字段不触发新会话、补扫旧档或改变验收门禁。
+
 
 双模型试点使用环回地址的 Ollama 文本接口，默认端口 11434；没有授予 Planner 工具、工作区写权限或新的业务角色。不支持该适配器、既有预算无法覆盖或没有授权时，Executor 使用原模型继续。服务返回的模型名、输入和输出 token 才计入该次调用。[Ollama 文本接口](https://docs.ollama.com/api/chat)
 
@@ -68,6 +73,8 @@ systemd-run --user --scope --collect --unit="zf-input-mock-qualification-$(date 
 | 浏览器声明路径指向不可消费的目录，记录缺口时重复检查同一路径并抛出异常 | 单独保留生产者声明与原失败原因。宿主回执回归覆盖目录、媒体不可用及恢复，不重复运行浏览器。 |
 
 影响范围测试需要控制器依赖。验证使用工作树独立环境安装 dev、web、controller 和 native-inputs 四组依赖。
+
+单任务 Impl 与独立 Task Verify 在首次派发和恢复时可选用 16 KiB 文本页。已绑定冻结候选的 Candidate Verify 各席可选 32 KiB 文本页，各自读取并核验自己的必读项。可调工具应预留完整的输出容量，受限客户端可用 8 KiB 或 2 KiB。看到完整页尾后按返回的游标继续，若截断则以本页输入游标和较小页重读。恢复首条命令可用 `--resume`，翻页时用 `--cursor` 替换它。已签来源、授权范围和必读项沿用原合同。
 
 现行 CLI 默认使用 JSON 与 8 KiB 批页。B 是显式文本批页试验。三组调用数来自模拟工具返回，无法据此估算真实模型 token 或从派发到准入的耗时。运行数值对照可设置 `ZF_8X8_FIXTURE_STATE`、`ZF_8X8_FIXTURE_ATTEMPT` 后执行 `tests/e2e/test_workflow_input_replay_mock_e2e.py`。宿主用例是 `tests/test_artifact_mount_host.py`，需专属的 `zf-input-mock-*.scope`，并设置 `ZF_TEST_INPUT_MOUNT=1`。
 
@@ -227,4 +234,18 @@ Planner 或 Critic 从恢复触发中取得上一轮预检时，签发前也会�
 
 对签有 `plan-synth` 阻塞式结果提交合同的调用，操作员重启、provider 中断续派、预算续批均在恢复简报中提供原 attempt 的草稿路径和当前 CLI 命令。Synth 在本轮对已撰写的草稿执行 `zf result validate --operation … --scratch`，依据本次返回的结构化诊断修复并重验。独立评审完成且预检通过后，用同一 operation 调用 `zf result submit` 并取得回执。已准入的结果沿用原回执；恢复简报的生成不会重写草稿。
 
+新建阻塞式 Plan Synth 操作时，若冻结读策略可按摘要读取，且与本次 Run、attempt、必读选择和内嵌策略完全一致，初始结果草稿仅保留该策略的引用和摘要。可用简报中的 `zf artifact read --attempt … --required` 查看原始必读内容。预检和正式提交均读取原操作的策略及真实读取回执；历史请求和已编辑草稿仍沿用原入口。
+
 已绑定 `workflow-read` Plan 预检和失败事件的 Planner，在同一个 operation scratch 填写结果，按原命令验证、提交。真实输入丢失或工具故障使 Plan 无法交付时，`execution_status=failed` 路由到该请求的子执行失败事件。可修复的草稿问题继续原地修正，业务意见和 Owner 决策保留各自的审查路径。
+
+### 冻结后补核历史并发证据
+
+在已批准的流程策略中，`autonomous_actions` 同时包含 `reassess_reader_evidence` 和
+`reassess_native_activity`，新 Candidate 请求才会冻结历史原生采样复核权限。已有请求保持
+原授权。OA 对具体 Reader 的 finding 判定执行情况未知，并选定 `next_action=reassess_native_activity` 后，受控复核只检查同一候选冻结前、
+正式材料缺失归属的成员。核对派发、实际发送、操作和租约、同席原生会话、工作区、模型及
+当时记录的用量样本，对吻合的原生记录前缀取摘要。授权被撤回时停止新派发。
+
+后继 Reader 收到独立的 `retrospective-native-activity` 摘要，引用历史窗口前须实际读取。
+旧判词、冻结摘要及成本事件原样保存。原始证据缺失或身份冲突时保留未知。核查发生时间以
+新的复核请求事件为准，执行窗口以摘要中的原始事件为准。

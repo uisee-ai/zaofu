@@ -17,6 +17,10 @@ _REPORT_SEVERITY_ALIASES = {
 }
 _FINDING_DETAIL_KEYS = (
     "finding_id",
+    "comparison",
+    "task_ids",
+    "basis",
+    "blocking",
     "code",
     "field",
     "task_id",
@@ -162,13 +166,17 @@ def project_report_failure(
                 source_name="fix_items",
             )
             normalized["source"] = "fix_item"
-            duplicate = any(
-                isinstance(item, dict)
-                and item.get("category") == normalized.get("category")
-                and item.get("path") == normalized.get("path")
-                and item.get("message") == normalized.get("message")
-                for item in findings
-            )
+            if fix_item.get("comparison"):
+                # Two tasks can require the same change but have different evidence.
+                duplicate = normalized in findings
+            else:
+                duplicate = any(
+                    isinstance(item, dict)
+                    and item.get("category") == normalized.get("category")
+                    and item.get("path") == normalized.get("path")
+                    and item.get("message") == normalized.get("message")
+                    for item in findings
+                )
             if not duplicate:
                 findings.append(normalized)
 
@@ -202,6 +210,24 @@ def project_synth_failure_payload(
         report.get("summary") or payload.get("summary") or payload.get("reason") or ""
     )
     findings = project_report_failure(artifact_payload, report, diagnostics)
+    assessments = payload.get("execution_assessments")
+    review_digest = payload.get("plan_review_disposition_digest")
+    if (review_digest and payload.get("plan_synth_verdict_only") and payload.get("control_result_ref")
+            and payload.get("reviewed_plan_candidate_digest") and isinstance(assessments, list)):
+        assessed = [row for row in assessments if isinstance(row, dict)
+                    and isinstance(row.get("runtime_evidence"), dict)
+                    and row["runtime_evidence"].get("sha256") == review_digest
+                    and row.get("disposition") in {"no_repair", "repair_required", "needs_clarification"}]
+        if assessed:
+            # The immutable verdict holds the full basis. Only confirmed obligations
+            # travel as work; a withdrawn objection remains available to the author.
+            artifact_payload["plan_review_disposition_ref"] = {
+                "control_result_ref": payload["control_result_ref"],
+                "plan_review_disposition_digest": review_digest,
+                "reviewed_plan_candidate_digest": payload["reviewed_plan_candidate_digest"],
+            }
+            findings = [row for row in findings if row.get("source") == "fix_item"
+                        or row.get("blocking") is True or row.get("category") == "report-schema"]
     if summary:
         artifact_payload["summary"] = summary
     if findings:
