@@ -177,6 +177,36 @@ def test_full_document_reference_contract_rejects_incomplete_mapping(fault):
     assert validate_prd_document(body)
 
 
+def test_synthesis_example_and_repair_agree_on_criterion_and_covered_ids():
+    from zf.runtime.channel_reply_prompt import channel_reply_response_contract
+
+    prompt = channel_reply_response_contract({}, {}, {"refs": {"synthesis_request_id": "current"}})
+    example = prompt.split("For example, acceptance_criteria:", 1)[1]
+    body = spec_document()
+    body["acceptance_criteria"] = json.JSONDecoder().raw_decode(example)[0]
+    body["requirement_coverage"] = json.JSONDecoder().raw_decode(
+        example.split("pairs with requirement_coverage:", 1)[1]
+    )[0]
+    assert validate_prd_document(body) == ""
+
+    criterion = body["acceptance_criteria"][0]
+    criterion["expected_result"] = criterion.pop("statement")
+    covered = body["requirement_coverage"][0]
+    body["requirement_coverage"].extend([
+        {**covered, "id": "REF-EXCLUDED", "acceptance_ids": []},
+        {**covered, "id": "REQ-BROKEN", "acceptance_ids": ["AC-UNKNOWN"]},
+    ])
+    diagnostic = validate_prd_document(body)
+    for issue in ("AC-1 requires a statement", "REF-EXCLUDED: covered acceptance_ids is empty",
+                  "REQ-BROKEN: covered acceptance_ids is undeclared ['AC-UNKNOWN']"):
+        assert issue in diagnostic
+
+    criterion["statement"] = criterion.pop("expected_result")
+    body["out_of_scope"] = ["Owner explicitly excluded optional notification delivery"]
+    body["requirement_coverage"] = [covered]
+    assert validate_prd_document(body) == ""
+
+
 def test_prd_spec_v1_accepts_standard_body_and_legacy_body_remains_valid():
     assert validate_prd_document(spec_document()) == ""
     assert validate_prd_document(document()) == ""

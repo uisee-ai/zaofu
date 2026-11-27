@@ -433,7 +433,12 @@ def channel_reply_response_contract(
             '(for example ["sources/requirement.md"]), not ref/digest objects. Copy actual bound source refs, '
             "not the illustrative example path; source_refs alone are not evidence. Research rows "
             "(id beginning RES- or kind=research) must also contain adopted_conclusion and applicability_limit. "
-            "Every deferred or gap item must also contain a non-empty reason. "
+            'For example, acceptance_criteria:[{"id":"AC-1","statement":"The original record remains."}] '
+            'pairs with requirement_coverage:[{"id":"REQ-1","source_refs":["<bound source>"],'
+            '"evidence_refs":["<bound evidence>"],"section":"Functional Requirements",'
+            '"status":"covered","acceptance_ids":["AC-1"]}]. Use actual IDs, refs and outcomes. '
+            "Each covered row links at least one declared AC. Put an unadopted feature in out_of_scope; "
+            "if a source item is deferred or a gap, record its actual status and reason. "
             "Match each source requirement to a real PRD section and acceptance; section must be the exact "
             "heading title (for example `Functional Requirements`), never a combined list of requirement IDs "
             "or a prose description. State exclusions explicitly. "
